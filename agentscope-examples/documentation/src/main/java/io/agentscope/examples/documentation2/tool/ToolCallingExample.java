@@ -24,6 +24,8 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.LocalDateTime;
@@ -81,6 +83,7 @@ public class ToolCallingExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -98,14 +101,15 @@ public class ToolCallingExample {
             }
             Msg userMsg = new UserMessage(input.trim());
             System.out.print("\nAgent: ");
-            agent.streamEvents(userMsg)
-                    .doOnNext(
-                            event -> {
-                                if (event instanceof TextBlockDeltaEvent e) {
-                                    System.out.print(e.getDelta());
-                                }
-                            })
-                    .blockLast();
+//            agent.streamEvents(userMsg)
+//                    .doOnNext(
+//                            event -> {
+//                                if (event instanceof TextBlockDeltaEvent e) {
+//                                    System.out.print(e.getDelta());
+//                                }
+//                            })
+//                    .blockLast();
+            agent.call(userMsg).block();
             System.out.println("\n");
         }
     }

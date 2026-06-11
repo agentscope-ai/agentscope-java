@@ -88,6 +88,7 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
+import io.agentscope.harness.agent.tool.MemorySaveTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.tool.ProposeSkillTool;
@@ -1823,11 +1824,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             AgentStateStore effectiveSession = stateStoreOverride;
-            NamespaceFactory nsFactory =
-                    rc -> {
-                        String uid = rc != null ? rc.getUserId() : null;
-                        return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
-                    };
+            IsolationScope fsIsolationScope = IsolationScope.USER;
+            if (remoteFilesystemSpec != null && remoteFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = remoteFilesystemSpec.getIsolationScope();
+            } else if (sandboxFilesystemSpec != null
+                    && sandboxFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = sandboxFilesystemSpec.getIsolationScope();
+            } else if (localFilesystemSpec != null
+                    && localFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = localFilesystemSpec.getIsolationScope();
+            }
+            NamespaceFactory nsFactory = fsIsolationScope.toNamespaceFactory();
             if (effectiveSession == null) {
                 effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
                 inner.stateStore(effectiveSession);
@@ -1923,14 +1930,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
-                IsolationScope effectiveIsolationScope = IsolationScope.USER;
-                if (remoteFilesystemSpec != null
-                        && remoteFilesystemSpec.getIsolationScope() != null) {
-                    effectiveIsolationScope = remoteFilesystemSpec.getIsolationScope();
-                } else if (sandboxFilesystemSpec != null
-                        && sandboxFilesystemSpec.getIsolationScope() != null) {
-                    effectiveIsolationScope = sandboxFilesystemSpec.getIsolationScope();
-                }
+                IsolationScope effectiveIsolationScope = fsIsolationScope;
 
                 String effectiveFlushPrompt =
                         memoryConfig.flushPrompt() != null
@@ -2008,6 +2008,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableMemoryTools) {
                 agentToolkit.registerTool(new MemorySearchTool(wsManager));
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
+                agentToolkit.registerTool(new MemorySaveTool(wsManager));
                 agentToolkit.registerTool(new SessionSearchTool(wsManager));
             }
             WorkspacePathNormalizer pathNormalizer;
