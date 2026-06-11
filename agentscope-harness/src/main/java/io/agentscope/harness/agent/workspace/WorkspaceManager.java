@@ -298,7 +298,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        relativePaths.add(normalizeRelativePath(fi.path().trim()));
+                        relativePaths.add(normalizeListedPath(fi.path().trim()));
                     }
                 }
             }
@@ -540,7 +540,10 @@ public class WorkspaceManager implements AutoCloseable {
                     if (fi.path() == null || fi.path().isBlank()) {
                         continue;
                     }
-                    String rel = normalizeRelativePath(fi.path().trim());
+                    String rel = normalizeListedPath(fi.path().trim());
+                    if (rel.isEmpty()) {
+                        continue;
+                    }
                     Instant mtime = parseInstantQuiet(fi.modifiedAt());
                     relPaths.put(rel, Optional.ofNullable(mtime));
                 }
@@ -930,6 +933,36 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
+     * Normalizes a path returned by {@link AbstractFilesystem#glob} into a workspace-relative
+     * string when possible.
+     */
+    private String normalizeListedPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        String normalized = path.replace('\\', '/').strip();
+        Path workspaceAbs = workspace.toAbsolutePath().normalize();
+        try {
+            Path candidate = Path.of(normalized).normalize();
+            if (candidate.isAbsolute()) {
+                if (candidate.startsWith(workspaceAbs)) {
+                    return workspaceAbs.relativize(candidate).toString().replace('\\', '/');
+                }
+                if (normalized.startsWith("/")) {
+                    return normalized.substring(1);
+                }
+                return normalized;
+            }
+        } catch (Exception ignored) {
+            // Fall through to the string-based fallback below.
+        }
+        if (normalized.startsWith("/")) {
+            return normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    /**
      * Returns workspace-relative paths of all memory files ({@code MEMORY.md} and {@code
      * memory/*.md}). Unions results from the {@link AbstractFilesystem} layer and the local disk,
      * deduplicating by relative path.
@@ -946,7 +979,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = normalizeListedPath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
@@ -983,7 +1016,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = normalizeListedPath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
