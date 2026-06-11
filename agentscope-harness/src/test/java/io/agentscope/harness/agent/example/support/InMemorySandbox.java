@@ -23,6 +23,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -86,7 +87,7 @@ public class InMemorySandbox implements Sandbox {
     public ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
             throws Exception {
         int timeout = timeoutSeconds != null ? timeoutSeconds : defaultTimeoutSeconds;
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
+        ProcessBuilder pb = new ProcessBuilder(buildShellCommand(command));
         pb.directory(workspaceDir.toFile());
         pb.redirectErrorStream(false);
         Process process = pb.start();
@@ -114,5 +115,13 @@ public class InMemorySandbox implements Sandbox {
 
     public Path getWorkspaceDir() {
         return workspaceDir;
+    }
+
+    private static List<String> buildShellCommand(String command) {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            return List.of("cmd.exe", "/c", command);
+        }
+        return List.of("sh", "-c", command);
     }
 }

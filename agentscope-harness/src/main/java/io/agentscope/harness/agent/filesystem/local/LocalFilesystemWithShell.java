@@ -319,7 +319,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             ProcessBuilder pb =
-                    new ProcessBuilder("sh", "-c", command)
+                    new ProcessBuilder(buildShellCommand(command))
                             .directory(workDir.toFile())
                             .redirectErrorStream(false);
 
@@ -426,5 +426,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
         }
         return namespaced;
+    }
+
+    private static List<String> buildShellCommand(String command) {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            return List.of("cmd.exe", "/c", command);
+        }
+        return List.of("sh", "-c", command);
     }
 }
