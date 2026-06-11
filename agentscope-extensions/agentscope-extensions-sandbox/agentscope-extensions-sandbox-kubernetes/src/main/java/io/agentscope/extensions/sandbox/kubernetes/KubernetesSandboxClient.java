@@ -25,6 +25,8 @@ import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -171,6 +173,11 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         if (callOptions.getMemoryRequest() != null) {
             o.setMemoryRequest(callOptions.getMemoryRequest());
         }
+        if (callOptions.getEnvironment() != null && !callOptions.getEnvironment().isEmpty()) {
+            Map<String, String> merged = new HashMap<>(base.getEnvironment());
+            merged.putAll(callOptions.getEnvironment());
+            o.setEnvironment(merged);
+        }
         return o;
     }
 
@@ -187,6 +194,7 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         o.setPodLabels(src.getPodLabels());
         o.setCpuRequest(src.getCpuRequest());
         o.setMemoryRequest(src.getMemoryRequest());
+        o.setEnvironment(src.getEnvironment());
         return o;
     }
 
