@@ -18,12 +18,14 @@ package io.agentscope.builder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -97,6 +99,16 @@ class BuilderAppContextLoadTest {
         @Bean
         BaseStore inMemoryStore() {
             return new InMemoryStore();
+        }
+
+        // Mockito.delegatesTo creates a proxy typed as AgentStateStore (not
+        // InMemoryAgentStateStore), bypassing HarnessAgent.isLocalSession() instanceof.
+        @Bean
+        @Primary
+        AgentStateStore testStateStore() {
+            return Mockito.mock(
+                    AgentStateStore.class,
+                    org.mockito.AdditionalAnswers.delegatesTo(new InMemoryAgentStateStore()));
         }
     }
 }

@@ -26,6 +26,7 @@ import io.agentscope.dataagent.web.catalog.AgentCatalogService;
 import io.agentscope.dataagent.web.session.SessionReadStateStore;
 import io.agentscope.dataagent.web.session.SessionTurnParser;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -46,7 +47,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Session management endpoints, scoped to a specific agent.
+ * AgentStateStore management endpoints, scoped to a specific agent.
  *
  * <ul>
  *   <li>{@code GET /api/agents/{agentId}/sessions/inbox} — paginated session list with previews
@@ -184,7 +185,8 @@ public class SessionController {
                         .getSession(key)
                         .orElseGet(() -> findSessionByConversationId(agentId, key, userId));
         if (entry == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + key);
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "AgentStateStore not found: " + key);
         }
         String gatewayAgentId = catalogService.peekGatewayAgentId(userId, agentId);
         if (!Objects.equals(entry.userId(), userId)
@@ -248,7 +250,7 @@ public class SessionController {
 
     /**
      * Extracts the conversationId (the threadId portion of {@link
-     * io.agentscope.dataagent.runtime.gateway.MsgContext}) from a canonical gateKey segment of the
+     * io.agentscope.harness.agent.gateway.MsgContext}) from a canonical gateKey segment of the
      * form {@code |t:<value>}. Returns {@code null} when the gateKey is missing or has no thread
      * segment — pre-multi-session sessions live with a {@code null} conversationId and can still be
      * addressed by their storage key.
@@ -293,7 +295,7 @@ public class SessionController {
      *
      * <p>Reads go through the per-agent {@link WorkspaceManager}'s composite filesystem (which is
      * what the harness writes through), so multi-tenant deployments backed by the shared
-     * {@link io.agentscope.harness.agent.store.BaseStore} stay correct. Falls back to
+     * {@link BaseStore} stay correct. Falls back to
      * {@link SessionAgentManager#history} only if the WorkspaceManager cannot be resolved
      * (e.g. the agent has been unloaded).
      */

@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -24,8 +23,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -70,25 +69,24 @@ public class ToolResultEvictionMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
-        final RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
-        AgentState state = agent.getAgentState();
-        final int sizeBefore = state != null ? state.contextMutable().size() : -1;
-        return next.apply(input).doOnComplete(() -> evictAddedToolResults(agent, rc, sizeBefore));
+    public Flux<AgentEvent> onReasoning(
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        evictOversizedToolResults(agent, rc);
+        return next.apply(input);
     }
 
-    private void evictAddedToolResults(Agent agent, RuntimeContext rc, int sizeBefore) {
-        AgentState state = agent.getAgentState();
-        if (state == null || sizeBefore < 0) {
+    private void evictOversizedToolResults(Agent agent, RuntimeContext rc) {
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
+        if (state == null) {
             return;
         }
         List<Msg> ctx = state.contextMutable();
         String agentName = agent.getName();
-        for (int i = sizeBefore; i < ctx.size(); i++) {
+        for (int i = 0; i < ctx.size(); i++) {
             Msg msg = ctx.get(i);
             if (msg == null || msg.getRole() != MsgRole.TOOL) {
                 continue;

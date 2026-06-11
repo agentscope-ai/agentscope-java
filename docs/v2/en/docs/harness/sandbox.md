@@ -15,7 +15,7 @@ Confines the agent's **file operations and command execution** to an isolated en
 
 ## A minimal example
 
-Local Docker, isolated per conversation:
+Local Docker, isolated per user:
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -27,30 +27,34 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 
 agent.call(msg, RuntimeContext.builder()
-    .sessionId("user-1-conv-1")
+    .userId("alice")
+    .sessionId("conv-1")
     .build()).block();
 ```
 
-Different `sessionId` → different sandbox; same `sessionId` across `call()` → automatically reuses the same sandbox (or restores from snapshot).
+Same `userId` across `call()` → automatically reuses the same sandbox (or restores from snapshot). Different `userId` → separate sandbox. When `userId` is absent, falls back to `sessionId` as the isolation key.
 
 ## IsolationScope — who shares a sandbox
 
-The most-tuned setting:
+All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFilesystemSpec`). The key parameter is `isolationScope`:
 
 | Scope | Sharing | Typical use |
 |-------|---------|-------------|
-| `SESSION` (default) | Each sessionId independent | Multi-user SaaS, each conversation runs on its own |
-| `USER` | Same `userId`'s sessions share | Same user shares the workspace across conversations (including distributed) |
-| `AGENT` | All users / sessions of this agent share | Public-tool-type agent |
+| `USER` (default) | Same `userId`'s sessions share; falls back to `SESSION` when userId is absent | Multi-user SaaS — each user keeps one workspace across conversations |
+| `SESSION` | Each sessionId independent | Strict per-conversation isolation |
+| `AGENT` | All users / sessions of this agent share | Public-tool-type agent, shared knowledge base |
 | `GLOBAL` | One shared slot per store | Use with care |
 
 ```java
+// Explicit SESSION scope (overrides default USER)
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
-    .isolationScope(IsolationScope.USER))
+    .isolationScope(IsolationScope.SESSION))
 ```
 
 `SESSION` is naturally concurrency-safe (each session has its own slot). `USER` / `AGENT` / `GLOBAL` in multi-replica deployments should pair with a mutex (see "Concurrency control" below).
+
+**USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
 
 ## Cross-call recovery = snapshots
 
@@ -68,6 +72,7 @@ Where snapshots land is decided by `snapshotSpec`:
 | `LocalSnapshotSpec` | Host local file (single-machine long-running) |
 | `OssSnapshotSpec` | OSS / S3-compatible (multi-replica) |
 | `RedisSnapshotSpec` | Redis (low latency, small workspaces) |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB (existing relational DB) |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -81,45 +86,57 @@ Host-side workspace files (`AGENTS.md` / `skills/` / `subagents/` / `knowledge/`
 
 When multiple replicas run the same agent and any replica must be able to pick up the same user's conversation, you need:
 
-1. A distributed `Session` (e.g. a Redis-backed implementation)
-2. A non-`Noop` snapshot (OSS / Redis / remote store)
-3. An appropriate `IsolationScope` (`USER` / `AGENT` / `GLOBAL`)
+1. A distributed `AgentStateStore` (e.g. Redis-backed) — passed via `.stateStore(...)` on the builder
+2. A non-`Noop` snapshot (OSS / Redis / remote store) — configured directly on the filesystem spec via `.snapshotSpec(...)`
+3. An appropriate `IsolationScope` (default `USER` is usually correct)
 
-To declare these together, use `sandboxDistributed(...)`:
+Everything is configured in one place:
 
 ```java
 HarnessAgent.builder()
     .name("assistant")
     .model(model)
+    .workspace(workspace)
+    .stateStore(redisStateStore)                    // distributed state
     .filesystem(new DockerFilesystemSpec()
         .image("ubuntu:24.04")
-        .isolationScope(IsolationScope.USER))
-    .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnapshotSpec))
+        .snapshotSpec(ossSnapshotSpec)              // cross-replica snapshot
+        .isolationScope(IsolationScope.USER))       // default, can omit
     .build();
 ```
 
-With `requireDistributed=true`, build fails fast if the actual Session / snapshot don't qualify — catching misconfig before deployment.
+The framework stores sandbox metadata (container ID, snapshot pointers, workspace-ready flag) in the same `AgentStateStore` that holds agent runtime state. Providing a distributed store automatically enables cross-replica sandbox resume — no extra configuration needed.
+
+If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`) with sandbox mode, the framework logs a warning at build time reminding you that sandbox state won't survive JVM restarts and can't be shared across instances.
 
 ## Concurrency control (multi-replica)
 
-In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, add a distributed lock. Redis-backed implementation built in:
+In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, you need a distributed lock.
+
+**Recommended**: use `distributedStore(...)` — snapshot and execution guard are auto-injected:
 
 ```java
-SandboxExecutionGuard guard = RedisSandboxExecutionGuard.builder(jedis)
-    .leaseTtl(Duration.ofMinutes(30))        // a bit larger than worst-case call duration
-    .retryInterval(Duration.ofMillis(500))
-    .build();
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
+HarnessAgent.builder()
+    .distributedStore(store)    // auto-wires stateStore + snapshotSpec + executionGuard
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .isolationScope(IsolationScope.USER))
+    .build();
+```
+
+To customize lock parameters, set the guard explicitly on the `SandboxFilesystemSpec`:
+
+```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
     .isolationScope(IsolationScope.USER)
-    .snapshotSpec(redisSnapshotSpec)
-    .executionGuard(guard))
+    .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
+        .leaseTtl(Duration.ofMinutes(30)).build()))
 ```
 
-The lock key is bucketed by scope automatically (`USER` → by userId, `AGENT` → by agent name).
-
-You can also implement the `SandboxExecutionGuard` interface to plug in other lock backends (DB / Zookeeper / etcd).
+Built-in implementations: `RedisSandboxExecutionGuard` (Redis `SET NX PX`), `JdbcSandboxExecutionGuard` (MySQL `GET_LOCK()`). You can also implement `SandboxExecutionGuard` to plug in Zookeeper, etcd, or other lock stores.
 
 ## Self-managed sandbox instances (advanced)
 
@@ -159,9 +176,9 @@ SandboxContext callCtx = SandboxContext.builder()
 
 Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it yourself when done.
 
-## Choosing a sandbox backend
+## Choosing a sandbox store
 
-| Backend | Best for |
+| Store | Best for |
 |---------|----------|
 | **Docker** | Local dev / single machine / trusted shell |
 | **Kubernetes** | Self-hosted K8s, node-level bind mounts |
@@ -169,7 +186,7 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 | **E2B** | Generic managed sandbox + native platform snapshots |
 | **AgentRun** | Aliyun-managed sandbox (Function Compute FC 3.0); per-instance NAS / OSS auto-mount; mainland-China low latency. Treated as a regular `SandboxFilesystemSpec` — full setup details (templates, RAM permissions, NAS-first config) live in the integration docs |
 
-All backends implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
+All stores implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
 
 ## How the workspace maps into the sandbox
 
@@ -179,7 +196,7 @@ To bind a host directory into the sandbox (e.g. a code repo), use `BindMountEntr
 
 File changes inside the sandbox don't sync back to the host — to retrieve sandbox-produced artifacts, have the agent `read_file` them.
 
-## Implementing your own sandbox backend
+## Implementing your own sandbox store
 
 To integrate a non-Docker isolation environment (self-hosted remote executor, commercial sandbox API, local mock, etc.), no Harness source changes needed — implement a few contract interfaces and pass them to `filesystem(...)`. The `InMemorySandbox` family under `agentscope-harness` tests is the minimal skeleton to copy.
 

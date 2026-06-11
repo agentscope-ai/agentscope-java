@@ -279,4 +279,77 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("Skills dir: " + tempDir.toAbsolutePath()));
         assertFalse(prompt.contains("## Code Execution"));
     }
+
+    // ===================== Path-B additions: per-skill <files-root> =====================
+
+    @Test
+    @DisplayName("Should emit per-skill <files-root> when codeExecution on and skill has originDir")
+    void testEmitsPerSkillFilesRoot(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# Content")
+                        .originDir(origin)
+                        .build();
+        skillRegistry.registerSkill("alpha_custom", skill, new RegisteredSkill("alpha_custom"));
+
+        provider.setCodeExecutionEnable(true);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
+        // No uploadDir set, all skills have originDir => uses per-skill template (no %s
+        // substitution needed; uses DEFAULT_PER_SKILL_CODE_EXECUTION_INSTRUCTION).
+        assertTrue(prompt.contains("Each skill in <available_skills>"));
+    }
+
+    @Test
+    @DisplayName("Should NOT emit <files-root> when codeExecution is off")
+    void testNoFilesRootWhenCodeExecutionOff(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# Content")
+                        .originDir(origin)
+                        .build();
+        skillRegistry.registerSkill("alpha_custom", skill, new RegisteredSkill("alpha_custom"));
+
+        // codeExecutionEnabled defaults to false
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertFalse(prompt.contains("<files-root>"));
+        assertFalse(prompt.contains("## Code Execution"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should pick uploadDir template when at least one visible skill is missing originDir")
+    void testFallbackToUploadDirTemplate(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill withOrigin =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# A")
+                        .originDir(origin)
+                        .build();
+        AgentSkill noOrigin = new AgentSkill("beta", "beta skill", "# B", null); // no originDir
+        skillRegistry.registerSkill(
+                "alpha_custom", withOrigin, new RegisteredSkill("alpha_custom"));
+        skillRegistry.registerSkill("beta_custom", noOrigin, new RegisteredSkill("beta_custom"));
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        // Mixed visibility => fall back to the legacy single-uploadDir template
+        assertTrue(prompt.contains("Skills root directory: " + tempDir.toAbsolutePath()));
+        // Only the skill with originDir still gets a per-skill <files-root>
+        assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
+    }
 }
