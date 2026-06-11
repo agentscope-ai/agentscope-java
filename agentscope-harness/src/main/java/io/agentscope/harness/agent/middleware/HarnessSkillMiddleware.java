@@ -76,7 +76,7 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
-    private final Toolkit toolkit;
+    private volatile Toolkit toolkit;
     private final SkillFilter builderFilter;
     private final SkillVisibilityFilter visibilityFilter;
     private final MarketplaceStager stager;
@@ -143,6 +143,20 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     /** Visible for tests / introspection. */
     public SkillRuntime runtime() {
         return runtime;
+    }
+
+    /**
+     * Rebind this middleware to the agent's actual toolkit after the defensive deep copy
+     * performed by {@code ReActAgent.Builder.build()}.
+     *
+     * <p>Without this rebind, the middleware would register {@code load_skill_through_path}
+     * on the pre-copy toolkit, making the tool invisible to the agent at runtime.
+     *
+     * @param newToolkit the toolkit copy that the agent will actually use
+     */
+    @Override
+    public void rebindToolkit(Toolkit newToolkit) {
+        this.toolkit = newToolkit;
     }
 
     @Override

@@ -4243,6 +4243,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
+            // Rebind middlewares to the new toolkit copy so that any middleware that
+            // dynamically registers tools (e.g., HarnessSkillMiddleware, DynamicSkillMiddleware)
+            // operates on the same toolkit instance the agent will use at runtime.
+            // Without this, the defensive copy above creates a mismatch: the middleware
+            // holds a reference to the pre-copy toolkit, while the agent uses the copy.
+            for (MiddlewareBase mw : middlewares) {
+                mw.rebindToolkit(agentToolkit);
+            }
+
             registerToolsFromHooks(agentToolkit);
 
             if (enableMetaTool) {
