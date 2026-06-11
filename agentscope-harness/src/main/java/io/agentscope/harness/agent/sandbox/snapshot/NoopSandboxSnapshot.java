@@ -41,6 +41,7 @@ public class NoopSandboxSnapshot implements SandboxSnapshot {
      * <p>Returns {@code false} — workspace archiving is skipped entirely when this
      * snapshot is in use, so this method is never called in normal operation.
      */
+    @JsonIgnore
     @Override
     public boolean isPersistenceEnabled() {
         return false;

@@ -20,7 +20,9 @@ import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import java.io.InputStream;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -60,19 +62,40 @@ class KubernetesSandboxStateSerdeTest {
      */
     @Test
     void roundTripKubernetesStateWithRemoteSnapshot() throws Exception {
+        // Simulate JdbcSnapshotSpec creating a RemoteSandboxSnapshot with a live client
+        RemoteSnapshotClient mockClient =
+                new RemoteSnapshotClient() {
+                    @Override
+                    public void upload(String snapshotId, InputStream data) {}
+
+                    @Override
+                    public InputStream download(String snapshotId) {
+                        return null;
+                    }
+
+                    @Override
+                    public boolean exists(String snapshotId) {
+                        return true;
+                    }
+                };
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId("s2");
         state.setNamespace("sandbox-ns");
         state.setPodName("agent-pod-abc");
-        // Simulate JdbcSnapshotSpec having previously created a RemoteSandboxSnapshot
-        state.setSnapshot(new RemoteSandboxSnapshot("jdbc-snapshot-id-xyz"));
+        state.setSnapshot(new RemoteSandboxSnapshot(mockClient, "jdbc-snapshot-id-xyz"));
 
+        // First call: serialize
         String json = mapper().writeValueAsString(state);
+        // Second call simulation: deserialize — this was throwing UnrecognizedPropertyException
         SandboxState read = mapper().readValue(json, SandboxState.class);
 
         Assertions.assertInstanceOf(KubernetesSandboxState.class, read);
         SandboxSnapshot snap = read.getSnapshot();
         Assertions.assertInstanceOf(RemoteSandboxSnapshot.class, snap);
         Assertions.assertEquals("jdbc-snapshot-id-xyz", snap.getId());
+        // client is null until SandboxManager re-injects it via snapshotSpec.build()
+        Assertions.assertNull(((RemoteSandboxSnapshot) snap).getClient());
+        // with null client, isRestorable() returns false (safe degradation to cold start)
+        Assertions.assertFalse(snap.isRestorable());
     }
 }

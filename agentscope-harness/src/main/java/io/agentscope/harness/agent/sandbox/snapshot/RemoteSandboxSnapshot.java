@@ -68,9 +68,15 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      * {@inheritDoc}
      *
      * <p>Uploads the archive via {@link RemoteSnapshotClient#upload}.
+     *
+     * @throws SandboxException.SnapshotException if client is null (snapshot not yet hydrated)
      */
     @Override
     public void persist(InputStream workspaceArchive) throws Exception {
+        if (client == null) {
+            throw new SandboxException.SnapshotException(
+                    id + ": RemoteSnapshotClient not available");
+        }
         try {
             client.upload(id, workspaceArchive);
         } catch (Exception e) {
@@ -82,10 +88,16 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      * {@inheritDoc}
      *
      * <p>Downloads the archive via {@link RemoteSnapshotClient#download}.
+     *
+     * @throws SandboxException.SnapshotException if client is null (snapshot not yet hydrated)
      */
     @JsonIgnore
     @Override
     public InputStream restore() throws Exception {
+        if (client == null) {
+            throw new SandboxException.SnapshotException(
+                    id + ": RemoteSnapshotClient not available");
+        }
         try {
             return client.download(id);
         } catch (Exception e) {
@@ -97,10 +109,15 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      * {@inheritDoc}
      *
      * <p>Checks existence via {@link RemoteSnapshotClient#exists}.
+     * Returns {@code false} when the client is null (snapshot not yet hydrated after
+     * deserialization), causing the sandbox start logic to degrade to a fresh initialisation.
      */
     @JsonIgnore
     @Override
     public boolean isRestorable() throws Exception {
+        if (client == null) {
+            return false;
+        }
         try {
             return client.exists(id);
         } catch (Exception e) {

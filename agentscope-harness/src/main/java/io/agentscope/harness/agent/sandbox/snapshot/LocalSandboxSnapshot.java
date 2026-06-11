@@ -118,6 +118,7 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
      *
      * @return {@code true} if the snapshot tar file exists
      */
+    @JsonIgnore
     @Override
     public boolean isRestorable() {
         return Files.exists(Path.of(basePath).resolve(id + ".tar"));
