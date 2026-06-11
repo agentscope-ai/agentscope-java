@@ -221,7 +221,32 @@ public class WorkspaceTaskRepository implements TaskRepository {
         String localKey = localKey(sessionId, taskId);
         CompletableFuture<String> future;
 
-        if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
+        if (spec instanceof TaskRunSpec.AdoptedTaskRunSpec adopted) {
+            // The future is already running (promoted from a timed-out sync execution).
+            // Skip executor submission; just wire up status-tracking callbacks.
+            future = adopted.future();
+            updateStatus(capturedRc, sessionId, taskId, TaskStatus.RUNNING, null, null);
+            final String sid = sessionId;
+            future.whenComplete(
+                    (result, err) -> {
+                        if (err != null) {
+                            Throwable cause =
+                                    err instanceof java.util.concurrent.CompletionException
+                                            ? err.getCause()
+                                            : err;
+                            String errMsg =
+                                    cause != null && cause.getMessage() != null
+                                            ? cause.getMessage()
+                                            : (cause != null
+                                                    ? cause.getClass().getSimpleName()
+                                                    : err.getClass().getSimpleName());
+                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
+                        } else {
+                            updateStatus(
+                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
+                        }
+                    });
+        } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
             future =
                     CompletableFuture.supplyAsync(
                             () ->

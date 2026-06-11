@@ -131,6 +131,9 @@ public class SubagentsMiddleware implements MiddlewareBase {
             2. **Do not poll.** Continue with other work; when the task finishes you'll see a `<system-reminder>` containing its result.
             3. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
 
+            ### Timeout promotion
+            When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
+
             ### Available agent ids
             %s
 

@@ -149,7 +149,7 @@ public final class HarnessGateway implements Gateway {
                             "HarnessGateway.bindMainAgent must be called before run(...)"));
         }
 
-        String sessionId = sessionMap.computeIfAbsent(gateKey, k -> generateSessionId());
+        String sessionId = sessionMap.computeIfAbsent(gateKey, HarnessGateway::generateSessionId);
 
         if (outboundAddress != null) {
             lastRouteBySession.put(sessionId, outboundAddress);
@@ -183,7 +183,7 @@ public final class HarnessGateway implements Gateway {
                             "HarnessGateway.bindMainAgent must be called before runStream(...)"));
         }
 
-        String sessionId = sessionMap.computeIfAbsent(gateKey, k -> generateSessionId());
+        String sessionId = sessionMap.computeIfAbsent(gateKey, HarnessGateway::generateSessionId);
 
         if (outboundAddress != null) {
             lastRouteBySession.put(sessionId, outboundAddress);
@@ -387,8 +387,8 @@ public final class HarnessGateway implements Gateway {
         return (id != null && !id.isBlank()) ? id : "main";
     }
 
-    private static String generateSessionId() {
-        return "gw-" + UUID.randomUUID();
+    private static String generateSessionId(String gateKey) {
+        return "gw-" + SessionIdUtils.deterministicHash(gateKey);
     }
 
     @Override

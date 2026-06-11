@@ -654,6 +654,12 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (namespaceFactory == null || key == null || key.isBlank()) {
             return key;
         }
+        // Absolute paths identify specific host locations and must not be namespace-scoped.
+        // Prepending a namespace prefix would turn them into relative paths, causing them to
+        // resolve incorrectly under the workspace root (e.g. /abs/path → ns//abs/path).
+        if (key.startsWith("/")) {
+            return key;
+        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;

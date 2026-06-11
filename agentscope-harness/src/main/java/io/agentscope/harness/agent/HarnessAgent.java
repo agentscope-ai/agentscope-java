@@ -979,9 +979,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         AbstractFilesystem abstractFilesystem;
         boolean leafSubagent = false;
         boolean agentTracingLogEnabled = true;
-        CompactionConfig compactionConfig = null;
+        CompactionConfig compactionConfig = CompactionConfig.builder().build();
         MemoryConfig memoryConfig = MemoryConfig.defaults();
-        ToolResultEvictionConfig toolResultEvictionConfig = null;
+        ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
+        boolean disableCompaction = false;
+        boolean disableToolResultEviction = false;
 
         final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
         final List<HarnessAgentBuilderSupport.SubagentFactoryEntry> customSubagentFactories =
@@ -1477,9 +1479,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Enables the {@link CompactionMiddleware} with the given configuration. */
+        /**
+         * Overrides the default {@link CompactionMiddleware} configuration.
+         * Compaction is enabled by default with {@link CompactionConfig#builder()}.build()
+         * defaults (dynamic trigger based on model context window, dynamic tail preservation).
+         * Use {@link #disableCompaction()} to turn it off entirely.
+         */
         public Builder compaction(CompactionConfig config) {
             this.compactionConfig = config;
+            this.disableCompaction = (config == null);
+            return this;
+        }
+
+        /** Disables the {@link CompactionMiddleware} entirely. */
+        public Builder disableCompaction() {
+            this.disableCompaction = true;
             return this;
         }
 
@@ -1496,9 +1510,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Enables {@link ToolResultEvictionMiddleware} with the given configuration. */
+        /**
+         * Overrides the default {@link ToolResultEvictionMiddleware} configuration.
+         * Tool result eviction is enabled by default with
+         * {@link ToolResultEvictionConfig#defaults()} (trigger at 80k chars).
+         * Use {@link #disableToolResultEviction()} to turn it off entirely.
+         */
         public Builder toolResultEviction(ToolResultEvictionConfig config) {
             this.toolResultEvictionConfig = config;
+            this.disableToolResultEviction = (config == null);
+            return this;
+        }
+
+        /** Disables the {@link ToolResultEvictionMiddleware} entirely. */
+        public Builder disableToolResultEviction() {
+            this.disableToolResultEviction = true;
             return this;
         }
 
@@ -1964,7 +1990,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveIsolationScope));
             }
             CompactionMiddleware compactionHook = null;
-            if (compactionConfig != null) {
+            if (!disableCompaction && compactionConfig != null) {
                 Model compactionModel =
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
@@ -1973,7 +1999,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     inner.middleware(compactionHook);
                 }
             }
-            if (toolResultEvictionConfig != null) {
+            if (!disableToolResultEviction && toolResultEvictionConfig != null) {
                 inner.middleware(
                         new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
@@ -2012,7 +2038,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new SessionSearchTool(wsManager));
             }
             WorkspacePathNormalizer pathNormalizer;
-            if (filesystem instanceof AbstractSandboxFilesystem) {
+            if (filesystem instanceof OverlayFilesystem ov
+                    && ov.getUpper() instanceof LocalFilesystemWithShell) {
+                // Local overlay mode. ShellAwareOverlay is instanceof AbstractSandboxFilesystem,
+                // so this branch must come before the sandbox check below to avoid using the
+                // sandbox "/workspace" prefix for real host paths.
+                // Only strip the workspace prefix — NOT the project prefix. Project absolute
+                // paths are handled correctly by the ROOTED pathPolicy, and stripping them
+                // would produce relative paths whose lower-layer virtual entries (/src/...)
+                // then fail in the upper layer's ROOTED check.
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
+            } else if (filesystem instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
             } else {
