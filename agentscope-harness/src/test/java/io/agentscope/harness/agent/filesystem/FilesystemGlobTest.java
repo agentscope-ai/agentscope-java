@@ -51,7 +51,7 @@ class FilesystemGlobTest {
         assertTrue(result.isSuccess());
         Set<String> relPaths =
                 result.matches().stream()
-                        .map(fi -> tmp.relativize(Path.of(fi.path())).toString().replace('\\', '/'))
+                        .map(fi -> fi.path().replace('\\', '/'))
                         .collect(Collectors.toSet());
 
         assertEquals(Set.of("memory/2026-05-13.md", "memory/sub/2026-05-14.md"), relPaths);

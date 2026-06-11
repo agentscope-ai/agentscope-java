@@ -183,7 +183,7 @@ class OtelTracingMiddlewareTest {
                         .build();
 
         ToolResultEndEvent tre =
-                new ToolResultEndEvent("reply-1", "call-1", ToolResultState.SUCCESS);
+                new ToolResultEndEvent("reply-1", "call-1", "testTool", ToolResultState.SUCCESS);
         ActingInput input = new ActingInput(List.of(toolCall));
         Flux<AgentEvent> result = middleware.onActing(agent, null, input, in -> Flux.just(tre));
         result.collectList().block();
