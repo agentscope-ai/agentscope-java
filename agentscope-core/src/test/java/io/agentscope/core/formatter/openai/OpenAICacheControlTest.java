@@ -16,8 +16,11 @@
 package io.agentscope.core.formatter.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Tests for cache_control support in OpenAI formatter.
+ * Validates that cache_control is placed at content block level.
  */
 class OpenAICacheControlTest {
 
@@ -45,12 +49,31 @@ class OpenAICacheControlTest {
         formatter = new OpenAIChatFormatter();
     }
 
+    /** Helper: get the last content part's cacheControl from a message. */
+    private Map<String, String> getLastPartCacheControl(OpenAIMessage msg) {
+        List<OpenAIContentPart> parts = msg.getContentAsList();
+        assertNotNull(parts, "Content should be array format after applyCacheControl");
+        assertTrue(!parts.isEmpty(), "Content parts should not be empty");
+        return parts.get(parts.size() - 1).getCacheControl();
+    }
+
+    /** Helper: assert no content block in the message has cache_control set. */
+    private void assertNoCacheControlOnParts(OpenAIMessage msg) {
+        List<OpenAIContentPart> parts = msg.getContentAsList();
+        if (parts == null) {
+            return;
+        }
+        for (OpenAIContentPart part : parts) {
+            assertNull(part.getCacheControl(), "No content block should have cache_control");
+        }
+    }
+
     @Nested
-    @DisplayName("applyCacheControl - automatic strategy")
+    @DisplayName("applyCacheControl - content block level")
     class ApplyCacheControlTest {
 
         @Test
-        @DisplayName("should add cache_control to system and last message")
+        @DisplayName("should add cache_control to last content block of system and last message")
         void systemAndLastMessage() {
             List<OpenAIMessage> messages = new ArrayList<>();
             messages.add(
@@ -61,10 +84,14 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertNull(messages.get(1).getCacheControl());
-            assertNull(messages.get(2).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(3).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertNull(messages.get(0).getCacheControl());
+
+            assertNoCacheControlOnParts(messages.get(1));
+            assertNoCacheControlOnParts(messages.get(2));
+
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(3)));
+            assertNull(messages.get(3).getCacheControl());
         }
 
         @Test
@@ -76,8 +103,8 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertNull(messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertNoCacheControlOnParts(messages.get(0));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
@@ -85,14 +112,12 @@ class OpenAICacheControlTest {
         void emptyList() {
             List<OpenAIMessage> messages = new ArrayList<>();
             formatter.applyCacheControl(messages);
-            // No exception thrown
         }
 
         @Test
         @DisplayName("should handle null list without error")
         void nullList() {
             formatter.applyCacheControl(null);
-            // No exception thrown
         }
 
         @Test
@@ -104,51 +129,49 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
         }
 
         @Test
-        @DisplayName("should not overwrite manually marked cache_control")
+        @DisplayName("should not overwrite content block with existing cache_control")
         void manuallyMarkedNotOverridden() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
-            List<OpenAIMessage> messages = new ArrayList<>();
-            messages.add(
-                    OpenAIMessage.builder()
-                            .role("system")
-                            .content("System")
+            OpenAIContentPart part =
+                    OpenAIContentPart.builder()
+                            .type("text")
+                            .text("System")
                             .cacheControl(customCacheControl)
-                            .build());
+                            .build();
+            List<OpenAIMessage> messages = new ArrayList<>();
+            messages.add(OpenAIMessage.builder().role("system").content(List.of(part)).build());
             messages.add(OpenAIMessage.builder().role("user").content("User").build());
 
             formatter.applyCacheControl(messages);
 
-            // System message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(0).getCacheControl());
-            // Last message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertEquals(customCacheControl, getLastPartCacheControl(messages.get(0)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
-        @DisplayName("should not overwrite last message with existing cache_control")
+        @DisplayName("should not overwrite last message content block with existing cache_control")
         void lastMessageManuallyMarkedNotOverridden() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
+            OpenAIContentPart part =
+                    OpenAIContentPart.builder()
+                            .type("text")
+                            .text("User")
+                            .cacheControl(customCacheControl)
+                            .build();
             List<OpenAIMessage> messages = new ArrayList<>();
             messages.add(OpenAIMessage.builder().role("system").content("System").build());
-            messages.add(
-                    OpenAIMessage.builder()
-                            .role("user")
-                            .content("User")
-                            .cacheControl(customCacheControl)
-                            .build());
+            messages.add(OpenAIMessage.builder().role("user").content(List.of(part)).build());
 
             formatter.applyCacheControl(messages);
 
-            // System message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            // Last message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(1).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertEquals(customCacheControl, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
@@ -161,9 +184,26 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(2).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(2)));
+        }
+
+        @Test
+        @DisplayName("should convert string content to array format")
+        void stringContentConvertedToArray() {
+            List<OpenAIMessage> messages = new ArrayList<>();
+            messages.add(OpenAIMessage.builder().role("system").content("Hello world").build());
+
+            formatter.applyCacheControl(messages);
+
+            assertTrue(messages.get(0).isMultimodal(), "Content should be array format");
+            List<OpenAIContentPart> parts = messages.get(0).getContentAsList();
+            assertNotNull(parts);
+            assertEquals(1, parts.size());
+            assertEquals("text", parts.get(0).getType());
+            assertEquals("Hello world", parts.get(0).getText());
+            assertEquals(EPHEMERAL, parts.get(0).getCacheControl());
         }
     }
 
@@ -172,7 +212,7 @@ class OpenAICacheControlTest {
     class MetadataMarkingTest {
 
         @Test
-        @DisplayName("should set cache_control from Msg metadata")
+        @DisplayName("should set cache_control on content block from Msg metadata")
         void metadataMarking() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
@@ -186,7 +226,9 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            assertNull(
+                    result.get(0).getCacheControl(), "Message-level cache_control should be null");
+            assertEquals(EPHEMERAL, getLastPartCacheControl(result.get(0)));
         }
 
         @Test
@@ -219,7 +261,7 @@ class OpenAICacheControlTest {
         }
 
         @Test
-        @DisplayName("should set cache_control on system message via metadata")
+        @DisplayName("should set cache_control on system message content block via metadata")
         void systemMessageMetadata() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
@@ -234,7 +276,8 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
 
             assertEquals(2, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            assertNull(result.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(result.get(0)));
             assertNull(result.get(1).getCacheControl());
         }
     }
