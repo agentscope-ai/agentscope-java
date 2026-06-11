@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
@@ -36,6 +40,7 @@ import java.util.UUID;
  * <p>Security: {@code id} must be a single path segment with no {@code /} or {@code ..}
  * characters to prevent path traversal attacks.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class LocalSandboxSnapshot implements SandboxSnapshot {
 
     private final String basePath;
@@ -48,7 +53,9 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
      * @param id unique identifier for this snapshot (must be a safe single path segment)
      * @throws IllegalArgumentException if {@code id} contains unsafe characters
      */
-    public LocalSandboxSnapshot(String basePath, String id) {
+    @JsonCreator
+    public LocalSandboxSnapshot(
+            @JsonProperty("basePath") String basePath, @JsonProperty("id") String id) {
         validateId(id);
         this.basePath = basePath;
         this.id = id;
@@ -121,6 +128,7 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
         return id;
     }
 
+    @JsonIgnore
     @Override
     public String getType() {
         return "local";

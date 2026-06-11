@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
 
@@ -24,23 +28,39 @@ import java.io.InputStream;
  * <p>This class delegates all operations to the provided client. The client is responsible
  * for authentication, retry logic, and network error handling.
  *
- * <p>Note: {@code RemoteSandboxSnapshot} is not directly serializable to JSON because
- * {@link RemoteSnapshotClient} cannot be serialized. When persisting session state,
- * only the {@code id} is needed — the client is re-injected from the builder at resume time.
+ * <p>JSON serialization preserves only the {@code id}; the {@code client} is transient and
+ * re-injected by the owning {@link RemoteSnapshotSpec} at resume time. The {@link JsonCreator}
+ * constructor is used by Jackson; callers should use
+ * {@link #RemoteSandboxSnapshot(RemoteSnapshotClient, String)} at runtime.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RemoteSandboxSnapshot implements SandboxSnapshot {
 
-    private final RemoteSnapshotClient client;
+    @JsonIgnore private final RemoteSnapshotClient client;
     private final String id;
 
     /**
-     * Creates a remote snapshot.
+     * Creates a remote snapshot with a live client.
      *
      * @param client the remote storage client to delegate operations to
      * @param id unique identifier for this snapshot
      */
     public RemoteSandboxSnapshot(RemoteSnapshotClient client, String id) {
         this.client = client;
+        this.id = id;
+    }
+
+    /**
+     * Deserialization constructor — restores the snapshot from persisted state.
+     *
+     * <p>The {@code client} is {@code null} after deserialization; it is re-injected by
+     * {@link RemoteSnapshotSpec#build(String)} when the sandbox resumes.
+     *
+     * @param id unique identifier for this snapshot
+     */
+    @JsonCreator
+    public RemoteSandboxSnapshot(@JsonProperty("id") String id) {
+        this.client = null;
         this.id = id;
     }
 
@@ -63,6 +83,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      *
      * <p>Downloads the archive via {@link RemoteSnapshotClient#download}.
      */
+    @JsonIgnore
     @Override
     public InputStream restore() throws Exception {
         try {
@@ -77,6 +98,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      *
      * <p>Checks existence via {@link RemoteSnapshotClient#exists}.
      */
+    @JsonIgnore
     @Override
     public boolean isRestorable() throws Exception {
         try {
@@ -91,6 +113,18 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
         return id;
     }
 
+    /**
+     * Returns the remote storage client, or {@code null} when this instance was restored from
+     * persisted state and the client has not yet been re-injected.
+     *
+     * @return the client, or {@code null} after deserialization
+     */
+    @JsonIgnore
+    public RemoteSnapshotClient getClient() {
+        return client;
+    }
+
+    @JsonIgnore
     @Override
     public String getType() {
         return "remote";

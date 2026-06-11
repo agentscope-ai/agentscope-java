@@ -19,19 +19,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 class KubernetesSandboxStateSerdeTest {
 
+    private static ObjectMapper mapper() {
+        return new ObjectMapper()
+                .findAndRegisterModules()
+                .registerModule(new HarnessSandboxJacksonModule())
+                .registerModule(new KubernetesHarnessSandboxJacksonModule());
+    }
+
     @Test
     void roundTripKubernetesState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule())
-                        .registerModule(new KubernetesHarnessSandboxJacksonModule());
-
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId("s1");
         state.setNamespace("ns1");
@@ -42,11 +45,34 @@ class KubernetesSandboxStateSerdeTest {
         ws.setRoot("/tmp/host");
         state.setWorkspaceSpec(ws);
 
-        String json = mapper.writeValueAsString(state);
-        SandboxState read = mapper.readValue(json, SandboxState.class);
+        String json = mapper().writeValueAsString(state);
+        SandboxState read = mapper().readValue(json, SandboxState.class);
         Assertions.assertInstanceOf(KubernetesSandboxState.class, read);
         KubernetesSandboxState k = (KubernetesSandboxState) read;
         Assertions.assertEquals("ns1", k.getNamespace());
         Assertions.assertEquals("p1", k.getPodName());
+    }
+
+    /**
+     * Regression test for issue #1710:
+     * KubernetesSandboxState + RemoteSandboxSnapshot failed to deserialize on second call
+     * with UnrecognizedPropertyException on the "type" field.
+     */
+    @Test
+    void roundTripKubernetesStateWithRemoteSnapshot() throws Exception {
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("s2");
+        state.setNamespace("sandbox-ns");
+        state.setPodName("agent-pod-abc");
+        // Simulate JdbcSnapshotSpec having previously created a RemoteSandboxSnapshot
+        state.setSnapshot(new RemoteSandboxSnapshot("jdbc-snapshot-id-xyz"));
+
+        String json = mapper().writeValueAsString(state);
+        SandboxState read = mapper().readValue(json, SandboxState.class);
+
+        Assertions.assertInstanceOf(KubernetesSandboxState.class, read);
+        SandboxSnapshot snap = read.getSnapshot();
+        Assertions.assertInstanceOf(RemoteSandboxSnapshot.class, snap);
+        Assertions.assertEquals("jdbc-snapshot-id-xyz", snap.getId());
     }
 }
