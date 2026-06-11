@@ -493,7 +493,9 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should load skill when array items use single-quoted values including escaped apostrophe")
+    @DisplayName(
+            "Should load skill when array items use single-quoted values including escaped"
+                    + " apostrophe")
     void testGetSkillWithSingleQuotedArrayItems() throws NacosException, IOException {
         // YAML single-quoted style: '' is the escape sequence for a literal apostrophe.
         String skillMd =
@@ -548,8 +550,7 @@ class NacosSkillRepositoryTest {
         assertEquals(List.of("触发意图一", "触发意图二", "触发意图三"), intents);
     }
 
-    private static byte[] createSkillZipWithRawMd(String rawSkillMd)
-            throws IOException {
+    private static byte[] createSkillZipWithRawMd(String rawSkillMd) throws IOException {
         String root = "skill-package";
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 ZipOutputStream zos = new ZipOutputStream(baos)) {
