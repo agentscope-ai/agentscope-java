@@ -57,10 +57,18 @@ import reactor.core.publisher.Mono;
  *   <li>Build a {@link SkillCatalog} of {@link HarnessSkillEntry} (with lazy resources and
  *       resolved {@code filesRoot}).
  *   <li>Install the catalog into the {@link SkillRuntime}, which (idempotently) registers the
- *       {@code load_skill_through_path} tool on the toolkit.
+ *       {@code load_skill_through_path} tool on the agent's runtime toolkit.
  *   <li>Render the {@code <available_skills>} prompt block and append it to the current system
  *       prompt.
  * </ol>
+ *
+ * <p><b>Toolkit note:</b> the {@code toolkit} constructor parameter is accepted for API
+ * compatibility but is <em>not</em> used for runtime tool registration. Instead,
+ * {@link #onSystemPrompt} always installs into {@code agent.getToolkit()} so the tool is
+ * registered on the toolkit that the running agent actually uses for reasoning. This matters
+ * because {@link io.agentscope.harness.agent.HarnessAgent HarnessAgent} makes a deep copy of
+ * the toolkit when building the inner {@link io.agentscope.core.ReActAgent ReActAgent}, so the
+ * constructor-injected intermediate toolkit is not the same instance as the agent's live toolkit.
  */
 @SuppressWarnings("deprecation")
 public class HarnessSkillMiddleware implements MiddlewareBase {
@@ -103,7 +111,8 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
      * Full constructor.
      *
      * @param repositories     compose-ordered list (low-to-high priority)
-     * @param toolkit          toolkit to register {@code load_skill_through_path} on
+     * @param toolkit          accepted for API compatibility; not used for runtime registration
+     *                         (see class-level note on toolkit copy semantics)
      * @param builderFilter    skill filter passed at agent build time (may be {@code null})
      * @param visibilityFilter optional per-request filter (canary/allow-list)
      * @param stager           marketplace stager; {@code null} disables staging entirely
@@ -142,15 +151,17 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
             ctx = RuntimeContext.empty();
         }
 
+        Toolkit agentToolkit = agent != null ? agent.getToolkit() : null;
+
         Map<String, RepoBound> merged = mergeRepositories(ctx);
         if (merged.isEmpty()) {
-            runtime.install(SkillCatalog.empty(), toolkit);
+            runtime.install(SkillCatalog.empty(), agentToolkit);
             return Mono.just(currentPrompt);
         }
 
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         if (visible.isEmpty()) {
-            runtime.install(SkillCatalog.empty(), toolkit);
+            runtime.install(SkillCatalog.empty(), agentToolkit);
             return Mono.just(currentPrompt);
         }
 
@@ -176,7 +187,7 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
         }
 
         SkillCatalog catalog = SkillCatalog.of(entries);
-        runtime.install(catalog, toolkit);
+        runtime.install(catalog, agentToolkit);
 
         SkillFilter effective =
                 builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);

@@ -403,6 +403,8 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 
 **`SKILL.md` 保持精简。** 控制在 2k tokens 上下，详细参考资料放 `references/`，脚本放 `scripts/`。agent 需要时会自己读。
 
+**SKILL.md 和脚本中只使用相对路径。** 由于抽象文件系统多层隔离的特殊性，SKILL.md 中引用资源和脚本时请使用相对于 SKILL.md 的路径（如 `scripts/run.py`、`references/guide.md`），**不要**硬编码绝对路径（如 `/workspace/scripts/run.py`）。框架会根据当前文件系统模式自动为每个 skill 生成正确的 `<files-root>` 绝对路径前缀，agent 在 shell 执行时会用 `<files-root>` 拼出完整路径。硬编码绝对路径会导致 skill 只能在特定文件系统模式下工作。
+
 **通用能力放市场，项目特有的写工作区。** 代码评审、表格分析这种放团队 Git 上集中维护；公司内部 RPC 规范、本项目的命名约定写到 `workspace/skills/` 里跟着代码版本走。
 
 **用户目录用来"覆盖+补充"，不要拿来当主存放。** 关键能力请放在所有用户都能看到的层。

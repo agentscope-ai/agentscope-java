@@ -21,12 +21,14 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
@@ -422,8 +424,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Per-call slot activation. Reads {@code (userId, sessionId)} from the given RuntimeContext
      * (falling back to {@link #defaultSessionId} when absent), and atomically swaps the active
-     * {@link #state} + {@link #permissionEngine} to that slot's cached entries (loading them on
-     * first use). Safe to call from {@code beforeAgentExecution} only — caller must hold the
+     * {@code #state} + {@code #permissionEngine} to that slot's cached entries.
+     *
+     * <p>When a {@link AgentStateStore} is configured the state is always reloaded from the store
+     * at the beginning of each call so that distributed deployments (where the same sessionId may
+     * drift across machines) see the latest persisted state rather than a stale local cache entry.
+     * The per-call cost of one store read is negligible compared to the LLM round-trip.
+     *
+     * <p>Safe to call from {@code beforeAgentExecution} only — caller must hold the
      * {@code AgentBase.acquireExecution} lock.
      */
     private CallExecution activateSlotForContext(RuntimeContext ctx) {
@@ -435,19 +443,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(uid, sid);
         final String finalUid = uid;
         final String finalSid = sid;
-        AgentState loaded =
-                stateCache.computeIfAbsent(
-                        slot,
-                        k ->
-                                loadOrCreateAgentStateForSlot(
-                                        stateStore,
-                                        finalUid,
-                                        finalSid,
-                                        initialPermissionContext,
-                                        getAgentId()));
-        PermissionEngine loadedEngine =
-                permissionEngineCache.computeIfAbsent(
-                        slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+        AgentState loaded;
+        if (stateStore != null) {
+            loaded =
+                    loadOrCreateAgentStateForSlot(
+                            stateStore, finalUid, finalSid, initialPermissionContext, getAgentId());
+            stateCache.put(slot, loaded);
+        } else {
+            loaded =
+                    stateCache.computeIfAbsent(
+                            slot,
+                            k ->
+                                    loadOrCreateAgentStateForSlot(
+                                            null,
+                                            finalUid,
+                                            finalSid,
+                                            initialPermissionContext,
+                                            getAgentId()));
+        }
+        PermissionEngine loadedEngine;
+        if (stateStore != null) {
+            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            permissionEngineCache.put(slot, loadedEngine);
+        } else {
+            loadedEngine =
+                    permissionEngineCache.computeIfAbsent(
+                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+        }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
@@ -603,15 +625,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * persisted).
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
-        return withRuntimeContext(call(msgs), context);
+        return callInternal(msgs, context, this::doCall);
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
-        return withRuntimeContext(call(msgs, structuredOutputClass), context);
+        return callInternal(msgs, context, m -> doCall(m, structuredOutputClass));
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
-        return withRuntimeContext(call(msgs, outputSchema), context);
+        return callInternal(msgs, context, m -> doCall(m, outputSchema));
     }
 
     /**
@@ -732,13 +754,110 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return withRuntimeContext(stream(msgs, options, schema), context);
     }
 
+    // ==================== Shared agent-stream core ====================
+
+    /**
+     * Overrides the base-class hook so that every {@code call()} variant — including structured
+     * output and context-bearing overloads — runs through the same {@link #buildAgentStream} core
+     * as {@code streamEvents()}.  This guarantees that the {@code onAgent} middleware chain fires
+     * on <em>all</em> invocation paths, not only on the streaming path.
+     *
+     * <p>The result is extracted from the {@link AgentResultEvent} emitted by
+     * {@link #buildAgentStream} before {@link AgentEndEvent}.
+     */
+    @Override
+    protected Mono<Msg> callInternal(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        return buildAgentStream(msgs, context, doCallFn)
+                .filter(e -> e instanceof AgentResultEvent)
+                .cast(AgentResultEvent.class)
+                .map(AgentResultEvent::getResult)
+                .takeLast(1)
+                .next();
+    }
+
+    /**
+     * Single implementation shared by both {@code call()} (via {@link #callInternal}) and
+     * {@code streamEvents()}.
+     *
+     * <p>The stream is bookended by {@link AgentStartEvent} / {@link AgentEndEvent}, wraps the
+     * full {@link AgentBase#runLifecycle} (shutdown guard, serialization gate, pre/post hooks,
+     * tracing), and emits {@link AgentResultEvent} carrying the final {@link Msg} immediately
+     * before {@link AgentEndEvent}.  The {@code onAgent} middleware chain is applied exactly
+     * once around this core.
+     *
+     * @param msgs      input messages
+     * @param context   caller-supplied per-call {@link RuntimeContext}, or {@code null}
+     * @param doCallFn  the concrete call implementation ({@link #doCall} or a structured-output
+     *                  variant) passed straight through to {@link AgentBase#runLifecycle}
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    private Flux<AgentEvent> buildAgentStream(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        Function<AgentInput, Flux<AgentEvent>> core =
+                input ->
+                        Flux.<AgentEvent>create(
+                                sink -> {
+                                    sink.next(new AgentStartEvent(null, replyId, getName()));
+                                    reactor.util.context.Context subscriberCtx =
+                                            reactor.util.context.Context.of(sink.contextView());
+
+                                    // Call runLifecycle directly — NOT call() — to avoid the
+                                    // onAgent chain being applied a second time.
+                                    Mono<Msg> lifecycle = runLifecycle(input.msgs(), doCallFn);
+                                    if (context != null) {
+                                        lifecycle =
+                                                lifecycle.contextWrite(
+                                                        c -> c.put(RUNTIME_CONTEXT_KEY, context));
+                                    }
+                                    // Do not install AgentEventEmitter.CONTEXT_KEY when the
+                                    // deprecated stream() → SubagentEventBus path is driving
+                                    // this invocation. On that path AgentSpawnTool reads
+                                    // SubagentEventBus.CONTEXT_KEY to forward child events;
+                                    // installing CONTEXT_KEY here would cause execLocalSync to
+                                    // take the AgentEvent path instead of the bus path, routing
+                                    // child events into this Flux's internal sink where they get
+                                    // filtered out by callInternal before reaching the caller.
+                                    boolean isSubagentBusPath =
+                                            subscriberCtx.hasKey(SubagentEventBus.CONTEXT_KEY);
+                                    lifecycle
+                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                            .contextWrite(
+                                                    c ->
+                                                            isSubagentBusPath
+                                                                    ? c
+                                                                    : c.put(
+                                                                            AgentEventEmitter
+                                                                                    .CONTEXT_KEY,
+                                                                            (AgentEventEmitter)
+                                                                                    sink::next))
+                                            .doFinally(
+                                                    signal -> {
+                                                        sink.next(new AgentEndEvent(replyId));
+                                                        sink.complete();
+                                                    })
+                                            .contextWrite(subscriberCtx)
+                                            .subscribe(
+                                                    finalMsg ->
+                                                            sink.next(
+                                                                    new AgentResultEvent(finalMsg)),
+                                                    sink::error);
+                                },
+                                FluxSink.OverflowStrategy.BUFFER);
+        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs == null ? List.of() : msgs));
+    }
+
+    // ==================== streamEvents public API ====================
+
     /**
      * Stream fine-grained {@link AgentEvent}s from the full agent lifecycle.
      *
-     * <p>This method goes through the same lifecycle as {@code call()} (acquire execution,
-     * hooks, pre/post call notification) but exposes the internal event stream. The lifecycle
-     * is driven by {@code call()} internally; events are captured via the per-call
-     * {@link CallExecution#eventSink} (carried on the per-subscription Reactor Context).
+     * <p>Both {@code call()} and {@code streamEvents()} share the same internal
+     * {@link #buildAgentStream} core, so the {@code onAgent} middleware chain fires on all paths.
+     * The stream includes {@link AgentResultEvent} (carrying the final {@link Msg}) immediately
+     * before {@link AgentEndEvent}.
      *
      * @param msgs input messages
      * @return event stream covering the full agent invocation lifecycle
@@ -760,44 +879,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
      *
-     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is attached to the
-     * Reactor Context of the underlying {@code call()} invocation that drives the event stream, so
-     * concurrent {@code streamEvents} calls do not share it.
+     * <p>Delegates directly to {@link #buildAgentStream} — the same core used by {@code call()}.
+     * Concurrent invocations do not share any state; each subscription gets its own event sink and
+     * lifecycle execution.
      *
      * @param msgs input messages
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        Function<AgentInput, Flux<AgentEvent>> core =
-                input ->
-                        Flux.<AgentEvent>create(
-                                sink -> {
-                                    sink.next(new AgentStartEvent(null, replyId, getName()));
-                                    reactor.util.context.Context subscriberCtx =
-                                            reactor.util.context.Context.of(sink.contextView());
-                                    // Carry the per-subscription event sink on the Reactor Context
-                                    // so doCall() can bind it onto this call's CallExecution scope;
-                                    // concurrent streamEvents calls never share an instance field.
-                                    withRuntimeContext(call(input.msgs()), context)
-                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
-                                            .contextWrite(
-                                                    c ->
-                                                            c.put(
-                                                                    AgentEventEmitter.CONTEXT_KEY,
-                                                                    (AgentEventEmitter) sink::next))
-                                            .doFinally(
-                                                    signal -> {
-                                                        sink.next(new AgentEndEvent(replyId));
-                                                        sink.complete();
-                                                    })
-                                            .contextWrite(subscriberCtx)
-                                            .subscribe(finalMsg -> {}, sink::error);
-                                },
-                                FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs == null ? List.of() : msgs));
+        return buildAgentStream(msgs, context, this::doCall);
     }
 
     /**
@@ -1557,48 +1648,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
-        /**
-         * Execute the full agent invocation as a {@link Flux} of fine-grained {@link AgentEvent}s.
-         *
-         * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
-         * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
-         * {@code summaryStream}). The stream is bookended by {@link AgentStartEvent} and
-         * {@link AgentEndEvent}.
-         *
-         * @param msgs the input messages
-         * @return event stream covering the full agent invocation lifecycle
-         */
-        Flux<AgentEvent> agentImpl(List<Msg> msgs) {
-            String replyId = UUID.randomUUID().toString().replace("-", "");
-
-            Function<AgentInput, Flux<AgentEvent>> core =
-                    input ->
-                            Flux.<AgentEvent>create(
-                                            sink -> {
-                                                eventSink = sink;
-                                                sink.next(
-                                                        new AgentStartEvent(
-                                                                null, replyId, getName()));
-
-                                                doCall(input.msgs())
-                                                        .doFinally(
-                                                                signal -> {
-                                                                    sink.next(
-                                                                            new AgentEndEvent(
-                                                                                    replyId));
-                                                                    eventSink = null;
-                                                                    sink.complete();
-                                                                })
-                                                        .subscribe(finalMsg -> {}, sink::error);
-                                            },
-                                            FluxSink.OverflowStrategy.BUFFER)
-                                    .doOnError(e -> eventSink = null);
-
-            return MiddlewareChain.build(
-                            middlewares, ReActAgent.this, rc, MiddlewareBase::onAgent, core)
-                    .apply(new AgentInput(msgs));
-        }
-
         private void publishEvent(AgentEvent event) {
             FluxSink<AgentEvent> sink = eventSink;
             if (sink != null) {
@@ -1993,7 +2042,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String replyId = UUID.randomUUID().toString().replace("-", "");
             AtomicBoolean textStarted = new AtomicBoolean(false);
             AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-            Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
+            Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
@@ -2020,7 +2069,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     thinkingStarted,
                                                     withToolEvents
                                                             ? startedToolCalls
-                                                            : ConcurrentHashMap.newKeySet(),
+                                                            : new ConcurrentHashMap<>(),
                                                     events);
                                         }
                                         return Flux.fromIterable(events);
@@ -2036,8 +2085,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (thinkingStarted.get()) {
                                     events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
                                 }
-                                for (String toolId : startedToolCalls) {
-                                    events.add(new ToolCallEndEvent(replyId, toolId));
+                                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
+                                    events.add(
+                                            new ToolCallEndEvent(
+                                                    replyId, tc.getKey(), tc.getValue()));
                                 }
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
@@ -2052,7 +2103,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context,
                 AtomicBoolean textStarted,
                 AtomicBoolean thinkingStarted,
-                Set<String> startedToolCalls,
+                Map<String, String> startedToolCalls,
                 List<AgentEvent> events) {
 
             if (block instanceof TextBlock tb) {
@@ -2071,8 +2122,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             } else if (block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
-                if (toolId != null && startedToolCalls.add(toolId)) {
-                    String toolName = tub.getName();
+                String toolName = tub.getName();
+                if (toolId != null && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
                     if (toolName != null && !toolName.startsWith("__")) {
                         events.add(new ToolCallStartEvent(replyId, toolId, toolName));
                     }
@@ -2080,7 +2131,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (tub.getContent() != null && !tub.getContent().isEmpty()) {
                     events.add(
                             new ToolCallDeltaEvent(
-                                    replyId, toolId != null ? toolId : "", tub.getContent()));
+                                    replyId,
+                                    toolId != null ? toolId : "",
+                                    toolName,
+                                    tub.getContent()));
                 }
             }
         }
@@ -2324,10 +2378,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 new ToolResultTextDeltaEvent(
                                                         replyId,
                                                         use.getId(),
+                                                        use.getName(),
                                                         "Permission denied by user"),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
+                                                        use.getName(),
                                                         ToolResultState.DENIED));
                                     });
 
@@ -2355,9 +2411,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     tool.getName()));
                                                 }
 
+                                                Set<String> chunkedToolIds =
+                                                        ConcurrentHashMap.newKeySet();
+
                                                 toolkit.setInternalChunkCallback(
                                                         (toolUse, chunk) -> {
-                                                            if (chunk.getOutput() != null) {
+                                                            if (chunk.getOutput() != null
+                                                                    && !chunk.getOutput()
+                                                                            .isEmpty()) {
+                                                                chunkedToolIds.add(toolUse.getId());
                                                                 for (ContentBlock block :
                                                                         chunk.getOutput()) {
                                                                     if (block
@@ -2368,6 +2430,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         toolUse
                                                                                                 .getId(),
+                                                                                        toolUse
+                                                                                                .getName(),
                                                                                         tb
                                                                                                 .getText()));
                                                                     } else {
@@ -2376,6 +2440,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         toolUse
                                                                                                 .getId(),
+                                                                                        toolUse
+                                                                                                .getName(),
                                                                                         block));
                                                                     }
                                                                 }
@@ -2403,6 +2469,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                     ToolUseBlock,
                                                                                     ToolResultBlock>
                                                                             entry : results) {
+                                                                        emitToolResultDelta(
+                                                                                sink,
+                                                                                replyId,
+                                                                                entry,
+                                                                                chunkedToolIds);
                                                                         ToolResultState state =
                                                                                 determineToolResultState(
                                                                                         entry
@@ -2412,6 +2483,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         entry.getKey()
                                                                                                 .getId(),
+                                                                                        entry.getKey()
+                                                                                                .getName(),
                                                                                         state));
                                                                     }
                                                                     sink.complete();
@@ -2508,6 +2581,35 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+
+        /**
+         * Emit delta events for tool results that were NOT already streamed via the chunk
+         * callback. For non-streaming tools the chunk callback is never invoked, so the
+         * event stream would otherwise contain only START and END with no content.
+         */
+        private void emitToolResultDelta(
+                FluxSink<AgentEvent> sink,
+                String replyId,
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry,
+                Set<String> chunkedToolIds) {
+            String toolId = entry.getKey().getId();
+            String toolName = entry.getKey().getName();
+            if (chunkedToolIds.contains(toolId)) {
+                return;
+            }
+            List<ContentBlock> output = entry.getValue().getOutput();
+            if (output == null || output.isEmpty()) {
+                return;
+            }
+            for (ContentBlock block : output) {
+                if (block instanceof TextBlock tb) {
+                    sink.next(
+                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText()));
+                } else {
+                    sink.next(new ToolResultDataDeltaEvent(replyId, toolId, toolName, block));
+                }
+            }
+        }
 
         private ToolResultState determineToolResultState(ToolResultBlock result) {
             if (result.isSuspended()) {
@@ -3187,7 +3289,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot, loading it
      * from the configured {@link AgentStateStore} on first access and caching it for subsequent
-     * calls.
+     * calls within this JVM.
+     *
+     * <p>Note: in distributed deployments the authoritative reload happens at call start inside
+     * {@code activateSlotForContext}. This method returns the locally cached instance (suitable
+     * for the "get → mutate → save" pattern used by admin APIs and tests).
      */
     public AgentState getAgentState(String userId, String sessionId) {
         String slot = slotKey(userId, sessionId);
