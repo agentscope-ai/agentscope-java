@@ -17,30 +17,99 @@ package io.agentscope.harness.agent.sandbox.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.NoopSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 
 class HarnessSandboxJacksonModuleTest {
 
+    private static ObjectMapper mapper() {
+        return new ObjectMapper()
+                .findAndRegisterModules()
+                .registerModule(new HarnessSandboxJacksonModule());
+    }
+
     @Test
     void roundTripsDockerSandboxState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule());
-
         DockerSandboxState original = new DockerSandboxState();
         original.setSessionId("sess-1");
         original.setWorkspaceRootReady(true);
 
-        String json = mapper.writeValueAsString(original);
-        SandboxState parsed = mapper.readValue(json, SandboxState.class);
+        String json = mapper().writeValueAsString(original);
+        SandboxState parsed = mapper().readValue(json, SandboxState.class);
 
         assertInstanceOf(DockerSandboxState.class, parsed);
         assertEquals("sess-1", parsed.getSessionId());
         assertEquals(true, parsed.isWorkspaceRootReady());
+    }
+
+    @Test
+    void roundTripsNoopSnapshot() throws Exception {
+        DockerSandboxState state = new DockerSandboxState();
+        state.setSessionId("s-noop");
+        state.setSnapshot(new NoopSandboxSnapshot());
+
+        String json = mapper().writeValueAsString(state);
+        SandboxState parsed = mapper().readValue(json, SandboxState.class);
+
+        assertInstanceOf(NoopSandboxSnapshot.class, parsed.getSnapshot());
+    }
+
+    @Test
+    void roundTripsLocalSnapshot() throws Exception {
+        DockerSandboxState state = new DockerSandboxState();
+        state.setSessionId("s-local");
+        state.setSnapshot(new LocalSandboxSnapshot("/tmp/snapshots", "snap-123"));
+
+        String json = mapper().writeValueAsString(state);
+        SandboxState parsed = mapper().readValue(json, SandboxState.class);
+
+        SandboxSnapshot snap = parsed.getSnapshot();
+        assertInstanceOf(LocalSandboxSnapshot.class, snap);
+        LocalSandboxSnapshot local = (LocalSandboxSnapshot) snap;
+        assertEquals("/tmp/snapshots", local.getBasePath());
+        assertEquals("snap-123", local.getId());
+    }
+
+    /** Regression test for: RemoteSandboxSnapshot deserializes without UnrecognizedPropertyException. */
+    @Test
+    void roundTripsRemoteSnapshot() throws Exception {
+        // Simulate the real case: RemoteSnapshotSpec creates a snapshot with a live client
+        RemoteSnapshotClient mockClient =
+                new RemoteSnapshotClient() {
+                    @Override
+                    public void upload(String snapshotId, InputStream data) {}
+
+                    @Override
+                    public InputStream download(String snapshotId) {
+                        return null;
+                    }
+
+                    @Override
+                    public boolean exists(String snapshotId) {
+                        return false;
+                    }
+                };
+        DockerSandboxState state = new DockerSandboxState();
+        state.setSessionId("s-remote");
+        state.setSnapshot(new RemoteSandboxSnapshot(mockClient, "snap-abc-456"));
+
+        String json = mapper().writeValueAsString(state);
+        SandboxState parsed = mapper().readValue(json, SandboxState.class);
+
+        SandboxSnapshot snap = parsed.getSnapshot();
+        assertInstanceOf(RemoteSandboxSnapshot.class, snap);
+        assertEquals("snap-abc-456", snap.getId());
+        // client is null after deserialization — re-injected by RemoteSnapshotSpec at resume time
+        assertNull(((RemoteSandboxSnapshot) snap).getClient());
     }
 }

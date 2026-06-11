@@ -103,6 +103,13 @@ public class SandboxManager {
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
                         SandboxState state = client.deserializeState(stateJson.get());
+                        // Re-inject live snapshot client: the snapshot was serialized without its
+                        // client (transient), so rebuild it from snapshotSpec before resume.
+                        if (sandboxContext.getSnapshotSpec() != null
+                                && state.getSnapshot() != null) {
+                            String snapshotId = state.getSnapshot().getId();
+                            state.setSnapshot(sandboxContext.getSnapshotSpec().build(snapshotId));
+                        }
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
