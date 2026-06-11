@@ -54,7 +54,7 @@ import org.springframework.context.annotation.Bean;
         prefix = NacosConstants.A2A_NACOS_PREFIX,
         name = "enabled",
         havingValue = "true",
-        matchIfMissing = true)
+        matchIfMissing = false)
 public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
 
     private static final Logger log =
@@ -81,7 +81,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             AgentScopeA2aNacosProperties a2aNacosProperties)
             throws NacosException {
         Properties nacosClientProperties = nacosProperties.getNacosProperties();
-        nacosClientProperties.putAll(a2aNacosProperties.getNacosProperties());
+        nacosClientProperties.putAll(a2aNacosProperties.getExplicitNacosProperties());
         return AiFactory.createAiService(nacosClientProperties);
     }
 
@@ -112,7 +112,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             prefix = NacosConstants.A2A_NACOS_DISCOVERY_PREFIX,
             name = "enabled",
             havingValue = "true",
-            matchIfMissing = true)
+            matchIfMissing = false)
     public AgentCardResolver nacosAgentCardResolver() {
         return new NacosAgentCardResolver(a2aService);
     }
@@ -128,7 +128,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             prefix = NacosConstants.A2A_NACOS_REGISTRY_PREFIX,
             name = "enabled",
             havingValue = "true",
-            matchIfMissing = true)
+            matchIfMissing = false)
     public AgentRegistry nacosAgentRegistry(AgentScopeA2aNacosProperties a2aNacosProperties) {
         return NacosAgentRegistry.builder(a2aService)
                 .nacosA2aProperties(buildNacosA2aProperties(a2aNacosProperties))
