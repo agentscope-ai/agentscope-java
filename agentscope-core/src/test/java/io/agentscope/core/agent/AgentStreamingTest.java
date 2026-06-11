@@ -115,6 +115,29 @@ class AgentStreamingTest {
     }
 
     @Test
+    void testStreamWithAllIncludesAgentResult() {
+        TestStreamingAgent agent = new TestStreamingAgent("test-agent");
+        agent.setResponseText("Response");
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Test").build()))
+                        .build();
+
+        StreamOptions options = StreamOptions.builder().eventTypes(EventType.ALL).build();
+
+        List<Event> events = new ArrayList<>();
+        agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
+
+        assertFalse(events.isEmpty());
+        Event lastEvent = events.get(events.size() - 1);
+        assertEquals(EventType.AGENT_RESULT, lastEvent.getType());
+        assertTrue(lastEvent.isLast());
+    }
+
+    @Test
     void testStreamWithSpecificEventTypes() {
         TestStreamingAgent agent = new TestStreamingAgent("test-agent");
         agent.setResponseText("Response");
