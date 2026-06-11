@@ -133,7 +133,7 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         }
     }
 
-    private KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
+    KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
         KubernetesSandboxClientOptions base =
                 defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
         if (callOptions == null) {
