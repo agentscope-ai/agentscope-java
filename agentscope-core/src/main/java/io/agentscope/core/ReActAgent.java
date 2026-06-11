@@ -35,6 +35,7 @@ import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -2487,6 +2488,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                 .getName(),
                                                                                         state));
                                                                     }
+                                                                    List<ToolUseBlock>
+                                                                            suspendedCalls =
+                                                                                    getSuspendedToolCalls(
+                                                                                            results);
+                                                                    if (!suspendedCalls.isEmpty()) {
+                                                                        sink.next(
+                                                                                new RequireExternalExecutionEvent(
+                                                                                        replyId,
+                                                                                        suspendedCalls));
+                                                                    }
                                                                     sink.complete();
                                                                 },
                                                                 sink::error);
@@ -2581,6 +2592,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+
+        private List<ToolUseBlock> getSuspendedToolCalls(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
+            return results.stream()
+                    .filter(entry -> entry.getValue().isSuspended())
+                    .map(Map.Entry::getKey)
+                    .toList();
+        }
 
         /**
          * Emit delta events for tool results that were NOT already streamed via the chunk
