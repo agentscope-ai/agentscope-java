@@ -30,12 +30,15 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.TestCleanupSupport;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -68,6 +71,20 @@ import reactor.core.publisher.Flux;
 class LocalFilesystemPersonalAssistantExampleTest {
 
     @TempDir Path workspace;
+    private final List<AutoCloseable> closeables = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+        }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
+    }
 
     /**
      * Demonstrates that files written to the workspace during one call persist to disk and are
@@ -80,12 +97,13 @@ class LocalFilesystemPersonalAssistantExampleTest {
         // Build the agent with a LocalFilesystemWithShell store.
         // No distributed store, no sandbox — all operations go straight to disk.
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("my-local-assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace.toAbsolutePath().normalize().toString())
-                        .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("my-local-assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace.toAbsolutePath().normalize().toString())
+                                .abstractFilesystem(new LocalFilesystemWithShell(workspace))
+                                .build());
 
         // Call 1: write a note to MEMORY.md through the workspace manager
         agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
@@ -121,12 +139,13 @@ class LocalFilesystemPersonalAssistantExampleTest {
         Files.createDirectories(workspace);
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("my-local-assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace.toAbsolutePath().normalize().toString())
-                        .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("my-local-assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace.toAbsolutePath().normalize().toString())
+                                .abstractFilesystem(new LocalFilesystemWithShell(workspace))
+                                .build());
 
         // Alice writes during her session
         agent.call(userMsg("alice here"), ctx("session-alice", "alice")).block();
@@ -151,12 +170,13 @@ class LocalFilesystemPersonalAssistantExampleTest {
         Files.createDirectories(workspace);
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("my-local-assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace.toAbsolutePath().normalize().toString())
-                        .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("my-local-assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace.toAbsolutePath().normalize().toString())
+                                .abstractFilesystem(new LocalFilesystemWithShell(workspace))
+                                .build());
 
         // Write a file from the host process (simulating a user placing a document in the
         // workspace)

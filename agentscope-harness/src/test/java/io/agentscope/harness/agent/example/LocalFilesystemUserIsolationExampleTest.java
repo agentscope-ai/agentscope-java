@@ -31,6 +31,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.TestCleanupSupport;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -39,9 +40,11 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -65,6 +68,20 @@ import reactor.core.publisher.Flux;
 class LocalFilesystemUserIsolationExampleTest {
 
     @TempDir Path workspace;
+    private final List<AutoCloseable> closeables = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+        }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
+    }
 
     /**
      * Writes MEMORY.md as alice, verifies it lands under {@code workspace/alice/MEMORY.md},
@@ -76,11 +93,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test Agent\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         // Alice writes MEMORY.md
         agent.call(userMsg("alice here"), ctx("s1", "alice")).block();
@@ -117,11 +135,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         // Write files as alice
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
@@ -172,11 +191,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
         AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
@@ -213,11 +233,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
         AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
@@ -255,11 +276,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("conversation start"), ctx("session-1", "alice")).block();
 
@@ -293,11 +315,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
@@ -319,11 +342,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
@@ -356,11 +380,12 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("assistant")
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("assistant")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
