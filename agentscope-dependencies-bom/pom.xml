@@ -108,7 +108,7 @@
         <json-schema-validator.version>2.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>
-        <tree-sitter.version>0.24.4</tree-sitter.version>
+        <tree-sitter.version>0.26.6</tree-sitter.version>
         <tree-sitter-bash.version>0.23.3</tree-sitter-bash.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
