@@ -72,23 +72,27 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path);
+        // Use tab-separated output: DIR\t<path> or FILE\t<path>\t<size>
+        // stat -c%s reads inode metadata only (O(1)), never reads file content.
+        // The sandbox runs on Docker Linux where GNU coreutils are always available.
         String cmd =
                 "for f in "
                         + escapedPath
-                        + "/*; do "
-                        + "  if [ -d \"$f\" ]; then echo \"DIR:$f\"; "
-                        + "  elif [ -f \"$f\" ]; then echo \"FILE:$f\"; fi; "
-                        + "done 2>/dev/null";
+                        + "/*; do   if [ -d \"$f\" ]; then printf 'DIR\\t%s\\n"
+                        + "' \"$f\";   elif [ -f \"$f\" ]; then printf 'FILE\\t%s\\t%s\\n"
+                        + "' \"$f\" \"$(stat -c%s \"$f\" 2>/dev/null || echo 0)\"; fi; done"
+                        + " 2>/dev/null";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         List<FileInfo> entries = new ArrayList<>();
 
         if (result.output() != null && !result.output().isBlank()) {
             for (String line : result.output().strip().split("\n")) {
-                if (line.startsWith("DIR:")) {
-                    entries.add(FileInfo.ofDir(line.substring(4), ""));
-                } else if (line.startsWith("FILE:")) {
-                    entries.add(FileInfo.ofFile(line.substring(5), 0, ""));
+                String[] parts = line.split("\t", 3);
+                if (parts.length >= 2 && "DIR".equals(parts[0])) {
+                    entries.add(FileInfo.ofDir(parts[1], ""));
+                } else if (parts.length >= 3 && "FILE".equals(parts[0])) {
+                    entries.add(FileInfo.ofFile(parts[1], parseFileSize(parts[2]), ""));
                 }
             }
         }
@@ -321,8 +325,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedPath = FilesystemUtils.shellQuote(path != null ? path : "/");
         String escapedPattern = FilesystemUtils.shellQuote(pattern);
 
+        // Use find -printf to emit "<size>\t<path>" per match in a single pass.
+        // -printf '%s\t%p\n' reads inode metadata only (O(1) per file, no file I/O).
+        // The sandbox runs on Docker Linux where GNU find is always available.
         String cmd =
-                "find " + escapedPath + " -type f -name " + escapedPattern + " 2>/dev/null | sort";
+                "find "
+                        + escapedPath
+                        + " -type f -name "
+                        + escapedPattern
+                        + " -printf '%s\\t%p\\n' 2>/dev/null | sort";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
@@ -334,11 +345,23 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         List<FileInfo> entries = new ArrayList<>();
         for (String line : output.split("\n")) {
             if (!line.isBlank()) {
-                entries.add(FileInfo.ofFile(line.trim(), 0, ""));
+                String[] parts = line.split("\t", 2);
+                if (parts.length == 2) {
+                    // find -printf '%s\t%p\n': parts[0]=size, parts[1]=path
+                    entries.add(FileInfo.ofFile(parts[1].trim(), parseFileSize(parts[0]), ""));
+                }
             }
         }
 
         return GlobResult.success(entries);
+    }
+
+    private static long parseFileSize(String raw) {
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     @Override
