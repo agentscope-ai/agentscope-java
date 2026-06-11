@@ -47,11 +47,43 @@ class WorkspaceManagerListingTest {
     }
 
     @Test
+    void listKnowledgeFiles_normalizesProjectLayerAbsolutePaths(
+            @TempDir Path project, @TempDir Path workspace) throws IOException {
+        Files.createDirectories(project.resolve("knowledge"));
+        Files.writeString(project.resolve("knowledge/guide.md"), "guide");
+
+        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
+            List<Path> knowledgeFiles = wm.listKnowledgeFiles(RuntimeContext.empty());
+            assertEquals(1, knowledgeFiles.size(), () -> "Unexpected knowledge files: " + knowledgeFiles);
+            assertEquals(
+                    workspace.resolve("knowledge/guide.md").normalize(),
+                    knowledgeFiles.get(0).normalize());
+        }
+    }
+
+    @Test
     void listMemoryFilePaths_returnsWorkspaceRelativePaths(
             @TempDir Path project, @TempDir Path workspace) throws IOException {
         Files.writeString(workspace.resolve("MEMORY.md"), "memory");
         Files.createDirectories(workspace.resolve("memory"));
         Files.writeString(workspace.resolve("memory/notes.md"), "notes");
+
+        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
+            List<String> memoryFiles = wm.listMemoryFilePaths(RuntimeContext.empty());
+            assertEquals(2, memoryFiles.size(), () -> "Unexpected memory files: " + memoryFiles);
+            assertTrue(memoryFiles.contains("MEMORY.md"));
+            assertTrue(memoryFiles.contains("memory/notes.md"));
+        }
+    }
+
+    @Test
+    void listMemoryFilePaths_normalizesProjectLayerAbsolutePaths(
+            @TempDir Path project, @TempDir Path workspace) throws IOException {
+        Files.writeString(project.resolve("MEMORY.md"), "memory");
+        Files.createDirectories(project.resolve("memory"));
+        Files.writeString(project.resolve("memory/notes.md"), "notes");
 
         AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {

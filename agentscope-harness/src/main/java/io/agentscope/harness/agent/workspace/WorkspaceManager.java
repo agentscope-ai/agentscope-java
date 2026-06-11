@@ -34,6 +34,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
@@ -941,25 +942,53 @@ public class WorkspaceManager implements AutoCloseable {
             return "";
         }
         String normalized = path.replace('\\', '/').strip();
-        Path workspaceAbs = workspace.toAbsolutePath().normalize();
         try {
             Path candidate = Path.of(normalized).normalize();
             if (candidate.isAbsolute()) {
-                if (candidate.startsWith(workspaceAbs)) {
-                    return workspaceAbs.relativize(candidate).toString().replace('\\', '/');
+                String workspaceRelative = relativizeIfUnder(candidate, workspace);
+                if (workspaceRelative != null) {
+                    return workspaceRelative;
                 }
-                if (normalized.startsWith("/")) {
-                    return normalized.substring(1);
+                Path lowerRoot = getOverlayLowerRoot();
+                if (lowerRoot != null) {
+                    String lowerRelative = relativizeIfUnder(candidate, lowerRoot);
+                    if (lowerRelative != null) {
+                        return lowerRelative;
+                    }
                 }
-                return normalized;
+                return stripLeadingSlashes(normalized);
             }
         } catch (Exception ignored) {
             // Fall through to the string-based fallback below.
         }
-        if (normalized.startsWith("/")) {
-            return normalized.substring(1);
+        return stripLeadingSlashes(normalized);
+    }
+
+    private String relativizeIfUnder(Path candidate, Path root) {
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        if (!candidate.startsWith(normalizedRoot)) {
+            return null;
         }
-        return normalized;
+        return normalizedRoot.relativize(candidate).toString().replace('\\', '/');
+    }
+
+    private String stripLeadingSlashes(String value) {
+        String s = value;
+        while (s.startsWith("/")) {
+            s = s.substring(1);
+        }
+        return s;
+    }
+
+    private Path getOverlayLowerRoot() {
+        if (!(filesystem instanceof OverlayFilesystem overlay)) {
+            return null;
+        }
+        AbstractFilesystem lower = overlay.lower();
+        if (lower instanceof LocalFilesystem localFilesystem) {
+            return localFilesystem.getCwd();
+        }
+        return null;
     }
 
     /**
