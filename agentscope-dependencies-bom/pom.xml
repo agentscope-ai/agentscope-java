@@ -105,8 +105,9 @@
         <spring.version>7.0.7</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
         <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
-        <json-schema-validator.version>2.0.0</json-schema-validator.version>
-        <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
+        <json-schema-validator.version>3.0.0</json-schema-validator.version>
+        <jsonschema-generator.version>5.0.0</jsonschema-generator.version>
+        <jackson3.version>3.0.4</jackson3.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <tree-sitter.version>0.24.4</tree-sitter.version>
         <tree-sitter-bash.version>0.23.3</tree-sitter-bash.version>
@@ -476,12 +477,6 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>com.fasterxml.jackson.core</groupId>
-                        <artifactId>jackson-core</artifactId>
-                    </exclusion>
-                </exclusions>
             </dependency>
 
             <!-- Victools JSON Schema Module for Jackson annotations support -->
@@ -489,6 +484,13 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-module-jackson</artifactId>
                 <version>${jsonschema-generator.version}</version>
+            </dependency>
+
+            <!-- Jackson 3.x (tools.jackson) required by jsonschema-generator 5.x -->
+            <dependency>
+                <groupId>tools.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson3.version}</version>
             </dependency>
 
             <!-- Apache Commons Lang3 -->
