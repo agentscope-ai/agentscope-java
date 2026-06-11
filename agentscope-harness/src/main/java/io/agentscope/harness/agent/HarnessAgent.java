@@ -392,6 +392,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getMaxIters();
     }
 
+    @Override
     public RuntimeContext getRuntimeContext() {
         return delegate.getRuntimeContext();
     }

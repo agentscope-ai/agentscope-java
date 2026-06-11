@@ -566,6 +566,7 @@ public abstract class AgentBase implements Agent {
      * on one instance this reflects the latest call — middlewares/tools that need their own call's
      * context should read it from the per-subscription {@link RuntimeContext} they are handed.
      */
+    @Override
     public RuntimeContext getRuntimeContext() {
         return null;
     }

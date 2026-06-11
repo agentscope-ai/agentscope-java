@@ -330,7 +330,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
             return next.apply(input);
         }
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        String sessionId = rc != null ? rc.getSessionId() : null;
+        String sessionId = rc.getSessionId();
 
         // ---- Phase B-3 push delivery -------------------------------------------------------
         // Drain newly-terminal tasks first so the SYSTEM summary built afterwards can omit them.

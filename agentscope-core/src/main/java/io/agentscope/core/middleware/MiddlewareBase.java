@@ -61,6 +61,9 @@ public interface MiddlewareBase {
     /**
      * Intercept the entire agent invocation.
      *
+     * <p>During an active invocation, per-call metadata is available through
+     * {@link Agent#getRuntimeContext()} for agent implementations that bind a runtime context.
+     *
      * @param agent the agent instance
      * @param ctx   per-call runtime context (session, user, attributes)
      * @param input agent input (messages)

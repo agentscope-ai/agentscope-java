@@ -102,13 +102,21 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * Returns the agent's live {@link Toolkit}, or {@code null} if this agent type does not
      * maintain one.
      *
-     * <p>This is the <em>runtime</em> toolkit — the same instance the agent uses when listing
+     * <p>This is the <em>runtime</em> toolkit - the same instance the agent uses when listing
      * available tools for the model and dispatching tool calls. Middleware that needs to register
      * tools dynamically (e.g., skill loaders) must use this accessor rather than any toolkit
      * reference captured at build time, because agents may deep-copy the toolkit during
      * construction.
      */
     default Toolkit getToolkit() {
+        return null;
+    }
+
+    /**
+     * Returns the current per-call {@link RuntimeContext} when the agent is executing, or
+     * {@code null} if this agent type does not expose one or no invocation is active.
+     */
+    default RuntimeContext getRuntimeContext() {
         return null;
     }
 }
