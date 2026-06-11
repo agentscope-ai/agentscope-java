@@ -74,6 +74,9 @@ public class NacosSkillRepository implements AgentSkillRepository {
     private static final Pattern YAML_KV =
             Pattern.compile("^([a-zA-Z_][a-zA-Z0-9_-]*)\\s*:\\s*(.*)$");
 
+    /** Matches a YAML block-sequence entry line, e.g. "  - some value" or "- item". */
+    private static final Pattern YAML_LIST_ITEM = Pattern.compile("^-\\s+(.*)$");
+
     /** Skill package entry: exactly one path segment then {@value #SKILL_MD}. */
     private static final Pattern ROOT_SKILL_MD = Pattern.compile("^([^/]+)/" + SKILL_MD + "$");
 
@@ -367,12 +370,15 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     /**
      * Fold lines that are not {@code key: value} into the previous key's value (Nacos / loose YAML
-     * style descriptions).
+     * style descriptions). Block-sequence entry lines ({@code - item}) under a key whose value is
+     * empty are collected into a list and serialised as an inline YAML array so that
+     * {@code MarkdownSkillParser}'s SnakeYAML parser can read them without error.
      */
     private static String normalizeFoldedFlatYaml(List<String> yamlLines) {
         StringBuilder emit = new StringBuilder();
         String pendingKey = null;
         String pendingVal = null;
+        List<String> pendingList = null;
 
         for (String raw : yamlLines) {
             String t = raw.trim();
@@ -384,26 +390,60 @@ public class NacosSkillRepository implements AgentSkillRepository {
             }
             Matcher m = YAML_KV.matcher(t);
             if (m.matches()) {
-                flushYamlKvLine(emit, pendingKey, pendingVal);
+                flushYamlKvLine(emit, pendingKey, pendingVal, pendingList);
                 pendingKey = m.group(1);
                 pendingVal = m.group(2).trim();
-            } else if (pendingKey != null) {
-                if (pendingVal == null || pendingVal.isEmpty()) {
-                    pendingVal = t;
-                } else {
-                    pendingVal = pendingVal + " " + t;
+                pendingList = null;
+            } else {
+                Matcher listMatcher = YAML_LIST_ITEM.matcher(t);
+                if (listMatcher.matches()
+                        && pendingKey != null
+                        && (pendingVal == null || pendingVal.isEmpty())) {
+                    // Block-sequence entry under a key with no inline value: collect as list.
+                    if (pendingList == null) {
+                        pendingList = new ArrayList<>();
+                    }
+                    pendingList.add(unquoteYamlString(listMatcher.group(1).trim()));
+                } else if (pendingKey != null) {
+                    // Plain folded continuation line (original behaviour).
+                    if (pendingVal == null || pendingVal.isEmpty()) {
+                        pendingVal = t;
+                    } else {
+                        pendingVal = pendingVal + " " + t;
+                    }
                 }
             }
         }
-        flushYamlKvLine(emit, pendingKey, pendingVal);
+        flushYamlKvLine(emit, pendingKey, pendingVal, pendingList);
         return emit.toString();
     }
 
-    private static void flushYamlKvLine(StringBuilder sb, String key, String value) {
+    private static void flushYamlKvLine(
+            StringBuilder sb, String key, String value, List<String> list) {
         if (key == null) {
             return;
         }
         sb.append(key).append(": ");
+
+        // Serialise block-sequence items as an inline YAML array: ["a", "b"].
+        if (list != null && !list.isEmpty()) {
+            sb.append('[');
+            boolean first = true;
+            for (String item : list) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                first = false;
+                sb.append('"');
+                appendYamlDoubleQuotedEscaped(sb, item);
+                sb.append('"');
+            }
+            sb.append(']');
+            sb.append('\n');
+            return;
+        }
+
+        // Scalar value (original behaviour).
         if (value == null || value.isEmpty()) {
             sb.append('\n');
             return;
@@ -449,6 +489,38 @@ public class NacosSkillRepository implements AgentSkillRepository {
                 || first == '%'
                 || first == '@'
                 || first == '`';
+    }
+
+    /**
+     * Strips a single layer of YAML quoting from a string value if present.
+     *
+     * <p>Handles the two YAML scalar quoting styles that Nacos exports use:
+     * <ul>
+     *   <li>Double-quoted: {@code "value"} becomes {@code value} (also unescapes {@code \"} to
+     *       {@code "} and {@code \\} to {@code \}). Only {@code \"} and {@code \\} are unescaped;
+     *       other YAML double-quoted escape sequences (e.g. \n, \t, unicode escapes) are passed
+     *       through as literal characters. This is an intentional subset that covers the Nacos
+     *       export format.</li>
+     *   <li>Single-quoted: {@code 'value'} becomes {@code value} (also unescapes {@code ''} to
+     *       a single apostrophe)</li>
+     * </ul>
+     * If the value is not quoted, it is returned unchanged.
+     */
+    private static String unquoteYamlString(String value) {
+        if (value == null || value.length() < 2) {
+            return value;
+        }
+        char first = value.charAt(0);
+        char last = value.charAt(value.length() - 1);
+        if (first == '"' && last == '"') {
+            String inner = value.substring(1, value.length() - 1);
+            return inner.replace("\\\"", "\"").replace("\\\\", "\\");
+        }
+        if (first == '\'' && last == '\'') {
+            String inner = value.substring(1, value.length() - 1);
+            return inner.replace("''", "'");
+        }
+        return value;
     }
 
     private static void appendYamlDoubleQuotedEscaped(StringBuilder sb, String value) {
