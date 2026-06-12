@@ -43,8 +43,8 @@ Flux<Event> events = agent.stream(msgs, StreamOptions.defaults(), ctx);
 | `TOOL_RESULT` | After each tool execution | `ToolResultBlock` (tool name, id, output) |
 | `HINT` | After RAG / memory retrieval | Context text injected into the model |
 | `SUMMARY` | When `maxIters` is reached | Iteration summary text |
-| `AGENT_RESULT` | Final reply ready | Same as `call()` return value; **not included** in stream by default |
-| `ALL` | Placeholder for all the above (except `AGENT_RESULT`) | — |
+| `AGENT_RESULT` | Final reply ready | Same as `call()` return value |
+| `ALL` | Placeholder for all event types | - |
 
 ### Subscribe to specific types only
 
@@ -153,7 +153,7 @@ serialize `event.getSource()` as well — see [Harness Subagent Streaming](../ha
 
 ```java
 StreamOptions options = StreamOptions.builder()
-        // Event types to receive (default: ALL, excluding AGENT_RESULT)
+        // Event types to receive (default: ALL)
         .eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.AGENT_RESULT)
 
         // Incremental mode: true = push deltas (default), false = push full accumulated text
