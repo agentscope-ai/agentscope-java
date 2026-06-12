@@ -38,6 +38,8 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
@@ -65,6 +67,9 @@ import reactor.core.publisher.Flux;
  * step. The assertions count {@link InMemorySandboxClient#getCreateCount()} and
  * {@link InMemorySandboxClient#getResumeCount()} to verify isolation behaviour.
  */
+@DisabledOnOs(
+        value = OS.WINDOWS,
+        disabledReason = "InMemorySandbox.exec hardcodes `sh`, unavailable on Windows")
 class SandboxFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
