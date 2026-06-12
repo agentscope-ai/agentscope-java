@@ -43,6 +43,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
@@ -116,6 +117,7 @@ public class WorkspaceManager implements AutoCloseable {
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
     private final Path workspace;
+    private final Path workspaceRoot;
     private final AbstractFilesystem filesystem;
 
     /** Best-effort local file index; may be {@code null} if SQLite is unavailable. */
@@ -158,6 +160,7 @@ public class WorkspaceManager implements AutoCloseable {
             NamespaceFactory namespaceFactory,
             boolean ownsIndex) {
         this.workspace = workspace;
+        this.workspaceRoot = workspace.toAbsolutePath().normalize();
         this.filesystem = filesystem;
         this.index = index;
         this.namespaceFactory = namespaceFactory;
@@ -226,6 +229,43 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
+     * Normalizes a filesystem-reported path to a workspace-relative path when possible.
+     *
+     * <p>This handles three common cases:
+     * <ul>
+     *   <li>already-relative workspace paths such as {@code memory/2026-05-20.md}</li>
+     *   <li>virtual/remote paths that start with {@code /}</li>
+     *   <li>local absolute paths that live under the workspace root</li>
+     * </ul>
+     */
+    public String toWorkspaceRelativePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+
+        String normalized = path.strip().replace('\\', '/');
+        try {
+            Path candidate = Path.of(path).normalize();
+            if (candidate.isAbsolute()) {
+                Path absoluteCandidate = candidate.toAbsolutePath().normalize();
+                if (absoluteCandidate.startsWith(workspaceRoot)) {
+                    return workspaceRoot
+                            .relativize(absoluteCandidate)
+                            .toString()
+                            .replace('\\', '/');
+                }
+            }
+        } catch (InvalidPathException ignored) {
+            // Fall through to string-based normalization.
+        }
+
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    /**
      * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
      * Use for paths that contain per-user data (sessions, tasks, memory).
      *
@@ -233,14 +273,15 @@ public class WorkspaceManager implements AutoCloseable {
      * identity (user/session) drives the namespace, not a shared mutable reference.
      */
     public Path resolveRuntimeDataPath(RuntimeContext rc, String relativePath) {
+        String normalized = normalizeRelativePath(relativePath);
         if (namespaceFactory == null) {
-            return workspace.resolve(relativePath);
+            return workspace.resolve(normalized);
         }
         List<String> ns = namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
         if (ns == null || ns.isEmpty()) {
-            return workspace.resolve(relativePath);
+            return workspace.resolve(normalized);
         }
-        return workspace.resolve(String.join("/", ns)).resolve(relativePath);
+        return workspace.resolve(String.join("/", ns)).resolve(normalized);
     }
 
     /** Reads AGENTS.md content, returns empty string if not found. */
@@ -266,7 +307,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || relativePath.isBlank()) {
             return "";
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = toWorkspaceRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return "";
         }
@@ -298,7 +339,10 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        relativePaths.add(normalizeRelativePath(fi.path().trim()));
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
+                        if (!rel.isEmpty()) {
+                            relativePaths.add(rel);
+                        }
                     }
                 }
             }
@@ -946,7 +990,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
@@ -983,7 +1027,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
