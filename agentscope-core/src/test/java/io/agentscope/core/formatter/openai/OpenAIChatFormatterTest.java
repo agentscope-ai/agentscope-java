@@ -380,6 +380,64 @@ class OpenAIChatFormatterTest {
     }
 
     @Nested
+    @DisplayName("thinkingBudget Tests")
+    class ThinkingBudgetTests {
+
+        @Test
+        @DisplayName("Should apply thinkingBudget from GenerateOptions")
+        void testApplyThinkingBudget() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("qwen3.7-max").messages(List.of()).build();
+
+            GenerateOptions options = GenerateOptions.builder().thinkingBudget(4096).build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertEquals(4096, request.getThinkingBudget());
+        }
+
+        @Test
+        @DisplayName("Should apply thinkingBudget from defaultOptions when options is null")
+        void testApplyThinkingBudgetFromDefault() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("qwen3.7-max").messages(List.of()).build();
+
+            GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(2048).build();
+
+            formatter.applyOptions(request, null, defaultOptions);
+
+            assertEquals(2048, request.getThinkingBudget());
+        }
+
+        @Test
+        @DisplayName("Options thinkingBudget should override defaultOptions")
+        void testThinkingBudgetOptionsOverridesDefault() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("qwen3.7-max").messages(List.of()).build();
+
+            GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(1000).build();
+            GenerateOptions options = GenerateOptions.builder().thinkingBudget(8000).build();
+
+            formatter.applyOptions(request, options, defaultOptions);
+
+            assertEquals(8000, request.getThinkingBudget());
+        }
+
+        @Test
+        @DisplayName("Should not set thinkingBudget when not specified")
+        void testThinkingBudgetNotSetWhenAbsent() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4o").messages(List.of()).build();
+
+            GenerateOptions options = GenerateOptions.builder().temperature(0.7).build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertNull(request.getThinkingBudget());
+        }
+    }
+
+    @Nested
     @DisplayName("applyAdditionalBodyParams Tests")
     class ApplyAdditionalBodyParamsTests {
 

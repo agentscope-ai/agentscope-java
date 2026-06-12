@@ -129,6 +129,17 @@ public class OpenAIRequest {
     private String reasoningEffort;
 
     /**
+     * Maximum tokens allocated for the model's internal thinking/reasoning process.
+     * Supported by OpenAI-compatible providers that expose a thinking budget parameter
+     * (e.g., Alibaba Cloud Bailian/DashScope Qwen3 series via {@code thinking_budget}).
+     * When set, the model is prevented from spending more than this many tokens on
+     * reasoning, leaving the remainder of {@code max_completion_tokens} for the
+     * visible response.
+     */
+    @JsonProperty("thinking_budget")
+    private Integer thinkingBudget;
+
+    /**
      * Controls whether to allow parallel tool calls.
      * Set to false to disable parallel tool calling.
      */
@@ -345,6 +356,14 @@ public class OpenAIRequest {
         this.reasoningEffort = reasoningEffort;
     }
 
+    public Integer getThinkingBudget() {
+        return thinkingBudget;
+    }
+
+    public void setThinkingBudget(Integer thinkingBudget) {
+        this.thinkingBudget = thinkingBudget;
+    }
+
     public Boolean getParallelToolCalls() {
         return parallelToolCalls;
     }
@@ -551,6 +570,11 @@ public class OpenAIRequest {
 
         public Builder reasoningEffort(String reasoningEffort) {
             request.setReasoningEffort(reasoningEffort);
+            return this;
+        }
+
+        public Builder thinkingBudget(Integer thinkingBudget) {
+            request.setThinkingBudget(thinkingBudget);
             return this;
         }
 
