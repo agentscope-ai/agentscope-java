@@ -410,8 +410,7 @@ class HarnessAgentTest {
 
         SubagentEntry entry =
                 entries.stream().filter(e -> "reviewer".equals(e.name())).findFirst().orElseThrow();
-        HarnessAgent child =
-                track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
+        HarnessAgent child = track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
 
         assertEquals(
                 defWorkspace.normalize(),
@@ -444,8 +443,7 @@ class HarnessAgentTest {
                         .filter(e -> "isolated-auto".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child =
-                track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
+        HarnessAgent child = track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
 
         Path expected = workspace.resolve("agents/isolated-auto/workspace").normalize();
         assertEquals(
@@ -485,8 +483,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-ext".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child =
-                track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
+        HarnessAgent child = track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
 
         assertEquals(
                 workspace.normalize(),
@@ -519,8 +516,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-inline".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child =
-                track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
+        HarnessAgent child = track((HarnessAgent) entry.factory().create(RuntimeContext.empty()));
 
         assertEquals(
                 workspace.normalize(),

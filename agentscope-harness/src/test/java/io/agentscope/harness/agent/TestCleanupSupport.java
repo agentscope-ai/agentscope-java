@@ -48,8 +48,7 @@ public final class TestCleanupSupport {
             } catch (Exception e) {
                 RuntimeException wrapped =
                         new RuntimeException(
-                                "Failed to close test resource "
-                                        + closeable.getClass().getName(),
+                                "Failed to close test resource " + closeable.getClass().getName(),
                                 e);
                 if (failure == null) {
                     failure = wrapped;
@@ -94,8 +93,7 @@ public final class TestCleanupSupport {
                 Thread.sleep(50);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException(
-                        "Interrupted while deleting temp directory " + root, e);
+                throw new RuntimeException("Interrupted while deleting temp directory " + root, e);
             }
         }
         throw new RuntimeException("Failed to delete temp directory " + root, lastError);
