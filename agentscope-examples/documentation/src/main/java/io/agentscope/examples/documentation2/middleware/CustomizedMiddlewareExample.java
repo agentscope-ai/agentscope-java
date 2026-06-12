@@ -17,11 +17,15 @@ package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -31,7 +35,8 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
@@ -60,13 +65,16 @@ public class CustomizedMiddlewareExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Middleware Monitoring Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Middleware Monitoring Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates lifecycle monitoring via MiddlewareBase.\n"
                         + "You'll see detailed logs of agent activities including reasoning and"
                         + " tool calls.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ProgressTools());
@@ -93,7 +101,31 @@ public class CustomizedMiddlewareExample {
                         .build();
 
         System.out.println("Try asking: 'Process the customer dataset'\n");
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     /**
@@ -104,7 +136,10 @@ public class CustomizedMiddlewareExample {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             System.out.println(
                     "\n[MIDDLEWARE] onAgent START — agent: "
                             + agent.getName()
@@ -117,6 +152,7 @@ public class CustomizedMiddlewareExample {
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             int msgCount = input.messages() != null ? input.messages().size() : 0;
@@ -127,7 +163,10 @@ public class CustomizedMiddlewareExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             String toolNames =
                     input.toolCalls().stream()
                             .map(ToolUseBlock::getName)

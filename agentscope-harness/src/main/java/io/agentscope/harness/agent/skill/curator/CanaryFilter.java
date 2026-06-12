@@ -27,8 +27,8 @@ import java.nio.charset.StandardCharsets;
  * authored / hub-installed skills always pass through.
  *
  * <p>The {@code rampUpDays} parameter is currently a placeholder — accepted on construction
- * but the M4 implementation does not yet ramp; it always uses the configured static
- * percentage. Future milestones will interpolate using {@code SkillUsageRecord.promotedAt}.
+ * but the current implementation does not yet ramp; it always uses the configured static
+ * percentage. A future version will interpolate using {@code SkillUsageRecord.promotedAt}.
  */
 public class CanaryFilter extends AbstractAgentCreatedFilter {
 

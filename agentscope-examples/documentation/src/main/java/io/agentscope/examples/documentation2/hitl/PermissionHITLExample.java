@@ -28,7 +28,6 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.util.Scanner;
 
 /**
@@ -66,15 +65,18 @@ public class PermissionHITLExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "Permission HITL Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Permission HITL Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates human-in-the-loop confirmation via the permission engine.\n"
                         + "safe_read is auto-allowed; dangerous_delete requires confirmation.\n"
                         + "Pass --headless to run in DONT_ASK mode (auto-deny confirmations).");
+        System.out.println("=".repeat(60) + "\n");
 
         boolean headless = args.length > 0 && "--headless".equalsIgnoreCase(args[0]);
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new DangerousTools());
 

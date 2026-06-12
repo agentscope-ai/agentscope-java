@@ -16,59 +16,82 @@
 package io.agentscope.examples.documentation2.quickstart;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 /**
  * BasicChatExample - The simplest Agent conversation example.
  *
- * <p>Migration notes (from documentation/quickstart):
+ * <p>Demonstrates:
  * <ul>
- *   <li>Removed {@code .memory(new InMemoryMemory())} — conversation history is now
- *       held internally in {@code AgentState}. Use {@code .session()} to configure
- *       an external persistence back-end when needed.</li>
+ *   <li>Creating an agent with {@code model("dashscope:qwen-plus")} (ModelRegistry auto-resolves
+ *       the provider and reads API key from env)</li>
+ *   <li>Interactive streaming chat via {@code streamEvents()}</li>
+ *   <li>Incremental text output using {@link TextBlockDeltaEvent}</li>
  * </ul>
+ *
+ * <p><b>Run:</b>
+ * <pre>
+ *   export DASHSCOPE_API_KEY=your_key
+ *   mvn exec:java -pl agentscope-examples/documentation \
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.quickstart.BasicChatExample
+ * </pre>
  */
 public class BasicChatExample {
 
-    /**
-     * Runs the basic chat example.
-     *
-     * @param args command-line arguments (ignored)
-     * @throws Exception if an I/O error occurs during the chat loop
-     */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Basic Chat Example",
-                "This example demonstrates the simplest Agent setup.\n"
-                        + "You'll chat with an AI assistant powered by DashScope.");
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            System.err.println("Error: DASHSCOPE_API_KEY environment variable not set.");
+            System.err.println("Get your API key from: https://dashscope.aliyun.com");
+            System.err.println("Then set it with: export DASHSCOPE_API_KEY=your_api_key");
+            System.exit(1);
+        }
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Basic Chat Example");
+        System.out.println("=".repeat(60));
+        System.out.println("A simple interactive chat with streaming output.");
+        System.out.println("Type 'exit' to quit.\n");
 
-        // In 2.0, conversation history is kept in AgentState automatically.
-        // No .memory(new InMemoryMemory()) call is needed.
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("Assistant")
                         .sysPrompt("You are a helpful AI assistant. Be friendly and concise.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(apiKey)
-                                        .modelName("qwen-plus")
-                                        .stream(true)
-                                        .enableThinking(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .defaultOptions(
-                                                GenerateOptions.builder()
-                                                        .thinkingBudget(1024)
-                                                        .build())
-                                        .build())
+                        .model("dashscope:qwen-plus")
                         .toolkit(new Toolkit())
                         .build();
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+
+            Msg userMsg = new UserMessage(input.trim());
+
+            System.out.print("\nAssistant: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 }

@@ -66,7 +66,7 @@ public final class ModelRegistry {
                             .build();
                 });
         registerBuiltin(
-                "qwen-.+",
+                "qwen.+",
                 modelId -> {
                     String apiKey = requireApiKey("DASHSCOPE_API_KEY", modelId);
                     return DashScopeChatModel.builder().apiKey(apiKey).modelName(modelId).stream(
@@ -251,8 +251,9 @@ public final class ModelRegistry {
                 + "  - No matching provider factory. Built-in providers: openai, dashscope,"
                 + " gemini, anthropic, ollama.\n"
                 + "    Format: \"<provider>:<model-name>\", e.g. \"openai:gpt-5.5\","
-                + " \"dashscope:qwen-max\".\n"
-                + "  - DashScope short form: \"qwen-*\" model ids (requires DASHSCOPE_API_KEY).\n"
+                + " \"dashscope:qwen-max\", \"dashscope:qwen3.7-plus\".\n"
+                + "  - DashScope short form: \"qwen*\" model ids (e.g. \"qwen-max\","
+                + " \"qwen3.7-plus\") require DASHSCOPE_API_KEY.\n"
                 + "  - Missing API key environment variable (e.g., OPENAI_API_KEY,"
                 + " DASHSCOPE_API_KEY).";
     }

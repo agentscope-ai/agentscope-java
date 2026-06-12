@@ -16,12 +16,12 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
@@ -37,7 +37,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Appends workspace context (session info, AGENTS.md, MEMORY.md, knowledge) to the
- * system prompt via {@link #onSystemPrompt(Agent, String)}.
+ * system prompt via {@link #onSystemPrompt(Agent, RuntimeContext, String)}.
  *
  * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
  * fired on {@code PreCallEvent}).
@@ -46,7 +46,7 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
-            ## Session Context
+            ## AgentStateStore Context
             This is the %s. We are setting up the context for our chat.
             Today's date is %s.
             My operating system is: %s
@@ -118,11 +118,8 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         String section = buildWorkspaceSection(rc);
         if (section.isEmpty()) {
             return Mono.just(currentPrompt);
@@ -223,9 +220,17 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
                     .append(describeMode(mode))
                     .append(". File tools reject absolute paths outside the roots above")
                     .append(mode == LocalFsMode.ROOTED ? " with a security error" : "")
-                    .append(
-                            "; relative paths resolve under the workspace and read-fall-back to"
-                                    + " the project (overlay copy-on-write).\n");
+                    .append(".\n");
+            if (fs instanceof ProjectAwareOverlay) {
+                sb.append(
+                        "File tools write project files (code, configs, etc.) to the project"
+                                + " directory. Workspace metadata paths (memory, sessions, skills,"
+                                + " agents, knowledge) are written to the workspace.\n");
+            } else {
+                sb.append(
+                        "Relative paths resolve under the workspace and read-fall-back to"
+                                + " the project (overlay copy-on-write).\n");
+            }
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
@@ -326,7 +331,7 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
     private String buildSessionDynamicPart(RuntimeContext rc) {
         List<String> parts = new ArrayList<>();
         if (rc != null && rc.getSessionId() != null) {
-            parts.add("Session ID: " + rc.getSessionId());
+            parts.add("AgentStateStore ID: " + rc.getSessionId());
         }
         if (environmentMemory != null && !environmentMemory.isBlank()) {
             parts.add(environmentMemory);

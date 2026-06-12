@@ -65,6 +65,7 @@ import reactor.core.publisher.Mono;
  *     .build();
  * }</pre>
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class UserAgent extends AgentBase {
 
     private static UserInputBase defaultInputMethod = StreamUserInput.builder().build();
