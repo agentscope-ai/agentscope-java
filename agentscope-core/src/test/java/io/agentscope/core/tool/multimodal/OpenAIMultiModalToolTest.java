@@ -17,8 +17,10 @@ package io.agentscope.core.tool.multimodal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -64,5 +66,42 @@ class OpenAIMultiModalToolTest {
         ImageBlock image = (ImageBlock) content.get(0);
         assertTrue(image.getSource() instanceof URLSource);
         assertEquals("https://example.com/cat.png", ((URLSource) image.getSource()).getUrl());
+    }
+
+    @Test
+    void testImageToText_usesCustomDefaultModel() {
+        String imageUrl = "https://example.com/image.png";
+        String jsonResponse =
+                "{\"choices\": [{\"message\": {\"content\": \"A cat sitting on a mat.\"}}]}";
+
+        when(client.callApi(
+                        any(),
+                        any(),
+                        eq("/v1/chat/completions"),
+                        argThat(
+                                req -> {
+                                    @SuppressWarnings("unchecked")
+                                    java.util.Map<String, Object> map =
+                                            (java.util.Map<String, Object>) req;
+                                    return "my-custom-vision-model".equals(map.get("model"));
+                                })))
+                .thenReturn(jsonResponse);
+
+        OpenAIMultiModalTool toolWithCustomModel =
+                new OpenAIMultiModalTool(client, "my-custom-vision-model");
+
+        Mono<ToolResultBlock> resultMono =
+                toolWithCustomModel.openaiImageToText(imageUrl, null, null, null);
+        ToolResultBlock result = resultMono.block();
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void testConstructor_rejectsBlankDefaultModelName() {
+        assertThrows(
+                IllegalArgumentException.class, () -> new OpenAIMultiModalTool("key", null, ""));
+        assertThrows(
+                IllegalArgumentException.class, () -> new OpenAIMultiModalTool("key", null, null));
     }
 }

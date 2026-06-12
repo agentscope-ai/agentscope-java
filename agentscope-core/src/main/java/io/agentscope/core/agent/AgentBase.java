@@ -188,7 +188,31 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        return runLifecycle(msgs, this::doCall);
+        return callInternal(msgs, null, this::doCall);
+    }
+
+    /**
+     * Extension point called by every {@code call()} overload, allowing subclasses to wrap the
+     * entire invocation in additional middleware (e.g. the {@code onAgent} chain in
+     * {@code ReActAgent}).
+     *
+     * <p>The default implementation attaches {@code context} to the Reactor Context (when
+     * non-null) and delegates straight to {@link #runLifecycle}. Subclasses that override this
+     * method must eventually invoke {@code runLifecycle(msgs, doCallFn)} to run the standard
+     * lifecycle (shutdown guard, serialization gate, pre/post hooks, tracing).
+     *
+     * @param msgs     input messages
+     * @param context  caller-supplied per-call {@link RuntimeContext}, or {@code null}
+     * @param doCallFn the concrete call implementation ({@link #doCall} or a structured-output
+     *                 variant)
+     * @return response message
+     */
+    protected Mono<Msg> callInternal(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        Mono<Msg> lifecycle = runLifecycle(msgs, doCallFn);
+        return context == null
+                ? lifecycle
+                : lifecycle.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
     }
 
     /**
@@ -225,7 +249,7 @@ public abstract class AgentBase implements Agent {
      * that scope on the Reactor Context, and run the preCall → doCall → postCall chain with error
      * handling, releasing execution on terminate.
      */
-    private Mono<Msg> runLifecycle(List<Msg> msgs, Function<List<Msg>, Mono<Msg>> doCallFn) {
+    protected Mono<Msg> runLifecycle(List<Msg> msgs, Function<List<Msg>, Mono<Msg>> doCallFn) {
         return Mono.using(
                 this::acquireExecution,
                 resource ->
@@ -351,7 +375,7 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
-        return runLifecycle(msgs, m -> doCall(m, structuredOutputClass));
+        return callInternal(msgs, null, m -> doCall(m, structuredOutputClass));
     }
 
     /**
@@ -365,7 +389,7 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return runLifecycle(msgs, m -> doCall(m, schema));
+        return callInternal(msgs, null, m -> doCall(m, schema));
     }
 
     /**
