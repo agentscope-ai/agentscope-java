@@ -28,16 +28,19 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.TestCleanupSupport;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -62,8 +65,22 @@ import org.junit.jupiter.api.io.TempDir;
 class SubagentRegistryRecoveryIntegrationTest {
 
     @TempDir Path workspace;
+    private final List<AutoCloseable> closeables = new ArrayList<>();
 
     private static final String SUB_SESSION = "exposed-echo-session";
+
+    @AfterEach
+    void cleanup() {
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+        }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
+    }
 
     /** A subagent whose reply reports the number of user turns it can see in context. */
     private HarnessAgent buildEchoSubagent(AgentStateStore sharedState) {
@@ -82,13 +99,14 @@ class SubagentRegistryRecoveryIntegrationTest {
                                     Map.of(),
                                     "stop"));
                 };
-        return HarnessAgent.builder()
-                .name("echo")
-                .model(new MockModel(generator))
-                .workspace(workspace)
-                .abstractFilesystem(new LocalFilesystem(workspace))
-                .stateStore(sharedState)
-                .build();
+        return track(
+                HarnessAgent.builder()
+                        .name("echo")
+                        .model(new MockModel(generator))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(sharedState)
+                        .build());
     }
 
     private static Msg ping() {
