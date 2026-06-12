@@ -169,6 +169,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("test-tool");
         when(mockMcpTool.description()).thenReturn("Test tool description");
+        when(mockMcpTool.title()).thenReturn(null);
 
         // Create schema with properties
         Map<String, Object> properties = new HashMap<>();
@@ -227,6 +228,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("weather-tool");
         when(mockMcpTool.description()).thenReturn("Weather tool");
+        when(mockMcpTool.title()).thenReturn(null);
 
         // Create schema with multiple parameters
         Map<String, Object> properties = new HashMap<>();
@@ -283,6 +285,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("simple-tool");
         when(mockMcpTool.description()).thenReturn("Simple tool");
+        when(mockMcpTool.title()).thenReturn(null);
 
         when(mockMcpTool.inputSchema())
                 .thenReturn(
@@ -328,6 +331,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("null-param-tool");
         when(mockMcpTool.description()).thenReturn("Tool with null preset params");
+        when(mockMcpTool.title()).thenReturn(null);
 
         when(mockMcpTool.inputSchema())
                 .thenReturn(
@@ -373,6 +377,7 @@ class McpClientManagerTest {
         McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
         when(mockMcpTool.name()).thenReturn("structured-tool");
         when(mockMcpTool.description()).thenReturn("Tool with output schema");
+        when(mockMcpTool.title()).thenReturn(null);
         when(mockMcpTool.inputSchema())
                 .thenReturn(
                         new McpSchema.JsonSchema(

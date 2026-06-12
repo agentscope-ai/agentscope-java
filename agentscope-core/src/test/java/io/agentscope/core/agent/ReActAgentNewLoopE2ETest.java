@@ -107,7 +107,7 @@ class ReActAgentNewLoopE2ETest {
 
     private static final class AlwaysAllowTool extends ToolBase {
         AlwaysAllowTool(String name) {
-            super(name, "always allow", schema(), true, true, false, null, false, false);
+            super(name, "always allow", schema(), true, true, false, null, false, false, null);
         }
 
         private static Map<String, Object> schema() {

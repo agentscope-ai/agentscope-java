@@ -28,6 +28,7 @@ import java.util.Objects;
 public class ToolSchema {
     private final String name;
     private final String description;
+    private final String title;
     private final Map<String, Object> parameters;
     private final Map<String, Object> outputSchema;
     private final Boolean strict;
@@ -40,6 +41,7 @@ public class ToolSchema {
     private ToolSchema(Builder builder) {
         this.name = Objects.requireNonNull(builder.name, "name is required");
         this.description = Objects.requireNonNull(builder.description, "description is required");
+        this.title = builder.title;
         this.parameters =
                 builder.parameters != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.parameters))
@@ -67,6 +69,15 @@ public class ToolSchema {
      */
     public String getDescription() {
         return description;
+    }
+
+    /**
+     * Gets the optional human-readable tool title.
+     *
+     * @return the tool title, or null if no title is defined
+     */
+    public String getTitle() {
+        return title;
     }
 
     /**
@@ -111,6 +122,7 @@ public class ToolSchema {
     public static class Builder {
         private String name;
         private String description;
+        private String title;
         private Map<String, Object> parameters;
         private Map<String, Object> outputSchema;
         private Boolean strict;
@@ -134,6 +146,17 @@ public class ToolSchema {
          */
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        /**
+         * Sets the optional human-readable tool title.
+         *
+         * @param title the tool title
+         * @return this builder instance
+         */
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 

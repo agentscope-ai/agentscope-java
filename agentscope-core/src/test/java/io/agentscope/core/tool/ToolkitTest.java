@@ -1236,6 +1236,7 @@ class ToolkitTest {
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("structured_mcp_tool");
         when(mcpTool.description()).thenReturn("Returns structured MCP output");
+        when(mcpTool.title()).thenReturn(null);
         when(mcpTool.inputSchema())
                 .thenReturn(
                         new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));

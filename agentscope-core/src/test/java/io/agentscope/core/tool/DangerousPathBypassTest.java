@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
@@ -62,6 +63,19 @@ class DangerousPathBypassTest {
 
     private static final ProbeToolBase PROBE = new ProbeToolBase();
 
+    private static boolean canCreateSymlinks(Path tempDir) {
+        try {
+            Path target = Files.createTempFile(tempDir, "symcap", ".tmp");
+            Path link = tempDir.resolve("symcap-link");
+            Files.createSymbolicLink(link, target);
+            Files.deleteIfExists(link);
+            Files.deleteIfExists(target);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Test
     void dotEnvIsDetected() {
         assertTrue(PROBE.check("/home/user/.env"));
@@ -99,6 +113,7 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToSshIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(canCreateSymlinks(tempDir), "Symlink creation not supported on this system");
         Path sshDir = tempDir.resolve(".ssh");
         Files.createDirectory(sshDir);
         Path sshConfig = sshDir.resolve("config");
@@ -112,6 +127,7 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToDotEnvIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(canCreateSymlinks(tempDir), "Symlink creation not supported on this system");
         Path envFile = tempDir.resolve(".env");
         Files.writeString(envFile, "SECRET=value\n");
 

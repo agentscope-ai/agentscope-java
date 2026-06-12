@@ -67,7 +67,8 @@ class PermissionEngineTest {
                     /* isMcp */ false,
                     /* mcpName */ null,
                     /* isExternalTool */ false,
-                    /* isStateInjected */ false);
+                    /* isStateInjected */ false,
+                    null);
         }
 
         FakePermissionTool withPermissionDecision(PermissionDecision decision) {

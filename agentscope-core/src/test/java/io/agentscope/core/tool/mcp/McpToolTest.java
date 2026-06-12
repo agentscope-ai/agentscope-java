@@ -813,6 +813,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool",
                         "Description",
+                        "test tool",
                         parameters,
                         outputSchema,
                         mockClientWrapper,
@@ -822,6 +823,7 @@ class McpToolTest {
 
         assertEquals("test-tool", tool.getName());
         assertEquals("Description", tool.getDescription());
+        assertEquals("test tool", tool.getTitle());
         assertEquals("custom-mcp-server", tool.getMcpName());
         assertTrue(tool.isReadOnly());
         assertNotNull(tool.getOutputSchema());
@@ -835,6 +837,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool",
                         null,
+                        "test tool",
                         parameters,
                         null,
                         mockClientWrapper,
@@ -854,6 +857,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool",
                         "Description",
+                        "test tool",
                         parameters,
                         outputSchema,
                         mockClientWrapper,
@@ -875,6 +879,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool",
                         "Description",
+                        "test tool",
                         parameters,
                         null,
                         mockClientWrapper,
@@ -897,6 +902,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool",
                         "Description",
+                        "test tool",
                         parameters,
                         outputSchema,
                         mockClientWrapper,

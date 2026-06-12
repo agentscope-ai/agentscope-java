@@ -37,6 +37,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class ProjectAwareOverlayTest {
@@ -235,6 +237,9 @@ class ProjectAwareOverlayTest {
     // ==================== Shell execute delegates to upper ====================
 
     @Test
+    @DisabledOnOs(
+            value = OS.WINDOWS,
+            disabledReason = "LocalFilesystemWithShell hardcodes `sh`, unavailable on Windows")
     void execute_delegatesToShellBackend() {
         var r = overlay.execute(rc, "echo hello", 10);
         assertTrue(r.output().contains("hello"));

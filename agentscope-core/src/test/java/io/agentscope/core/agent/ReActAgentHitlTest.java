@@ -112,7 +112,17 @@ class ReActAgentHitlTest {
 
     private static final class AskingTool extends ToolBase {
         AskingTool(String name) {
-            super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
+            super(
+                    name,
+                    "asks for permission",
+                    schemaFor(),
+                    false,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false,
+                    null);
         }
 
         private static Map<String, Object> schemaFor() {
@@ -141,7 +151,7 @@ class ReActAgentHitlTest {
 
     private static final class AllowingTool extends ToolBase {
         AllowingTool(String name) {
-            super(name, "auto-allow", schemaFor(), true, true, false, null, false, false);
+            super(name, "auto-allow", schemaFor(), true, true, false, null, false, false, null);
         }
 
         private static Map<String, Object> schemaFor() {
