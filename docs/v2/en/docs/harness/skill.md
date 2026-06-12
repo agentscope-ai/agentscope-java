@@ -403,6 +403,8 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 **Keep `SKILL.md` lean.** Aim for ≤ 2k tokens; put reference material under `references/`, scripts under `scripts/`. The agent reads them on demand.
 
+**Use relative paths in SKILL.md and scripts.** Due to the multi-layer isolation of the abstract filesystem, always reference resources and scripts using paths relative to SKILL.md (e.g. `scripts/run.py`, `references/guide.md`). **Do not** hard-code absolute paths like `/workspace/scripts/run.py`. The framework automatically generates the correct `<files-root>` absolute path prefix for each skill based on the active filesystem mode, and the agent uses `<files-root>` to construct full paths at shell-execution time. Hard-coded absolute paths make a skill work only under a specific filesystem mode.
+
 **General capability in marketplaces, project-specific in the workspace.** Code review, table analysis → team Git for shared maintenance. Internal RPC conventions, project naming rules → `workspace/skills/` so they version with the code.
 
 **Per-user dirs are for "override + augment", not primary storage.** Keep critical skills visible to every user.
