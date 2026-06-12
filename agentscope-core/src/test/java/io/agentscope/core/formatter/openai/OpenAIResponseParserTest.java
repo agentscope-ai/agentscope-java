@@ -596,7 +596,7 @@ class OpenAIResponseParserTest {
         }
 
         @Test
-        @DisplayName("Should handle malformed JSON arguments gracefully")
+        @DisplayName("Should preserve malformed JSON arguments as raw content")
         void testToolCallWithMalformedJson() {
             OpenAIResponse response = new OpenAIResponse();
             response.setObject("chat.completion");
@@ -622,8 +622,19 @@ class OpenAIResponseParserTest {
 
             ChatResponse result = parser.parseResponse(response, startTime);
 
-            // Should not throw, but tool call may not be added due to parse error
             assertNotNull(result);
+            ToolUseBlock toolBlock =
+                    result.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+
+            assertNotNull(toolBlock);
+            assertEquals("call_123", toolBlock.getId());
+            assertEquals("test_tool", toolBlock.getName());
+            assertEquals("{malformed json}", toolBlock.getContent());
+            assertTrue(toolBlock.getInput().isEmpty());
         }
     }
 
