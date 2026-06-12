@@ -213,10 +213,16 @@ public class PlanModeMiddleware implements MiddlewareBase {
                                                 replyId, call.getId(), call.getName()));
                                 events.add(
                                         new ToolResultTextDeltaEvent(
-                                                replyId, call.getId(), DENY_MESSAGE));
+                                                replyId,
+                                                call.getId(),
+                                                call.getName(),
+                                                DENY_MESSAGE));
                                 events.add(
                                         new ToolResultEndEvent(
-                                                replyId, call.getId(), ToolResultState.DENIED));
+                                                replyId,
+                                                call.getId(),
+                                                call.getName(),
+                                                ToolResultState.DENIED));
                             }
                             return Flux.fromIterable(events);
                         });

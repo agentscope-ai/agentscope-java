@@ -57,6 +57,7 @@ import java.util.Set;
  *   <li>{@code skills/} → segment {@code skills}
  *   <li>{@code subagents/} → segment {@code subagents}
  *   <li>{@code knowledge/} → segment {@code knowledge}
+ *   <li>{@code plans/} → segment {@code plans}
  *   <li>{@code agents/<agentId>/sessions/} → segment {@code sessions}
  *   <li>{@code agents/<agentId>/tasks/} → segment {@code tasks}
  * </ul>
@@ -154,6 +155,10 @@ public class RemoteFilesystemSpec {
         return this;
     }
 
+    public IsolationScope getIsolationScope() {
+        return isolationScope;
+    }
+
     /**
      * Sets the workspace index for accelerating remote filesystem reads (ls/glob/exists/grep).
      * If not set, the remote filesystem falls back to full store scans.
@@ -168,7 +173,8 @@ public class RemoteFilesystemSpec {
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced
      *   <li>shared <b>prefix</b> routes ({@code memory/}, {@code skills/}, {@code subagents/},
-     *       {@code knowledge/}, {@code agents/<id>/sessions/}, {@code agents/<id>/tasks/}, plus
+     *       {@code knowledge/}, {@code plans/}, {@code agents/<id>/sessions/},
+     *       {@code agents/<id>/tasks/}, plus
      *       any {@code addSharedPrefix} extras): wrapped in an {@link OverlayFilesystem} where
      *       the <em>upper</em> layer is the {@link RemoteFilesystem} (per-user, persisted in the
      *       {@link BaseStore}) and the <em>lower</em> layer is a read-only {@link LocalFilesystem}
@@ -214,6 +220,7 @@ public class RemoteFilesystemSpec {
         routes.put(
                 "knowledge/",
                 overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
+        routes.put("plans/", overlayRoute(workspace.resolve("plans"), "plans", effectiveAgentId));
         routes.put(
                 "agents/" + effectiveAgentId + "/sessions/",
                 overlayRoute(
