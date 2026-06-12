@@ -39,6 +39,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -69,6 +70,7 @@ class HarnessAgentSubagentStreamTest {
     // "parent" agent's persisted AgentState from leaking between cases.
     @TempDir Path stateHome;
 
+    private final List<AutoCloseable> closeables = new ArrayList<>();
     private String previousStateHome;
 
     @BeforeEach
@@ -79,11 +81,21 @@ class HarnessAgentSubagentStreamTest {
 
     @AfterEach
     void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+            TestCleanupSupport.deleteRecursivelyWithRetry(stateHome);
         }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
     }
 
     // -----------------------------------------------------------------
@@ -177,12 +189,13 @@ class HarnessAgentSubagentStreamTest {
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
         HarnessAgent parent =
-                HarnessAgent.builder()
-                        .name("parent")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("parent")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-stream").build();
 
@@ -274,12 +287,13 @@ class HarnessAgentSubagentStreamTest {
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
         HarnessAgent parent =
-                HarnessAgent.builder()
-                        .name("parent")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("parent")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         List<Event> events =
                 parent.stream(
@@ -358,12 +372,13 @@ class HarnessAgentSubagentStreamTest {
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
         HarnessAgent parent =
-                HarnessAgent.builder()
-                        .name("parent")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("parent")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         Msg reply =
                 parent.call(
@@ -451,12 +466,13 @@ class HarnessAgentSubagentStreamTest {
         when(model.getModelName()).thenReturn("stub");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("diag-parent")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("diag-parent")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         // After the HarnessAgent → ReActAgent unification the inner agent is exposed via
         // getDelegate(); toolkit is reachable through the public getToolkit() accessor.

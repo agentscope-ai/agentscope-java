@@ -29,9 +29,14 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -44,43 +49,52 @@ class BuilderBootstrapSmokeTest {
 
     @TempDir Path tempDir;
 
+    @AfterEach
+    void cleanup() {
+        deleteRecursivelyWithRetry(tempDir);
+    }
+
     @Test
     void singleAgent_chatUiChannel() throws Exception {
         Model model = stubModel("single-agent-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main").description("main"))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
 
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("Hello from test").block();
-        assertTrue(reply.getTextContent().contains("single-agent-reply"));
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("Hello from test").block();
+            assertTrue(reply.getTextContent().contains("single-agent-reply"));
+        }
     }
 
     @Test
     void singleAgent_chatUiChannel_perPeer() throws Exception {
         Model model = stubModel("per-peer-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main"))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
 
-        ChannelConfig perPeerConfig =
-                ChannelConfig.builder(ChatUiChannel.CHANNEL_ID).dmScope(DmScope.PER_PEER).build();
-        ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
+            ChannelConfig perPeerConfig =
+                    ChannelConfig.builder(ChatUiChannel.CHANNEL_ID)
+                            .dmScope(DmScope.PER_PEER)
+                            .build();
+            ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
 
-        Msg reply1 = chat.send("alice", "Hi!").block();
-        Msg reply2 = chat.send("bob", "Hi!").block();
-        assertTrue(reply1.getTextContent().contains("per-peer-reply"));
-        assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+            Msg reply1 = chat.send("alice", "Hi!").block();
+            Msg reply2 = chat.send("bob", "Hi!").block();
+            assertTrue(reply1.getTextContent().contains("per-peer-reply"));
+            assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+        }
     }
 
     @Test
@@ -88,7 +102,7 @@ class BuilderBootstrapSmokeTest {
         Model mainModel = stubModel("from-main");
         Model supportModel = stubModel("from-support");
 
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
@@ -96,11 +110,49 @@ class BuilderBootstrapSmokeTest {
                         .configureAgent("main", b -> b.name("main-agent").model(mainModel))
                         .configureAgent("support", b -> b.name("support-agent").model(supportModel))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
 
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("hello").block();
-        assertTrue(reply.getTextContent().contains("from-main"));
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("hello").block();
+            assertTrue(reply.getTextContent().contains("from-main"));
+        }
+    }
+
+    private static void deleteRecursivelyWithRetry(Path root) {
+        if (root == null) {
+            return;
+        }
+        IOException lastError = null;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            try {
+                if (!Files.exists(root)) {
+                    return;
+                }
+                try (var paths = Files.walk(root)) {
+                    paths.sorted(Comparator.reverseOrder())
+                            .forEach(
+                                    path -> {
+                                        try {
+                                            Files.deleteIfExists(path);
+                                        } catch (IOException e) {
+                                            throw new UncheckedIOException(e);
+                                        }
+                                    });
+                }
+                return;
+            } catch (UncheckedIOException e) {
+                lastError = e.getCause();
+            } catch (IOException e) {
+                lastError = e;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while deleting temp directory " + root, e);
+            }
+        }
+        throw new RuntimeException("Failed to delete temp directory " + root, lastError);
     }
 
     private static Model stubModel(String assistantText) {

@@ -35,8 +35,10 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -75,6 +77,8 @@ class HarnessAgentSubagentStreamEventsTest {
         } else {
             System.clearProperty("agentscope.state.home");
         }
+        deleteRecursivelyWithRetry(workspace);
+        deleteRecursivelyWithRetry(stateHome);
     }
 
     // -----------------------------------------------------------------
@@ -375,5 +379,46 @@ class HarnessAgentSubagentStreamEventsTest {
         assertTrue(
                 parentEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_END),
                 "parent AGENT_END should have null source");
+    }
+
+    private static void deleteRecursivelyWithRetry(Path root) {
+        if (root == null) {
+            return;
+        }
+        IOException lastError = null;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            try {
+                if (!Files.exists(root)) {
+                    return;
+                }
+                try (var paths = Files.walk(root)) {
+                    paths.sorted(Comparator.reverseOrder())
+                            .forEach(
+                                    path -> {
+                                        try {
+                                            Files.deleteIfExists(path);
+                                        } catch (IOException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    });
+                }
+                return;
+            } catch (RuntimeException e) {
+                if (e.getCause() instanceof IOException ioException) {
+                    lastError = ioException;
+                } else {
+                    throw e;
+                }
+            } catch (IOException e) {
+                lastError = e;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while deleting temp directory " + root, e);
+            }
+        }
+        throw new RuntimeException("Failed to delete temp directory " + root, lastError);
     }
 }
