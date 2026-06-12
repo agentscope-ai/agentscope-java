@@ -68,6 +68,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -94,6 +95,14 @@ class AgentScopeAgentExecutorTest {
 
     private String doMockForContext(
             boolean isStreaming, boolean blockingByState, boolean blockingByConfig) {
+        return doMockForContext(isStreaming, blockingByState, blockingByConfig, null);
+    }
+
+    private String doMockForContext(
+            boolean isStreaming,
+            boolean blockingByState,
+            boolean blockingByConfig,
+            Map<String, Object> messageMetadata) {
         String taskId = UUID.randomUUID().toString();
         String contextId = UUID.randomUUID().toString();
 
@@ -104,6 +113,9 @@ class AgentScopeAgentExecutorTest {
         when(mockMessage.getTaskId()).thenReturn(taskId);
         when(mockMessage.getContextId()).thenReturn(contextId);
         when(mockMessage.getParts()).thenReturn(List.of());
+        if (null != messageMetadata) {
+            when(mockMessage.getMetadata()).thenReturn(messageMetadata);
+        }
         when(mockContext.getMessage()).thenReturn(mockMessage);
 
         MessageSendParams mockParams = mock(MessageSendParams.class);
@@ -180,6 +192,47 @@ class AgentScopeAgentExecutorTest {
                     List.of("streaming result 1", " 2"),
                     mockContext.getTaskId(),
                     mockContext.getContextId());
+        }
+
+        @Test
+        @DisplayName("Should read user and session IDs from top-level request metadata")
+        void testExecuteAgentReadsTopLevelRequestMetadata() throws JSONRPCError {
+            Map<String, Object> metadata = Map.of("userId", "user-001", "sessionId", "sess-001");
+
+            doMockForContext(false, false, true, metadata);
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.empty());
+
+            ArgumentCaptor<AgentRequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(AgentRequestOptions.class);
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner).stream(anyList(), optionsCaptor.capture());
+            AgentRequestOptions requestOptions = optionsCaptor.getValue();
+            assertEquals(mockContext.getTaskId(), requestOptions.getTaskId());
+            assertEquals("user-001", requestOptions.getUserId());
+            assertEquals("sess-001", requestOptions.getSessionId());
+        }
+
+        @Test
+        @DisplayName("Should read user and session IDs from nested request metadata")
+        void testExecuteAgentReadsNestedRequestMetadata() throws JSONRPCError {
+            Map<String, Object> msgMetadata = Map.of("userId", "user-001", "sessionId", "sess-001");
+            Map<String, Object> metadata = Map.of("msg-1", msgMetadata);
+
+            doMockForContext(false, false, true, metadata);
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.empty());
+
+            ArgumentCaptor<AgentRequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(AgentRequestOptions.class);
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner).stream(anyList(), optionsCaptor.capture());
+            AgentRequestOptions requestOptions = optionsCaptor.getValue();
+            assertEquals(mockContext.getTaskId(), requestOptions.getTaskId());
+            assertEquals("user-001", requestOptions.getUserId());
+            assertEquals("sess-001", requestOptions.getSessionId());
         }
 
         @Test

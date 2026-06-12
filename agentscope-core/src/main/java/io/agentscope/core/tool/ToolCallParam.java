@@ -144,7 +144,7 @@ public class ToolCallParam {
      *
      * <p>Note: The input map structure is copied so that entries can be modified
      * independently, but nested values (typed as Object) remain shared.
-     * Immutable fields (toolUseBlock, agent, context, emitter) are shared by reference.
+     * Immutable fields (toolUseBlock, agent, runtimeContext, emitter) are shared by reference.
      *
      * @param source The existing ToolCallParam to copy values from
      * @return A new builder pre-populated with the source's values
