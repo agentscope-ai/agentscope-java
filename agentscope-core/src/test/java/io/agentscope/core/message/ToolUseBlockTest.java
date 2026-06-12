@@ -17,11 +17,14 @@ package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -183,6 +186,69 @@ class ToolUseBlockTest {
         assertEquals(original.getInput(), deserialized.getInput());
         assertEquals(original.getContent(), deserialized.getContent());
         assertEquals(original.getMetadata(), deserialized.getMetadata());
+    }
+
+    @Test
+    void testThoughtSignatureStringRoundTripKeepsValueHashCode() throws JsonProcessingException {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("tool-gemini")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, "dGVzdA=="))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(original);
+        ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
+
+        assertEquals(original, deserialized);
+        assertEquals(original.hashCode(), deserialized.hashCode());
+    }
+
+    @Test
+    void testConstructorNormalizesByteArrayThoughtSignatureToBase64String() {
+        byte[] rawSignature = "raw-thought-signature".getBytes();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, rawSignature);
+
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("tool-bytes")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .metadata(metadata)
+                        .build();
+
+        Object stored = block.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertInstanceOf(String.class, stored);
+        assertEquals(Base64.getEncoder().encodeToString(rawSignature), stored);
+    }
+
+    @Test
+    void testByteArrayAndBase64StringMetadataProduceEqualBlocks() {
+        byte[] rawSignature = "same-signature".getBytes();
+        String encoded = Base64.getEncoder().encodeToString(rawSignature);
+
+        Map<String, Object> bytesMetadata = new HashMap<>();
+        bytesMetadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, rawSignature);
+        ToolUseBlock fromBytes =
+                ToolUseBlock.builder()
+                        .id("tool-id")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .metadata(bytesMetadata)
+                        .build();
+
+        ToolUseBlock fromString =
+                ToolUseBlock.builder()
+                        .id("tool-id")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, encoded))
+                        .build();
+
+        assertEquals(fromString, fromBytes);
+        assertEquals(fromString.hashCode(), fromBytes.hashCode());
     }
 
     @Test

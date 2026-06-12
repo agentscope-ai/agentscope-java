@@ -17,6 +17,7 @@ package io.agentscope.core.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents token usage information for chat completion responses.
@@ -81,6 +82,25 @@ public class ChatUsage {
      */
     public double getTime() {
         return time;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ChatUsage)) {
+            return false;
+        }
+        ChatUsage that = (ChatUsage) o;
+        return this.inputTokens == that.inputTokens
+                && this.outputTokens == that.outputTokens
+                && Double.compare(this.time, that.time) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.inputTokens, this.outputTokens, this.time);
     }
 
     /**
