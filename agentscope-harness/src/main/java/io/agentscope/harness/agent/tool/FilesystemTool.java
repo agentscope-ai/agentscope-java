@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -37,9 +38,20 @@ import java.util.stream.Collectors;
 public class FilesystemTool {
 
     private final AbstractFilesystem abstractFilesystem;
+    private final WorkspacePathNormalizer pathNormalizer;
 
     public FilesystemTool(AbstractFilesystem abstractFilesystem) {
+        this(abstractFilesystem, null);
+    }
+
+    public FilesystemTool(
+            AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
         this.abstractFilesystem = abstractFilesystem;
+        this.pathNormalizer = pathNormalizer;
+    }
+
+    private String norm(String path) {
+        return pathNormalizer != null ? pathNormalizer.normalize(path) : path;
     }
 
     @Tool(
@@ -57,7 +69,7 @@ public class FilesystemTool {
                     int offset,
             @ToolParam(name = "limit", description = "Max lines to return. Default: 0 (all lines)")
                     int limit) {
-        ReadResult r = abstractFilesystem.read(runtimeContext, path, offset, limit);
+        ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), offset, limit);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -71,7 +83,7 @@ public class FilesystemTool {
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
             @ToolParam(name = "content", description = "File content to write") String content) {
-        WriteResult r = abstractFilesystem.write(runtimeContext, path, content);
+        WriteResult r = abstractFilesystem.write(runtimeContext, norm(path), content);
         return r.isSuccess() ? "Written to " + r.path() : "Error: " + r.error();
     }
 
@@ -93,7 +105,7 @@ public class FilesystemTool {
         boolean shouldReplaceAll = Boolean.TRUE.equals(replaceAll);
         EditResult r =
                 abstractFilesystem.edit(
-                        runtimeContext, path, oldString, newString, shouldReplaceAll);
+                        runtimeContext, norm(path), oldString, newString, shouldReplaceAll);
         return r.isSuccess()
                 ? "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))"
                 : "Error: " + r.error();
@@ -110,7 +122,7 @@ public class FilesystemTool {
             @ToolParam(name = "path", description = "Directory or file to search") String path,
             @ToolParam(name = "glob", description = "Optional file glob filter (e.g., *.java)")
                     String glob) {
-        GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, path, glob);
+        GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, norm(path), glob);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -129,7 +141,7 @@ public class FilesystemTool {
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
                     String pattern,
             @ToolParam(name = "path", description = "Base directory to search from") String path) {
-        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, path);
+        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path));
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -149,7 +161,7 @@ public class FilesystemTool {
     public String listFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {
-        LsResult r = abstractFilesystem.ls(runtimeContext, path);
+        LsResult r = abstractFilesystem.ls(runtimeContext, norm(path));
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
