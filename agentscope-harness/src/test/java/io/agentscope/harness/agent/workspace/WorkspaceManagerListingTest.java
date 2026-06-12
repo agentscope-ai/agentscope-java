@@ -36,10 +36,14 @@ class WorkspaceManagerListingTest {
         Files.createDirectories(workspace.resolve("knowledge"));
         Files.writeString(workspace.resolve("knowledge/guide.md"), "guide");
 
-        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
             List<Path> knowledgeFiles = wm.listKnowledgeFiles(RuntimeContext.empty());
-            assertEquals(1, knowledgeFiles.size(), () -> "Unexpected knowledge files: " + knowledgeFiles);
+            assertEquals(
+                    1,
+                    knowledgeFiles.size(),
+                    () -> "Unexpected knowledge files: " + knowledgeFiles);
             assertEquals(
                     workspace.resolve("knowledge/guide.md").normalize(),
                     knowledgeFiles.get(0).normalize());
@@ -52,10 +56,14 @@ class WorkspaceManagerListingTest {
         Files.createDirectories(project.resolve("knowledge"));
         Files.writeString(project.resolve("knowledge/guide.md"), "guide");
 
-        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
             List<Path> knowledgeFiles = wm.listKnowledgeFiles(RuntimeContext.empty());
-            assertEquals(1, knowledgeFiles.size(), () -> "Unexpected knowledge files: " + knowledgeFiles);
+            assertEquals(
+                    1,
+                    knowledgeFiles.size(),
+                    () -> "Unexpected knowledge files: " + knowledgeFiles);
             assertEquals(
                     workspace.resolve("knowledge/guide.md").normalize(),
                     knowledgeFiles.get(0).normalize());
@@ -69,7 +77,8 @@ class WorkspaceManagerListingTest {
         Files.createDirectories(workspace.resolve("memory"));
         Files.writeString(workspace.resolve("memory/notes.md"), "notes");
 
-        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
             List<String> memoryFiles = wm.listMemoryFilePaths(RuntimeContext.empty());
             assertEquals(2, memoryFiles.size(), () -> "Unexpected memory files: " + memoryFiles);
@@ -85,7 +94,8 @@ class WorkspaceManagerListingTest {
         Files.createDirectories(project.resolve("memory"));
         Files.writeString(project.resolve("memory/notes.md"), "notes");
 
-        AbstractFilesystem fs = new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
             List<String> memoryFiles = wm.listMemoryFilePaths(RuntimeContext.empty());
             assertEquals(2, memoryFiles.size(), () -> "Unexpected memory files: " + memoryFiles);
