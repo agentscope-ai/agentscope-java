@@ -38,6 +38,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
@@ -994,35 +996,42 @@ public abstract class AgentBase implements Agent {
                                             // into this parent sink without an extra Flux layer.
                                             SubagentEventBus bus = sink::next;
 
+                                            Disposable.Swap upstreamSubscription =
+                                                    Disposables.swap();
+                                            sink.onDispose(upstreamSubscription);
+
                                             // Use Mono.defer to ensure trace context propagation
                                             // while maintaining streaming hook functionality
-                                            Mono.defer(() -> callSupplier.get())
-                                                    .contextWrite(
-                                                            context ->
-                                                                    context.put(
-                                                                                    SubagentEventBus
-                                                                                            .CONTEXT_KEY,
-                                                                                    bus)
-                                                                            .putAll(ctxView))
-                                                    .doFinally(
-                                                            signalType -> {
-                                                                // Remove temporary hook
-                                                                hooks.remove(streamingHook);
-                                                            })
-                                                    .subscribe(
-                                                            finalMsg -> {
-                                                                if (options.shouldStream(
-                                                                        EventType.AGENT_RESULT)) {
-                                                                    sink.next(
-                                                                            new Event(
-                                                                                    EventType
-                                                                                            .AGENT_RESULT,
-                                                                                    finalMsg,
-                                                                                    true));
-                                                                }
-                                                            },
-                                                            sink::error,
-                                                            sink::complete);
+                                            upstreamSubscription.update(
+                                                    Mono.defer(() -> callSupplier.get())
+                                                            .contextWrite(
+                                                                    context ->
+                                                                            context.put(
+                                                                                            SubagentEventBus
+                                                                                                    .CONTEXT_KEY,
+                                                                                            bus)
+                                                                                    .putAll(
+                                                                                            ctxView))
+                                                            .doFinally(
+                                                                    signalType -> {
+                                                                        // Remove temporary hook
+                                                                        hooks.remove(streamingHook);
+                                                                    })
+                                                            .subscribe(
+                                                                    finalMsg -> {
+                                                                        if (options.shouldStream(
+                                                                                EventType
+                                                                                        .AGENT_RESULT)) {
+                                                                            sink.next(
+                                                                                    new Event(
+                                                                                            EventType
+                                                                                                    .AGENT_RESULT,
+                                                                                            finalMsg,
+                                                                                            true));
+                                                                        }
+                                                                    },
+                                                                    sink::error,
+                                                                    sink::complete));
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .publishOn(Schedulers.boundedElastic()));
