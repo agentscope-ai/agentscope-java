@@ -31,7 +31,7 @@
     <description>Spring MVC endpoints for the internal AgentScope task HTTP protocol (remote subagents)</description>
 
     <properties>
-        <spring-boot.version>4.0.4</spring-boot.version>
+        <spring-boot.version>4.1.0</spring-boot.version>
     </properties>
 
     <dependencyManagement>
