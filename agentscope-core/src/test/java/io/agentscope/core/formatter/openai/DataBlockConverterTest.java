@@ -111,4 +111,76 @@ class DataBlockConverterTest {
 
         assertTrue(hasImage, "base64 image from DataBlock should be present");
     }
+
+    @Test
+    void testDataBlockVideoUrl() {
+        var formatter = new OpenAIChatFormatter();
+
+        var msg =
+                new UserMessage(
+                        List.of(
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/movie.mp4")
+                                                        .build())
+                                        .build()));
+
+        List<OpenAIMessage> result = formatter.format(List.of(msg));
+        assertEquals(1, result.size());
+
+        Object content = result.get(0).getContent();
+        assertTrue(
+                content instanceof List<?>,
+                "expected List<OpenAIContentPart>, got " + content.getClass());
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) (List<?>) content;
+
+        boolean hasVideo =
+                parts.stream()
+                        .anyMatch(
+                                p ->
+                                        "video_url".equals(p.getType())
+                                                && p.getVideoUrl() != null
+                                                && "https://example.com/movie.mp4"
+                                                        .equals(p.getVideoUrl().getUrl()));
+        assertTrue(hasVideo, "video_url from DataBlock should be present");
+    }
+
+    @Test
+    void testDataBlockAudioUrlFallback() {
+        var formatter = new OpenAIChatFormatter();
+
+        var msg =
+                new UserMessage(
+                        List.of(
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/song.mp3")
+                                                        .build())
+                                        .build()));
+
+        List<OpenAIMessage> result = formatter.format(List.of(msg));
+        assertEquals(1, result.size());
+
+        Object content = result.get(0).getContent();
+        assertTrue(
+                content instanceof List<?>,
+                "expected List<OpenAIContentPart>, got " + content.getClass());
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) (List<?>) content;
+
+        boolean hasAudioText =
+                parts.stream()
+                        .anyMatch(
+                                p ->
+                                        "text".equals(p.getType())
+                                                && p.getText() != null
+                                                && p.getText()
+                                                        .contains("https://example.com/song.mp3"));
+        assertTrue(hasAudioText, "URL-based audio should produce a text placeholder");
+    }
 }
