@@ -113,7 +113,7 @@
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
-        <jgit.version>7.6.0.202603022253-r</jgit.version>
+        <jgit.version>7.7.0.202606012155-r</jgit.version>
         <fabric8.kubernetes-client.version>6.13.4</fabric8.kubernetes-client.version>
         <protobuf.java.version>4.29.3</protobuf.java.version>
 
