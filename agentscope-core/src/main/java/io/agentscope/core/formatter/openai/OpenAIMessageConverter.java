@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -23,6 +24,7 @@ import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -161,91 +163,17 @@ public class OpenAIMessageConverter {
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentParts.add(OpenAIContentPart.text(tb.getText()));
+                addTextPart(tb.getText(), contentParts);
             } else if (block instanceof ImageBlock ib) {
-                try {
-                    Source source = ib.getSource();
-                    if (source == null) {
-                        log.warn("ImageBlock has null source, skipping");
-                        continue;
-                    }
-                    String imageUrl = convertImageSourceToUrl(source);
-                    contentParts.add(OpenAIContentPart.imageUrl(imageUrl));
-                } catch (Exception e) {
-                    String errorMsg =
-                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    log.warn("Failed to process ImageBlock: {}", errorMsg);
-                    contentParts.add(
-                            OpenAIContentPart.text(
-                                    "[Image - processing failed: " + errorMsg + "]"));
-                }
+                addImagePart(ib.getSource(), contentParts);
             } else if (block instanceof AudioBlock ab) {
-                try {
-                    // OpenAI expects base64 audio in input_audio format
-                    Source source = ab.getSource();
-                    if (source == null) {
-                        log.warn("AudioBlock has null source, using placeholder");
-                        contentParts.add(OpenAIContentPart.text("[Audio - source missing]"));
-                        continue;
-                    }
-                    if (source instanceof Base64Source b64) {
-                        String audioData = b64.getData();
-                        if (audioData == null || audioData.isEmpty()) {
-                            log.warn("Base64Source has null or empty data, using placeholder");
-                            contentParts.add(OpenAIContentPart.text("[Audio - data missing]"));
-                            continue;
-                        }
-                        String mediaType = b64.getMediaType();
-                        String format = mediaType != null ? detectAudioFormat(mediaType) : "wav";
-                        if (format == null) {
-                            log.debug("Audio format detection returned null, defaulting to wav");
-                            format = "wav";
-                        }
-                        contentParts.add(OpenAIContentPart.inputAudio(audioData, format));
-                    } else if (source instanceof URLSource urlSource) {
-                        // For URL-based audio, we need to add as text since OpenAI
-                        // input_audio requires base64
-                        String url = urlSource.getUrl();
-                        if (url == null || url.isEmpty()) {
-                            log.warn("URLSource has null or empty URL, using placeholder");
-                            contentParts.add(OpenAIContentPart.text("[Audio URL - missing]"));
-                            continue;
-                        }
-                        log.warn("URL-based audio not directly supported, using text reference");
-                        contentParts.add(OpenAIContentPart.text("[Audio URL: " + url + "]"));
-                    } else {
-                        log.warn(
-                                "Unknown audio source type: {}", source.getClass().getSimpleName());
-                        contentParts.add(
-                                OpenAIContentPart.text("[Audio - unsupported source type]"));
-                    }
-                } catch (Exception e) {
-                    String errorMsg =
-                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    log.warn("Failed to process AudioBlock: {}", errorMsg, e);
-                    contentParts.add(
-                            OpenAIContentPart.text(
-                                    "[Audio - processing failed: " + errorMsg + "]"));
-                }
+                addAudioPart(ab.getSource(), contentParts);
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for OpenAI");
             } else if (block instanceof VideoBlock vb) {
-                try {
-                    Source source = vb.getSource();
-                    if (source == null) {
-                        log.warn("VideoBlock has null source, skipping");
-                        continue;
-                    }
-                    String videoUrl = convertVideoSourceToUrl(source);
-                    contentParts.add(OpenAIContentPart.videoUrl(videoUrl));
-                } catch (Exception e) {
-                    String errorMsg =
-                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    log.warn("Failed to process VideoBlock: {}", errorMsg);
-                    contentParts.add(
-                            OpenAIContentPart.text(
-                                    "[Video - processing failed: " + errorMsg + "]"));
-                }
+                addVideoPart(vb.getSource(), contentParts);
+            } else if (block instanceof DataBlock db) {
+                addDataPart(db.getSource(), contentParts);
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -429,11 +357,114 @@ public class OpenAIMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
         return false;
+    }
+
+    private void addTextPart(String text, List<OpenAIContentPart> parts) {
+        parts.add(OpenAIContentPart.text(text));
+    }
+
+    private void addDataPart(Source source, List<OpenAIContentPart> parts) {
+        if (source == null) {
+            log.warn("DataBlock has null source, skipping");
+            return;
+        }
+        String mimeType;
+        if (source instanceof Base64Source b64) {
+            mimeType = b64.getMediaType();
+        } else if (source instanceof URLSource u) {
+            mimeType = MediaUtils.determineMediaType(u.getUrl());
+        } else {
+            log.warn("DataBlock has unknown source type: {}", source.getClass().getSimpleName());
+            return;
+        }
+        if (mimeType.startsWith("image/")) {
+            addImagePart(source, parts);
+        } else if (mimeType.startsWith("audio/")) {
+            addAudioPart(source, parts);
+        } else if (mimeType.startsWith("video/")) {
+            addVideoPart(source, parts);
+        } else {
+            log.warn("DataBlock has unrecognized MIME type '{}', skipping", mimeType);
+        }
+    }
+
+    private void addImagePart(Source source, List<OpenAIContentPart> parts) {
+        if (source == null) {
+            log.warn("Image source is null, skipping");
+            return;
+        }
+        try {
+            String imageUrl = convertImageSourceToUrl(source);
+            parts.add(OpenAIContentPart.imageUrl(imageUrl));
+        } catch (Exception e) {
+            String errorMsg =
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Failed to process image: {}", errorMsg);
+            addTextPart("[Image - processing failed: " + errorMsg + "]", parts);
+        }
+    }
+
+    private void addAudioPart(Source source, List<OpenAIContentPart> parts) {
+        if (source == null) {
+            log.warn("Audio source is null, using placeholder");
+            addTextPart("[Audio - source missing]", parts);
+            return;
+        }
+        try {
+            if (source instanceof Base64Source b64) {
+                String audioData = b64.getData();
+                if (audioData == null || audioData.isEmpty()) {
+                    log.warn("Base64Source has null or empty data, using placeholder");
+                    addTextPart("[Audio - data missing]", parts);
+                    return;
+                }
+                String mediaType = b64.getMediaType();
+                String format = mediaType != null ? detectAudioFormat(mediaType) : "wav";
+                if (format == null) {
+                    format = "wav";
+                }
+                parts.add(OpenAIContentPart.inputAudio(audioData, format));
+            } else if (source instanceof URLSource u) {
+                String url = u.getUrl();
+                if (url == null || url.isEmpty()) {
+                    log.warn("URLSource has null or empty URL, using placeholder");
+                    addTextPart("[Audio URL - missing]", parts);
+                    return;
+                }
+                log.warn("URL-based audio not directly supported, using text reference");
+                addTextPart("[Audio URL: " + url + "]", parts);
+            } else {
+                log.warn("Unknown audio source type: {}", source.getClass().getSimpleName());
+                addTextPart("[Audio - unsupported source type]", parts);
+            }
+        } catch (Exception e) {
+            String errorMsg =
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Failed to process audio: {}", errorMsg, e);
+            addTextPart("[Audio - processing failed: " + errorMsg + "]", parts);
+        }
+    }
+
+    private void addVideoPart(Source source, List<OpenAIContentPart> parts) {
+        if (source == null) {
+            log.warn("Video source is null, skipping");
+            return;
+        }
+        try {
+            String videoUrl = convertVideoSourceToUrl(source);
+            parts.add(OpenAIContentPart.videoUrl(videoUrl));
+        } catch (Exception e) {
+            String errorMsg =
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Failed to process video: {}", errorMsg);
+            addTextPart("[Video - processing failed: " + errorMsg + "]", parts);
+        }
     }
 
     /**
