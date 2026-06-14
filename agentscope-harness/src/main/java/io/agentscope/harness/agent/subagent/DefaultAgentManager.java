@@ -167,9 +167,10 @@ public final class DefaultAgentManager {
      * Invokes an agent with a user prompt. Handles both plain {@link Agent} and {@link
      * HarnessAgent} (injects {@link RuntimeContext} for the latter).
      *
-     * <p>For {@link HarnessAgent} children, {@code userId} is propagated so that isolation-key
-     * resolution (e.g. {@code USER}-scoped sandbox slots) works correctly. A fresh {@code
-     * sessionId} is always assigned independently of the parent session.
+     * <p>For {@link HarnessAgent} children, the parent {@link RuntimeContext}'s attributes,
+     * typed values, and tool execution context are preserved. {@code userId} still propagates so
+     * isolation-key resolution (e.g. {@code USER}-scoped sandbox slots) works correctly, while a
+     * fresh {@code sessionId} is always assigned independently of the parent session.
      *
      * @param agent the agent to invoke
      * @param sessionId a new, child-specific session id
@@ -177,7 +178,22 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        return invokeAgent(agent, null, sessionId, userId, prompt);
+    }
+
+    /**
+     * Invokes an agent with a user prompt and the parent call context.
+     *
+     * <p>This is the preferred entry point for harness subagent delegation because it preserves
+     * the parent runtime metadata on the child call.
+     */
+    public Mono<Msg> invokeAgent(
+            Agent agent,
+            RuntimeContext parentContext,
+            String sessionId,
+            String userId,
+            String prompt) {
+        RuntimeContext ctx = childContext(parentContext, sessionId, userId);
         if (agent instanceof ReActAgent react) {
             return react.call(List.of(userMessage(prompt)), ctx);
         }
@@ -213,9 +229,25 @@ public final class DefaultAgentManager {
             String prompt,
             EventSource source,
             StreamOptions options) {
+        return invokeAgentStream(agent, null, sessionId, userId, prompt, source, options);
+    }
+
+    /**
+     * Invokes an agent and returns its execution as a tagged {@link Flux} of {@link Event}s.
+     *
+     * <p>This overload preserves the parent runtime context for harness subagents.
+     */
+    public Flux<Event> invokeAgentStream(
+            Agent agent,
+            RuntimeContext parentContext,
+            String sessionId,
+            String userId,
+            String prompt,
+            EventSource source,
+            StreamOptions options) {
         Flux<Event> childFlux;
         StreamOptions effective = options != null ? options : StreamOptions.defaults();
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        RuntimeContext ctx = childContext(parentContext, sessionId, userId);
         if (agent instanceof ReActAgent react) {
             childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
         } else if (agent instanceof HarnessAgent harness) {
@@ -228,6 +260,16 @@ public final class DefaultAgentManager {
 
     public WorkspaceManager getWorkspaceManager() {
         return workspaceManager;
+    }
+
+    private static RuntimeContext childContext(
+            RuntimeContext parentContext, String sessionId, String userId) {
+        String effectiveUserId =
+                userId != null ? userId : parentContext != null ? parentContext.getUserId() : null;
+        if (parentContext != null) {
+            return parentContext.fork(sessionId, effectiveUserId);
+        }
+        return RuntimeContext.builder().sessionId(sessionId).userId(effectiveUserId).build();
     }
 
     private static Msg userMessage(String prompt) {

@@ -76,6 +76,33 @@ public class RuntimeContext {
         }
     }
 
+    private RuntimeContext(
+            String sessionId,
+            String userId,
+            Map<String, Object> stringAttributes,
+            Map<Class<?>, ? extends Map<String, Object>> typedAttributes,
+            ToolExecutionContext toolExecutionContext) {
+        this.sessionId = sessionId;
+        this.userId = userId;
+        this.stringAttributes = new ConcurrentHashMap<>();
+        this.typedAttributes = new ConcurrentHashMap<>();
+        this.toolExecutionContext = toolExecutionContext;
+        this.agentState = null;
+        if (stringAttributes != null && !stringAttributes.isEmpty()) {
+            this.stringAttributes.putAll(stringAttributes);
+        }
+        if (typedAttributes != null && !typedAttributes.isEmpty()) {
+            for (Map.Entry<Class<?>, ? extends Map<String, Object>> e :
+                    typedAttributes.entrySet()) {
+                Map<String, Object> values = e.getValue();
+                if (values == null || values.isEmpty()) {
+                    continue;
+                }
+                this.typedAttributes.put(e.getKey(), new ConcurrentHashMap<>(values));
+            }
+        }
+    }
+
     /**
      * Shallow, mutable empty context (null session fields, empty attribute maps, no tool context).
      */
@@ -106,6 +133,22 @@ public class RuntimeContext {
      */
     public void setAgentState(AgentState agentState) {
         this.agentState = agentState;
+    }
+
+    /**
+     * Creates a child context that preserves this context's extras, typed attributes, and tool
+     * execution context while letting the caller override the child session and user identity.
+     *
+     * <p>The call-scoped {@link AgentState} is intentionally not copied; child agents install
+     * their own state when their call begins.
+     */
+    public RuntimeContext fork(String sessionId, String userId) {
+        return new RuntimeContext(
+                sessionId != null ? sessionId : this.sessionId,
+                userId != null ? userId : this.userId,
+                this.stringAttributes,
+                this.typedAttributes,
+                this.toolExecutionContext);
     }
 
     /**
