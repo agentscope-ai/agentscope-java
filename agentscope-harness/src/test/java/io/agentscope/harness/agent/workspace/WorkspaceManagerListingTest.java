@@ -259,4 +259,26 @@ class WorkspaceManagerListingTest {
                     invokeNormalizeListedPath(wm, foreignAbsolute.toString()));
         }
     }
+
+    @Test
+    void normalizeListedPath_handlesWorkspaceAndProjectAbsoluteInputs(
+            @TempDir Path project, @TempDir Path workspace) throws IOException {
+        Files.createDirectories(workspace.resolve("memory"));
+        Files.writeString(workspace.resolve("memory/workspace.md"), "workspace");
+        Files.createDirectories(project.resolve("memory"));
+        Files.writeString(project.resolve("memory/project.md"), "project");
+
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
+            assertEquals(
+                    "memory/workspace.md",
+                    invokeNormalizeListedPath(
+                            wm, workspace.resolve("memory/workspace.md").toString()));
+            assertEquals(
+                    "memory/project.md",
+                    invokeNormalizeListedPath(wm, project.resolve("memory/project.md").toString()));
+            assertEquals("bad\u0000path", invokeNormalizeListedPath(wm, "bad\u0000path"));
+        }
+    }
 }
