@@ -34,6 +34,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
@@ -298,7 +299,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        relativePaths.add(normalizeRelativePath(fi.path().trim()));
+                        relativePaths.add(normalizeListedPath(fi.path().trim()));
                     }
                 }
             }
@@ -540,7 +541,10 @@ public class WorkspaceManager implements AutoCloseable {
                     if (fi.path() == null || fi.path().isBlank()) {
                         continue;
                     }
-                    String rel = normalizeRelativePath(fi.path().trim());
+                    String rel = normalizeListedPath(fi.path().trim());
+                    if (rel.isEmpty()) {
+                        continue;
+                    }
                     Instant mtime = parseInstantQuiet(fi.modifiedAt());
                     relPaths.put(rel, Optional.ofNullable(mtime));
                 }
@@ -930,6 +934,64 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
+     * Normalizes a path returned by {@link AbstractFilesystem#glob} into a workspace-relative
+     * string when possible.
+     */
+    private String normalizeListedPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        String normalized = path.replace('\\', '/').strip();
+        try {
+            Path candidate = Path.of(normalized).normalize();
+            if (candidate.isAbsolute()) {
+                String workspaceRelative = relativizeIfUnder(candidate, workspace);
+                if (workspaceRelative != null) {
+                    return workspaceRelative;
+                }
+                Path lowerRoot = getOverlayLowerRoot();
+                if (lowerRoot != null) {
+                    String lowerRelative = relativizeIfUnder(candidate, lowerRoot);
+                    if (lowerRelative != null) {
+                        return lowerRelative;
+                    }
+                }
+                return stripLeadingSlashes(normalized);
+            }
+        } catch (Exception ignored) {
+            // Fall through to the string-based fallback below.
+        }
+        return stripLeadingSlashes(normalized);
+    }
+
+    private String relativizeIfUnder(Path candidate, Path root) {
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        if (!candidate.startsWith(normalizedRoot)) {
+            return null;
+        }
+        return normalizedRoot.relativize(candidate).toString().replace('\\', '/');
+    }
+
+    private String stripLeadingSlashes(String value) {
+        String s = value;
+        while (s.startsWith("/")) {
+            s = s.substring(1);
+        }
+        return s;
+    }
+
+    private Path getOverlayLowerRoot() {
+        if (!(filesystem instanceof OverlayFilesystem overlay)) {
+            return null;
+        }
+        AbstractFilesystem lower = overlay.lower();
+        if (lower instanceof LocalFilesystem localFilesystem) {
+            return localFilesystem.getCwd();
+        }
+        return null;
+    }
+
+    /**
      * Returns workspace-relative paths of all memory files ({@code MEMORY.md} and {@code
      * memory/*.md}). Unions results from the {@link AbstractFilesystem} layer and the local disk,
      * deduplicating by relative path.
@@ -946,7 +1008,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = normalizeListedPath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
@@ -983,7 +1045,7 @@ public class WorkspaceManager implements AutoCloseable {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = normalizeListedPath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }

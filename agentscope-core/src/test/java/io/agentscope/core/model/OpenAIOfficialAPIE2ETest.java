@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.core.e2e.E2ETestCondition;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.extension.ExtendWith;
 import reactor.test.StepVerifier;
 
 /**
@@ -52,6 +54,7 @@ import reactor.test.StepVerifier;
  *
  * <p><b>Requirements:</b>
  * <ul>
+ *   <li>ENABLE_E2E_TESTS=true</li>
  *   <li>OPENAI_API_KEY environment variable must be set (official OpenAI API key)</li>
  *   <li>Active internet connection</li>
  *   <li>Valid OpenAI API quota</li>
@@ -62,6 +65,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @Tag("openai")
 @Tag("official")
+@ExtendWith(E2ETestCondition.class)
 @DisplayName("OpenAI Official API E2E Tests (Real OpenAI API)")
 @EnabledIfEnvironmentVariable(
         named = "OPENAI_API_KEY",
