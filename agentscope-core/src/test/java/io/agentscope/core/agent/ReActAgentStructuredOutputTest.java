@@ -31,11 +31,13 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -639,5 +641,84 @@ class ReActAgentStructuredOutputTest {
         // no IllegalStateException throw
         WeatherResponse result2 = response2.getStructuredData(WeatherResponse.class);
         assertNotNull(result2);
+    }
+
+    @Test
+    @DisplayName("Native structured output failure should fallback to synthetic tool path")
+    void testNativeStructuredOutputFallback() {
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location", "TestCity",
+                                "temperature", "25°C",
+                                "condition", "Cloudy"));
+
+        final AtomicInteger callCount = new AtomicInteger(0);
+        Model nativeThrowModel =
+                new MockModel(
+                        msgs -> {
+                            int count = callCount.getAndIncrement();
+                            if (count == 0) {
+                                throw new RuntimeException("Mock native structured output failure");
+                            }
+                            // After fallback: return tool call then text, same as normal flow
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+                            if (!hasToolResults) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_fb")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
+                                                                        .build()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_2")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Done")
+                                                                    .build()))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("fallback-agent")
+                        .sysPrompt("You are an assistant")
+                        .model(nativeThrowModel)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Whats the weather?").build())
+                        .build();
+
+        Msg response = agent.call(inputMsg, WeatherResponse.class).block(Duration.ofSeconds(10));
+        assertNotNull(response);
+        WeatherResponse result = response.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("TestCity", result.location);
+        assertEquals("25°C", result.temperature);
+        assertEquals("Cloudy", result.condition);
     }
 }
