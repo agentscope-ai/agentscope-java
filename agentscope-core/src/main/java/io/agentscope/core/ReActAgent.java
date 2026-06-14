@@ -989,7 +989,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         e.getMessage() != null
                                                 ? e.getMessage()
                                                 : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(msgs, jsonSchema);
+                                return doFallbackStructuredCall(List.of(), jsonSchema);
                             });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
