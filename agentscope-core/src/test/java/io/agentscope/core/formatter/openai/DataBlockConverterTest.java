@@ -183,4 +183,57 @@ class DataBlockConverterTest {
                                                         .contains("https://example.com/song.mp3"));
         assertTrue(hasAudioText, "URL-based audio should produce a text placeholder");
     }
+
+    @Test
+    void testDataBlockUnknownMimeType() {
+        var formatter = new OpenAIChatFormatter();
+
+        var msg =
+                new UserMessage(
+                        List.of(
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/file.unknown")
+                                                        .build())
+                                        .build()));
+
+        List<OpenAIMessage> result = formatter.format(List.of(msg));
+        assertEquals(1, result.size());
+        // Unrecognized MIME type produces empty string content (no parts match)
+        assertEquals("", result.get(0).getContent());
+    }
+
+    @Test
+    void testDataBlockBase64Audio() {
+        var formatter = new OpenAIChatFormatter();
+
+        var msg =
+                new UserMessage(
+                        List.of(
+                                DataBlock.builder()
+                                        .source(new Base64Source("audio/wav", "base64audiodata"))
+                                        .build()));
+
+        List<OpenAIMessage> result = formatter.format(List.of(msg));
+        assertEquals(1, result.size());
+
+        Object content = result.get(0).getContent();
+        assertTrue(
+                content instanceof List<?>,
+                "expected List<OpenAIContentPart>, got " + content.getClass());
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) (List<?>) content;
+
+        boolean hasAudio =
+                parts.stream()
+                        .anyMatch(
+                                p ->
+                                        "input_audio".equals(p.getType())
+                                                && p.getInputAudio() != null
+                                                && "base64audiodata"
+                                                        .equals(p.getInputAudio().getData()));
+        assertTrue(hasAudio, "Base64 audio from DataBlock should produce input_audio part");
+    }
 }
