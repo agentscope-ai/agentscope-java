@@ -22,13 +22,19 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +52,14 @@ import org.slf4j.LoggerFactory;
 public class LocalFilesystemWithShell extends LocalFilesystem implements AbstractSandboxFilesystem {
 
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystemWithShell.class);
+
+    private static final ExecutorService STREAM_READER_POOL =
+            Executors.newCachedThreadPool(
+                    r -> {
+                        Thread thread = new Thread(r, "local-filesystem-shell-stream-reader");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
@@ -316,6 +330,10 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             throw new IllegalArgumentException("timeout must be positive, got " + effectiveTimeout);
         }
 
+        Process proc = null;
+        Future<String> stdoutFuture = null;
+        Future<String> stderrFuture = null;
+
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             ProcessBuilder pb =
@@ -328,17 +346,20 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 pb.environment().putAll(env);
             }
 
-            Process proc = pb.start();
+            proc = pb.start();
+            Process startedProc = proc;
+
+            stdoutFuture =
+                    STREAM_READER_POOL.submit(() -> readStream(startedProc.getInputStream()));
+            stderrFuture =
+                    STREAM_READER_POOL.submit(() -> readStream(startedProc.getErrorStream()));
 
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
 
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
             if (!finished) {
                 proc.destroyForcibly();
+                cancelStreamReader(stdoutFuture);
+                cancelStreamReader(stderrFuture);
                 String msg;
                 if (timeoutSeconds != null) {
                     msg =
@@ -355,6 +376,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 }
                 return new ExecuteResponse(msg, 124, false);
             }
+
+            String stdout = getStreamOutput(stdoutFuture);
+            String stderr = getStreamOutput(stderrFuture);
 
             StringBuilder output = new StringBuilder();
             if (stdout != null && !stdout.isEmpty()) {
@@ -393,6 +417,11 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
+            if (proc != null && proc.isAlive()) {
+                proc.destroyForcibly();
+            }
+            cancelStreamReader(stdoutFuture);
+            cancelStreamReader(stderrFuture);
             log.error("Command execution failed: {}", e.getMessage(), e);
             return new ExecuteResponse(
                     "Error executing command ("
@@ -401,6 +430,31 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                             + e.getMessage(),
                     1,
                     false);
+        }
+    }
+
+    private static String readStream(InputStream stream) throws IOException {
+        return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    private static String getStreamOutput(Future<String> future)
+            throws IOException, InterruptedException {
+        try {
+            return future != null ? future.get(5, TimeUnit.SECONDS) : "";
+        } catch (TimeoutException e) {
+            throw new IOException("Timed out while reading process output", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw new IOException("Failed to read process output", cause);
+        }
+    }
+
+    private static void cancelStreamReader(Future<String> future) {
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
         }
     }
 
