@@ -353,6 +353,7 @@ public class AgentSpawnTool {
                                                 agentManager
                                                         .invokeAgent(
                                                                 agent,
+                                                                runtimeContext,
                                                                 sessionId,
                                                                 currentUserId,
                                                                 capturedTask)
@@ -516,6 +517,7 @@ public class AgentSpawnTool {
                                                 agentManager
                                                         .invokeAgent(
                                                                 spawned.agent(),
+                                                                runtimeContext,
                                                                 spawned.sessionId(),
                                                                 currentUserId,
                                                                 capturedMessage)
@@ -639,7 +641,7 @@ public class AgentSpawnTool {
                                         .withSource(sourcePath));
 
                         return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt)
+                                .invokeAgent(agent, parentCtx, sessionId, userId, prompt)
                                 .contextWrite(
                                         c ->
                                                 c.put(
@@ -660,6 +662,7 @@ public class AgentSpawnTool {
                         return agentManager
                                 .invokeAgentStream(
                                         agent,
+                                        parentCtx,
                                         sessionId,
                                         userId,
                                         prompt,
@@ -682,11 +685,12 @@ public class AgentSpawnTool {
                                         Mono.defer(
                                                 () ->
                                                         agentManager.invokeAgent(
-                                                                agent, sessionId, userId, prompt)));
+                                                                agent, parentCtx, sessionId, userId,
+                                                                prompt)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt);
+                    return agentManager.invokeAgent(agent, parentCtx, sessionId, userId, prompt);
                 });
     }
 
@@ -892,6 +896,7 @@ public class AgentSpawnTool {
                                                 agentManager
                                                         .invokeAgent(
                                                                 spawned.agent(),
+                                                                runtimeContext,
                                                                 spawned.sessionId(),
                                                                 currentUserId,
                                                                 capturedTask)

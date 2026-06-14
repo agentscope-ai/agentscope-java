@@ -15,15 +15,32 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Phase B-0 — verify {@link DefaultAgentManager#createAgentIfPresent(String, RuntimeContext)} and
@@ -31,6 +48,10 @@ import org.junit.jupiter.api.Test;
  * {@link RuntimeContext} to the registered {@link SubagentFactory} unchanged.
  */
 class DefaultAgentManagerRuntimeContextTest {
+
+    private record TypedMarker(String value) {}
+
+    private record ToolMarker(String value) {}
 
     private static SubagentDeclaration plainDecl(String name) {
         return SubagentDeclaration.builder()
@@ -98,5 +119,90 @@ class DefaultAgentManagerRuntimeContextTest {
         assertNotNull(seen.get());
         // We don't assert .equals() here — empty() may return a fresh instance — only that the
         // factory never sees null.
+    }
+
+    @Test
+    void invokeAgent_preservesParentRuntimeContextMetadata() {
+        HarnessAgent child = mock(HarnessAgent.class);
+        when(child.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(Mono.just(reply("ok")));
+
+        RuntimeContext parent = parentContext();
+        DefaultAgentManager mgr = new DefaultAgentManager(List.of(), null);
+
+        mgr.invokeAgent(child, parent, "child-session", parent.getUserId(), "hello").block();
+
+        ArgumentCaptor<RuntimeContext> captor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(child).call(any(Msg.class), captor.capture());
+
+        RuntimeContext childCtx = captor.getValue();
+        assertEquals("child-session", childCtx.getSessionId());
+        assertEquals(parent.getUserId(), childCtx.getUserId());
+        assertEquals("trace-123", childCtx.get("traceId"));
+        assertEquals(
+                OutboundAddress.direct("chatui", "chatui:123"),
+                childCtx.get("outboundAddress", OutboundAddress.class));
+        assertEquals(new TypedMarker("typed-1"), childCtx.get(TypedMarker.class));
+        assertSame(parent.getToolExecutionContext(), childCtx.getToolExecutionContext());
+        assertNull(childCtx.getAgentState());
+    }
+
+    @Test
+    void invokeAgentStream_preservesParentRuntimeContextMetadata() {
+        HarnessAgent child = mock(HarnessAgent.class);
+        when(child.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        RuntimeContext parent = parentContext();
+        DefaultAgentManager mgr = new DefaultAgentManager(List.of(), null);
+
+        mgr.invokeAgentStream(
+                child,
+                parent,
+                "child-stream-session",
+                parent.getUserId(),
+                "hello",
+                null,
+                StreamOptions.defaults());
+
+        ArgumentCaptor<RuntimeContext> captor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(child).stream(anyList(), any(StreamOptions.class), captor.capture());
+
+        RuntimeContext childCtx = captor.getValue();
+        assertEquals("child-stream-session", childCtx.getSessionId());
+        assertEquals(parent.getUserId(), childCtx.getUserId());
+        assertEquals("trace-123", childCtx.get("traceId"));
+        assertEquals(
+                OutboundAddress.direct("chatui", "chatui:123"),
+                childCtx.get("outboundAddress", OutboundAddress.class));
+        assertEquals(new TypedMarker("typed-1"), childCtx.get(TypedMarker.class));
+        assertSame(parent.getToolExecutionContext(), childCtx.getToolExecutionContext());
+        assertNull(childCtx.getAgentState());
+    }
+
+    private static RuntimeContext parentContext() {
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .sessionId("parent-session")
+                        .userId("alice")
+                        .put("traceId", "trace-123")
+                        .put(TypedMarker.class, new TypedMarker("typed-1"))
+                        .toolExecutionContext(
+                                ToolExecutionContext.builder()
+                                        .register(new ToolMarker("tool-di"))
+                                        .build())
+                        .build();
+        ctx.put(
+                "outboundAddress",
+                OutboundAddress.class,
+                OutboundAddress.direct("chatui", "chatui:123"));
+        return ctx;
+    }
+
+    private static Msg reply(String text) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .content(TextBlock.builder().text(text).build())
+                .build();
     }
 }
