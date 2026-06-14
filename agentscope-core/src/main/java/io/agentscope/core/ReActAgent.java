@@ -989,7 +989,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         e.getMessage() != null
                                                 ? e.getMessage()
                                                 : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(List.of(), jsonSchema);
+                                return doFallbackStructuredCall(msgs, jsonSchema);
                             });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
@@ -1035,17 +1035,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
-                            .onErrorResume(
+                            .doOnError(
                                     e -> {
                                         scope.rollbackContext(contextSizeBefore);
                                         scope.nativeResponseFormat = null;
-                                        log.warn(
-                                                "Native structured output failed ({}) — falling"
-                                                        + " back to synthetic tool path",
-                                                e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                        return doFallbackStructuredCall(msgs, jsonSchema);
                                     });
                 });
     }
