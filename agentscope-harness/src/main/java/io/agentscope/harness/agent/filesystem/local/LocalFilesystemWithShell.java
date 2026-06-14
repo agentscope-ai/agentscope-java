@@ -318,10 +318,22 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
-            ProcessBuilder pb =
-                    new ProcessBuilder("sh", "-c", command)
-                            .directory(workDir.toFile())
-                            .redirectErrorStream(false);
+
+            String osName = System.getProperty("os.name").toLowerCase();
+
+            ProcessBuilder pb = null;
+
+            if (osName.contains("win")) {
+                pb =
+                        new ProcessBuilder("cmd", "/c", command)
+                                .directory(workDir.toFile())
+                                .redirectErrorStream(false);
+            } else {
+                pb =
+                        new ProcessBuilder("sh", "-c", command)
+                                .directory(workDir.toFile())
+                                .redirectErrorStream(false);
+            }
 
             if (!env.isEmpty()) {
                 pb.environment().clear();
