@@ -2107,7 +2107,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 List<AgentEvent> events) {
 
             if (block instanceof TextBlock tb) {
+
+
                 if (textStarted.compareAndSet(false, true)) {
+                    if (thinkingStarted.get()) {
+                        events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                        thinkingStarted.set(false);
+                    }
+
+
                     events.add(new TextBlockStartEvent(replyId, "text"));
                 }
                 if (tb.getText() != null && !tb.getText().isEmpty()) {
@@ -2115,16 +2123,43 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             } else if (block instanceof ThinkingBlock tb) {
                 if (thinkingStarted.compareAndSet(false, true)) {
+
+                    if (textStarted.get()) {
+                        events.add(new TextBlockEndEvent(replyId, "text"));
+                        textStarted.set(false);
+                    }
+
                     events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
                 }
                 if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
                     events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
                 }
             } else if (block instanceof ToolUseBlock tub) {
+
                 String toolId = resolveToolCallId(tub, context);
                 String toolName = tub.getName();
+                Map<String, String> preStartToolCalls = new HashMap<>(startedToolCalls);
                 if (toolId != null && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
                     if (toolName != null && !toolName.startsWith("__")) {
+
+                        if (thinkingStarted.get()) {
+                            events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                            thinkingStarted.set(false);
+                        }
+
+                        if (textStarted.get()) {
+                            events.add(new TextBlockEndEvent(replyId, "text"));
+                            textStarted.set(false);
+                        }
+                        for (Map.Entry<String, String> tc : preStartToolCalls.entrySet()) {
+                            events.add(
+                                    new ToolCallEndEvent(
+                                            replyId, tc.getKey(), tc.getValue()));
+                            startedToolCalls.remove(tc.getKey());
+                        }
+
+
+
                         events.add(new ToolCallStartEvent(replyId, toolId, toolName));
                     }
                 }
