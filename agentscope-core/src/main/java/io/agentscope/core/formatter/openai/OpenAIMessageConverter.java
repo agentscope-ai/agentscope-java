@@ -391,6 +391,7 @@ public class OpenAIMessageConverter {
             addVideoPart(source, parts);
         } else {
             log.warn("DataBlock has unrecognized MIME type '{}', skipping", mimeType);
+            addTextPart("[Data - unrecognized type: " + mimeType + "]", parts);
         }
     }
 

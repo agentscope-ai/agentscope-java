@@ -200,8 +200,24 @@ class DataBlockConverterTest {
 
         List<OpenAIMessage> result = formatter.format(List.of(msg));
         assertEquals(1, result.size());
-        // Unrecognized MIME type produces empty string content (no parts match)
-        assertEquals("", result.get(0).getContent());
+
+        Object content = result.get(0).getContent();
+        assertTrue(
+                content instanceof List<?>,
+                "expected List<OpenAIContentPart>, got " + content.getClass());
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) (List<?>) content;
+
+        boolean hasFallback =
+                parts.stream()
+                        .anyMatch(
+                                p ->
+                                        "text".equals(p.getType())
+                                                && p.getText() != null
+                                                && p.getText()
+                                                        .startsWith("[Data - unrecognized type:"));
+        assertTrue(hasFallback, "unknown MIME should produce a text placeholder");
     }
 
     @Test
