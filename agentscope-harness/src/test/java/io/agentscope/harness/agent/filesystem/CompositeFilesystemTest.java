@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +29,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -213,5 +215,30 @@ class CompositeFilesystemTest {
         assertTrue(jsonPaths.contains("tools.json"));
         assertFalse(
                 jsonPaths.contains("AGENTS.md"), "AGENTS.md must not match *.json: " + jsonPaths);
+    }
+
+    /**
+     * Regression for #1737: when path is "." (which WorkspacePathNormalizer returns for
+     * workspace root), route directories should still be merged into the listing.
+     */
+    @Test
+    void lsRoot_mergesRouteEntriesWhenPathIsDot() {
+        AbstractFilesystem routeBackend = mock(AbstractFilesystem.class);
+        when(routeBackend.ls(any(), anyString()))
+                .thenReturn(LsResult.success(List.of(FileInfo.ofFile("/SKILL.md", 10, ""))));
+
+        AbstractFilesystem defaultBackend = mock(AbstractFilesystem.class);
+        when(defaultBackend.ls(any(), anyString())).thenReturn(LsResult.success(List.of()));
+
+        CompositeFilesystem composite =
+                new CompositeFilesystem(defaultBackend, Map.of("/skills/", routeBackend));
+
+        LsResult result = composite.ls(CTX, ".");
+
+        assertTrue(result.isSuccess());
+        List<String> paths = result.entries().stream().map(FileInfo::path).toList();
+        assertTrue(
+                paths.stream().anyMatch(p -> p.startsWith("/skills")),
+                "route entries should appear when listing root with '.', got: " + paths);
     }
 }
