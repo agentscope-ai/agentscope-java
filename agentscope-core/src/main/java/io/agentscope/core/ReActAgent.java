@@ -1027,11 +1027,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .strict(true)
                                             .build());
 
+                    int contextSizeBefore = scope.state.contextMutable().size();
+
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
+                                    })
+                            .onErrorResume(
+                                    e -> {
+                                        scope.rollbackContext(contextSizeBefore);
+                                        scope.nativeResponseFormat = null;
+                                        log.warn(
+                                                "Native structured output failed ({}) — falling"
+                                                        + " back to synthetic tool path",
+                                                e.getMessage() != null
+                                                        ? e.getMessage()
+                                                        : e.getClass().getSimpleName());
+                                        return doFallbackStructuredCall(msgs, jsonSchema);
                                     });
                 });
     }
@@ -1808,6 +1822,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private void addToContext(List<Msg> msgs) {
             if (msgs != null) {
                 state.contextMutable().addAll(msgs);
+            }
+        }
+
+        /** Roll back context to a given size on fallback, e.g. after native structured output failure. */
+        void rollbackContext(int targetSize) {
+            List<Msg> ctx = state.contextMutable();
+            while (ctx.size() > targetSize) {
+                ctx.remove(ctx.size() - 1);
             }
         }
 
