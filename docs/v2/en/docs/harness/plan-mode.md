@@ -193,7 +193,7 @@ To observe task changes in real time through the event stream, listen for `todo_
 ```java
 agent.streamEvents(message)
     .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
-    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolCallName()))
     .doOnNext(e -> {
         // Re-read the latest task list from state
         var tasks = agent.getAgentState(userId, sessionId)
