@@ -193,7 +193,7 @@ GET /v1/admin/sessions/{sessionId}/tasks
 ```java
 agent.streamEvents(message)
     .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
-    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolCallName()))
     .doOnNext(e -> {
         // 从 state 中读取最新任务列表
         var tasks = agent.getAgentState(userId, sessionId)
