@@ -218,7 +218,8 @@ class SkillRuntimeTest {
         @Test
         void loadingSkillActivatesSkillToolGroupViaRuntimeToolkitFallback() {
             Toolkit tk = new Toolkit();
-            tk.createToolGroup("alpha_workspace_skill_tools", "alpha skill tools", false);
+            String toolGroupName = AgentSkill.toolGroupName("alpha_workspace");
+            tk.createToolGroup(toolGroupName, "alpha skill tools", false);
 
             SkillRuntime r = new SkillRuntime();
             HarnessSkillEntry e = HarnessSkillEntry.of(skill("alpha", "workspace"), null);
@@ -227,7 +228,7 @@ class SkillRuntimeTest {
             invoke(r, "alpha_workspace", "SKILL.md");
 
             assertTrue(
-                    tk.getToolGroup("alpha_workspace_skill_tools").isActive(),
+                    tk.getToolGroup(toolGroupName).isActive(),
                     "loading a skill should activate its bound tool group");
         }
 
@@ -275,10 +276,10 @@ class SkillRuntimeTest {
         @Test
         void laterInstallRefreshesToolkitFallbackReference() {
             Toolkit firstToolkit = new Toolkit();
-            firstToolkit.createToolGroup("alpha_workspace_skill_tools", "alpha skill tools", false);
+            String toolGroupName = AgentSkill.toolGroupName("alpha_workspace");
+            firstToolkit.createToolGroup(toolGroupName, "alpha skill tools", false);
             Toolkit secondToolkit = new Toolkit();
-            secondToolkit.createToolGroup(
-                    "alpha_workspace_skill_tools", "alpha skill tools", false);
+            secondToolkit.createToolGroup(toolGroupName, "alpha skill tools", false);
 
             SkillRuntime r = new SkillRuntime();
             HarnessSkillEntry entry = HarnessSkillEntry.of(skill("alpha", "workspace"), null);
@@ -293,8 +294,8 @@ class SkillRuntimeTest {
                             .build();
             r.loadTool().callAsync(p).block();
 
-            assertFalse(firstToolkit.getToolGroup("alpha_workspace_skill_tools").isActive());
-            assertTrue(secondToolkit.getToolGroup("alpha_workspace_skill_tools").isActive());
+            assertFalse(firstToolkit.getToolGroup(toolGroupName).isActive());
+            assertTrue(secondToolkit.getToolGroup(toolGroupName).isActive());
         }
     }
 

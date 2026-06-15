@@ -187,9 +187,12 @@ public final class SkillLoadTool implements AgentTool {
             toolkit = toolkitRef.get();
         }
         if (toolkit == null) {
+            log.debug(
+                    "activateSkillTools: no toolkit available for skill '{}'",
+                    entry.skill().getSkillId());
             return;
         }
-        String toolGroupName = entry.skill().getSkillId() + "_skill_tools";
+        String toolGroupName = AgentSkill.toolGroupName(entry.skill().getSkillId());
         if (toolkit.getToolGroup(toolGroupName) == null) {
             return;
         }

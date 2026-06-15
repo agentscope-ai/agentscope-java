@@ -72,6 +72,6 @@ class RegisteredSkill {
      * @return The tool group name
      */
     public String getToolsGroupName() {
-        return skillId + "_skill_tools";
+        return AgentSkill.toolGroupName(skillId);
     }
 }

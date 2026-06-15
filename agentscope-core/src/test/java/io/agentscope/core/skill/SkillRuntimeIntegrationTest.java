@@ -92,7 +92,7 @@ class SkillRuntimeIntegrationTest {
         skillBox.registration().skill(calculatorSkill).agentTool(calculatorMultiply).apply();
 
         String skillId = calculatorSkill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
+        String toolGroupName = AgentSkill.toolGroupName(skillId);
 
         // Step 2: Verify initial state - skill and tool group inactive
         assertFalse(skillBox.isSkillActive(skillId), "Skill should be inactive initially");
@@ -177,8 +177,8 @@ class SkillRuntimeIntegrationTest {
 
         String mathSkillId = mathSkill.getSkillId();
         String weatherSkillId = weatherSkill.getSkillId();
-        String mathToolGroupName = mathSkillId + "_skill_tools";
-        String weatherToolGroupName = weatherSkillId + "_skill_tools";
+        String mathToolGroupName = AgentSkill.toolGroupName(mathSkillId);
+        String weatherToolGroupName = AgentSkill.toolGroupName(weatherSkillId);
 
         // Load first skill
         loadSkill(mathSkillId);

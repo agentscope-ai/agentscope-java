@@ -176,7 +176,7 @@ class SkillBoxToolsTest {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         String skillId = "test_skill_custom";
-        String toolGroupName = skillId + "_skill_tools";
+        String toolGroupName = AgentSkill.toolGroupName(skillId);
 
         assertFalse(skillBox.isSkillActive(skillId));
 
@@ -296,7 +296,7 @@ class SkillBoxToolsTest {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         String skillId = "test_skill_custom";
-        String toolGroupName = skillId + "_skill_tools";
+        String toolGroupName = AgentSkill.toolGroupName(skillId);
 
         assertFalse(skillBox.isSkillActive(skillId));
 
@@ -489,7 +489,8 @@ class SkillBoxToolsTest {
         assertFalse(isErrorResult(result), "Should not fail when skill has no tools");
         assertTrue(skillBox.isSkillActive(skillId), "Skill should still be activated");
         assertNull(
-                toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
+                toolkit.getToolGroup(AgentSkill.toolGroupName(skillId)),
+                "Tool group should not be created");
     }
 
     @Test

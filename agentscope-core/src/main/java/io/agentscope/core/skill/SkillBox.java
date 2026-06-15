@@ -577,7 +577,7 @@ public class SkillBox {
                     throw new IllegalStateException(
                             "Must bind toolkit or call toolkit() before apply()");
                 }
-                String skillToolGroup = skill.getSkillId() + "_skill_tools";
+                String skillToolGroup = AgentSkill.toolGroupName(skill.getSkillId());
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
