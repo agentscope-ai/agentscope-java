@@ -21,38 +21,39 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
 /**
  * Demonstrates how to thread per-call metadata through {@link RuntimeContext} and
- * combine it with persistent {@link Session} storage so the same agent instance can
+ * combine it with persistent {@link AgentStateStore} storage so the same agent instance can
  * pick up history across runs.
  *
  * <p>{@link RuntimeContext} is a transient, per-call metadata bag — useful for
  * passing tenant ids, request ids, or anything else hooks and tools should see
- * during a single {@code call}. {@link Session} + {@link io.agentscope.core.state.SessionKey}
+ * during a single {@code call}. {@link AgentStateStore}
  * configured on the builder turn the same agent into one that loads and saves
  * conversation context to disk automatically.
  */
 public class RuntimeContextExample {
 
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "RuntimeContext Example",
-                "Shows per-call RuntimeContext metadata and JsonSession persistence.");
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("RuntimeContext Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
+                "Shows per-call RuntimeContext metadata and JsonFileAgentStateStore persistence.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
-        Session session = new JsonSession(sessionPath);
+        AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -62,16 +63,16 @@ public class RuntimeContextExample {
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)
-                                        .modelName("qwen-plus")
+                                        .modelName("dashscope:qwen-plus")
                                         .stream(false)
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(new Toolkit())
-                        .session(session)
-                        .sessionKey(SimpleSessionKey.of("runtime-context-demo"))
+                        .stateStore(stateStore)
+                        .defaultSessionId("runtime-context-demo")
                         .build();
 
-        int loaded = agent.getState().getContext().size();
+        int loaded = agent.getAgentState().getContext().size();
         System.out.println("Loaded " + loaded + " message(s) from session.");
 
         RuntimeContext ctx =
@@ -88,6 +89,8 @@ public class RuntimeContextExample {
         System.out.println("Assistant: " + (second == null ? "" : second.getTextContent()));
 
         System.out.println(
-                "Final context size: " + agent.getState().getContext().size() + " message(s).");
+                "Final context size: "
+                        + agent.getAgentState().getContext().size()
+                        + " message(s).");
     }
 }

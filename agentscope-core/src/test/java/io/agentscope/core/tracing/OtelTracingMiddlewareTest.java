@@ -76,7 +76,7 @@ class OtelTracingMiddlewareTest {
         AgentInput input = new AgentInput(List.of());
 
         AgentStartEvent rse = new AgentStartEvent("sess-1", "reply-42", "test-agent");
-        Flux<AgentEvent> result = middleware.onAgent(agent, input, in -> Flux.just(rse));
+        Flux<AgentEvent> result = middleware.onAgent(agent, null, input, in -> Flux.just(rse));
         result.collectList().block();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
@@ -117,7 +117,8 @@ class OtelTracingMiddlewareTest {
         AgentInput input = new AgentInput(List.of());
 
         Flux<AgentEvent> result =
-                middleware.onAgent(agent, input, in -> Flux.error(new RuntimeException("boom")));
+                middleware.onAgent(
+                        agent, null, input, in -> Flux.error(new RuntimeException("boom")));
         try {
             result.collectList().block();
         } catch (Exception ignored) {
@@ -136,7 +137,7 @@ class OtelTracingMiddlewareTest {
         ModelCallEndEvent mce = new ModelCallEndEvent("reply-1", usage);
 
         ModelCallInput input = new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o"));
-        Flux<AgentEvent> result = middleware.onModelCall(agent, input, in -> Flux.just(mce));
+        Flux<AgentEvent> result = middleware.onModelCall(agent, null, input, in -> Flux.just(mce));
         result.collectList().block();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
@@ -182,9 +183,9 @@ class OtelTracingMiddlewareTest {
                         .build();
 
         ToolResultEndEvent tre =
-                new ToolResultEndEvent("reply-1", "call-1", ToolResultState.SUCCESS);
+                new ToolResultEndEvent("reply-1", "call-1", "testTool", ToolResultState.SUCCESS);
         ActingInput input = new ActingInput(List.of(toolCall));
-        Flux<AgentEvent> result = middleware.onActing(agent, input, in -> Flux.just(tre));
+        Flux<AgentEvent> result = middleware.onActing(agent, null, input, in -> Flux.just(tre));
         result.collectList().block();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();

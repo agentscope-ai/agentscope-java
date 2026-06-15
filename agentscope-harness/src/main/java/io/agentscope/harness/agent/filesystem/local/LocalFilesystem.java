@@ -28,8 +28,8 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.BufferedReader;
@@ -448,14 +448,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
-                                String filePath;
-                                if (mode == LocalFsMode.SANDBOXED) {
-                                    filePath = toVirtualPath(file);
-                                } else if (hasNamespace(runtimeContext)) {
-                                    filePath = stripNamespacePrefix(runtimeContext, file);
-                                } else {
-                                    filePath = file.toAbsolutePath().toString();
-                                }
+                                String filePath = resolveEntryPath(runtimeContext, file);
                                 String modifiedAt =
                                         Instant.ofEpochMilli(attrs.lastModifiedTime().toMillis())
                                                 .toString();
@@ -694,14 +687,15 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (hasNamespace(rc)) {
             return stripNamespacePrefix(rc, entry);
         }
-        return entry.toAbsolutePath().toString();
+        return toCwdRelativePath(entry);
+    }
+
+    private String toCwdRelativePath(Path path) {
+        return cwd.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/');
     }
 
     private String stripNamespacePrefix(RuntimeContext rc, Path absolutePath) {
-        String relPath =
-                cwd.relativize(absolutePath.toAbsolutePath().normalize())
-                        .toString()
-                        .replace('\\', '/');
+        String relPath = toCwdRelativePath(absolutePath);
         String nsPrefix = String.join("/", namespaceFactory.getNamespace(rc));
         if (relPath.startsWith(nsPrefix + "/")) {
             return relPath.substring(nsPrefix.length() + 1);
@@ -766,14 +760,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (pathText == null || lineNumStr == null) {
                 return null;
             }
-            String filePath;
-            if (mode == LocalFsMode.SANDBOXED) {
-                filePath = toVirtualPath(Path.of(pathText));
-            } else if (hasNamespace(rc)) {
-                filePath = stripNamespacePrefix(rc, Path.of(pathText));
-            } else {
-                filePath = pathText;
-            }
+            String filePath = resolveEntryPath(rc, Path.of(pathText));
             int lineNum = Integer.parseInt(lineNumStr.trim());
             String text = linesText != null ? linesText.replaceAll("[\r\n]+$", "") : "";
             return new GrepMatch(filePath, lineNum, text);
@@ -856,14 +843,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                                             Files.readAllLines(file, StandardCharsets.UTF_8);
                                     for (int i = 0; i < lines.size(); i++) {
                                         if (compiledPattern.matcher(lines.get(i)).find()) {
-                                            String filePath;
-                                            if (mode == LocalFsMode.SANDBOXED) {
-                                                filePath = toVirtualPath(file);
-                                            } else if (hasNamespace(rc)) {
-                                                filePath = stripNamespacePrefix(rc, file);
-                                            } else {
-                                                filePath = file.toAbsolutePath().toString();
-                                            }
+                                            String filePath = resolveEntryPath(rc, file);
                                             matches.add(
                                                     new GrepMatch(filePath, i + 1, lines.get(i)));
                                         }

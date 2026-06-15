@@ -96,8 +96,8 @@ public interface TaskRepository {
     // Implementations that persist {@link TaskRecord} should override the three methods below to
     // surface "terminal-but-not-yet-delivered" tasks to the parent agent's reasoning loop. The
     // default no-op implementations preserve pull-only semantics for in-memory repositories
-    // (e.g. {@link DefaultTaskRepository}) where the parent process and any task callers share
-    // the same JVM and can rely on direct future completion instead.
+    // where the parent process and any task callers share the same JVM and can rely on direct
+    // future completion instead.
     // ------------------------------------------------------------------------
 
     /**
