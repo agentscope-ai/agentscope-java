@@ -180,6 +180,56 @@ class DefaultAgentManagerRuntimeContextTest {
         assertNull(childCtx.getAgentState());
     }
 
+    @Test
+    void invokeAgent_withoutParentRuntimeContext_usesProvidedIdentityOnly() {
+        HarnessAgent child = mock(HarnessAgent.class);
+        when(child.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(Mono.just(reply("ok")));
+
+        DefaultAgentManager mgr = new DefaultAgentManager(List.of(), null);
+        mgr.invokeAgent(child, "child-session", "solo-user", "hello").block();
+
+        ArgumentCaptor<RuntimeContext> captor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(child).call(any(Msg.class), captor.capture());
+
+        RuntimeContext childCtx = captor.getValue();
+        assertEquals("child-session", childCtx.getSessionId());
+        assertEquals("solo-user", childCtx.getUserId());
+        assertNull(childCtx.get("traceId"));
+        assertNull(childCtx.get("outboundAddress", OutboundAddress.class));
+        assertNull(childCtx.get(TypedMarker.class));
+        assertNull(childCtx.getToolExecutionContext());
+        assertNull(childCtx.getAgentState());
+    }
+
+    @Test
+    void invokeAgentStream_withoutParentRuntimeContext_usesProvidedIdentityOnly() {
+        HarnessAgent child = mock(HarnessAgent.class);
+        when(child.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        DefaultAgentManager mgr = new DefaultAgentManager(List.of(), null);
+        mgr.invokeAgentStream(
+                child,
+                "child-stream-session",
+                "solo-user",
+                "hello",
+                null,
+                StreamOptions.defaults());
+
+        ArgumentCaptor<RuntimeContext> captor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(child).stream(anyList(), any(StreamOptions.class), captor.capture());
+
+        RuntimeContext childCtx = captor.getValue();
+        assertEquals("child-stream-session", childCtx.getSessionId());
+        assertEquals("solo-user", childCtx.getUserId());
+        assertNull(childCtx.get("traceId"));
+        assertNull(childCtx.get("outboundAddress", OutboundAddress.class));
+        assertNull(childCtx.get(TypedMarker.class));
+        assertNull(childCtx.getToolExecutionContext());
+        assertNull(childCtx.getAgentState());
+    }
+
     private static RuntimeContext parentContext() {
         RuntimeContext ctx =
                 RuntimeContext.builder()

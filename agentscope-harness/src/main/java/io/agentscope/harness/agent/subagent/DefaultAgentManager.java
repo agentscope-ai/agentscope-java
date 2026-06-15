@@ -264,12 +264,10 @@ public final class DefaultAgentManager {
 
     private static RuntimeContext childContext(
             RuntimeContext parentContext, String sessionId, String userId) {
-        String effectiveUserId =
-                userId != null ? userId : parentContext != null ? parentContext.getUserId() : null;
         if (parentContext != null) {
-            return parentContext.fork(sessionId, effectiveUserId);
+            return parentContext.fork(sessionId, userId);
         }
-        return RuntimeContext.builder().sessionId(sessionId).userId(effectiveUserId).build();
+        return RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
     }
 
     private static Msg userMessage(String prompt) {
