@@ -125,7 +125,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
+        return next.apply(input).concatWith(doFlush(agent, rc).thenMany(Flux.<AgentEvent>empty()));
     }
 
     private reactor.core.publisher.Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
