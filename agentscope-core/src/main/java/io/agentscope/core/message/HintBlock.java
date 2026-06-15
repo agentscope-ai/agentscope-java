@@ -29,11 +29,20 @@ public final class HintBlock extends ContentBlock {
 
     private final String id;
     private final String hint;
+    private final String source;
 
     @JsonCreator
-    public HintBlock(@JsonProperty("id") String id, @JsonProperty("hint") String hint) {
+    public HintBlock(
+            @JsonProperty("id") String id,
+            @JsonProperty("hint") String hint,
+            @JsonProperty("source") String source) {
         this.id = id;
         this.hint = hint;
+        this.source = source;
+    }
+
+    public HintBlock(String id, String hint) {
+        this(id, hint, null);
     }
 
     /**
@@ -52,5 +61,14 @@ public final class HintBlock extends ContentBlock {
      */
     public String getHint() {
         return hint;
+    }
+
+    /**
+     * Returns the sender or origin of this hint. For team messages this is the sender's display
+     * name (e.g. {@code "alice"}); for system notifications it may be {@code "system"} or
+     * {@code null}.
+     */
+    public String getSource() {
+        return source;
     }
 }
