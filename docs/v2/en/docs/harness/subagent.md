@@ -361,7 +361,7 @@ parent.streamEvents(new UserMessage(message), ctx)
         if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
             System.out.print(prefix + ((TextBlockDeltaEvent) event).getDelta());
         } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolName());
+            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolCallName());
         } else if (event.getType() == AgentEventType.AGENT_START) {
             if (src != null) System.out.println("── child started: " + src);
         } else if (event.getType() == AgentEventType.AGENT_END) {
@@ -402,7 +402,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                 if (event instanceof TextBlockDeltaEvent delta) {
                     payload.put("delta", delta.getDelta());
                 } else if (event instanceof ToolCallStartEvent start) {
-                    payload.put("toolName", start.getToolName());
+                    payload.put("toolName", start.getToolCallName());
                 }
                 return ServerSentEvent.<String>builder()
                         .data(objectMapper.writeValueAsString(payload))
