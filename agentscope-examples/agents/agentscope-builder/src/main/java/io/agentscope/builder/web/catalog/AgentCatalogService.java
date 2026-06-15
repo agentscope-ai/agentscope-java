@@ -46,21 +46,38 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Business logic for the agent catalog: merges global agent definitions (loaded from
- * {@code agentscope.json}) with per-user custom agent definitions, and dynamically instantiates
- * user-custom agents on demand.
+ * Agent Catalog（目录）的核心业务逻辑。
  *
- * <h2>Visibility rules</h2>
+ * <h2>什么是 Catalog？</h2>
+ * Catalog 是 Agent 的「市场/仓库」，管理所有可供用户使用的 Agent 定义。
+ * Agent 分为两种 scope（作用域）：
  *
  * <ul>
- *   <li><b>Global agents</b> ({@code scope = "global"}): defined in {@code agentscope.json},
- *       registered in {@link HarnessGateway} at startup. All users can list and converse with
- *       them; each user's conversation is isolated via a separate session keyed by
- *       {@code (userId, agentId)}.
- *   <li><b>User-custom agents</b> ({@code scope = "user"}): stored per-user in
- *       {@code .agentscope/users/{userId}/agents.json}. Only the owning user can see,
- *       create, update, or delete them. On first use they are dynamically built and registered
- *       in the gateway under the namespace key {@code uca-{userId}-{agentId}}.
+ *   <li><b>SCOPE_GLOBAL（全局 Agent）</b>：定义在项目 {@code agentscope.json} 中，
+ *       启动时注册到 {@link HarnessGateway}。所有用户可见，每个用户的对话通过
+ *       {@code (userId, agentId)} 键值隔离 Session。
+ *   <li><b>SCOPE_USER（用户自定义 Agent / UCA）</b>：存储在
+ *       {@code .agentscope/users/{userId}/agents.json} 中。只有 owner 可以创建、
+ *       编辑、删除。首次使用时动态构建并注册到 Gateway，注册 ID 格式为
+ *       {@code uca-{ownerId}-{agentId}}。
+ *       其他用户可通过 {@link io.agentscope.builder.web.share.AgentShareGrant} 获得访问权限。
+ * </ul>
+ *
+ * <h2>UCA (User Custom Agent) 是什么？</h2>
+ * UCA 是用户自己创建的自定义 Agent。和全局 Agent 的关键区别：
+ * <ul>
+ *   <li>全局 Agent 的 ID 直接注册在 Gateway 中（如 "assistant"）
+ *   <li>UCA 的 Gateway ID 带有 owner 前缀（如 "uca-bob-my-assistant"），
+ *       因为多个用户可以创建同名的 Agent，Gateway 需要全局唯一的 ID 来区分
+ * </ul>
+ *
+ * <h2>分享场景下的文件系统隔离</h2>
+ * 当 alice 使用 bob 分享的 Agent 时：
+ * <ul>
+ *   <li><b>会话隔离</b>：alice 的对话存储在自己的 Session 中（通过 MsgContext.userId）
+ *   <li><b>技能/子 Agent 共享</b>：从 bob（owner）的命名空间读取（通过 resolveFilesystemUserId）
+ *   <li><b>Gateway ID 唯一</b>：始终以 owner 的 ID 注册（"uca-bob-my-agent"），
+ *       确保所有调用者共享同一个 Agent 实例
  * </ul>
  */
 @Service
@@ -68,7 +85,7 @@ public class AgentCatalogService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentCatalogService.class);
 
-    /** Prefix for user-custom agent IDs when registered in the gateway. */
+    /** 用户自定义 Agent 注册到 Gateway 时的 ID 前缀（UCA = User Custom Agent） */
     public static final String UCA_PREFIX = "uca-";
 
     private final BuilderBootstrap builderBootstrap;
@@ -81,17 +98,15 @@ public class AgentCatalogService {
     private final AgentAclService aclService;
 
     /**
-     * In-flight cache of dynamically-registered gateway agent IDs. Key: {@code {userId}/{agentId}},
-     * Value: the gateway agent ID (e.g. {@code uca-{userId}-{agentId}}).
+     * UCA 注册缓存。Key: {@code {userId}/{agentId}}，Value: Gateway 注册 ID（如 "uca-bob-my-agent"）。
+     * 首次使用时懒加载构建，后续复用已注册的实例。
      */
     private final ConcurrentHashMap<String, String> registeredUcaIds = new ConcurrentHashMap<>();
 
     /**
-     * Reverse index: gateway agent id -> owner user id. Populated by {@link #buildAndRegisterUca}
-     * so the gateway's {@code fsUserIdResolver} can map a chat-time {@code (callerUserId,
-     * gatewayAgentId)} pair to the owner whose filesystem namespace holds the shared agent's
-     * skills / subagents / memory. Entries are monotonic because the gateway id encodes the
-     * owner ({@code uca-<ownerId>-<entryId>}); owners do not change after creation.
+     * Gateway ID → Owner ID 反向索引。由 {@link #buildAndRegisterUca} 填充，
+     * 用于对话时解析文件系统用户 ID：共享 Agent 的技能/子 Agent/记忆从 owner 的命名空间读取。
+     * Gateway ID 编码了 owner 信息（"uca-{ownerId}-{agentId}"），owner 在创建后不会改变。
      */
     private final ConcurrentHashMap<String, String> gatewayIdToOwner = new ConcurrentHashMap<>();
 
@@ -119,25 +134,31 @@ public class AgentCatalogService {
     }
 
     /**
-     * Resolves the user id the gateway should attach to a chat turn's {@link
-     * io.agentscope.core.agent.RuntimeContext}, given the caller's user id and the routed gateway
-     * agent id.
+     * 解析文件系统用户 ID：决定对话时从谁的命名空间读取技能、子 Agent 和记忆。
      *
+     * <h2>为什么需要这个方法？</h2>
+     * 当 alice 使用 bob 分享的 Agent 时，Agent 的技能/子 Agent 定义存储在 bob 的
+     * 文件系统命名空间中。Gateway 需要知道从哪个用户的目录加载这些资源。
+     *
+     * <h2>解析规则</h2>
      * <ul>
-     *   <li><strong>Globals</strong> (e.g. {@code default}): returns the caller's user id, so
-     *       each caller has their own per-user overlay on the shared agent definition.
-     *   <li><strong>SCOPE_USER agents</strong> (id begins with {@link #UCA_PREFIX} once
-     *       registered): returns the agent owner's user id. All callers reading a shared agent
-     *       therefore observe the same skills, subagents, and memory under the owner's namespace
-     *       — matching the namespace the controller writes to via
-     *       {@code AgentSkillsController#resolveOwner}.
-     *   <li>Unknown / not-yet-registered ids: falls back to the caller's user id, so the chat
-     *       path is robust against races between session restore and UCA registration.
+     *   <li><b>全局 Agent</b>（如 "default"）：返回调用者 ID，每人有独立的 per-user overlay
+     *   <li><b>SCOPE_USER Agent</b>（ID 以 "uca-" 开头）：返回 owner 的 ID，
+     *       所以所有被分享者都读取 owner 的技能/子 Agent/记忆
+     *   <li>未识别 ID：兜底返回调用者 ID
      * </ul>
      *
-     * <p>Session routing keys are unaffected (the gateway still derives them from {@link
-     * io.agentscope.builder.runtime.gateway.MsgContext#userId()}), so each caller retains an
-     * independent conversation thread on a shared agent.
+     * <p><b>注意</b>：这个方法只影响文件系统读取路径，不影响 Session 隔离。
+     * Session 仍然按调用者的 userId 隔离（通过 MsgContext.userId）。
+     *
+     * <h2>举例</h2>
+     * <pre>
+     *   alice 使用 bob 分享的 Agent（gatewayId = "uca-bob-my-agent"）：
+     *     resolveFilesystemUserId("alice", "uca-bob-my-agent")
+     *     → gatewayIdToOwner.get("uca-bob-my-agent") → "bob"
+     *     → 返回 "bob"（对话时从 bob 的目录加载技能/子 Agent）
+     *     → 但 Session 仍然属于 alice，对话历史隔离
+     * </pre>
      */
     public String resolveFilesystemUserId(String callerUserId, String agentId) {
         if (callerUserId == null || callerUserId.isBlank()) {
@@ -689,16 +710,25 @@ public class AgentCatalogService {
     // -----------------------------------------------------------------
 
     /**
-     * Resolves the gateway agent ID to use when routing a chat message to the given agent.
+     * 将 Catalog 层的逻辑 Agent ID 转换为 Gateway 层的实际注册 ID。
+     *
+     * <h2>为什么需要这个方法？不能直接用 agentId 吗？</h2>
+     * <p>因为 Catalog 层的 agentId 只是逻辑标识，Gateway 注册的实际 ID 可能不同：
      *
      * <ul>
-     *   <li>For global agents: returns the agent id as-is (already in gateway registry).
-     *   <li>For user-custom agents: ensures the agent is built and registered in the gateway
-     *       under the <em>owner</em>'s namespace (so shared-in callers reuse the same instance),
-     *       then returns the namespaced gateway id ({@code uca-{ownerId}-{agentId}}).
+     *   <li><b>全局 Agent</b>：agentId 直接就是 gatewayId（如 "assistant" → "assistant"）
+     *   <li><b>用户自定义 Agent (UCA)</b>：需要加 owner 前缀确保全局唯一
+     *       （如 bob 的 "my-assistant" → "uca-bob-my-assistant"）。
+     *       多个用户可能创建同名 Agent，不加前缀会冲突。
      * </ul>
      *
-     * @throws ResponseStatusException 404 if the agent is not visible to the user
+     * <p>对于 UCA，还会检查调用者是否有权限访问（findVisible），找到 owner，
+     * 并确保 Agent 已在 Gateway 中构建注册（首次使用时懒加载）。
+     *
+     * @param userId 调用者用户 ID
+     * @param agentId Catalog 层的逻辑 Agent ID
+     * @return Gateway 层的实际注册 ID
+     * @throws ResponseStatusException 404 如果用户无权访问该 Agent
      */
     public String resolveGatewayAgentId(String userId, String agentId) {
         if (isGlobal(agentId)) {
@@ -808,6 +838,24 @@ public class AgentCatalogService {
         return store.list(userId).stream().map(e -> e.toDefinition(userId)).toList();
     }
 
+    /**
+     * 动态构建用户自定义 Agent 并注册到 Gateway（首次使用时触发）。
+     *
+     * <h2>构建流程</h2>
+     * <ol>
+     *   <li>生成 Gateway 唯一 ID：{@code uca-{ownerId}-{agentId}}
+     *   <li>解析工作空间路径
+     *   <li>组装 HarnessAgent：名称、描述、系统提示、模型、最大迭代次数
+     *   <li>加载技能仓库（layered skill repositories）
+     *   <li>注入 OutboundTool（IM 渠道主动推送消息能力）
+     *   <li>注入 ToolNotificationHook（实时工具调用 SSE 推流）
+     *   <li>注册到 Gateway 并记录 owner 映射
+     * </ol>
+     *
+     * @param userId Agent 的 owner（不是调用者），确保共享场景下以 owner 身份注册
+     * @param entry 持久化存储的 Agent 定义
+     * @return Gateway 注册 ID（如 "uca-bob-my-assistant"）
+     */
     private String buildAndRegisterUca(String userId, UserAgentDefinitionStore.StoredEntry entry) {
         String gatewayAgentId = UCA_PREFIX + userId + "-" + entry.id();
 

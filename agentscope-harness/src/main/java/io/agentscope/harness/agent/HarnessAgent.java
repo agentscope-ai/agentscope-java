@@ -51,6 +51,8 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -83,6 +85,7 @@ import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
+import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -512,6 +515,22 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             return workspaceManager;
         }
         return workspaceFactory.apply(userId, sessionId);
+    }
+
+    /**
+     * Returns a per-user {@link Session} view with userId baked into its namespace.
+     *
+     * <p>This mirrors {@link #ensureSessionDefaults(RuntimeContext)} — when a
+     * {@code sessionFactory} is present, a WorkspaceSession scoped to {@code userId} is
+     * returned; otherwise falls back to the agent-level {@code defaultSession}.
+     * Callers should use this to read/write session state outside of a call flow.
+     */
+    public Session sessionFor(String userId) {
+        if (sessionFactory != null && userId != null && !userId.isBlank()) {
+            Session perCall = sessionFactory.apply(userId);
+            return perCall != null ? perCall : defaultSession;
+        }
+        return defaultSession;
     }
 
     /**
@@ -1470,6 +1489,13 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
         }
 
         public HarnessAgent build() {
+            // 文件系统四种模式互斥校验：
+            //   模式1: filesystem(SandboxFilesystemSpec)   — 沙箱隔离（如 Docker）
+            //   模式2: filesystem(RemoteFilesystemSpec)    — 本地+远程存储混合
+            //   模式3: filesystem(LocalFilesystemSpec)     — 纯本地目录+本机 shell
+            //   逃生口: abstractFilesystem(AbstractFilesystem) — 用户完全自定义后端
+
+            // 校验1: 三种声明式 spec 只能选一个
             int specCount = 0;
             if (sandboxFilesystemSpec != null) specCount++;
             if (remoteFilesystemSpec != null) specCount++;
@@ -1479,11 +1505,15 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                         "At most one of sandboxFilesystemSpec, remoteFilesystemSpec,"
                                 + " localFilesystemSpec may be configured");
             }
+
+            // 校验2: 逃生口和声明式 spec 互斥
             if (abstractFilesystem != null && specCount > 0) {
                 throw new IllegalStateException(
                         "abstractFilesystem() is an escape hatch and is mutually exclusive with"
                                 + " filesystem(...) specs");
             }
+
+            // 校验3: sandboxDistributed 只能在沙箱模式下使用
             if (sandboxDistributedOptions != null && sandboxFilesystemSpec == null) {
                 throw new IllegalStateException(
                         "sandboxDistributed(...) requires sandbox mode."
@@ -1583,31 +1613,54 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
 
-            // Capture a per-ctx WorkspaceManager factory. Built once at build time so per-request
-            // callers (controllers, etc.) can produce a view bound to an explicit (userId,
-            // sessionId) without depending on the chat path's per-call RuntimeContext.
-            // The returned WorkspaceManager wraps the shared filesystem with a
-            // BakedContextFilesystem
-            // that substitutes the supplied (uid, sid) RC on every call — so even when callers pass
-            // RuntimeContext.empty(), the underlying namespace factories still see the baked
-            // identity. See HarnessAgent.workspaceFor(...) for the public entry point.
+            // ============================================================
+            // workspaceFactoryFn: 按 (userId, sessionId) 创建用户维度的 WorkspaceManager
+            // ============================================================
+            // 作用：外部调用方（Controller、API 层）不需要走完整的 chat 调用链路就能拿到
+            // 一个绑定了特定用户身份的 WorkspaceManager，实现多租户数据隔离。
+            //
+            // 工作原理：
+            //   1. 将 (uid, sid) 烘焙进 RuntimeContext
+            //   2. 用 BakedContextFilesystem 包装共享的 filesystem——后续每次文件操作都
+            //      自动带上这个烘焙的身份，即使调用方传 RuntimeContext.empty() 也不影响
+            //   3. NamespaceFactory 按 uid 生成命名空间列表 [uid]（如 ["alice"]），
+            //      这样文件操作就落在 workspace/alice/ 子目录下
+            //
+            // 入口：HarnessAgent.workspaceFor(userId, sessionId)
+            //
+            // 示例：
+            //   WorkspaceManager aliceWs = agent.workspaceFor("alice", "s1");
+            //   String agentsMd = aliceWs.readAgentsMd(RuntimeContext.empty());
+            //   // ↑ 实际读取的是 workspace/alice/AGENTS.md（如果 fs 有 per-user ns）
             final AbstractFilesystem sharedFilesystemRef = filesystem;
             final Path capturedWorkspace = resolvedWorkspace;
             final WorkspaceIndex capturedIndex = workspaceIndex;
             java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactoryFn =
                     (uid, sid) -> {
+                        // 把 (uid, sid) 固定进 RuntimeContext，让后续文件操作无需再传身份
                         RuntimeContext bakedRc = buildBakedRuntimeContext(uid, sid);
+                        // NamespaceFactory 按 userId 生成命名空间前缀
                         NamespaceFactory ctxNs =
                                 rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        // 包装共享 filesystem：每次调用都用 bakedRc 替换传进来的 RuntimeContext
                         AbstractFilesystem ctxFs =
                                 new BakedContextFilesystem(sharedFilesystemRef, bakedRc);
                         return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
                     };
 
-            // Per-userId Session factory: only produces userId-baked WorkspaceSession views when
-            // the agent's defaultSession is itself a WorkspaceSession. Other (distributed)
-            // session backends are returned unchanged via {@code null} so callers fall back to
-            // defaultSession.
+            // ============================================================
+            // sessionFactoryFn: 按 userId 创建用户维度的 Session
+            // ============================================================
+            // 作用：为每个用户创建独立的 WorkspaceSession，使会话状态按 userId 隔离。
+            //
+            // 条件：只在 defaultSession 是 WorkspaceSession（纯本地模式）时才生效。
+            //       如果用户配置了分布式 Session（如 RedisSession），这里返回 null，
+            //       调用方回退到 defaultSession——分布式 Session 自己管理隔离。
+            //
+            // 示例：
+            //   Session aliceSession = sessionFactory.apply("alice");
+            //   // aliceSession 数据落在 workspace/agents/<agentId>/sessions/ 下
+            //   // 且 NamespaceFactory 固定返回 ["alice"]，与 bob 的数据隔离
             final Session capturedDefaultSession = effectiveSession;
             final String capturedAgentId = resolvedAgentId;
             java.util.function.Function<String, Session> sessionFactoryFn =
@@ -1621,19 +1674,49 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
             Memory memory = new InMemoryMemory();
 
-            // ---- Hooks ----
+            // ---- Hooks 装配：在 ReAct 循环的关键时机注入能力 ----
+            //
+            // Hook 按 priority 排序后注入 ReActAgent，在每个推理→行动→结果的周期中拦截：
+            //   1. PreReasoning（推理前） — 注入上下文、压缩历史、恢复状态
+            //   2. PostReasoning（推理后）
+            //   3. PreActing（工具执行前）— 重写工具参数
+            //   4. PostActing（工具执行后）— 卸载大结果
+            //   5. PostCall（调用结束后）— 刷新记忆、持久化状态
             List<Hook> allHooks = new ArrayList<>(hooks);
 
-            // Sandbox lifecycle hook runs first (priority=50) — acquire/release sandbox session
+            // SandboxLifecycleHook: 沙箱生命周期管理（priority=50，最先执行）
+            //   场景：沙箱模式下，每次调用需要获取/释放沙箱 session
+            //   效果：call() 开始时自动获取沙箱 session，结束时自动释放
             if (sandboxLifecycleHook != null) {
                 allHooks.add(sandboxLifecycleHook);
             }
 
+            // AgentTraceHook: 追踪日志（priority=100）
+            //   场景：开发调试 / 生产监控
+            //   效果：INFO 级别记录每次推理和工具调用，DEBUG 级别记录完整参数和结果
             if (agentTracingLogEnabled) {
                 allHooks.add(new AgentTraceHook());
             }
 
+            // ============================================================
+            // WorkspaceContextHook: 工作区上下文注入（PreCall 阶段，priority 900）
+            // ============================================================
+            //   场景：agent 每次 call() 前需要知道自己是谁、记住什么、懂什么
+            //   效果：在 PreCallEvent 时拼装完整系统提示词，追加到用户原始 sysPrompt 之后：
+            //     - Session Context     → 日期/OS/工作区路径/Session ID
+            //     - 行为指引            → 如何使用 knowledge/、memory_search、
+            //                            MEMORY.md 何时更新
+            //     - AGENTS.md           → agent 人格与行为约定
+            //     - MEMORY.md           → 跨会话长期记忆（用户偏好、关键事实），
+            //                            token 超限时优先截断此部分
+            //     - KNOWLEDGE.md        → 领域知识概要 + knowledge/ 文件列表目录
+            //     - 额外上下文文件       → setAdditionalContextFiles 指定的文件
+            //   注意：日流水账（memory/YYYY-MM-DD.md）不在此注入，
+            //         它仅由 MemoryConsolidator 读取用于合并
+            //   示例：用户在 3 天前提过"我叫天宇"，MEMORY.md 通过 consolidateMemory
+            //         记录了这个事实，agent 今天推理时仍能叫出用户名字
             if (!disableWorkspaceContext) {
+                // priority 900 PreCallEvent
                 WorkspaceContextHook markdownHook =
                         new WorkspaceContextHook(
                                 wsManager,
@@ -1644,31 +1727,116 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 allHooks.add(markdownHook);
             }
 
+            // ============================================================
+            // MemoryFlushHook: daily.md记忆追加新的memory entry（PostCall 阶段）
+            // ============================================================
+            //   场景：对话中出现了值得长期记住的事实（用户姓名、偏好、计划等），
+            //         需要从对话历史中提炼并落到 memory/YYYY-MM-DD.md
+            //   效果：每次 call() 结束后，用 LLM 扫描对话历史，提取关键事实，
+            //         追加到当日记忆文件（日流水账）。这样即使上下文被压缩或
+            //         进程重启，重要信息也不会丢失
+            //   示例：用户说"我喜欢喝冰美式"，flush 后将此偏好写入 memory/2026-06-06.md，
+            //         下周 agent 仍能通过读取 memory 文件回忆起这个偏好
             MemoryFlushHook memoryFlushHook = null;
             if (model != null && !disableMemoryHooks) {
+                // priority 5 PostCallEvent
                 memoryFlushHook = new MemoryFlushHook(wsManager, model);
                 allHooks.add(memoryFlushHook);
             }
 
+            // ============================================================
+            // MemoryMaintenanceHook: memory.md记忆后台维护（PostCall 阶段顺带归档daily.md和清理*.log.jsonl，priority
+            // 6）
+            // ============================================================
+            // 节流控制：默认每 30 分钟最多执行一次，非每次调用都触发
+            // runMaintenance 内含 3 个动作（按顺序）：
+            //
+            // ① expireDailyFiles  — 清理过期的日流水账文件
+            //    场景：memory/ 下 YYYY-MM-DD.md 越积越多
+            //    效果：将 dailyFileRetentionDays（默认 90 天）之前的日流水账
+            //          移动到 memory/archive/ 归档
+            //    示例：今天是 2026-06-06，2026-03-01.md → memory/archive/2026-03-01.md
+            //
+            // ② consolidateMemory  — LLM 合并去重到 MEMORY.md
+            //    场景：日流水账碎片化，同一事实散落在多天文件中
+            //    效果：MemoryConsolidator 读取 watermark 之后的新日流水账 +
+            //          当前 MEMORY.md，交给 LLM 去重/合并/归类后覆盖写入 MEMORY.md
+            //    示例：3 天日流水账都记录了"用户叫天宇"，合并后 MEMORY.md 仅保留一条：
+            //          "- 用户姓名：天宇"
+            //
+            // ③ pruneOldSessions  — 清理过期的 *.log.jsonl 会话日志
+            //    场景：agents/ 下 .log.jsonl 完整对话日志越积越多
+            //    效果：将 sessionRetentionDays（默认 180 天）之前修改的
+            //          .log.jsonl 文件删除（.jsonl 上下文文件不受影响）
+            //    示例：agents/*/sessions/2025-09-01.log.jsonl → 删除
             if (model != null && !disableMemoryHooks) {
+                // priority 6 PostCallEvent
                 MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
                 allHooks.add(new MemoryMaintenanceHook(wsManager, consolidator));
             }
 
+            // ============================================================
+            // CompactionHook: 对话压缩（PreReasoning 阶段）
+            // ============================================================
+            //   场景：长对话中消息数达到阈值（如 30 条），模型上下文窗口快装不下了
+            //   效果：用 LLM 对当前会话的历史消息做摘要压缩，保留最近 N 条（如 10 条）原始消息，其余替换为摘要文本。
+            //         flushBeforeCompact=true → 压缩前先提取事实到日流水账，确保重要信息不因压缩而丢失
+            //         offloadBeforeCompact=true → 压缩前先把原始消息归档到 JSONL session
+            // tree，例如:agents/<agentId>/sessions/<sessionId>.jsonl
+            //         完整历史仍可通过 SessionSearchTool 检索
+            //   示例：30 轮对话 → 触发压缩 → 前 20 轮被摘要为一段文字，
+            //         最近 10 轮保持原文，上下文从 30 条降到 ~11 条
             CompactionHook compactionHook = null;
             if (compactionConfig != null && model != null) {
+                // priority 10 PreReasoningEvent
                 compactionHook = new CompactionHook(wsManager, model, compactionConfig);
                 allHooks.add(compactionHook);
             }
 
+            // ============================================================
+            // ToolResultEvictionHook: 大工具结果卸载（PostActing 阶段）
+            // ============================================================
+            //   场景：工具返回了超大结果（如 cat 了一个 2MB 的日志文件），
+            //         直接塞回上下文会撑爆模型
+            //   效果：超出阈值的工具结果被写入文件系统，上下文里只留占位符 +
+            //         预览（前 N 行），agent 可调用 read_file 按需回读完整内容
+            //   示例：agent 执行 shell_execute("cat /var/log/app.log") 返回 500KB，
+            //         eviction 将其存入 workspace 文件，上下文中替换为：
+            //         "Result written to /tmp/result-abc123.txt (500KB). Preview: [前 2KB]..."
             if (toolResultEvictionConfig != null) {
                 allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
             }
 
+            // ============================================================
+            // SessionPersistenceHook: 会话持久化（PostCall 阶段）
+            // ============================================================
+            //   场景：进程重启后 agent 需要记得之前聊到哪了
+            //   效果：每次 call() 结束后，将 agent 的状态（对话历史、工具调用等）
+            //         写入 Session（JSONL 文件或远端存储），下次相同 sessionId 的
+            //         调用自动从断点恢复
+            //   示例：用户昨天和 agent 聊到第 15 轮，今天用相同 sessionId 发起新对话，
+            //         agent 自动加载昨天的 15 轮历史，无缝继续
             if (!disableSessionPersistence) {
                 allHooks.add(new SessionPersistenceHook());
             }
 
+            // ============================================================
+            // SubagentsHook / DynamicSubagentsHook: 子 agent 编排
+            // ============================================================
+            //   场景：复杂任务需要分解——主 agent 调用子 agent 处理独立子任务
+            //   效果：注入 task / task_output 工具，主 agent 可同步或后台委派子 agent。
+            //         DynamicSubagentsHook 从远端 filesystem 动态发现子 agent 规格文件，
+            //         SubagentsHook 只在 build 时一次性扫描 workspace 下的 subagents/*.md
+            //
+            //   跳过条件：
+            //     - leafSubagent=true：当前就是子 agent，不再注册子 agent 能力（防止无限递归）
+            //     - disableSubagents=true：显式禁用
+            //
+            //   示例：
+            //     用户："帮我在 GitHub 上搜 Python 爬虫项目，并分析质量"
+            //     主 agent → task("github-search", "搜索 Python 爬虫 TOP 5")
+            //            → task("code-reviewer", "分析这 5 个项目的代码质量")
+            //            → 汇总各子 agent 结果返回给用户
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsHook dynamicSubagentsHook =
@@ -1686,24 +1854,40 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 }
             }
 
-            // ---- Toolkit ----
+            // ---- Toolkit 注册：给 agent 装配内置工具 ----
             Toolkit agentToolkit = toolkit;
 
+            // MemorySearchTool / MemoryGetTool / SessionSearchTool: 记忆与会话检索
+            //   场景：agent 需要查阅历史记忆或过往会话
+            //   效果：agent 通过 tool call 搜索 workspace 中的记忆文件和会话记录
+            //   示例：用户问"我之前说过的那个项目叫什么？"
+            //         agent 调用 memory_search("项目") → 找到 MEMORY.md 中的记录
             if (!disableMemoryTools) {
                 agentToolkit.registerTool(new MemorySearchTool(wsManager));
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
                 agentToolkit.registerTool(new SessionSearchTool(wsManager));
             }
 
+            // FilesystemTool: 文件系统操作（read_file, write_file, edit_file, grep, glob, ls）
+            //   场景：agent 需要读写 workspace 中的文件
+            //   效果：注册 6 个文件操作工具，所有操作走 AbstractFilesystem（本地/远程/沙箱透明）
             if (!disableFilesystemTools) {
                 agentToolkit.registerTool(new FilesystemTool(filesystem));
             }
 
+            // ShellExecuteTool: shell 命令执行（仅沙箱或本地+shell 模式）
+            //   场景：agent 需要执行 shell 命令（安装依赖、运行脚本、编译代码等）
+            //   条件：filesystem 实现了 AbstractSandboxFilesystem
+            //        （SandboxFilesystemSpec 或 LocalFilesystemWithShell）
+            //         RemoteFilesystemSpec 模式没有 shell，因为远端存储无法执行命令
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
-            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
+            // ---- tools.json: MCP 服务器注册 + allow/deny 过滤 ----
+            //   场景：用户通过 workspace/tools.json 声明式配置 MCP 工具服务器和工具白名单/黑名单
+            //   效果：先注册 MCP 工具 -> 注册静态 skill 工具 -> 最后 apply allow/deny 过滤
+            //   优先级：toolsConfigOverride（编程式）> workspace/tools.json（声明式）
             ToolsConfig resolvedToolsConfig = null;
             if (!disableToolsConfig) {
                 if (toolsConfigOverride != null) {
@@ -1716,20 +1900,18 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
             }
 
-            // ---- Skills ----
-            // Compose an ordered repository list (low → high priority):
-            //   1. Project-global directory (~/.agentscope/skills/-equivalent)
-            //   2. Marketplace repos (skillRepository(...) calls, in registration order)
-            //   3. Workspace agent-shared directory (workspace/skills/)
-            //   4. Per-user namespaced filesystem (<userId>/skills/)
-            // Later entries override earlier ones on name collision. When the merged list is
-            // non-empty AND dynamic skills are enabled → DynamicSkillHook owns SkillBox lifecycle.
-            // When dynamic is disabled (legacy / static) → build the merged set once into a static
-            // SkillBox and let ReActAgent's legacy SkillHook render it.
-            // Skill repositories live alongside the agent and load on every reasoning step
-            // through DynamicSkillHook. The Layer-4 (per-user namespaced) repository needs the
-            // current call's RC, but composeSkillRepositories runs before HarnessAgent exists;
-            // we wire it via a self-reference that is populated at the end of build().
+            // ---- Skills: 四层技能仓库合成 ----
+            //   优先级（低→高，后者覆盖前者同名 skill）：
+            //     1. 全局目录    (~/.agentscope/skills/)
+            //     2. Marketplace 仓库
+            //     3. 工作区共享   (workspace/skills/)
+            //     4. 用户命名空间 (<userId>/skills/)
+            //
+            //   动态模式（默认）：DynamicSkillHook 每次推理时动态加载，支持运行时新增/修改 skill
+            //   静态模式（disableDynamicSkills=true）：build 时一次性合并为 SkillBox，后续不变
+            //
+            //   示例：workspace/skills/ 有个 code-review SKILL.md，
+            //         alice 也有私有的 code-review → alice 的版本覆盖 workspace 共享版
             final AtomicReference<HarnessAgent> selfRef = new AtomicReference<>();
             Supplier<RuntimeContext> currentRcSupplier =
                     () -> {
@@ -1749,12 +1931,12 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 }
             }
 
-            // ---- Apply tools.json allow/deny filter (after MCP + static skill registration) ----
+            // ---- 应用 tools.json 的 allow/deny 过滤器（MCP + 静态 skill 注册之后） ----
             if (resolvedToolsConfig != null) {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }
 
-            // ---- Build ReActAgent ----
+            // ---- 构建 ReActAgent delegate ----
             ReActAgent.Builder reactBuilder =
                     ReActAgent.builder()
                             .name(name)
@@ -1885,27 +2067,54 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
         }
 
         // -----------------------------------------------------------------
-        //  Backend
+        //  Backend — 文件系统后端选择
+        //
+        //  按优先级决定 Agent 的 AbstractFilesystem 实现：
+        //    1. abstractFilesystem       — 用户显式传入的，最高优先级
+        //    2. remoteFilesystemSpec      — RemoteFilesystem (OverlayFilesystem 混合，
+        //                                   模板在本地，用户修改写远程存储)
+        //    3. localFilesystemSpec       — LocalFilesystem (纯本地，无 shell)
+        //    4. 默认                       — LocalFilesystemWithShell (本地 + shell 执行)
+        //
+        //  Agent 层的对话/推理逻辑不关心文件存在哪里，全部通过 AbstractFilesystem
+        //  抽象操作。Backend 层负责"文件操作真正落在哪"。
         // -----------------------------------------------------------------
 
+        /**
+         * 按优先级解析文件系统后端实现。
+         *
+         * <p>优先级从高到低：
+         * <ol>
+         *   <li>{@link #abstractFilesystem} — 用户通过 {@code .filesystem()} 显式传入的实例
+         *   <li>{@link #remoteFilesystemSpec} — 远程存储模式，构建 {@link CompositeFilesystem}
+         *       （模板存本地只读 + 用户修改写 {@link BaseStore}，通过 {@link OverlayFilesystem} 分层）
+         *   <li>{@link #localFilesystemSpec} — 纯本地文件系统（无 shell），适合关掉 shell 的场景
+         *   <li>默认 — {@link LocalFilesystemWithShell}，本地磁盘 + shell 执行，
+         *       开箱即用，无需任何额外配置
+         * </ol>
+         */
         private AbstractFilesystem resolveFilesystem(
                 Path workspace,
                 String agentId,
                 WorkspaceIndex workspaceIndex,
                 NamespaceFactory nsFactory) {
+            // 1. 用户显式传入的 filesystem 实例，直接使用
             if (abstractFilesystem != null) {
                 return abstractFilesystem;
             }
+            // 2. 远程存储模式：模板文件在本地 workspace 作只读基线，
+            //    用户个性化修改写入远程 BaseStore，不同用户/会话通过 namespace 隔离
             if (remoteFilesystemSpec != null) {
                 if (workspaceIndex != null) {
                     remoteFilesystemSpec.workspaceIndex(workspaceIndex);
                 }
                 return remoteFilesystemSpec.toFilesystem(workspace, agentId, nsFactory);
             }
+            // 3. 纯本地文件系统，不暴露 shell 执行能力
             if (localFilesystemSpec != null) {
                 return localFilesystemSpec.toFilesystem(workspace, nsFactory);
             }
-            // Default to Mode 3 with out-of-the-box LocalFilesystemWithShell settings.
+            // 4. 默认：本地磁盘 + shell，最简部署场景，开箱即用
             return new LocalFilesystemWithShell(workspace, nsFactory);
         }
 

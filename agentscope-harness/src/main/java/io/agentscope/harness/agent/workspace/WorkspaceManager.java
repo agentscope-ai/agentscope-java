@@ -190,10 +190,17 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
-     * Validates the workspace exists and key files are present. Logs warnings for anything
-     * missing. Called once at HarnessAgent build time.
+     * 工作区校验：HarnessAgent build() 时调用一次，检查 workspace 和 AGENTS.md 是否存在。
+     *
+     * <p>校验逻辑：
+     * <ol>
+     *   <li>先检查本地磁盘上 workspace 目录是否存在
+     *   <li>再检查 AGENTS.md 是否存在：先查本地磁盘，若没有则通过 filesystem 查远端（RemoteFilesystemSpec 模式下文件在远端存储）
+     *   <li>不存在只打 warn 日志，不阻塞启动——agent 仍可运行但缺少人格定义
+     * </ol>
      */
     public void validate() {
+        // 1. workspace 目录必须存在
         if (!Files.isDirectory(workspace)) {
             log.warn(
                     "Workspace directory does not exist: {}. "
@@ -201,9 +208,11 @@ public class WorkspaceManager implements AutoCloseable {
                     workspace.toAbsolutePath());
             return;
         }
+        // 2. 双层检查 AGENTS.md：先查本地磁盘(Files.isRegularFile)，再用 filesystem 查远端
         boolean agentsMdExists = Files.isRegularFile(workspace.resolve(AGENTS_MD));
         if (!agentsMdExists && filesystem != null) {
             try {
+                // RemoteFilesystemSpec 模式下 AGENTS.md 可能在远端 BaseStore 中
                 agentsMdExists = filesystem.exists(RuntimeContext.empty(), AGENTS_MD);
             } catch (Exception e) {
                 log.debug(
@@ -211,6 +220,7 @@ public class WorkspaceManager implements AutoCloseable {
                         e.getMessage());
             }
         }
+        // 3. 没有 AGENTS.md 只打 warn，不抛异常——agent 仍可运行
         if (!agentsMdExists) {
             log.warn(
                     "AGENTS.md not found in workspace: {}. "
@@ -224,11 +234,18 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
-     * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
-     * Use for paths that contain per-user data (sessions, tasks, memory).
+     * 根据 RuntimeContext 中的 userId/sessionId 解析带命名空间前缀的路径。
      *
-     * <p>The runtime context is forwarded to the {@link NamespaceFactory} so per-call
-     * identity (user/session) drives the namespace, not a shared mutable reference.
+     * <p>多租户隔离的核心：通过 NamespaceFactory 把不同用户的数据写入不同子目录。
+     *
+     * <pre>{@code
+     * // userId="alice" 时:
+     * resolveRuntimeDataPath(rc, "memory/")  → workspace/alice/memory/
+     * // userId="bob" 时:
+     * resolveRuntimeDataPath(rc, "memory/")  → workspace/bob/memory/
+     * // 无 namespaceFactory 时:
+     * resolveRuntimeDataPath(rc, "memory/")  → workspace/memory/
+     * }</pre>
      */
     public Path resolveRuntimeDataPath(RuntimeContext rc, String relativePath) {
         if (namespaceFactory == null) {
@@ -354,13 +371,16 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
-     * Appends UTF-8 text to a workspace-relative file, creating parent directories when needed.
-     * All writes go through the {@link AbstractFilesystem}.
+     * 追加写入 UTF-8 内容到 workspace 相对路径文件。
      *
-     * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
-     * read→merge→write cycle is atomic within this process. For cross-process / multi-node
-     * deployments the {@link AbstractFilesystem} backend must additionally provide server-side
-     * concurrency control.
+     * <p>所有写操作走 AbstractFilesystem（RemoteFilesystemSpec 模式下写入远端 BaseStore）。
+     * 写入前先读取已有内容，拼接后再覆盖写入——实现 append 语义。
+     * 使用 per-path ReentrantLock 保证同一进程内 read→merge→write 的原子性。
+     *
+     * <pre>{@code
+     * // 追加一行日志到今日记忆文件
+     * workspaceManager.appendUtf8WorkspaceRelative(rc, "memory/2026-06-06.md", "- 用户提到喜欢喝咖啡\n");
+     * }</pre>
      */
     public void appendUtf8WorkspaceRelative(
             RuntimeContext rc, String relativePath, String content) {
@@ -732,17 +752,26 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
-    // ==================== Two-layer read/write helpers ====================
+    // ==================== 双层读取：filesystem 优先，本地磁盘兜底 ====================
 
     /**
-     * Two-layer read: filesystem first (namespaced by {@link
-     * NamespaceFactory}), local disk fallback.
+     * 双层读取模式：先通过 AbstractFilesystem 读取（支持用户/session 命名空间隔离），
+     * 若 filesystem 返回空则回退到本地磁盘直接读取。
+     *
+     * <p>这样设计的原因：
+     * <ul>
+     *   <li>RemoteFilesystemSpec 模式下，用户编辑过的文件在远端 BaseStore 中，需要优先读远端版本
+     *   <li>模板文件（如 workspace/skills/ 下的默认技能）在本地磁盘上作为基线
+     *   <li>纯本地模式下 filesystem 为 null，直接走磁盘兜底
+     * </ul>
      */
     private String readWithOverride(RuntimeContext rc, String relativePath) {
+        // 1. 优先走 filesystem（RemoteFilesystemSpec 会读远端，LocalFilesystemSpec 读本地命名空间）
         String fsContent = readTextThroughFilesystem(rc, relativePath);
         if (!fsContent.isEmpty()) {
             return fsContent;
         }
+        // 2. filesystem 没读到内容，回退到本地磁盘（模板基线）
         return readFileQuietly(workspace.resolve(relativePath));
     }
 

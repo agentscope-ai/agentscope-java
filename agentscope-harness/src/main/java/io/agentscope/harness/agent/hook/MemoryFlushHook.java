@@ -88,6 +88,10 @@ public class MemoryFlushHook implements Hook, RuntimeContextAware {
         MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
+        // 总结:
+        // 把memeory.md(跨会话长期记忆内容)+ /memory/yyyy-MM-dd.md 当前文件内容 + 当前会话messages
+        //  -》 告知LLM 通过system promt让LLM抽取新的memory 追加到 /memory/yyyy-MM-dd.md( 内容块:## Memory Flush —
+        // extracted...)
         Mono<Void> flushMono =
                 flushManager
                         .flushMemories(rc, messages)

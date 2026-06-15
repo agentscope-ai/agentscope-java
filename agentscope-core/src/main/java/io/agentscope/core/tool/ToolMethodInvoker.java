@@ -157,11 +157,13 @@ class ToolMethodInvoker {
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
 
-            // Special handling: inject ToolEmitter automatically
+            // 自动注入 ToolEmitter（无需 @ToolParam 注解）：
+            // 该 emitter 由 ToolExecutor 创建，内含 chunkCallback，
+            // 工具方法调用 emitter.onResult(chunk) 即可推送中间进度。
             if (param.getType() == ToolEmitter.class) {
                 args[i] = emitter;
             }
-            // Special handling: inject Agent automatically
+            // 自动注入当前 Agent 实例
             else if (param.getType() == Agent.class) {
                 args[i] = agent;
             }

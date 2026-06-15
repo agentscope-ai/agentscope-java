@@ -93,7 +93,8 @@ public class MemoryFlushManager {
     }
 
     /**
-     * Extracts long-term memories from messages using the model and writes them to disk.
+     * Extracts long-term memories(追加 ## Memory Flush — extracted...到/memory/yyy-MM-dd.md中)
+     * from messages(这里是会话消息)  using the model and writes them to disk.
      *
      * <p>Provides existing MEMORY.md and today's daily file content to the extraction LLM
      * so it can effectively deduplicate and avoid re-extracting known facts.
@@ -103,10 +104,11 @@ public class MemoryFlushManager {
         if (conversationText.isBlank()) {
             return Mono.empty();
         }
-
+        // 当前时刻的memory.md文档内容
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        // 旧的memory/yyyy-MM-dd.md 文档内容
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
@@ -117,11 +119,13 @@ public class MemoryFlushManager {
                     .append("\n\n");
         }
         if (!existingDaily.isBlank()) {
+            // 告诉LLM到目前为止的 memory/yyyy-MM-dd.md 内容
             userPrompt
                     .append("Today's daily ledger so far (your output will be appended after):\n")
                     .append(existingDaily)
                     .append("\n\n");
         }
+        // 告诉LLM 从当前会话窗口中 抽取新的memories
         userPrompt
                 .append(
                         "Extract NEW memories from this conversation window (skip anything"
@@ -140,6 +144,20 @@ public class MemoryFlushManager {
                         .content(TextBlock.builder().text(userPrompt.toString()).build())
                         .build());
 
+        // model.stream() 返回 Flux<ChatResponse>，即流式输出的逐块响应
+        // 每个 ChatResponse 包含一小段增量文本（流式 chunk）
+        // reduce 的作用：将流式 chunks 拼接成一个完整的字符串
+        //
+        // reduce 签名：
+        //   reduce(initial, BiFunction<T, U, U> accumulator)
+        //     - 参数1: 初始值（空 StringBuilder）
+        //     - 参数2: (累加器, 当前元素) → 累加器
+        //     - 返回值: Mono<U>，只在流完成后发射一次，包含最终累加结果
+        //
+        // 这里不用 map+collectList 的原因：
+        //   - reduce 流式消费，边收 chunk 边 append，内存保留一个 StringBuilder
+        //   - collectList 需要先把所有 chunk 缓存到一个 List，再 join，多一次 List 分配
+        //   - reduce 语义更直接：把多个值折叠成单个值
         return model.stream(flushInput, null, null)
                 .reduce(
                         new StringBuilder(),
@@ -157,6 +175,8 @@ public class MemoryFlushManager {
                             }
                             return sb;
                         })
+                // reduce 返回 Mono<StringBuilder>，flatMap 拿到的是完整拼接后的文本
+                // 追加 ## Memory Flush — extracted...到/memory/yyy-MM-dd.md中
                 .flatMap(
                         sb -> {
                             String extracted = sb.toString();
@@ -190,6 +210,62 @@ public class MemoryFlushManager {
 
     /**
      * Offloads raw messages to the JSONL session tree.
+     * 对话归档：将传入的消息列表持久化到 JSONL session tree，并更新空间索引。
+     *
+     * <p>调用时机（两处，各自传不同的消息列表）：
+     *
+     * <p><b>1. CompactionHook（PreReasoningEvent 阶段，priority=10）</b>
+     * <pre>{@code
+     * // ConversationCompactor.compactIfNeeded():
+     * List<Msg> prefix = filterSummaryMessages(messages.subList(0, cutoff));
+     * List<Msg> tail = messages.subList(cutoff, messages.size());
+     * // 注意：此处传入的是全部 messages（prefix + tail），不是只传 prefix
+     * flushManager.offloadMessages(rc, messages, agentId, sessionId);
+     * // 然后替换 Memory: [summaryMsg] + tail
+     * }</pre>
+     *
+     * <p><b>2. MemoryFlushHook（PostCallEvent 阶段，priority=5）</b>
+     * <pre>{@code
+     * // MemoryFlushHook.doFlush():
+     * List<Msg> messages = memory.getMessages(); // Memory 中当前的全部消息
+     * flushManager.offloadMessages(rc, messages, agentId, sessionId);
+     * }</pre>
+     *
+     * <p>消息流示意（触发压缩的场景）：
+     * <pre>{@code
+     * 时间线: PreReasoning → LLM推理 → 产生新消息 → PostCall
+     *
+     * Memory 快照（PreReasoning）: [msg1, msg2, msg3, msg4, msg5, msg6, msg7, msg8]
+     *                                        ↑── prefix ──↑  ↑─ tail ─↑
+     * CompactionHook.offloadMessages(messages) ← 传入全部 8 条，写入 JSONL
+     * 压缩后 Memory → [summary, msg6, msg7, msg8]
+     *
+     * ... LLM 推理 ...
+     * Memory 新增本轮消息: [summary, msg6, msg7, msg8, newUser, newAssistant]
+     *
+     * MemoryFlushHook.offloadMessages(memory.getMessages()) ← 传入全部 6 条
+     *   ↓ 写入 JSONL（msg6~msg8 和 summary 也会再次记入，SessionTree 是
+     *     追加式日志，不同时间点的快照各自独立记录）
+     * }</pre>
+     *
+     * <p>不触发压缩的场景：
+     * <pre>{@code
+     * MemoryFlushHook.offloadMessages(memory.getMessages()) ← 传入 Memory 中全部消息
+     * CompactionHook 返回 Optional.empty()，不调用 offloadMessages
+     * }</pre>
+     *
+     * <p>两步操作：
+     * <ol>
+     *   <li>{@code offloadToSessionTree} — 每条消息渲染为文本后追加到
+     *       {@code agents/<agentId>/sessions/<sessionId>.jsonl}
+     *   <li>{@code updateSessionIndex} — 同步更新 SQLite/远程索引，标记该
+     *       session 有新的归档内容，方便 SessionSearchTool 检索
+     * </ol>
+     *
+     * @param rc        运行时上下文（用户/session 标识）
+     * @param messages  要归档的消息列表（由调用方决定范围）
+     * @param agentId   agent 标识
+     * @param sessionId session 标识
      */
     public void offloadMessages(
             RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
@@ -203,10 +279,50 @@ public class MemoryFlushManager {
         workspaceManager.updateSessionIndex(rc, agentId, sessionId, "conversation offloaded");
     }
 
+    /**
+     * 将消息列表逐条追加到 SessionTree 的 JSONL 文件中。
+     *
+     * <p>消息流示例（Memory 中的消息 → 过滤 → 写入 JSONL）：
+     * <pre>{@code
+     * Memory 中当前消息:
+     *   [0] SYSTEM   "You are a helpful assistant..."
+     *   [1] USER     "帮我写一个 Python 爬虫"
+     *   [2] ASSISTANT  ToolUseBlock: read_file("requirements.txt")
+     *   [3] TOOL     ToolResultBlock: "requests>=2.28\nbeautifulsoup4>=4.11"
+     *   [4] ASSISTANT  TextBlock: "好的，我来写一个爬虫..."
+     *   [5] USER     "再加个异步支持"
+     *
+     * 过滤规则：
+     *   (1) role==null 的无效消息 ✓ 跳过
+     *   (2) 包含 "<session_context>" 字符串的 USER 消息 ✓ 跳过
+     *       — 预留的防御性检查，当前没有任何代码注入带此标签的消息，属于 no-op
+     *   (3) 渲染后纯文本为空 ✓ 跳过
+     *
+     * 最终写入 JSONL:
+     *   [1] USER       "帮我写一个 Python 爬虫"
+     *   [2] ASSISTANT  "ToolUseBlock: read_file requirements.txt"
+     *   [3] TOOL       "ToolResultBlock: requests>=2.28..."
+     *   [4] ASSISTANT  "好的，我来写一个爬虫..."
+     *   [5] USER       "再加个异步支持"
+     * }</pre>
+     *
+     * <p>注意：压缩摘要消息的过滤不在本方法内，而是由上游调用方处理：
+     * <pre>{@code
+     * // ConversationCompactor.compactIfNeeded() 中:
+     * List<Msg> prefix = filterSummaryMessages(prefix);  // 先把 __compaction_summary__ 过滤掉
+     * flushManager.offloadMessages(rc, prefix, agentId, sessionId);  // 再传给本方法
+     *
+     * // filterSummaryMessages 的实现:
+     * messages.stream()
+     *     .filter(m -> !"__compaction_summary__".equals(m.getName()))
+     *     .collect(Collectors.toList());
+     * }</pre>
+     */
     private void offloadToSessionTree(
             RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
         try {
             Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
+            // agents/<agentId>/sessions/<sessionId>.jsonl
             String contextRelPath =
                     WorkspaceConstants.AGENTS_DIR
                             + "/"
@@ -231,6 +347,7 @@ public class MemoryFlushManager {
 
             String lastId = null;
             for (Msg msg : messages) {
+                // 过滤：(1) role 为空 (2) <session_context> 标记（防御性检查，当前为 no-op）
                 if (msg.getRole() == null || isSessionContextMessage(msg)) {
                     continue;
                 }
@@ -301,11 +418,16 @@ public class MemoryFlushManager {
     private static final String SESSION_CONTEXT_TAG = "<session_context>";
 
     /**
-     * Serializes all messages into a textual representation for the memory extraction model.
-     * Includes USER, ASSISTANT, and TOOL messages. Assistant tool-call blocks and tool-result
-     * blocks are rendered as concise text so the model can extract memories from tool interactions.
-     * The injected {@code <session_context>} user message is skipped as it contains only
-     * environment metadata, not real conversation content.
+     * 将消息列表序列化为纯文本，供记忆提取模型使用。
+     *
+     * <p>包含 USER、ASSISTANT、TOOL 消息。工具调用/结果块渲染为简洁文本。
+     *
+     * <p>过滤规则：
+     * <ul>
+     *   <li>SYSTEM 消息 — 跳过（系统提示词不是对话内容）
+     *   <li>包含 {@code <session_context>} 字符串的 USER 消息 — 跳过（预留的防御性检查，
+     *       当前代码中无任何地方注入此标签，实际为 no-op）
+     * </ul>
      */
     private String serializeMessages(List<Msg> messages) {
         return messages.stream()
@@ -316,6 +438,14 @@ public class MemoryFlushManager {
                 .collect(Collectors.joining("\n"));
     }
 
+    /**
+     * 检查是否为包含 {@code <session_context>} 标记的 USER 消息。
+     *
+     * <p>预留的防御性检查：当前代码中没有任何地方向消息里注入此标签，
+     * WorkspaceContextHook 通过 {@code appendSystemContent()} 把 Session Context 注入
+     * SYSTEM 消息，格式为 Markdown 标题 {@code ## Session Context}，不含 XML 标签。
+     * 因此此方法在当前代码路径中始终返回 false（no-op）。
+     */
     private static boolean isSessionContextMessage(Msg msg) {
         if (msg.getRole() != MsgRole.USER) {
             return false;

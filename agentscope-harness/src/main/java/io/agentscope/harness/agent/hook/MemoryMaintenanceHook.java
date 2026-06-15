@@ -102,18 +102,35 @@ public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
+
         if (!(event instanceof PostCallEvent)) {
             return Mono.just(event);
         }
+        // Instant 是 JDK 8+ 的时间戳类，表示 UTC 时间线上的一个纳秒精度时刻。
+        // Instant.now() 获取当前 UTC 时刻，类似于 System.currentTimeMillis() 但精度更高。
         Instant now = Instant.now();
+
+        // 读取上次维护执行的时间（初始值为 Instant.EPOCH = 1970-01-01T00:00:00Z）
         Instant last = lastRunAt.get();
+
+        // 节流检查：距离上次执行不足 minGap（默认 30 分钟）则跳过
+        // Duration.between(a, b) 返回两个时刻之间的时间差，compareTo 比较大小
         if (Duration.between(last, now).compareTo(minGap) < 0) {
             return Mono.just(event);
         }
+
+        // CAS（Compare-And-Set）原子操作：仅当 lastRunAt 当前值仍为 last 时，才更新为 now。
+        // 这是无锁并发控制——如果另一个线程先一步更新了 lastRunAt，CAS 失败返回 false，
+        // 当前线程直接跳过，保证同时只有一个线程执行维护任务。
         if (!lastRunAt.compareAndSet(last, now)) {
             return Mono.just(event);
         }
+
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+
+        // Mono.fromRunnable 将同步的维护逻辑包装为 Mono，使其融入响应式链。
+        // .onErrorResume 捕获 runMaintenance 中的所有异常，仅打日志不中断事件链。
+        // .thenReturn(event) 无论维护成功或失败，最终都将原事件透传给下一个 Hook。
         return Mono.fromRunnable(() -> runMaintenance(rc))
                 .onErrorResume(
                         e -> {
@@ -179,6 +196,42 @@ public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
         }
     }
 
+    /**
+     * 清理过期的 {@code *.log.jsonl} 会话日志文件。
+     *
+     * <h3>什么是 .log.jsonl？</h3>
+     * 双文件模式下，每次 agent 对话产生一对文件：
+     * <pre>
+     * agents/{agentId}/sessions/
+     * ├── {sessionId}.jsonl          ← LLM 上下文（会被 CompactionHook 截断/压缩重写）
+     * └── {sessionId}.log.jsonl      ← 完整历史日志（只追加，永不压缩，用于审计+搜索）
+     * </pre>
+     * {@code .jsonl} 是"工作记忆"（可丢弃重写），{@code .log.jsonl} 是"档案库"
+     * （永久保留直到过期清理）。两者由 {@code SessionTree.flush()} 同时写入。
+     *
+     * <h3>写入链路</h3>
+     * <pre>
+     * Agent.call() 结束 → MemoryFlushHook → MemoryFlushManager.offloadMessages()
+     * → SessionTree.append() → SessionTree.flush() → 同时写 .jsonl 和 .log.jsonl
+     * </pre>
+     *
+     * <h3>清理流程</h3>
+     * <pre>
+     *   1. 通过 filesystem.glob 匹配 agents/*.log.jsonl
+     *   2. 计算截止时间 cutoff = now - sessionRetentionDays 天
+     *   3. 遍历匹配到的文件：
+     *      - 跳过目录
+     *      - 跳过无 modifiedAt 的文件（保守策略，不删）
+     *      - 解析 modifiedAt → 如果早于 cutoff → 删除
+     *      - 解析或删除失败只打日志，不抛异常
+     *
+     * 举例（sessionRetentionDays=180，今天是 2026-06-06）：
+     *   agents/
+     *   ├── sess-abc.log.jsonl  modifiedAt=2026-06-01  → 保留（距今 5 天）
+     *   ├── sess-xyz.log.jsonl  modifiedAt=2025-09-01  → 删除（距今 278 天 > 180）
+     *   └── sess-old.log.jsonl  modifiedAt=null        → 保留（无法判断，保守跳过）
+     * </pre>
+     */
     private void pruneOldSessions(RuntimeContext rc) {
         AbstractFilesystem fs = workspaceManager.getFilesystem();
         if (fs == null) {

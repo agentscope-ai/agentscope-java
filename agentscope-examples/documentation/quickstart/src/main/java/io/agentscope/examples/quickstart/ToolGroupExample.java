@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
@@ -59,8 +60,12 @@ public class ToolGroupExample {
                                         .apiKey(apiKey)
                                         .modelName("qwen-max")
                                         .stream(true)
-                                        .enableThinking(false)
+                                        .enableThinking(true)
                                         .formatter(new DashScopeChatFormatter())
+                                        .defaultOptions(
+                                                GenerateOptions.builder()
+                                                        .thinkingBudget(1024)
+                                                        .build())
                                         .build())
                         .toolkit(toolkit)
                         .enableMetaTool(true)

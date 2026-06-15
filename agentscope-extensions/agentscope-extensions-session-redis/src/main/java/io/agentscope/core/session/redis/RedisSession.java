@@ -225,41 +225,78 @@ public class RedisSession implements Session {
         }
     }
 
+    /**
+     * 保存 List 类型的状态到 Redis。
+     *
+     * <p>采用基于哈希的增量更新策略，分为三种情况:
+     * <ol>
+     *   <li><b>全量重写</b>: 列表缩短了 / 已有部分被修改 / 哈希丢失 → DEL + 逐条 RPUSH 重建</li>
+     *   <li><b>增量追加</b>: 已有部分没变，仅尾部新增 → 只 RPUSH 新元素（最常见的热路径）</li>
+     *   <li><b>跳过</b>: 列表完全没有变化 → 零 Redis IO</li>
+     * </ol>
+     *
+     * <p>对应 Redis 数据结构:
+     * <ul>
+     *   <li>数据本身 → Redis List: {@code {prefix}{sessionId}:{key}:list}
+     *      每个元素是 JSON 序列化的 State</li>
+     *   <li>变更检测 → Redis String: {@code {prefix}{sessionId}:{key}:list:_hash}
+     *      存储采样 hash 值，用于判断已有部分是否被修改</li>
+     *   <li>Key 追踪 → Redis Set: {@code {prefix}{sessionId}:_keys}
+     *      记录这个 session 下有哪些 key，用于 exists/delete/listSessions</li>
+     * </ul>
+     *
+     * @param sessionKey session 标识
+     * @param key 状态 key（如 "memory_msg"）
+     * @param values 内存中完整的 List（如全部消息列表）
+     */
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
         String sessionId = sessionKey.toIdentifier();
+        // Redis List key: agentscope:session:user123:memory_msg:list
         String listKey = getListKey(sessionId, key);
+        // Hash key: agentscope:session:user123:memory_msg:list:_hash
         String hashKey = listKey + HASH_SUFFIX;
+        // 元数据 Set key: agentscope:session:user123:_keys
         String keysKey = getKeysKey(sessionId);
         try {
-            // Compute current hash
+            // 1. 对内存中的完整列表计算采样 hash
             String currentHash = ListHashUtil.computeHash(values);
-            // Get stored hash
+            // 2. 从 Redis 读取上次保存时的 hash
             String storedHash = client.get(hashKey);
-            // Get current list length
+            // 3. 获取 Redis List 中已有的元素数量
             long existingCount = client.getListLength(listKey);
-            // Determine if full rewrite is needed
+            // 4. 判断是否需要全量重写
+            //    - 列表缩短(有删除) → true
+            //    - 哈希丢失但数据还在 → true
+            //    - prefix hash 变化(内部有修改) → true
+            //    - prefix hash 一致且 size 增长 → false (增量追加)
+            //    - prefix hash 一致且 size 相同 → false (跳过)
             boolean needsFullRewrite =
                     ListHashUtil.needsFullRewrite(values, storedHash, (int) existingCount);
             if (needsFullRewrite) {
-                // Delete and recreate the list
+                // ── 分支1: 全量重写 ──
+                // DEL 删除整个 Redis List，然后逐条 RPUSH 重建
                 client.deleteKeys(listKey);
                 for (State item : values) {
                     String json = JsonUtils.getJsonCodec().toJson(item);
                     client.rightPushList(listKey, json);
                 }
             } else if (values.size() > existingCount) {
-                // Incremental append
+                // ── 分支2: 增量追加（最热路径）──
+                // 已有部分未变，只取尾部新增的元素
+                // 例如: 内存 100 条, Redis 已有 98 条 → 只 RPUSH 第 99、100 条
                 List<? extends State> newItems = values.subList((int) existingCount, values.size());
                 for (State item : newItems) {
                     String json = JsonUtils.getJsonCodec().toJson(item);
                     client.rightPushList(listKey, json);
                 }
             }
-            // else: no change, skip
-            // Update hash
+            // ── 分支3: size == existingCount，无变化，跳过 ──
+            // 5. 更新 hash 值（SET），供下次 save 时比对
             client.set(hashKey, currentHash);
-            // Track this key in the session's key set
+            // 6. 在 _keys Set 中记录这个 key 的存在（SADD）
+            //    存的是逻辑 key + 后缀，如 "memory_msg:list"
+            //    delete 时靠 endsWith(":list") 区分单值和列表，反推实际 Redis key
             client.addToSet(keysKey, key + LIST_SUFFIX);
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);

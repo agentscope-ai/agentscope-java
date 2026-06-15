@@ -43,26 +43,66 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Gateway-style gateway: routes inbound turns by {@link MsgContext}, and dispatches subagent
- * completion announces as new {@link HarnessAgent} runs on the root requester (OpenClaw gateway
- * analogue).
+ * 网关（Gateway）—— builder 项目的核心路由枢纽。
  *
- * <p>Session management is delegated to {@link SessionAgentManager}. The gateway wires itself as
- * the {@link SessionAgentManager.AnnounceDispatcher} and {@link
- * SessionAgentManager.SpawnInterceptor} on creation, so subagent spawns and announces flow through
- * the correct channel gates.
+ * <p>一句话职责：把「谁能访问哪个 Agent + 用哪个 session + 消息发到哪里」串起来。
  *
- * <h2>Session routing</h2>
+ * <h2>核心数据流</h2>
+ * <pre>
+ *   外部消息入口（飞书/GitHub/Web/钉钉）
+ *       │
+ *       ▼
+ *   CallbackController → Channel.mapper() → InboundMessage（统一格式）
+ *       │
+ *       ▼
+ *   ChatUiChannel.dispatch() / FeishuChannel.dispatch()
+ *       │
+ *       ▼
+ *   ChannelRouter.resolve()  ← 8 级 binding 匹配，找到目标 agentId
+ *       │
+ *       ▼
+ *   ChannelRouter.buildContext()  ← 构造 MsgContext（决定 session 隔离粒度）
+ *       │
+ *       ▼
+ *   ★ HarnessGateway.run()  ← 就是这里，路由 + session 管理 + Agent 调用
+ *       │
+ *       ▼
+ *   HarnessAgent.call() → ReActAgent 执行
+ *       │
+ *       ▼
+ *   Agent 响应 → ChannelManager.deliver() → 飞书/钉钉/GitHub/Web 推送回复
+ * </pre>
  *
- * On the first {@link #run} call for a given {@link MsgContext#canonicalKey()}, a MAIN session is
- * registered in the {@link SessionAgentManager}. Subsequent calls for the same key reuse that
- * session. Multiple harness agents may be registered with {@link #registerAgent} for agentId-based
- * routing.
+ * <h2>关键设计</h2>
+ * <h3>1. Session 路由</h3>
+ * <p>每条入站消息带一个 {@link MsgContext#canonicalKey()}（由 channel + group + room + threadId
+ * 组合而成），同一个 canonicalKey 对应同一个 MAIN session。
+ * 首次访问时自动创建，后续复用，实现「同一用户的同一段对话，历史连续」。
  *
- * <h2>Per-session turn serialization</h2>
+ * <h3>2. 四张路由映射表</h3>
+ * <pre>
+ * ┌───────────────────────────────────┬──────────────────────────────────────────────────┐
+ * │ 映射表                             │ 作用                                             │
+ * ├───────────────────────────────────┼──────────────────────────────────────────────────┤
+ * │ contextKeyToSessionKey            │ gateKey → sessionKey（核心！决定对话复用哪个 session）│
+ * │ sessionKeyToGateKey               │ 反向查找：子 Agent 完成后找到父 session 的 gate    │
+ * │ sessionKeyToAgentId               │ session → agentId（announce 时路由回同一个 Agent）  │
+ * │ lastRouteBySessionKey             │ session → 最近一次出站地址（主动推送消息到哪里）      │
+ * └───────────────────────────────────┴──────────────────────────────────────────────────┘
+ * </pre>
  *
- * Each {@link MsgContext#canonicalKey()} has a fair lock ({@link SessionTurnGate}) so at most one
- * {@code HarnessAgent.call} runs at a time for that key.
+ * <h3>3. per-key 串行化（SessionTurnGate）</h3>
+ * <p>同一个 canonicalKey 同一时刻只允许一个 Agent call 在执行（通过 {@link SessionTurnGate} 公平锁），
+ * 防止同一用户的并发请求交错执行导致状态混乱。
+ *
+ * <h3>4. 子 Agent announce（完成通知）</h3>
+ * <p>当子 Agent 执行完毕，通过 {@link #tryDispatchAnnounce} 把结果回送给父 Agent，
+ * 再触发一轮新的 agent call，最终通过 ChannelManager 推送到原渠道。
+ *
+ * @see MsgContext          路由上下文（canonicalKey = session 路由 key）
+ * @see ChannelRouter       消息入站路由（8 级 binding 匹配）
+ * @see SessionAgentManager session 生命周期管理（创建/销毁/持久化）
+ * @see SessionTurnGate     per-key 并发控制（同一 key 串行执行）
  */
 public final class HarnessGateway implements Gateway {
 
@@ -71,57 +111,106 @@ public final class HarnessGateway implements Gateway {
     private final SessionAgentManager sessionAgentManager;
     private final ChannelManager channelManager;
 
-    /** Primary agent, set via {@link #bindMainAgent}. Used as routing fallback. */
+    /**
+     * 主 Agent 实例（默认 Agent），通过 {@link #bindMainAgent} 设置。
+     *
+     * <p>当请求没有显式指定 agentId，或指定的 agentId 在 agentRegistry 中不存在时，
+     * fallback 到这个主 Agent。使用 AtomicReference 保证线程安全的读写。
+     */
     private final AtomicReference<HarnessAgent> mainAgent = new AtomicReference<>();
 
-    /** agentId -> HarnessAgent, populated by {@link #bindMainAgent} and {@link #registerAgent}. */
+    /**
+     * agentId → HarnessAgent 注册表。
+     *
+     * <p>通过 {@link #bindMainAgent} 注册主 Agent，通过 {@link #registerAgent} 注册其他 Agent。
+     * ChannelRouter 路由完成后，通过 ctx.extra.get("agentId") 查此表找到目标 Agent 实例。
+     */
     private final ConcurrentHashMap<String, HarnessAgent> agentRegistry = new ConcurrentHashMap<>();
 
-    /** The agentId registered by the most recent {@link #bindMainAgent} call. */
+    /**
+     * 最近一次 {@link #bindMainAgent} 调用时的 agentId。
+     * 作为最后的 fallback，当 mainAgent 引用为空时通过此 ID 从 agentRegistry 取。
+     */
     private volatile String defaultAgentId = null;
 
     /**
-     * gateKey -> main session key (in SessionAgentManager). Populated on first {@link #run} per
-     * key; used to resume the same MAIN session across turns.
+     * 核心路由表 ①：gateKey → sessionKey。
+     *
+     * <p>gateKey = MsgContext.canonicalKey()，如 "chatui|r:bob"、"feishu-rd|g:org-a|r:oc_123"。
+     * sessionKey = SessionAgentManager 中的 MAIN session 唯一标识。
+     *
+     * <p>作用：同一个 canonicalKey 的请求，复用同一个 MAIN session，
+     * 确保 bob 连续发的两条消息会进同一个对话历史。
+     *
+     * <p>典型例子：
+     * <pre>
+     *   第一次请求: "chatui|r:bob" → compute() 发现 key 不存在 → 创建 sessionKey = "sess_001"
+     *   第二次请求: "chatui|r:bob" → compute() 发现已存在 → isSessionFresh=true → 复用 "sess_001"
+     *   alice 请求: "chatui|r:alice" → compute() 发现 key 不存在 → 创建 sessionKey = "sess_002"
+     * </pre>
      */
     private final ConcurrentHashMap<String, String> contextKeyToSessionKey =
             new ConcurrentHashMap<>();
 
     /**
-     * main session key -> gateKey. Populated when a MAIN session is created. Used by {@link
-     * #tryDispatchAnnounce} to deliver completion announces on the correct channel gate.
+     * 核心路由表 ②：sessionKey → gateKey（反向索引）。
+     *
+     * <p>子 Agent 完成任务后，需要找到父 session 对应的 gateKey，才能在正确的渠道 gate 上触发
+     * announce（完成通知），所以需要这个反向映射。
+     *
+     * <p>使用场景：{@link #tryDispatchAnnounce} 通过 requesterSessionKey 找到 gateKey，
+     * 再用 gateKey 找到 SessionTurnGate，在正确的渠道上串行执行 announce agent call。
      */
     private final ConcurrentHashMap<String, String> sessionKeyToGateKey = new ConcurrentHashMap<>();
 
     /**
-     * main session key -> agentId. Used by {@link #tryDispatchAnnounce} to route the completion
-     * announce to the same agent that originated the run.
+     * 核心路由表 ③：sessionKey → agentId。
+     *
+     * <p>子 Agent announce 回来时，需要知道用哪个 Agent 来处理完成通知。
+     * 通过此表把 session 映射回创建它的 agentId，保证 announce 由同一个 Agent 处理。
      */
     private final ConcurrentHashMap<String, String> sessionKeyToAgentId = new ConcurrentHashMap<>();
 
     /**
-     * session key -> last outbound address. Updated on every inbound {@link #run} call so
-     * proactive outbound messages (announces) can be delivered to the correct channel/peer.
+     * 核心路由表 ④：sessionKey → 最近一次出站地址（OutboundAddress）。
+     *
+     * <p>每条入站消息的 {@link #run()} 调用都会更新此表，记录「这次消息是从哪个渠道/哪个群来的」。
+     * 子 Agent 完成后，通过此表把结果推送到正确的渠道和会话。
+     *
+     * <p>例子：bob 在飞书群 oc_123 发消息触发子 Agent → 子 Agent 完成后
+     * 通过 lastRouteBySessionKey 知道应该把回复发到 feishu-rd:oc_123。
      */
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
     /**
-     * Resolves the {@link RuntimeContext#getUserId()} the gateway should attach to a turn, given
-     * the caller's user id and the routed agent id. Defaults to identity (caller's user id is
-     * used verbatim).
+     * 文件系统用户身份解析器（用于共享 Agent 场景）。
      *
-     * <p>Platforms that want shared-agent semantics — e.g. multiple users routing to the same
-     * shared agent should all read from the agent owner's filesystem namespace — install a
-     * resolver that maps {@code (callerUserId, agentId) -> ownerUserId} for those agents. The
-     * gateway uses the resolved id only for {@link RuntimeContext#getUserId()} (the dimension
-     * the filesystem {@code NamespaceFactory} consumes); session routing keys still derive from
-     * the original {@link MsgContext#userId()} so each caller keeps their own conversation
-     * thread.
+     * <p>问题背景：
+     * <pre>
+     *   bob 访问共享 Agent "deploy-bot"，如果直接用 bob 的身份做文件系统命名空间，
+     *   bob 的对话历史会混入 deploy-bot 的文件系统，干扰 deploy-bot 所有者（owner）的数据。
+     * </pre>
+     * 解决方案：安装一个解析器，把 (callerUserId, agentId) → ownerUserId，
+     * 让所有用户共享同一个文件系统 namespace，但各自保持独立的对话 session。
+     *
+     * <p>关键区分：
+     * <pre>
+     *   session 路由 key：从 MsgContext.userId() 派生 → 每个用户独立 session
+     *   文件系统 userId：从 fsUserIdResolver 解析 → 可能映射到同一个 owner
+     * </pre>
+     *
+     * <p>默认行为：直接返回 callerUserId，不做映射（无共享 Agent 需求）。
      */
     private volatile BiFunction<String, String, String> fsUserIdResolver =
             (callerUserId, agentId) -> callerUserId;
 
+    /**
+     * per-key 并发锁，确保同一个 canonicalKey 同一时刻只执行一个 agent call。
+     *
+     * <p>场景：同一个用户在同一渠道同一会话中连续发了两条消息，
+     * 第一条还没处理完第二条就到了，通过此锁串行化执行，防止对话状态混乱。
+     */
     private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
@@ -164,9 +253,17 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
-     * Restores gateway routing maps from persisted MAIN sessions in the session store. Only
-     * fresh sessions (per the configured {@link SessionResetPolicy}) are restored; stale
-     * sessions are skipped so a new session will be created on the next inbound turn.
+     * 从持久化存储中恢复 MAIN session 的路由映射表。
+     *
+     * <p>在 Gateway 创建时调用，将上一次运行中已有的 MAIN session 恢复到内存映射表中，
+     * 确保应用重启后已有对话能够继续。
+     *
+     * <p>过滤规则：
+     * <pre>
+     *   ① 只恢复 MAIN 类型（跳过 SUBAGENT）
+     *   ② gateKey 非空的（必须能确定路由 key）
+     *   ③ 符合 SessionResetPolicy 的新鲜度要求的（过期的跳过）
+     * </pre>
      */
     private void restorePersistedMainSessions() {
         SessionResetPolicy policy = sessionAgentManager.getConfig().sessionResetPolicy();
@@ -279,16 +376,45 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
-     * Inbound turn with outbound address tracking. Records the {@code outboundAddress} as the
-     * session's "last route" so proactive outbound messages (subagent announces) can be delivered
-     * to the correct channel/peer.
+     * 【核心方法】入口 turn 处理 —— 处理一条来自外部渠道的入站消息。
+     *
+     * <p>完整调用链：
+     * <pre>
+     *   Channel.dispatch(inboundMessage)
+     *     → ChannelRouter.resolve(inbound)          // 8 级 binding 匹配，找到 agentId
+     *     → ChannelRouter.buildContext(inbound, dmScope, agentId, senderId)  // 构造 MsgContext
+     *     → ★ HarnessGateway.run(ctx, messages, outboundAddress)  ← 就是这里
+     *         → resolveAgent(requestedAgentId)      // 从注册表找 Agent 实例
+     *         → resolveOrCreateMainSession(gateKey) // 复用或创建 MAIN session
+     *         → withGatedTurn(gateKey, ha.call())   // per-key 串行锁 + Agent 执行
+     * </pre>
+     *
+     * <h3>MsgContext 的 key 维度由 ChannelRouter.buildDmContext() 控制</h3>
+     * <pre>
+     *   MsgContext.canonicalKey() = channel [|g:group] [|r:room] [|t:threadId]
+     *
+     *   群聊:  "feishu-rd|g:org-a|r:oc_123"      ← group + room
+     *   DM:    "chatui|r:bob"                    ← room（DmScope = PER_PEER）
+     *   Thread: "discord|r:ch_789|t:thread_456"  ← room + threadId
+     * </pre>
+     *
+     * <h3>RuntimeContext 的 fsUserId 说明</h3>
+     * <pre>
+     *   session 路由 key：从 MsgContext.userId() 派生，每个用户独立 session
+     *   文件系统 userId：从 fsUserIdResolver 解析，共享 Agent 场景下可能映射到同一个 owner
+     * </pre>
      */
     @Override
     public Mono<Msg> run(MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
         MsgContext ctx = context != null ? context : MsgContext.defaultContext();
+
+        // 1. 计算 session 路由 key（canonicalKey）
+        // 例如 "chatui|r:bob"（PER_PEER 私聊）或 "feishu-rd|g:org-a|r:oc_123"（群聊）
         String gateKey = ctx.canonicalKey();
 
-        String requestedAgentId = ctx.extra() != null ? (String) ctx.extra().get("agentId") : null;
+        // 2. 从 MsgContext.extra 中取出 ChannelRouter 预设的 agentId，找到对应 Agent 实例
+        // 如果没有指定或找不到，fallback 到 mainAgent / defaultAgentId
+        String requestedAgentId = ctx.extra() != null ? ctx.extra().get("agentId") : null;
         HarnessAgent ha = resolveAgent(requestedAgentId);
         if (ha == null) {
             return Mono.error(
@@ -296,20 +422,26 @@ public final class HarnessGateway implements Gateway {
                             "HarnessGateway.bindMainAgent must be called before run(...)"));
         }
 
+        // 3. 复用或创建 MAIN session（原子操作，高并发安全）
+        // contextKeyToSessionKey.compute(gateKey, ...) 保证同一 gateKey 只会创建一个 session
         String sessionKey = resolveOrCreateMainSession(gateKey, ha, ctx.userId());
+        // sessionId 是对话历史的存储标识，sessionKey 是路由映射的标识，通常相等
         String sessionId =
                 sessionAgentManager
                         .viewSession(sessionKey)
                         .map(SessionView::sessionId)
                         .orElse(sessionKey);
 
+        // 4. 记录出站地址（供子 Agent announce 时回送结果到正确的渠道）
         if (outboundAddress != null) {
             lastRouteBySessionKey.put(sessionKey, outboundAddress);
         }
 
-        // Session routing (gateKey) is per-caller so each user keeps their own conversation
-        // thread, but the filesystem-namespacing user id is owner-pinned for shared agents via
-        // {@link #fsUserIdResolver}. Defaults to identity when no resolver is installed.
+        // 5. 构造 RuntimeContext（Agent 执行时的上下文信息）
+        // sessionId    → 对话历史的存储 key
+        // sessionKey   → 路由映射的 key（可能和 sessionId 相同）
+        // msgContext   → 原始路由上下文（包含 channel、guild、room 等）
+        // userId       → 文件系统命名空间用的用户 ID（共享 Agent 场景下可能不同于实际发送者）
         String routedAgentId = resolveAgentId(ha);
         String fsUserId = resolveFsUserId(ctx.userId(), routedAgentId);
         RuntimeContext.Builder rtcBuilder =
@@ -321,12 +453,33 @@ public final class HarnessGateway implements Gateway {
             rtcBuilder.userId(fsUserId);
         }
         RuntimeContext runtimeContext = rtcBuilder.build();
+
+        // 6. 在 per-key 串行锁保护下执行 Agent call
+        // withGatedTurn 保证同一个 gateKey 同一时刻只有一个 turn 在执行
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
     }
 
     /**
-     * Spawn interceptor: records gate-key, agent-id, and last-route mappings so announces for
-     * child sessions route to the correct channel gate, agent, and outbound delivery target.
+     * 子 Agent 创建拦截器 —— 当 {@link SessionAgentManager} 创建子 Agent session 时自动调用。
+     *
+     * <p>目的：把子 session 的三张路由映射表都「继承」父 session 的映射，
+     * 确保子 Agent 完成后 announce 能沿着正确的路径回送。
+     *
+     * <p>继承关系：
+     * <pre>
+     *   父 session (sess_main_001):
+     *     gateKey    = "feishu-rd|r:oc_123"
+     *     agentId    = "assistant"
+     *     outAddr    = feishu-rd:oc_123
+     *
+     *   子 session (sess_sub_001) 创建时：
+     *     gateKey    ← 继承父的 "feishu-rd|r:oc_123"
+     *     agentId    ← 继承父的 "assistant"
+     *     outAddr    ← 继承父的 feishu-rd:oc_123
+     *
+     *   子 Agent 完成后 → tryDispatchAnnounce() 通过这些映射
+     *   找到正确的 gate、Agent、出站地址，把结果推送回飞书群 oc_123
+     * </pre>
      */
     private void onSpawn(SpawnResult result, String parentSessionKey) {
         if (parentSessionKey != null) {
@@ -346,9 +499,38 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
-     * Attempts gateway-style dispatch on subagent completion: schedules a new agent turn carrying
-     * {@link PendingCompletion#announceText()} on the requester's gate, then delivers the agent's
-     * reply through the originating channel via {@link ChannelManager}.
+     * 子 Agent 完成后的 announce 分发 —— Gateway 的「后向推送」机制。
+     *
+     * <p>场景：主 Agent 通过 {@code #run()} 创建子 Agent 并执行工具，子 Agent 完成后，
+     * SessionAgentManager 调用此方法把结果回送给父 Agent，再触发一轮 Agent call。
+     *
+     * <h3>完整流程</h3>
+     * <pre>
+     * 父 Agent (sess_main_001) 调用了 PlanNotebook 工具 → 创建子 Agent (sess_sub_001)
+     *   → SessionAgentManager 创建子 session
+     *   → ★ onSpawn() 拦截：把子 session 的 gateKey/agentId/lastRoute 都继承父 session
+     *   → 子 Agent 执行完成
+     *   → SessionAgentManager ★ tryDispatchAnnounce() ← 就是这里
+     *       → sessionKeyToGateKey.get(requesterKey)    // 找到父 session 的 gateKey
+     *       → sessionKeyToAgentId.get(requesterKey)    // 找到父 session 的 agentId
+     *       → resolveOrCreateMainSession()             // 复用父 session
+     *       → withGatedTurn(gateKey, ha.call(announce)) // 父 Agent 收到完成通知，继续执行
+     *       → deliverAnnounceReply(deliveryTarget, reply) // 把最终回复推送到渠道
+     * </pre>
+     *
+     * <h3>关键数据源</h3>
+     * <pre>
+     *   completion.requesterSessionKey()  // 谁请求的子 Agent
+     *   completion.announceText()         // 子 Agent 完成通知内容
+     *   completion.childSessionKey()      // 子 session 的 key
+     * </pre>
+     *
+     * <h3>ROOT_REQUESTER 特殊处理</h3>
+     * <p>当 requesterKey 是 SessionConstants.ROOT_REQUESTER_SESSION_KEY 时，
+     * 表示请求是从 Root Agent 直接发起的子 Agent（而非中间 Agent），gateKey 不存在
+     * 时使用默认 MsgContext 的 canonicalKey。
+     *
+     * @return true 如果成功处理了 announce 并启动了新的 agent turn
      */
     boolean tryDispatchAnnounce(PendingCompletion completion) {
         String requesterKey = completion.requesterSessionKey();
@@ -420,8 +602,19 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
-     * Delivers the agent's announce reply through the channel manager. If no channel manager or no
-     * last route is available, the reply is logged but not delivered.
+     * announce 回复消息推送 —— 通过 {@link ChannelManager} 把子 Agent 完成通知的结果
+     * 发回原始渠道。
+     *
+     * <p>流程：
+     * <pre>
+     *   子 Agent 完成 → 返回回复消息 → ★ deliverAnnounceReply()
+     *       → check reply == null → 直接返回
+     *       → check "NO_REPLY" → 跳过推送
+     *       → lastRouteBySessionKey.get(requesterKey) → 找到目标渠道
+     *       → channelManager.deliver(target, reply) → 推送到飞书/钉钉/GitHub
+     * </pre>
+     *
+     * <p>容错：如果找不到出站地址或 channelManager 为 null，仅打日志不抛异常。
      */
     private void deliverAnnounceReply(OutboundAddress target, Msg reply) {
         if (reply == null) {
@@ -447,9 +640,18 @@ public final class HarnessGateway implements Gateway {
     }
 
     // -----------------------------------------------------------------
-    //  Internal helpers
+    //  Internal helpers（内部工具方法）
     // -----------------------------------------------------------------
 
+    /**
+     * 三级 fallback 的 Agent 解析策略：
+     * <pre>
+     *   ① agentId 在 agentRegistry 中存在 → 返回对应 Agent
+     *   ② mainAgent 引用不为空 → 返回主 Agent
+     *   ③ defaultAgentId 在 registry 中存在 → 返回默认 Agent
+     *   ④ 都找不到 → 返回 null（调用方会返回 Mono.error）
+     * </pre>
+     */
     private HarnessAgent resolveAgent(String agentId) {
         if (agentId != null && agentRegistry.containsKey(agentId)) {
             return agentRegistry.get(agentId);
@@ -461,6 +663,40 @@ public final class HarnessGateway implements Gateway {
         return defaultAgentId != null ? agentRegistry.get(defaultAgentId) : null;
     }
 
+    /**
+     * 复用或创建 MAIN session —— 核心原子操作。
+     *
+     * <p>通过 {@link ConcurrentHashMap#compute()} 实现并发安全的"读-算-写"：
+     * <pre>
+     *   场景 ①：首次访问
+     *     gateKey = "chatui|r:bob"
+     *     → existingSessionKey = null
+     *     → registerMainSession("assistant", null, "chatui|r:bob", "bob")
+     *     → 回写 sessionKeyToGateKey / sessionKeyToAgentId 反向索引
+     *     → 返回新 sessionKey
+     *
+     *   场景 ②：已存在且 session 还新鲜
+     *     gateKey = "chatui|r:bob"
+     *     → existingSessionKey = "sess_001"
+     *     → isSessionFresh("sess_001") = true
+     *     → 直接返回 "sess_001"
+     *
+     *   场景 ③：已存在但 session 过期
+     *     gateKey = "chatui|r:bob"
+     *     → existingSessionKey = "sess_001"
+     *     → isSessionFresh("sess_001") = false
+     *     → log.info("Session stale, rolling over...")
+     *     → registerMainSession 创建新 session
+     *     → 覆盖 contextKeyToSessionKey["chatui|r:bob"]
+     *     → 回写反向索引
+     *     → 返回新 sessionKey
+     * </pre>
+     *
+     * @param gateKey 消息路由 key（canonicalKey）
+     * @param ha 当前处理消息的 HarnessAgent
+     * @param userId 发送者身份（用于 session 隔离）
+     * @return sessionKey（MAIN session 的唯一标识）
+     */
     private String resolveOrCreateMainSession(String gateKey, HarnessAgent ha, String userId) {
         return contextKeyToSessionKey.compute(
                 gateKey,
@@ -483,6 +719,20 @@ public final class HarnessGateway implements Gateway {
                 });
     }
 
+    /**
+     * 检查 session 是否仍然有效。
+     *
+     * <p>判断依据：
+     * <pre>
+     *   ① SessionResetPolicy.mode == NEVER
+     *     → 不过期，永远返回 true
+     *   ② 其他模式（1_MINUTE / 1_DAY / 1_HOUR / 1_WEEK / 30_MINUTE）
+     *     → SessionFreshnessEvaluator.evaluate(lastActivityMs, now, policy)
+     *     → 判断距离上次活动时间是否超过阈值
+     *   ③ session 不存在
+     *     → return false
+     * </pre>
+     */
     private boolean isSessionFresh(String sessionKey) {
         SessionResetPolicy policy = sessionAgentManager.getConfig().sessionResetPolicy();
         if (policy.mode() == SessionResetPolicy.ResetMode.NEVER) {
@@ -502,6 +752,9 @@ public final class HarnessGateway implements Gateway {
                 .orElse(false);
     }
 
+    /**
+     * 从 HarnessAgent 实例解析 agentId，取不到时默认为 "main"。
+     */
     private static String resolveAgentId(HarnessAgent ha) {
         String id = ha != null ? ha.getAgentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";

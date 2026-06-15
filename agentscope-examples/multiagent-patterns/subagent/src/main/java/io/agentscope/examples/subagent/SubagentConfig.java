@@ -123,7 +123,7 @@ public class SubagentConfig {
         Toolkit depToolkit = new Toolkit();
         depToolkit.registerTool(globSearch);
         depToolkit.registerTool(grepSearch);
-        ReActAgent dependencyAnalyzerReAct =
+        ReActAgent dependencyAnalyzerReAct = // agent 依赖分析（pom.xml 等）
                 ReActAgent.builder()
                         .name("dependency-analyzer")
                         .description(
@@ -151,6 +151,17 @@ public class SubagentConfig {
         for (Resource res : agentResources) {
             builder.addAgentResource(res);
         }
+        //  ┌─────────────────────┬─────────────────────────────────────────┬──────────────────────────┬──────────────────────────┐
+        //  │      子智能体         │                  来源                   │         拥有工具           │           职责           │
+        //  ├─────────────────────┼─────────────────────────────────────────┼──────────────────────────┼──────────────────────────┤
+        //  │ codebase-explorer   │ agents/codebase-explorer.md (AgentSpec) │ glob_search, grep_search │ 代码库文件搜索与结构分析 │
+        //  ├─────────────────────┼─────────────────────────────────────────┼──────────────────────────┼──────────────────────────┤
+        //  │ web-researcher      │ agents/web-researcher.md (AgentSpec)    │ web_fetch                │ 网页内容抓取与分析       │
+        //  ├─────────────────────┼─────────────────────────────────────────┼──────────────────────────┼──────────────────────────┤
+        //  │ general-purpose     │ agents/general-purpose.md (AgentSpec)   │ 全部三个工具               │ 综合代码+网页研究        │
+        //  ├─────────────────────┼─────────────────────────────────────────┼──────────────────────────┼──────────────────────────┤
+        //  │ dependency-analyzer │ Java 代码直接构建 ReActAgent              │ glob_search, grep_search │ 依赖分析（pom.xml 等）   │
+        //  └─────────────────────┴─────────────────────────────────────────┴──────────────────────────┴──────────────────────────┘
         TaskToolsBuilder.TaskToolsResult taskToolsResult = builder.build();
 
         // Orchestrator toolkit: default tools + Task + TaskOutput (no subAgent registration)
@@ -169,7 +180,7 @@ public class SubagentConfig {
                                         + " codebase-explorer, web-researcher, general-purpose, and"
                                         + " dependency-analyzer sub-agents")
                         .model(model)
-                        .sysPrompt(ORCHESTRATOR_SYSTEM_PROMPT)
+                        .sysPrompt(ORCHESTRATOR_SYSTEM_PROMPT)// 告诉 LLM 什么时候自己干、什么时候委派给哪个 Sub-Agent
                         .toolkit(orchestratorToolkit)
                         .memory(new InMemoryMemory());
 

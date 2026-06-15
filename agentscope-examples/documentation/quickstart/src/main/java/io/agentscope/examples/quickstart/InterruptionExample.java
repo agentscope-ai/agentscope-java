@@ -16,6 +16,8 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.ErrorEvent;
@@ -30,6 +32,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
@@ -38,6 +41,9 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
@@ -105,14 +111,125 @@ public class InterruptionExample {
                 new Thread(
                         () -> {
                             try {
-                                Msg response = agent.call(userMsg).block();
-                                if (response != null) {
-                                    System.out.println(
-                                            "\n[Agent Response] "
-                                                    + MsgUtils.getTextContent(response));
+                                System.out.print("Agent>....... ");
+                                try {
+                                    // Try to use stream() first for real-time output
+                                    AtomicBoolean hasPrintedThinkingHeader =
+                                            new AtomicBoolean(false);
+                                    AtomicBoolean hasPrintedTextHeader = new AtomicBoolean(false);
+                                    AtomicBoolean hasPrintedTextSeparator =
+                                            new AtomicBoolean(false);
+                                    AtomicReference<String> lastThinkingContent =
+                                            new AtomicReference<>("");
+                                    AtomicReference<String> lastTextContent =
+                                            new AtomicReference<>("");
+
+                                    StreamOptions streamOptions =
+                                            StreamOptions.builder()
+                                                    .eventTypes(
+                                                            EventType.REASONING,
+                                                            EventType.TOOL_RESULT)
+                                                    .incremental(true)
+                                                    .includeReasoningResult(false)
+                                                    .build();
+
+                                    agent.stream(userMsg, streamOptions)
+                                            .doOnNext(
+                                                    event -> {
+                                                        Msg msg = event.getMessage();
+                                                        for (ContentBlock block :
+                                                                msg.getContent()) {
+                                                            if (block instanceof ThinkingBlock) {
+                                                                printStreamContent(
+                                                                        ((ThinkingBlock) block)
+                                                                                .getThinking(),
+                                                                        lastThinkingContent,
+                                                                        hasPrintedThinkingHeader,
+                                                                        "> Thinking: ",
+                                                                        null);
+                                                            } else if (block instanceof TextBlock) {
+                                                                printStreamContent(
+                                                                        ((TextBlock) block)
+                                                                                .getText(),
+                                                                        lastTextContent,
+                                                                        hasPrintedTextHeader,
+                                                                        "Text: ",
+                                                                        () -> {
+                                                                            if (hasPrintedThinkingHeader
+                                                                                            .get()
+                                                                                    && !hasPrintedTextSeparator
+                                                                                            .get()) {
+                                                                                System.out.print(
+                                                                                        "\n\n");
+                                                                                hasPrintedTextSeparator
+                                                                                        .set(true);
+                                                                            }
+                                                                        });
+                                                            }
+                                                        }
+                                                    })
+                                            .blockLast();
+                                } catch (Exception e) {
+                                    // Fallback to call() if streaming is not supported or fails
+                                    if (e instanceof UnsupportedOperationException) {
+                                        System.err.println(
+                                                "\n"
+                                                        + "[Info] Streaming not supported by this"
+                                                        + " agent. Falling back to call().");
+                                    } else {
+                                        System.err.println(
+                                                "\n[Warning] Exception during streaming: "
+                                                        + e.getMessage());
+                                        e.printStackTrace();
+                                        System.err.println("[Info] Falling back to call().");
+                                    }
+
+                                    Msg response = agent.call(userMsg).block();
+                                    if (response != null) {
+                                        // Extract thinking and text separately to match streaming
+                                        // format
+                                        String thinking =
+                                                response.getContent().stream()
+                                                        .filter(
+                                                                block ->
+                                                                        block
+                                                                                instanceof
+                                                                                ThinkingBlock)
+                                                        .map(
+                                                                block ->
+                                                                        ((ThinkingBlock) block)
+                                                                                .getThinking())
+                                                        .collect(Collectors.joining("\n"));
+
+                                        String text =
+                                                response.getContent().stream()
+                                                        .filter(block -> block instanceof TextBlock)
+                                                        .map(block -> ((TextBlock) block).getText())
+                                                        .collect(Collectors.joining("\n"));
+
+                                        boolean hasContent = false;
+                                        if (!thinking.isEmpty()) {
+                                            System.out.print("> Thinking: " + thinking);
+                                            hasContent = true;
+                                        }
+                                        if (!text.isEmpty()) {
+                                            if (hasContent) {
+                                                System.out.print("\n\n");
+                                            }
+                                            System.out.print("Text: " + text);
+                                            hasContent = true;
+                                        }
+                                        if (!hasContent) {
+                                            System.out.print("[No response]");
+                                        }
+                                    }
                                 }
+
+                                System.out.println("\n");
+
                             } catch (Exception e) {
-                                System.err.println("[Error] " + e.getMessage());
+                                System.err.println("\nError: " + e.getMessage());
+                                e.printStackTrace();
                             }
                         });
 
@@ -120,7 +237,7 @@ public class InterruptionExample {
 
         // Wait 2 seconds then interrupt
         try {
-            Thread.sleep(2000);
+            Thread.sleep(5000);
             System.out.println("\n>>> USER INTERRUPTS AGENT <<<\n");
 
             // Create interrupt message
@@ -253,6 +370,40 @@ public class InterruptionExample {
                     "Successfully processed dataset '%s' with operation '%s'. "
                             + "Results: 1000 records analyzed.",
                     datasetName, operation);
+        }
+    }
+
+    private static void printStreamContent(
+            String content,
+            AtomicReference<String> lastContentRef,
+            AtomicBoolean hasPrintedHeaderRef,
+            String header,
+            Runnable prePrintAction) {
+        String lastContent = lastContentRef.get();
+        String toPrint;
+
+        // Detect if cumulative or incremental
+        if (content.startsWith(lastContent)) {
+            // Cumulative: print only new part
+            toPrint = content.substring(lastContent.length());
+            lastContentRef.set(content);
+        } else {
+            // Incremental: print as-is and append
+            toPrint = content;
+            lastContentRef.set(lastContent + content);
+        }
+
+        if (!toPrint.isEmpty()) {
+            if (prePrintAction != null) {
+                prePrintAction.run();
+            }
+
+            if (!hasPrintedHeaderRef.get()) {
+                System.out.print(header);
+                hasPrintedHeaderRef.set(true);
+            }
+            System.out.print(toPrint);
+            System.out.flush();
         }
     }
 }

@@ -39,21 +39,29 @@ import java.util.Objects;
  *     from {@code InboundMessage.senderId()}
  */
 public record MsgContext(
+        // 渠道标识，如 "chatui", "feishu", "slack"
         String channel,
+        // 群组/团队/租户 ID，多租户场景用于隔离不同 workspace
         String group,
+        // 房间/频道 ID 或私聊场景下的对端用户 ID
         String room,
+        // 线程/话题 ID，用于区分同一房间下的不同讨论线程
         String threadId,
+        // 平台相关的线程时间戳或消息锚点（如 Slack thread_ts）
         String threadTs,
+        // 扩展键值对，适配器用于传递额外路由信息（通常包含 "agentId"）
         Map<String, String> extra,
+        // 消息发送者的用户身份，用于 HarnessAgent 多租户命名空间隔离
+        // 注意：userId 不参与 canonicalKey() 计算，不影响 session 路由
         String userId) {
 
+    /** 规范构造函数：确保 extra 不可为 null 且不可变 */
     public MsgContext {
         extra = extra != null ? Map.copyOf(extra) : Map.of();
     }
 
     /**
-     * Convenience constructor without {@code userId} (backwards-compatible for existing callsites
-     * that do not carry user identity).
+     * 不带 userId 的便捷构造函数（兼容旧调用方）。
      */
     public MsgContext(
             String channel,
@@ -65,32 +73,50 @@ public record MsgContext(
         this(channel, group, room, threadId, threadTs, extra, null);
     }
 
-    /** Default single-conversation context (no channel metadata, no userId). */
+    /** 默认的单会话上下文（无渠道元数据，无用户身份）。 */
     public static MsgContext defaultContext() {
         return new MsgContext("default", null, null, null, null, Map.of(), null);
     }
 
-    /** Returns a copy of this context with the given {@code userId} set. */
+    /** 返回设置了指定 userId 的副本（不可变对象，返回新实例）。 */
     public MsgContext withUserId(String userId) {
         return new MsgContext(channel, group, room, threadId, threadTs, extra, userId);
     }
 
-    /** Stable key for session routing: same logical conversation maps to the same gateway session id. */
+    /**
+     * 生成稳定的会话路由键，同一逻辑对话始终映射到同一 Session。
+     *
+     * <p>格式示例：
+     * <pre>
+     *   "chatui"                                     — 所有人共享一个 session
+     *   "chatui|r:bob"                               — bob 的独立 session
+     *   "chatui|g:tenantA|r:bob"                     — 多租户下 bob 的隔离 session
+     *   "feishu|r:room_42|t:thread_7"                — 飞书房间中的线程 session
+     * </pre>
+     *
+     * <p>userId 不参与此 key 的计算，确保同一用户的对话始终路由到同一 session。
+     */
     public String canonicalKey() {
         StringBuilder sb = new StringBuilder(64);
+        // channel 兜底为 "default"
         sb.append(Objects.requireNonNullElse(channel, "default"));
+        // group → "|g:xxx"
         if (group != null && !group.isBlank()) {
             sb.append("|g:").append(group.trim());
         }
+        // room → "|r:xxx"
         if (room != null && !room.isBlank()) {
             sb.append("|r:").append(room.trim());
         }
+        // threadId → "|t:xxx"
         if (threadId != null && !threadId.isBlank()) {
             sb.append("|t:").append(threadId.trim());
         }
+        // threadTs → "|ts:xxx"
         if (threadTs != null && !threadTs.isBlank()) {
             sb.append("|ts:").append(threadTs.trim());
         }
+        // extra 按 key 排序后追加 → "|x:k1=v1|x:k2=v2"
         if (!extra.isEmpty()) {
             extra.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())

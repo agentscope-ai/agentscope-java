@@ -128,7 +128,7 @@ public class AgentSkillsController {
 
     @GetMapping("/workspace")
     public Mono<List<WorkspaceSkillInfo>> listWorkspaceSkills(
-            @PathVariable String agentId, Authentication auth) {
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -153,7 +153,9 @@ public class AgentSkillsController {
 
     @GetMapping("/workspace/{name}")
     public Mono<WorkspaceSkillDetail> getWorkspaceSkill(
-            @PathVariable String agentId, @PathVariable String name, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("name") String name,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -173,8 +175,8 @@ public class AgentSkillsController {
 
     @PutMapping("/workspace/{name}")
     public Mono<WorkspaceSkillInfo> upsertWorkspaceSkill(
-            @PathVariable String agentId,
-            @PathVariable String name,
+            @PathVariable("agentId") String agentId,
+            @PathVariable("name") String name,
             @RequestBody WorkspaceSkillUpsertRequest req,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -216,7 +218,9 @@ public class AgentSkillsController {
     @DeleteMapping("/workspace/{name}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteWorkspaceSkill(
-            @PathVariable String agentId, @PathVariable String name, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("name") String name,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {
@@ -246,7 +250,7 @@ public class AgentSkillsController {
 
     @GetMapping("/repositories")
     public Mono<List<RepositoryInfo>> listRepositories(
-            @PathVariable String agentId, Authentication auth) {
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -262,7 +266,9 @@ public class AgentSkillsController {
 
     @GetMapping("/repositories/{index}/skills")
     public Mono<List<MarketSkillInfo>> listRepositorySkills(
-            @PathVariable String agentId, @PathVariable int index, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("index") int index,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -297,9 +303,9 @@ public class AgentSkillsController {
 
     @GetMapping("/repositories/{index}/skills/{name}")
     public Mono<MarketSkillDetail> getRepositorySkill(
-            @PathVariable String agentId,
-            @PathVariable int index,
-            @PathVariable String name,
+            @PathVariable("agentId") String agentId,
+            @PathVariable("index") int index,
+            @PathVariable("name") String name,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
@@ -332,7 +338,9 @@ public class AgentSkillsController {
 
     @PostMapping("/workspace/install")
     public Mono<WorkspaceSkillInfo> installFromRepository(
-            @PathVariable String agentId, @RequestBody InstallRequest req, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestBody InstallRequest req,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -408,7 +416,7 @@ public class AgentSkillsController {
 
     @PostMapping("/workspace/marketplace-install")
     public Mono<WorkspaceSkillInfo> installFromMarketplace(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestBody MarketplaceInstallRequest req,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();

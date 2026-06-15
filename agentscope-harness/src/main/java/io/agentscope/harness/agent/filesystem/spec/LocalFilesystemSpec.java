@@ -37,17 +37,40 @@ import java.util.Map;
  */
 public class LocalFilesystemSpec {
 
+    // shell 命令超时（秒），超过后强杀进程
+    // 示例: .executeTimeoutSeconds(300)  // 长命令给 5 分钟
     private int executeTimeoutSeconds = LocalFilesystemWithShell.DEFAULT_EXECUTE_TIMEOUT;
+
+    // stdout+stderr 截断上限（字节），防止大输出撑爆模型上下文
+    // 示例: .maxOutputBytes(50_000)  // 限制 50KB
     private int maxOutputBytes = 100_000;
+
+    // shell 环境变量注入，每次命令执行时注入到 ProcessBuilder
+    // 示例: .env("GITHUB_TOKEN", "ghp_xxx")
+    //       .env("PYTHONPATH", "/app/libs")
     private final Map<String, String> env = new LinkedHashMap<>();
+
+    // 是否继承 JVM 父进程的所有环境变量
+    //   false（默认）: 从零开始，只有 env() 注入的变量可见 — 安全
+    //   true:         继承 System.getenv()，env() 同名项覆盖
+    // 示例: .inheritEnv(true)   // 让 shell 能访问 PATH、HOME 等系统变量
     private boolean inheritEnv = false;
+
+    // 路径虚拟化：锚定在 workspace 根目录，禁止 .. 逃逸
+    //   agent 看到的是 /file.txt 而非 /data/workspace/file.txt
+    // 示例: .virtualMode(true)  // agent 无法读到 workspace 外的文件
     private boolean virtualMode = false;
 
     /**
-     * Sets the default command execution timeout in seconds.
+     * shell 命令执行超时（秒）。
+     * <p>每次 agent 调用 {@code shell_execute} 工具时，
+     * shell 进程最多存活这个时间，超时后 Process.destroyForcibly() 强杀。
      *
-     * @param seconds timeout (must be positive)
-     * @return this spec
+     * <pre>{@code
+     * // 批量数据处理需要更长时间
+     * .filesystem(new LocalFilesystemSpec()
+     *     .executeTimeoutSeconds(600))
+     * }</pre>
      */
     public LocalFilesystemSpec executeTimeoutSeconds(int seconds) {
         if (seconds <= 0) {
@@ -58,10 +81,16 @@ public class LocalFilesystemSpec {
     }
 
     /**
-     * Sets the maximum number of output bytes captured from any single shell command.
+     * shell 命令输出截断上限（字节）。
+     * <p>stdout + stderr 的总长度超过此值时截断，
+     * 末尾追加 "... Output truncated at xxx bytes." 标记。
+     * 防止大文件 cat 或 verbose 命令把模型上下文撑爆。
      *
-     * @param bytes byte cap (must be positive)
-     * @return this spec
+     * <pre>{@code
+     * // 只取前 200KB 输出
+     * .filesystem(new LocalFilesystemSpec()
+     *     .maxOutputBytes(200_000))
+     * }</pre>
      */
     public LocalFilesystemSpec maxOutputBytes(int bytes) {
         if (bytes <= 0) {
@@ -72,11 +101,16 @@ public class LocalFilesystemSpec {
     }
 
     /**
-     * Adds an environment variable that will be set for every shell command.
+     * 注入 shell 环境变量。
+     * <p>每次命令执行时写入 ProcessBuilder.environment()。
+     * 可多次调用逐条添加。注意 token 类变量安全，不要暴露给调试日志。
      *
-     * @param name variable name
-     * @param value variable value
-     * @return this spec
+     * <pre>{@code
+     * // 给 shell 注入 API token 和自定义路径
+     * .filesystem(new LocalFilesystemSpec()
+     *     .env("GITHUB_TOKEN", System.getenv("GITHUB_TOKEN"))
+     *     .env("PYTHONPATH", "/opt/tools"))
+     * }</pre>
      */
     public LocalFilesystemSpec env(String name, String value) {
         if (name == null || name.isBlank()) {
@@ -87,11 +121,18 @@ public class LocalFilesystemSpec {
     }
 
     /**
-     * Controls whether the parent process environment is inherited by shell commands. When
-     * {@code false} (default), only variables added via {@link #env(String, String)} are visible.
+     * 是否继承 JVM 父进程的环境变量。
      *
-     * @param inherit whether to inherit parent env
-     * @return this spec
+     * <p>{@code false}（默认）：shell 环境从零开始，只有 {@link #env(String, String)}
+     * 注入的变量可见 — 不会把 JAVA_HOME、AWS_SECRET 等主机变量暴露给 agent。
+     * <p>{@code true}：先拷贝 System.getenv()，再用 env() 覆盖同名项，
+     * 适合 agent 需要用 PATH、HOME 等系统变量的场景。
+     *
+     * <pre>{@code
+     * // 继承父进程环境，让 shell 能访问系统工具链
+     * .filesystem(new LocalFilesystemSpec()
+     *     .inheritEnv(true))
+     * }</pre>
      */
     public LocalFilesystemSpec inheritEnv(boolean inherit) {
         this.inheritEnv = inherit;
@@ -99,11 +140,20 @@ public class LocalFilesystemSpec {
     }
 
     /**
-     * Enables virtual-path mode: paths are anchored to the workspace root and traversal outside
-     * is blocked.
+     * 路径虚拟化模式。
      *
-     * @param virtual whether to enable virtual mode
-     * @return this spec
+     * <p>启用后：
+     * <ul>
+     *   <li>所有路径锚定在 workspace 根目录，agent 看到的是 {@code /file.txt}
+     *       而非 {@code /data/workspace/file.txt}
+     *   <li>禁止 {@code ..} 目录穿越和 {@code ~} 引用，违者抛 SecurityException
+     * </ul>
+     *
+     * <pre>{@code
+     * // agent 无法访问 workspace 外文件
+     * .filesystem(new LocalFilesystemSpec()
+     *     .virtualMode(true))
+     * }</pre>
      */
     public LocalFilesystemSpec virtualMode(boolean virtual) {
         this.virtualMode = virtual;

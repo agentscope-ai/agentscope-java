@@ -57,6 +57,8 @@ public class SkillBox implements StateModule {
 
     private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
+    // 这里的构造函数中的toolkit压根就没有意义,----这里理解错了,其实是有用的,因为skillbox要通过registration()注册skill
+    // ReActAgent在build的时候,toolkit会copy,然后会把copy后的toolkit重新绑定
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null);
     }

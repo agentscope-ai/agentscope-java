@@ -216,7 +216,10 @@ class ToolExecutor {
         ToolExecutionContext finalContext =
                 ToolExecutionContext.merge(param.getContext(), toolkitContext);
 
-        // Create emitter for streaming
+        // 创建 ToolEmitter，注入到工具方法的 ToolEmitter 参数中。
+        // chunkCallback 由 acting() 阶段通过 setInternalChunkCallback 注册，
+        // 链路上：emitter.onResult(chunk) → chunkCallback → notifyActingChunk → ActingChunkEvent →
+        // hooks
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
 
         // Merge input with preset parameters. Preset values win so framework-controlled
@@ -303,6 +306,8 @@ class ToolExecutor {
 
         // Parallel or sequential execution
         if (parallel) {
+            // Flux.mergeSequential(monos) 返回的是一个尚未激活的 Flux，.collectList() 返回的是一个尚未激活的
+            //  Mono。谁都没有 subscribe。
             return Flux.mergeSequential(monos).collectList();
         }
         return Flux.concat(monos).collectList();

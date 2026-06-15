@@ -186,6 +186,33 @@ public final class ChannelRouter {
     //  MsgContext construction from routing result + dmScope
     // -----------------------------------------------------------------
 
+    /**
+     * 根据消息的会话类型（Thread / DM / Channel）构造 MsgContext。
+     *
+     * <p>这是 ChannelRouter 路由结果的「落地」步骤 —— 路由找到目标 Agent 后，
+     * 通过 MsgContext 决定用哪个 session 来承接这次对话。
+     *
+     * <h3>三种会话类型的 MsgContext 构造逻辑</h3>
+     * <pre>
+     * ┌──────────────┬──────────────────────────────────────────────────────────┐
+     * │ 会话类型     │ MsgContext 构造方式                                       │
+     * ├──────────────┼──────────────────────────────────────────────────────────┤
+     * │ Thread（帖子）│ parentPeer → room, peer → threadId                        │
+     * │              │ → canonicalKey = "discord|r:#general|t:thread_456"        │
+     * │              │ → 每个 Thread 独立 session                                │
+     * ├──────────────┼──────────────────────────────────────────────────────────┤
+     * │ DM（私聊）   │ 由 DmScope 决定 room/group 填充策略                       │
+     * │              │ → 详见 buildDmContext()                                  │
+     * ├──────────────┼──────────────────────────────────────────────────────────┤
+     * │ Channel/群聊 │ room = peer.id, group = guild                            │
+     * │              │ → canonicalKey = "feishu-rd|g:org-a|r:oc_123"            │
+     * │              │ → 同一个群的所有人共享 session（senderId 通过 userId 区分）│
+     * └──────────────┴──────────────────────────────────────────────────────────┘
+     * </pre>
+     *
+     * <p>最后通过 {@code ctx.withUserId(userId)} 把发送者身份挂上去。
+     * userId 不参与 canonicalKey 计算，只用于 HarnessAgent 内部做 namespace 隔离。
+     */
     private MsgContext buildContext(
             InboundMessage msg, DmScope dmScope, String agentId, String userId) {
         Map<String, String> extra = Map.of("agentId", agentId);
@@ -194,19 +221,80 @@ public final class ChannelRouter {
 
         MsgContext ctx;
         if (peer.kind().isThread()) {
-            // Thread: parent peer → room, thread peer → threadId
+            // Thread（主题帖）场景：父级频道是 room，Thread 自身是 threadId
+            // 例如 Discord #general 频道下的某个 Thread:
+            //   parentPeer = CHANNEL("ch_789")  → room = "ch_789"
+            //   peer       = THREAD("thread_456") → threadId = "thread_456"
+            //   → canonicalKey = "discord|r:ch_789|t:thread_456"
             String parentRoom = msg.parentPeer() != null ? msg.parentPeer().id() : null;
             ctx = new MsgContext(channel, msg.guild(), parentRoom, peer.id(), null, extra);
         } else if (peer.kind().isDirect()) {
+            // DM（私聊）场景：由 DmScope 决定隔离粒度
             ctx = buildDmContext(channel, peer.id(), msg.accountId(), dmScope, extra);
         } else {
-            // Non-DM channel / group: room = peer id, group = guild
+            // Channel/群聊 场景：群/频道 ID 作为 room，组织作为 group
+            // 例如飞书群 "oc_123" 在组织 "org-a" 下:
+            //   → canonicalKey = "feishu-rd|g:org-a|r:oc_123"
+            // 同群内 bob 和 alice 共用同一个 session，
+            // 但 HarnessAgent 通过 userId 知道具体是谁在说话
             ctx = new MsgContext(channel, msg.guild(), peer.id(), null, null, extra);
         }
 
+        // 把发送者身份挂到 MsgContext 上（不参与 canonicalKey 计算）
         return userId != null ? ctx.withUserId(userId) : ctx;
     }
 
+    /**
+     * 根据 {@link DmScope} 构造 DM（私聊）场景下的 MsgContext。
+     *
+     * <p>核心逻辑：通过控制 MsgContext 中 room / group 字段的填充，
+     * 间接控制 {@link MsgContext#canonicalKey()} 的输出，从而决定 session 隔离粒度。
+     *
+     * <h3>canonicalKey 生成规则（MsgContext 中定义）</h3>
+     * <pre>
+     *   canonicalKey = channel
+     *                + "|g:" + group   （group 不为空时）
+     *                + "|r:" + room    （room 不为空时）
+     * </pre>
+     *
+     * <h3>四种 DmScope → MsgContext → canonicalKey → 效果对照</h3>
+     * <pre>
+     * ┌─────────────────────────┬──────────────────────────────────────┬─────────────────────────────────┐
+     * │ DmScope                 │ MsgContext(group, room)              │ canonicalKey                    │
+     * ├─────────────────────────┼──────────────────────────────────────┼─────────────────────────────────┤
+     * │ MAIN                    │ (null, null)                         │ "chatui"                        │
+     * │ PER_PEER ★最常用        │ (null, "bob")                        │ "chatui|r:bob"                  │
+     * │ PER_CHANNEL_PEER        │ (null, "bob") ★注意和上面一样         │ "chatui|r:bob" ← 但 channel 不同│
+     * │ PER_ACCOUNT_CHANNEL_PEER│ ("tenantA", "bob")                   │ "chatui|g:tenantA|r:bob"        │
+     * └─────────────────────────┴──────────────────────────────────────┴─────────────────────────────────┘
+     * </pre>
+     *
+     * <h3>具体例子：bob 和 alice 都通过 ChatUi 私聊同一个 Agent</h3>
+     * <pre>
+     *   MAIN:
+     *     bob   → canonicalKey = "chatui"
+     *     alice → canonicalKey = "chatui"  ← 同一个！两人共享对话历史
+     *
+     *   PER_PEER:
+     *     bob   → canonicalKey = "chatui|r:bob"
+     *     alice → canonicalKey = "chatui|r:alice"  ← 不同！各自独立
+     *
+     *   PER_CHANNEL_PEER:
+     *     bob 在 ChatUi → canonicalKey = "chatui|r:bob"
+     *     bob 在 飞书   → canonicalKey = "feishu-rd|r:bob"  ← channel 不同，session 不同
+     *     → 同一人不同平台入口，对话历史也分开
+     *
+     *   PER_ACCOUNT_CHANNEL_PEER:
+     *     bob(租户A)在 ChatUi → canonicalKey = "chatui|g:tenantA|r:bob"
+     *     bob(租户B)在 ChatUi → canonicalKey = "chatui|g:tenantB|r:bob"  ← group 不同，session 不同
+     *     → 多租户 SaaS 场景，同一平台不同账号彻底隔离
+     * </pre>
+     *
+     * <p>注意  {@code PER_PEER} 和 {@code PER_CHANNEL_PEER} 在这里构造出的 MsgContext
+     * 字段完全一样（都是 room=peerId），区别在于  {@code channel} 参数的值不同：
+     * PER_PEER 模式下 channel 通常固定（如 "chatui"），而 PER_CHANNEL_PEER 模式下
+     * channel 来自不同的平台实例（如 "chatui" vs "feishu-rd"）。
+     */
     private MsgContext buildDmContext(
             String channel,
             String peerId,
@@ -215,14 +303,28 @@ public final class ChannelRouter {
             Map<String, String> extra) {
         return switch (dmScope) {
             case MAIN ->
-                    // All DMs share one session — no room/group in key
+                    // 所有人共享一个 session
+                    // channel = "chatui", group = null, room = null
+                    // → canonicalKey = "chatui"
+                    // → bob 和 alice 的对话混在同一个 session 里
                     new MsgContext(channel, null, null, null, null, extra);
-            case PER_PEER -> new MsgContext(channel, null, peerId, null, null, extra);
+            case PER_PEER ->
+                    // 每个人独立 session（★ 最常用）
+                    // channel = "chatui", group = null, room = peerId（如 "bob"）
+                    // → canonicalKey = "chatui|r:bob"
+                    // → 不同用户互不干扰
+                    new MsgContext(channel, null, peerId, null, null, extra);
             case PER_CHANNEL_PEER ->
-                    // channel already in MsgContext.channel; just add peerId as room
+                    // 同一个人，不同平台入口，session 也分开
+                    // MsgContext 字段和 PER_PEER 一样（room=peerId）
+                    // 但 channel 来自不同平台实例（"chatui" vs "feishu-rd"），
+                    // canonicalKey 自然不同，实现了跨平台隔离
                     new MsgContext(channel, null, peerId, null, null, extra);
             case PER_ACCOUNT_CHANNEL_PEER ->
-                    // include accountId as group for full disambiguation
+                    // 最细粒度：多租户维度隔离
+                    // channel = "chatui", group = accountId（如 "tenantA"）, room = peerId
+                    // → canonicalKey = "chatui|g:tenantA|r:bob"
+                    // → 同一平台的不同租户，同一租户的不同用户，全部隔离
                     new MsgContext(channel, accountId, peerId, null, null, extra);
         };
     }

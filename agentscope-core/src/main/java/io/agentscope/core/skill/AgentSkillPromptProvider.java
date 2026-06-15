@@ -52,7 +52,7 @@ public class AgentSkillPromptProvider {
             Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
             How to use skills:
-            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
+            - Load skill: ill_through_path(skillId="<skill-id>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 

@@ -45,7 +45,7 @@ public class ToolCallingExample {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SimpleTools());
 
-        System.out.println("Registered tools:");
+        System.out.println("注册 tools:");
         System.out.println("  - get_current_time: Get current time in a timezone");
         System.out.println("  - calculate: Evaluate simple math expressions");
         System.out.println("  - search: Simulate search functionality\n");
@@ -63,7 +63,7 @@ public class ToolCallingExample {
                                         .apiKey(apiKey)
                                         .modelName("qwen-max")
                                         .stream(true)
-                                        .enableThinking(false)
+                                        .enableThinking(true)
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)

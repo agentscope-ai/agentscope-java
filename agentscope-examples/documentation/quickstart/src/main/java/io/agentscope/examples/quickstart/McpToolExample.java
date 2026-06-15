@@ -60,7 +60,8 @@ public class McpToolExample {
                         .sysPrompt(
                                 "You are a helpful assistant with access to MCP tools. "
                                         + "Use the available tools to help users with their"
-                                        + " requests.")
+                                        + " requests.\n"
+                                        + " 如果通过mcp tools工具做不到,禁止继续操作")
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)

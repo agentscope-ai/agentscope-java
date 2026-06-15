@@ -21,10 +21,51 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Represents a chat completion response from a language model.
+ * 统一模型响应对象，非流和流模式共用，屏蔽不同 LLM 厂商的差异。
  *
- * <p>This immutable data class contains the response content, usage information,
- * and optional metadata returned by the model after processing a chat request.
+ * <p>非流模式（stream=false）：
+ * <pre>{@code
+ *   ChatResponse response = model.call(messages).block();
+ *   // response.content 是完整的 ContentBlock 列表
+ * }</pre>
+ *
+ * <p>流模式（stream=true）：
+ * <pre>{@code
+ *   model.stream(messages)
+ *     .doOnNext(response -> { ... })  // 每个 SSE chunk(例如DashScopeResponse) 都是一个 ChatResponse
+ *     .blockLast();
+ * }</pre>
+ * <p>流式中每个 chunk(DashScopeResponse) 是独立的 ChatResponse，content 只含该 chunk 的增量 Block，
+ * 当前 chunk 没有的内容类型（如 reasoning_content、tool_calls）对应 Block 就不出现。
+ * 上层（ReActAgent）负责累积各 chunk 的 Block，拼接成完整 Msg。
+ *
+ * <p>LLM API 响应 → ChatResponse 字段映射（以 DashScope 为例）：
+ * <pre>{@code
+ * API response
+ * (例如DashScopeResponse)      ChatResponse
+ * ─────────────────────────────────────────────────────
+ * request_id                     ──→    id
+ * output.choices[0].message {
+ *   reasoning_content            ──→    content[0] = ThinkingBlock
+ *   content                      ──→    content[1] = TextBlock
+ *   tool_calls[]                 ──→    content[2..] = ToolUseBlock (每个)
+ * }
+ * output.choices[0].finish_reason ──→   finishReason
+ * usage.input_tokens              ──→   usage.inputTokens
+ * usage.output_tokens             ──→   usage.outputTokens
+ * (now - startTime)               ──→   usage.time
+ * }</pre>
+ *
+ * <p>finish_reason 取值：
+ * <ul>
+ *   <li>"stop" — 正常结束</li>
+ *   <li>"length" — 达到 max_tokens 上限被截断</li>
+ *   <li>"tool_calls" — 模型要求调用工具</li>
+ *   <li>null — 流式中间块，尚未完成</li>
+ * </ul>
+ *
+ * <p>content 中 Block 的组装顺序（DashScopeResponseParser 保证）：
+ * ThinkingBlock → TextBlock → ToolUseBlock
  */
 public class ChatResponse {
 

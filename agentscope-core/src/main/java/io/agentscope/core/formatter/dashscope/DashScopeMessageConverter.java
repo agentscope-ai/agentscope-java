@@ -166,6 +166,17 @@ public class DashScopeMessageConverter {
      * @return DashScopeMessage with tool response format
      */
     private DashScopeMessage convertToolRoleMessage(Msg msg) {
+        // 一个 TOOL-role Msg 对应一次工具执行结果，由且仅由一个 ToolResultBlock 表达。
+        // 即便 assistant 并行调用 N 个工具，每个调用都产生独立的 Msg(TOOL)：
+        //
+        //   Msg(ASSISTANT) ─→ N 个 ToolUseBlock（可并行调用多个工具）
+        //       │
+        //       ├── Msg(TOOL) ─→ ToolResultBlock { id, name, output: [...] }
+        //       ├── Msg(TOOL) ─→ ToolResultBlock { id, name, output: [...] }
+        //       └── Msg(TOOL) ─→ ToolResultBlock { id, name, output: [...] }
+        //
+        // 每个 ToolResultBlock.output 是 List<ContentBlock>，可包含多条文本、图片等。
+        // 所以 getFirstContentBlock 获取唯一的 ToolResultBlock 是完全足够的。
         ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
         if (toolResult != null) {
             List<DashScopeContentPart> content =
@@ -200,8 +211,16 @@ public class DashScopeMessageConverter {
      * @return DashScopeMessage with simple text content
      */
     private DashScopeMessage convertToSimpleContent(Msg msg) {
-        // Check if message contains tool result - if so, treat as TOOL role
+        // 一个 TOOL-role Msg 对应一次工具执行结果，只包含一个 ToolResultBlock。
+        // 多条输出内容（文本、图片等）存在 ToolResultBlock.output 列表里。
         ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
+        // MsgRole.TOOL 一定代表工具执行后的结果消息。
+        // 工具调用生命周期：
+        //   ① Msg(ASSISTANT) + ToolUseBlock  → "我要调用 get_weather"
+        //   ② Agent 框架执行工具，拿到结果
+        //   ③ Msg(TOOL) + ToolResultBlock     → "结果是：北京晴天25°C"
+        //   ④ 下一轮 reasoning()，③ 作为上下文喂给 LLM
+        // ToolResultBlock.id 对应 ① 中 ToolUseBlock.id，用于关联。
         if (toolResult != null
                 && (msg.getRole() == MsgRole.TOOL || msg.getRole() == MsgRole.SYSTEM)) {
             return DashScopeMessage.builder()

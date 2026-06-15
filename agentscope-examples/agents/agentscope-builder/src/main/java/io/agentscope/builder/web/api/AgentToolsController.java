@@ -151,7 +151,8 @@ public class AgentToolsController {
     // -----------------------------------------------------------------
 
     @GetMapping("/active")
-    public Mono<ActiveToolsResponse> active(@PathVariable String agentId, Authentication auth) {
+    public Mono<ActiveToolsResponse> active(
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -220,7 +221,8 @@ public class AgentToolsController {
     // -----------------------------------------------------------------
 
     @GetMapping("/config")
-    public Mono<ToolsConfig> getConfig(@PathVariable String agentId, Authentication auth) {
+    public Mono<ToolsConfig> getConfig(
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -233,7 +235,9 @@ public class AgentToolsController {
 
     @PutMapping("/config")
     public Mono<ToolsConfig> putConfig(
-            @PathVariable String agentId, @RequestBody ToolsConfig body, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestBody ToolsConfig body,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -358,7 +362,7 @@ public class AgentToolsController {
 
     @GetMapping("/catalog/builtins")
     public Mono<List<BuiltinToolInfo>> catalogBuiltins(
-            @PathVariable String agentId, Authentication auth) {
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -369,7 +373,7 @@ public class AgentToolsController {
 
     @GetMapping("/catalog/mcp-servers")
     public Mono<List<McpCatalogEntry>> catalogMcpServers(
-            @PathVariable String agentId, Authentication auth) {
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {

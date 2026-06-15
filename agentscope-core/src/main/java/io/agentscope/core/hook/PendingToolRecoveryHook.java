@@ -32,7 +32,55 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * Hook that automatically recovers from orphaned pending tool calls by generating error
+ * "孤儿"待处理工具调用
+ *
+ *   当一个 LLM 请求执行 tool call 后，ReActAgent 正常流程是这样的：
+ *
+ *   USER消息 → LLM推理 → 输出 ToolUseBlock → 执行工具 → 得到 ToolResultBlock
+ *                                                              ↓
+ *                                                       继续下一次推理
+ *
+ *   但如果工具执行过程中出错了，这条链路就断了：
+ *
+ *   USER消息 → LLM推理 → 输出 ToolUseBlock ("get_weather", id=call_1)
+ *                            ↓
+ *                       执行工具... 超时/异常/进程被杀 → ❌ 没有 ToolResultBlock!
+ *                            ↓
+ *                  call_1 成了"孤儿"——有 tool_use 但没有对应的 tool_result
+ *
+ *   孤儿 Tool Call 会有什么后果？
+ *
+ *   LLM API 要求每个 tool_use 必须有对应的 tool_result 才能继续推理。如果 memory 里有未完成的 tool call，LLM 会报错。
+ *
+ *   这时候这个 Hook 在 PreCallEvent（下次用户调用前）自动检查：
+ *
+ *   1. 找出最后一个 ASSISTANT 消息里的 ToolUseBlock
+ *   2. 检查 memory 里是否已有对应的 ToolResultBlock
+ *   3. 如果缺失 → 自动生成一条错误结果补上
+ *
+ *   // 自动生成的错误结果
+ *   ToolResultBlock.builder()
+ *       .id(toolCall.getId())
+ *       .output("[ERROR] Previous tool execution failed or was interrupted. Tool: get_weather")
+ *       .build();
+ *
+ *   整个过程可视化
+ *
+ *   修复前 (memory 状态):
+ *     ASSISTANT: "我来查天气" + [ToolUseBlock: get_weather, id=call_1]
+ *     ← 没有对应的 ToolResultBlock！孤儿!
+ *
+ *   PendingToolRecoveryHook 检测到 → 自动打补丁:
+ *     TOOL: [ToolResultBlock: id=call_1, output="[ERROR] ..."]
+ *
+ *   修复后 (memory 状态):
+ *     ASSISTANT: "我来查天气" + [ToolUseBlock: get_weather, id=call_1]
+ *     TOOL: [ToolResultBlock: id=call_1, output="[ERROR] ..."]  ← 补上了
+ *     → LLM 可以安全继续推理
+ *
+ *   一句话总结：工具执行失败时，这个 Hook 自动给没有结果的 tool call 补一个"执行失败"的错误结果，避免 LLM 因为缺少 tool_result 而崩溃。
+ *
+ * Hook that automatically recovers from orphaned(使……成孤儿) pending tool calls by generating error
  * {@link ToolResultBlock}s before the agent processes new input.
  *
  * <p>When tool execution fails, times out, or is interrupted, tool call states may remain in

@@ -59,4 +59,6 @@ public interface SessionKey {
     default String toIdentifier() {
         return JsonUtils.getJsonCodec().toJson(this);
     }
+
+
 }

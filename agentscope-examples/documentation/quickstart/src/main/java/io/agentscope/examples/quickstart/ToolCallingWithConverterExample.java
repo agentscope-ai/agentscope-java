@@ -415,7 +415,7 @@ public class ToolCallingWithConverterExample {
          * You can try adjusting the comment description of this field to help the model recognize its different meanings
          * #JsonPropertyDescription("Delivery address, including province, city, district, and detailed street address for product delivery")
          */
-        @JsonPropertyDescription("Product origin, This refers to the product's country of origin.")
+        @JsonPropertyDescription("这是`收获地址`,并不是`产地`或者`发货地址`")
         private String address;
 
         @JsonPropertyDescription(

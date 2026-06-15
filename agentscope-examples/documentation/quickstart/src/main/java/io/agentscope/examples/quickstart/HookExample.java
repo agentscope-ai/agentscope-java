@@ -106,22 +106,39 @@ public class HookExample {
      * <p>This hook demonstrates the event-driven approach using pattern matching on different event
      * types.
      */
+    /**
+     * Agent 执行生命周期监听 Hook。
+     *
+     * <p>Agent 执行一次 call 的完整生命周期:
+     * <pre>
+     * PreCallEvent → [reasoning 循环: ReasoningChunkEvent...] → PreActingEvent
+     *   → [acting 进度: ActingChunkEvent...] → PostActingEvent
+     *   → [继续 reasoning 或结束] → PostCallEvent
+     * </pre>
+     */
     static class MonitoringHook implements Hook {
 
         @Override
         public <T extends HookEvent> Mono<T> onEvent(T event) {
+            // ── 1. 调用开始 ──
+            // Agent.call() 被调用时触发，在一次完整的 ReAct 循环开始之前
             if (event instanceof PreCallEvent preCall) {
                 System.out.println(
                         "\n[HOOK] PreCallEvent - Agent started: " + preCall.getAgent().getName());
 
+                // ── 2. LLM 推理流式输出 ──
+                // LLM 生成思考/回复内容的增量片段，每条 chunk 是流式返回的一小段文本
+                // 用户通过 SSE 看到的逐字输出就是由这个事件驱动的
             } else if (event instanceof ReasoningChunkEvent reasoningChunk) {
-                // Print streaming reasoning content as it arrives (incremental chunks)
                 Msg chunk = reasoningChunk.getIncrementalChunk();
                 String text = MsgUtils.getTextContent(chunk);
                 if (text != null && !text.isEmpty()) {
                     System.out.print(text);
                 }
 
+                // ── 3. 工具调用之前 ──
+                // LLM 决定调用某个工具后、框架实际执行该工具之前触发
+                // 可在此修改工具参数 (preActing 是可变事件)
             } else if (event instanceof PreActingEvent preActing) {
                 System.out.println(
                         "\n[HOOK] PreActingEvent - Tool: "
@@ -129,8 +146,10 @@ public class HookExample {
                                 + ", Input: "
                                 + preActing.getToolUse().getInput());
 
+                // ── 4. 工具执行中的进度更新 ──
+                // 工具内部通过 ToolEmitter.emit() 发出的实时进度，不走 LLM
+                // 适合长耗时工具（如数据处理、文件上传）汇报进度给前端
             } else if (event instanceof ActingChunkEvent actingChunk) {
-                // Receive progress updates from ToolEmitter
                 ToolResultBlock chunk = actingChunk.getChunk();
                 String output =
                         chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
@@ -140,6 +159,9 @@ public class HookExample {
                                 + ", Progress: "
                                 + output);
 
+                // ── 5. 工具调用完成 ──
+                // 工具方法 return 后触发，携带最终的工具执行结果
+                // 可在此修改工具返回结果 (postActing 是可变事件)
             } else if (event instanceof PostActingEvent postActing) {
                 ToolResultBlock result = postActing.getToolResult();
                 String output =
@@ -150,11 +172,13 @@ public class HookExample {
                                 + ", Result: "
                                 + output);
 
+                // ── 6. 调用结束 ──
+                // Agent 完成全部推理-行动循环、生成最终回复后触发
             } else if (event instanceof PostCallEvent) {
                 System.out.println("[HOOK] PostCallEvent - Agent execution finished\n");
             }
 
-            // Return the event unchanged
+            // 事件默认原样返回，不做修改
             return Mono.just(event);
         }
     }

@@ -91,13 +91,17 @@ public class SessionAgentManager {
     private final SessionStore sessionStore;
 
     // Session registry
+    // sessionsByKey：sessionKey → SessionEntry，所有会话的主索引
     private final ConcurrentHashMap<String, SessionEntry> sessionsByKey = new ConcurrentHashMap<>();
+    // labelToSessionKey：会话标签 → sessionKey，支持用户通过自定义名称查找会话
     private final ConcurrentHashMap<String, String> labelToSessionKey = new ConcurrentHashMap<>();
+    // childrenByParent：父 sessionKey → 子 sessionKey 列表，构建会话调用树
+    // 启动时通过 restoreFromStore() 从 sessions.json 的 spawnedBy 字段重建
     private final ConcurrentHashMap<String, List<String>> childrenByParent =
             new ConcurrentHashMap<>();
 
     // Agent instance cache — keyed by sessionKey, holds live agents with in-memory state.
-    // Used to avoid re-creating agents on every execute() call within the same JVM lifetime.
+    // 同一 JVM 生命周期内复用 agent 实例，避免每次 execute() 都重建
     private final ConcurrentHashMap<String, Agent> agentCache = new ConcurrentHashMap<>();
 
     // Lane management
@@ -145,6 +149,14 @@ public class SessionAgentManager {
     /**
      * Restores in-memory session registry from the durable {@link SessionStore}. Called once
      * during construction when a store is provided.
+     *
+     * <p>重建三个内存索引：
+     * <ol>
+     *   <li>sessionsByKey — 主索引（sessionKey → SessionEntry）
+     *   <li>labelToSessionKey — 标签索引（label → sessionKey）
+     *   <li>childrenByParent — 父子关系索引（通过 spawnedBy 字段重建调用树）
+     * </ol>
+     * 恢复完成后立即执行一次 runMaintenance()，清理过期会话。
      */
     private void restoreFromStore() {
         for (SessionStore.StoredEntry stored : sessionStore.listAll()) {
@@ -255,6 +267,16 @@ public class SessionAgentManager {
     /**
      * Registers a new subagent session, optionally inheriting the {@code userId} from its parent
      * for continued namespace isolation.
+     *
+     * <h2>spawn 三字段的含义</h2>
+     * <ul>
+     *   <li><b>spawnedBy</b>：父会话的 sessionKey，构建会话调用树（MAIN 会话为 null）
+     *   <li><b>spawnDepth</b>：嵌套深度 = parentSpawnDepth + 1
+     *        （MAIN=0，子=1，孙=2，最大 {@link SessionConstants#MAX_SPAWN_DEPTH}=3）
+     *   <li><b>spawnRunId</b>：单次运行的唯一标识（"run-" + UUID），
+     *        用于 SubagentRunRegistry 追踪 PENDING → RUNNING → COMPLETED/FAILED 生命周期
+     * </ul>
+     * 这三个字段都无法从文件系统推导，必须由 SessionStore 注册表维护。
      */
     public SpawnResult registerSession(
             String agentId,
@@ -367,6 +389,9 @@ public class SessionAgentManager {
     /**
      * Registers a new MAIN session, optionally recording the {@code gateKey} for gateway routing
      * persistence and {@code userId} for HarnessAgent namespace isolation.
+     *
+     * <p>MAIN 会话与 SUBAGENT 会话的关键区别：
+     * spawnedBy=null, spawnDepth=0, spawnRunId=null —— 它是调用树的根节点。
      */
     public SpawnResult registerMainSession(
             String agentId, String label, String gateKey, String userId) {
@@ -633,6 +658,15 @@ public class SessionAgentManager {
     /**
      * Runs session maintenance: prunes stale sessions and caps total entries. Called automatically
      * after session registration when maintenance is enabled, or can be invoked manually.
+     *
+     * <h2>两种清理策略</h2>
+     * <ol>
+     *   <li><b>时间维度 pruneAfterMs</b>：lastActivityMs 早于 cutoff 的会话被删除
+     *   <li><b>数量维度 maxEntries</b>：按 lastActivityMs 升序，淘汰最旧的
+     * </ol>
+     * 注意：此方法只清理 sessionsByKey 注册表 + sessions.json 磁盘文件，<b>不删除</b>
+     * transcript 文件（.jsonl / .log.jsonl）。transcript 文件由 harness 层的
+     * MemoryMaintenanceHook 单独负责清理。
      *
      * @return number of sessions removed
      */
@@ -943,6 +977,14 @@ public class SessionAgentManager {
      * Resolves the session file path for a given agent, session, and owning user. The {@code userId}
      * is used to bake a per-user {@link RuntimeContext} so the underlying {@code WorkspaceManager}
      * resolves into the correct per-user namespace.
+     *
+     * <p>返回的是 workspace-relative 路径字符串（通过
+     * {@code WorkspaceManager.resolveSessionFile()}），不是本地磁盘绝对路径。
+     * 当使用 RemoteFilesystem 时，该路径代表 BaseStore 中的虚拟 namespace key。
+     *
+     * <p>注意：此方法调用的是旧格式 {@code resolveSessionFile() → .json}，
+     * 而非新的双文件模式 {@code resolveSessionContextFile() → .jsonl} 和
+     * {@code resolveSessionLogFile() → .log.jsonl}。
      */
     public String resolveSessionFilePath(String userId, String agentId, String sessionId) {
         if (delegate.getWorkspaceManager() != null) {

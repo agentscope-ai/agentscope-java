@@ -83,9 +83,9 @@ public class SessionController {
 
     @GetMapping("/inbox")
     public Mono<List<InboxEntry>> inbox(
-            @PathVariable String agentId,
-            @RequestParam(defaultValue = "50") int limit,
-            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @PathVariable("agentId") String agentId,
+            @RequestParam(name = "limit", defaultValue = "50") int limit,
+            @RequestParam(name = "unreadOnly", defaultValue = "false") boolean unreadOnly,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
@@ -123,7 +123,9 @@ public class SessionController {
 
     @GetMapping("/{key}")
     public Mono<List<SessionTurnParser.TurnEntry>> turns(
-            @PathVariable String agentId, @PathVariable String key, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("key") String key,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -135,7 +137,9 @@ public class SessionController {
 
     @PostMapping("/{key}/reset")
     public Mono<ResetResult> reset(
-            @PathVariable String agentId, @PathVariable String key, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("key") String key,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -147,7 +151,9 @@ public class SessionController {
 
     @PatchMapping("/{key}/read")
     public Mono<ReadStateResult> markRead(
-            @PathVariable String agentId, @PathVariable String key, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("key") String key,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -160,7 +166,9 @@ public class SessionController {
     @DeleteMapping("/{key}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> delete(
-            @PathVariable String agentId, @PathVariable String key, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("key") String key,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {

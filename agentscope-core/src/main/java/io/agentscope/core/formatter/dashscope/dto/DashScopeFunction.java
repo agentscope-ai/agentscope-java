@@ -19,11 +19,20 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * DashScope function call DTO.
+ * DashScope function 调用 DTO，对应 tool_calls 数组中的 function 对象。
  *
- * <p>This class represents the function details in a tool call.
+ * <p>DashScope API 中，tool call 的参数以 JSON 字符串形式传输。本类的两个字段
+ * 经 DashScopeResponseParser 映射到 AgentScope 的 ToolUseBlock：
  *
- * <p>Example:
+ * <pre>{@code
+ * DashScopeFunction                  ToolUseBlock
+ * ───────────────────────────────────────────────
+ * name        ───────────────────→  name          (工具名称)
+ * arguments   ───────────────────→  content       (原始 JSON 字符串，非结构化)
+ *              后续由 ModelUtils   →  input        (解析为 Map<String, Object>)
+ * }</pre>
+ *
+ * <p>JSON 示例：
  * <pre>{@code
  * {
  *   "name": "get_weather",

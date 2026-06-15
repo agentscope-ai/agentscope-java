@@ -25,51 +25,65 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
 /**
- * Unified execution configuration for timeout and retry behavior.
+ * 统一的超时与重试配置，同时用于模型 API 调用和工具执行。
  *
- * <p>This class replaces the previous TimeoutConfig and RetryConfig classes, providing a single
- * unified configuration for controlling execution behavior of both model API calls and tool
- * executions.
- *
- * <p>Use the builder pattern to construct instances. All fields are optional and nullable.
- *
- * <h2>Standard Defaults</h2>
- *
- * <ul>
- *   <li>{@link #MODEL_DEFAULTS}: 5 minutes timeout, 3 retry attempts with exponential backoff
- *   <li>{@link #TOOL_DEFAULTS}: 5 minutes timeout, no retry (1 attempt only)
- * </ul>
- *
- * <h2>Configuration Merging</h2>
- *
- * <p>Use {@link #mergeConfigs(ExecutionConfig, ExecutionConfig)} to combine configurations with
- * parameter-by-parameter precedence. This allows layering configs from different sources:
+ * <p>三个配置入口（优先级从高到低）：
  *
  * <pre>{@code
- * // Priority: per-request > agent-level > component-defaults > system-defaults
- * ExecutionConfig effective = ExecutionConfig.mergeConfigs(
- *     perRequestConfig,
- *     ExecutionConfig.mergeConfigs(agentConfig, ExecutionConfig.MODEL_DEFAULTS)
- * );
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │ ① 每调用一次    GenerateOptions.executionConfig()               │
+ * │               Toolkit.callTools() 的 agentExecutionConfig 参数   │
+ * │                                                                 │
+ * │ ② Agent 级别   ReActAgent.builder()                            │
+ * │               .modelExecutionConfig(cfg)   — 模型 API 调用       │
+ * │               .toolExecutionConfig(cfg)    — 工具执行            │
+ * │                                                                 │
+ * │ ③ Toolkit 级别 ToolkitConfig.builder()                         │
+ * │               .executionConfig(cfg)                             │
+ * │                                                                 │
+ * │ ④ 系统默认    MODEL_DEFAULTS  /  TOOL_DEFAULTS（兜底）          │
+ * └─────────────────────────────────────────────────────────────────┘
  * }</pre>
+ *
+ * <p>模型调用 vs 工具调用的默认值差异：
+ * <ul>
+ *   <li>MODEL_DEFAULTS — timeout=5min, maxAttempts=3, 指数退避 2s→30s
+ *       （模型 API 可安全重试，无副作用）</li>
+ *   <li>TOOL_DEFAULTS   — timeout=5min, maxAttempts=1（不重试）
+ *       （工具可能有副作用：发邮件、扣款等，重试会重复执行）</li>
+ * </ul>
+ *
+ * <p>合并规则（{@link #mergeConfigs}）：逐字段 primary 优先，
+ * primary 有值就用 primary，没有才 fallback。
+ *
+ * <pre>{@code
+ * // Toolkit 内的实际合并逻辑
+ * ExecutionConfig effective = ExecutionConfig.mergeConfigs(
+ *     agentExecutionConfig,                           // agent 级别
+ *     ExecutionConfig.mergeConfigs(
+ *         config.getExecutionConfig(),                // toolkit 级别
+ *         ExecutionConfig.TOOL_DEFAULTS));            // 系统默认
+ * }</pre>
+ *
+ * <p>不支持 Spring Boot application.yml 配置，必须代码配置。
  */
 public class ExecutionConfig {
-    /** Timeout duration for a single execution (model request or tool call). */
+    /** Timeout duration for a single execution (model request or tool call). 单次执行最长等待 TOOL_DEFAULTS  5 分钟│    MODEL_DEFAULTS  5 分钟*/
     private final Duration timeout;
 
-    /** Maximum number of attempts (including the initial attempt). */
+    /** Maximum number of attempts (including the initial attempt). 最多尝试次数  TOOL_DEFAULTS   1（不重试）   │  MODEL_DEFAULTS3（重试 2 次）*/
     private final Integer maxAttempts;
 
-    /** Initial backoff duration for the first retry. */
+    /** Initial backoff duration for the first retry. 首次重试等待 MODEL_DEFAULTS 2 秒*/
     private final Duration initialBackoff;
 
-    /** Maximum backoff duration between retries. */
+    /** Maximum backoff duration between retries. 重试等待上限 MODEL_DEFAULTS 30 秒*/
     private final Duration maxBackoff;
 
-    /** Multiplier applied to backoff duration after each retry. */
+    /** Multiplier applied to backoff duration after each retry. 重试间隔指数增长  MODEL_DEFAULTS 2.0*/
     private final Double backoffMultiplier;
 
-    /** Predicate to determine if an error should trigger a retry. */
+    /** Predicate to determine if an error should trigger a retry. 什么异常才重试  429/5xx/超时/网络错误*/
     private final Predicate<Throwable> retryOn;
 
     /**

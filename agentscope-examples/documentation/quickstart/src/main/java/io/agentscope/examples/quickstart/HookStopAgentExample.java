@@ -53,7 +53,7 @@ public class HookStopAgentExample {
     public static void main(String[] args) throws Exception {
         // Print welcome message
         ExampleUtils.printWelcome(
-                "Hook Stop Agent Example",
+                "人机交互Hook Stop Agent Example",
                 "This example demonstrates human-in-the-loop tool confirmation.\n"
                         + "The agent will pause before executing sensitive operations,\n"
                         + "allowing you to review and confirm the tool calls.");

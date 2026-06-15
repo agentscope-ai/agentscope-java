@@ -83,7 +83,7 @@ public class AgentCatalogController {
 
     /** Gets a single agent definition visible to the authenticated user. */
     @GetMapping("/{id}")
-    public Mono<AgentDefinition> getAgent(@PathVariable String id, Authentication auth) {
+    public Mono<AgentDefinition> getAgent(@PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () ->
@@ -133,7 +133,9 @@ public class AgentCatalogController {
      */
     @PutMapping("/{id}")
     public Mono<AgentDefinition> updateAgent(
-            @PathVariable String id, @RequestBody AgentCreateRequest req, Authentication auth) {
+            @PathVariable("id") String id,
+            @RequestBody AgentCreateRequest req,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -160,7 +162,7 @@ public class AgentCatalogController {
      */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteAgent(@PathVariable String id, Authentication auth) {
+    public Mono<Void> deleteAgent(@PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {

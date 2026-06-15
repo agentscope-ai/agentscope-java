@@ -176,14 +176,21 @@ public class ExampleUtils {
                                         for (ContentBlock block : msg.getContent()) {
                                             if (block instanceof ThinkingBlock) {
                                                 printStreamContent(
-                                                        ((ThinkingBlock) block).getThinking(),
+                                                        "["
+                                                                + event.getType()
+                                                                + "]"
+                                                                + ((ThinkingBlock) block)
+                                                                        .getThinking(),
                                                         lastThinkingContent,
                                                         hasPrintedThinkingHeader,
                                                         "> Thinking: ",
                                                         null);
                                             } else if (block instanceof TextBlock) {
                                                 printStreamContent(
-                                                        ((TextBlock) block).getText(),
+                                                        "["
+                                                                + event.getType()
+                                                                + "]"
+                                                                + ((TextBlock) block).getText(),
                                                         lastTextContent,
                                                         hasPrintedTextHeader,
                                                         "Text: ",

@@ -63,7 +63,7 @@ public class GitLabWebhookController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<String>> webhook(
-            @PathVariable String channelId,
+            @PathVariable("channelId") String channelId,
             @RequestHeader(value = "X-Gitlab-Token", required = false) String token,
             @RequestHeader(value = "X-Gitlab-Event", required = false) String eventType,
             @RequestBody String rawBody) {

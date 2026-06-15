@@ -13,7 +13,7 @@
 # limitations under the License.
 
 server:
-  port: 8080
+  port: 9090
 
 logging:
   level:

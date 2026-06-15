@@ -81,17 +81,21 @@ public final class ListHashUtil {
 
         int size = values.size();
         StringBuilder sb = new StringBuilder();
+        // hash 中包含 size，所以列表缩短(size变小)一定能被检测到
         sb.append("size:").append(size).append(";");
 
-        // Get sample indices based on list size
+        // 获取采样索引：≤5 全量采样，>5 按 [0, 1/4, 1/2, 3/4, tail] 采样 5 个位置
         int[] sampleIndices = getSampleIndices(size);
 
+        // 拼接 "索引:hash,索引:hash,..." 形成指纹字符串
+        // 示例: "size:100;0:12345,25:67890,50:11111,75:22222,99:33333"
         for (int idx : sampleIndices) {
             State item = values.get(idx);
             int itemHash = item != null ? item.hashCode() : 0;
             sb.append(idx).append(":").append(itemHash).append(",");
         }
 
+        // 最终转为 hex 字符串存储到 Redis
         return Integer.toHexString(sb.toString().hashCode());
     }
 
@@ -110,7 +114,7 @@ public final class ListHashUtil {
      */
     private static int[] getSampleIndices(int size) {
         if (size <= SAMPLING_THRESHOLD) {
-            // Small list: sample all elements
+            // 小列表（≤5个元素）：对所有元素采样，因为遍历成本很低
             int[] indices = new int[size];
             for (int i = 0; i < size; i++) {
                 indices[i] = i;
@@ -118,7 +122,9 @@ public final class ListHashUtil {
             return indices;
         }
 
-        // Large list: sample at key positions
+        // 大列表（>5个元素）：用 5 个固定比例位置采样，O(1) 代价覆盖列表的头、中、尾
+        // 示例: size=100 → [0, 25, 50, 75, 99] 分别对应 0%、25%、50%、75%、末尾
+        // 这样只要这 5 个位置 + size 的 hash 没变，就可以推断列表仅有尾部追加
         return new int[] {0, size / 4, size / 2, size * 3 / 4, size - 1};
     }
 
@@ -140,6 +146,13 @@ public final class ListHashUtil {
     /**
      * Determine if a full rewrite is needed based on list content and existing count.
      *
+     * <p>三种结果:
+     * <ul>
+     *   <li>true  → 全量重写: DEL + 逐条 RPUSH 重建整个 List</li>
+     *   <li>false → 增量追加: 只 RPUSH 新增的尾部元素（最热路径）</li>
+     *   <li>false → 无变化跳过: size 没变则零 Redis 开销</li>
+     * </ul>
+     *
      * @param currentValues the current complete list of state objects
      * @param storedHash the previously stored hash (may be null)
      * @param existingCount the count of items already stored
@@ -153,18 +166,22 @@ public final class ListHashUtil {
 
         int currentSize = currentValues.size();
 
-        // Case 1: List shrunk (items were deleted)
+        // 情况1: 列表缩短了（有元素被删除，如 memory.deleteMessage 或 clear）
+        // Redis List 不支持删除中间元素，必须全量重建
         if (currentSize < existingCount) {
             return true;
         }
 
-        // Case 2: Missing hash but existing data found (e.g., version upgrade or corrupted hash)
-        // Must rewrite because we cannot verify unmodified state.
+        // 情况2: Redis 中已有数据但哈希丢失（版本升级/数据损坏）
+        // 无法验证已有部分是否被修改，安全起见全量重写
         if (storedHash == null && existingCount > 0) {
             return true;
         }
 
-        // Case 3: Check if the previously existing elements were modified.
+        // 情况3: 取已有部分（prefix = 前 existingCount 个元素），
+        // 用采样 hash 比对，判断已有部分是否被修改
+        // - hash 变了 → 内部有修改，需要全量重写
+        // - hash 没变 → 可以增量追加（仅尾部新增）
         List<? extends State> prefix = currentValues.subList(0, existingCount);
         String prefixHash = computeHash(prefix);
         return hasChanged(prefixHash, storedHash);

@@ -19,7 +19,9 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 
 /**
@@ -37,6 +39,8 @@ public class BasicChatExample {
         // Get API key (from environment or interactive input)
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
+//        OpenAIChatModel.builder()
+//        GeminiChatModel.builder();
         // Create Agent with minimal configuration
         ReActAgent agent =
                 ReActAgent.builder()

@@ -71,7 +71,8 @@ public class AgentBindingController {
     }
 
     @GetMapping
-    public Mono<List<AgentBindingView>> list(@PathVariable String agentId, Authentication auth) {
+    public Mono<List<AgentBindingView>> list(
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         guard.require(userId, agentId, Tier.RUN);
         return Mono.fromCallable(
@@ -99,7 +100,7 @@ public class AgentBindingController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<AgentBindingView> add(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestBody BindingCreateRequest req,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -137,8 +138,8 @@ public class AgentBindingController {
 
     @PutMapping("/{index}")
     public Mono<AgentBindingView> update(
-            @PathVariable String agentId,
-            @PathVariable int index,
+            @PathVariable("agentId") String agentId,
+            @PathVariable("index") int index,
             @RequestParam("channelId") String channelId,
             @RequestBody BindingCreateRequest req,
             Authentication auth) {
@@ -190,8 +191,8 @@ public class AgentBindingController {
     @DeleteMapping("/{index}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> delete(
-            @PathVariable String agentId,
-            @PathVariable int index,
+            @PathVariable("agentId") String agentId,
+            @PathVariable("index") int index,
             @RequestParam("channelId") String channelId,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();

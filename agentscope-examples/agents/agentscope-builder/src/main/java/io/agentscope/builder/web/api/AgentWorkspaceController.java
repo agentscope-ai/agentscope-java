@@ -120,7 +120,8 @@ public class AgentWorkspaceController {
     // -----------------------------------------------------------------
 
     @GetMapping
-    public Mono<WorkspaceSummary> summary(@PathVariable String agentId, Authentication auth) {
+    public Mono<WorkspaceSummary> summary(
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -132,7 +133,7 @@ public class AgentWorkspaceController {
 
     @PostMapping("/scaffold")
     public Mono<WorkspaceSummary> scaffold(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestParam(name = "name", defaultValue = "") String agentName,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -163,7 +164,7 @@ public class AgentWorkspaceController {
     // -----------------------------------------------------------------
 
     @GetMapping("/memory")
-    public Mono<MemoryView> memory(@PathVariable String agentId, Authentication auth) {
+    public Mono<MemoryView> memory(@PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -200,7 +201,7 @@ public class AgentWorkspaceController {
 
     @GetMapping("/files")
     public Mono<List<FileNode>> tree(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestParam(name = "recursive", defaultValue = "true") boolean recursive,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -226,7 +227,9 @@ public class AgentWorkspaceController {
 
     @GetMapping("/file")
     public Mono<String> readFile(
-            @PathVariable String agentId, @RequestParam("path") String path, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestParam("path") String path,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -262,7 +265,7 @@ public class AgentWorkspaceController {
 
     @PutMapping("/file")
     public Mono<FileNode> writeFile(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestParam("path") String path,
             @RequestBody WriteRequest req,
             Authentication auth) {
@@ -307,7 +310,7 @@ public class AgentWorkspaceController {
     @PostMapping("/file")
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<FileNode> createNode(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestParam("path") String path,
             @RequestParam(name = "type", defaultValue = "file") String type,
             Authentication auth) {
@@ -355,7 +358,9 @@ public class AgentWorkspaceController {
 
     @PostMapping("/file/move")
     public Mono<FileNode> moveNode(
-            @PathVariable String agentId, @RequestBody MoveRequest req, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestBody MoveRequest req,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -399,7 +404,9 @@ public class AgentWorkspaceController {
     @DeleteMapping("/file")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteNode(
-            @PathVariable String agentId, @RequestParam("path") String path, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestParam("path") String path,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {
@@ -431,7 +438,7 @@ public class AgentWorkspaceController {
 
     @PostMapping("/upload")
     public Mono<FileNode> upload(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
             @RequestParam("path") String path,
             @RequestPart("file") FilePart file,
             Authentication auth) {
@@ -515,7 +522,7 @@ public class AgentWorkspaceController {
 
     @GetMapping("/subagents")
     public Mono<List<SubagentInfo>> listSubagents(
-            @PathVariable String agentId, Authentication auth) {
+            @PathVariable("agentId") String agentId, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -552,8 +559,8 @@ public class AgentWorkspaceController {
 
     @PutMapping("/subagents/{name}")
     public Mono<SubagentInfo> upsertSubagent(
-            @PathVariable String agentId,
-            @PathVariable String name,
+            @PathVariable("agentId") String agentId,
+            @PathVariable("name") String name,
             @RequestBody SubagentUpsertRequest req,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -586,7 +593,9 @@ public class AgentWorkspaceController {
     @PostMapping("/subagents/from-agent")
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<SubagentInfo> createSubagentFromAgent(
-            @PathVariable String agentId, @RequestBody FromAgentRequest req, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @RequestBody FromAgentRequest req,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -647,7 +656,9 @@ public class AgentWorkspaceController {
     @DeleteMapping("/subagents/{name}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteSubagent(
-            @PathVariable String agentId, @PathVariable String name, Authentication auth) {
+            @PathVariable("agentId") String agentId,
+            @PathVariable("name") String name,
+            Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {

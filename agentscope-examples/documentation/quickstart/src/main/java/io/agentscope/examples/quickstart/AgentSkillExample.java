@@ -44,8 +44,8 @@ public class AgentSkillExample {
 
     private static final String SKILL_NAME = "skill-creator";
     private static final String RESOURCES_DIR =
-            "agentscope-examples/quickstart/src/main/resources/skills";
-    private static final String OUTPUT_DIR = "agentscope-examples/quickstart/target/skill-output";
+            "agentscope-examples/documentation/quickstart/src/main/resources/skills";
+    private static final String OUTPUT_DIR = "agentscope-exampless/documentation/quickstart/target/skill-output";
 
     public static void main(String[] args) throws Exception {
         ExampleUtils.printWelcome(
@@ -62,6 +62,9 @@ public class AgentSkillExample {
         SkillBox skillBox = new SkillBox(toolkit);
 
         AgentSkill skillCreator = loadSkillCreatorSkill();
+        // 这里registration()是new了一个new SkillRegistration(this-skillbox)
+        // 然后通过SkillRegistration注册agentSkill
+        //     以及skill的相关tool到toolkit 以及设置skillId_skill_tools skillToolGroup
         skillBox.registration().skill(skillCreator).apply();
 
         Path outputDir = resolvePath(OUTPUT_DIR);

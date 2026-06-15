@@ -159,18 +159,27 @@ public class RemoteFilesystemSpec {
      */
     public AbstractFilesystem toFilesystem(
             Path workspace, String agentId, NamespaceFactory localNamespaceFactory) {
+        // agentId 兜底值
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
+        // 默认层：本地文件系统，负责未被路由覆盖的路径（无 shell）
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 
-        // Read-only workspace-root template view for the exact-file overlays below. The lower
-        // technically exposes the entire workspace, but CompositeFilesystem does not recurse into
-        // exact-file routes (it does single-key exists/read), so the over-exposure is unreachable.
+        // 只读的 workspace 根目录模板视图（用于精确文件路由的下层基线）
+        // 虽然技术上暴露了整个 workspace，但 CompositeFilesystem 对精确文件路由
+        // 只做单 key 的 exists/read 操作，不会递归遍历，所以过曝是不可达的
         LocalFilesystem workspaceTemplate = new LocalFilesystem(workspace, true, 10, null);
 
+        // 按路径前缀分发到不同的 OverlayFilesystem
+        // 每个路由 = OverlayFilesystem(上层: RemoteFilesystem可写, 下层: LocalFilesystem只读模板)
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
+
+        // ── 精确文件路由（不以 / 结尾）─────────────────────────────
+        // CompositeFilesystem 只对单个文件名做 exists/read，不递归
         routes.put("AGENTS.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
         routes.put("MEMORY.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
         routes.put("tools.json", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+
+        // ── 目录前缀路由（以 / 结尾，递归匹配子路径）─────────────────
         routes.put(
                 "memory/", overlayRoute(workspace.resolve("memory"), "memory", effectiveAgentId));
         routes.put(
@@ -181,18 +190,21 @@ public class RemoteFilesystemSpec {
         routes.put(
                 "knowledge/",
                 overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
+        // sessions: 会话 JSONL 归档，每次对话独立
         routes.put(
                 "agents/" + effectiveAgentId + "/sessions/",
                 overlayRoute(
                         workspace.resolve("agents").resolve(effectiveAgentId).resolve("sessions"),
                         "sessions",
                         effectiveAgentId));
+        // tasks: PlanNotebook 任务持久化
         routes.put(
                 "agents/" + effectiveAgentId + "/tasks/",
                 overlayRoute(
                         workspace.resolve("agents").resolve(effectiveAgentId).resolve("tasks"),
                         "tasks",
                         effectiveAgentId));
+        // 用户通过 addSharedPrefix() 注册的额外共享路径
         for (String extra : extraSharedPrefixes) {
             String segment = routeSegmentFromPrefix(extra);
             routes.put(extra, overlayRoute(workspace.resolve(segment), segment, effectiveAgentId));
@@ -201,11 +213,10 @@ public class RemoteFilesystemSpec {
     }
 
     /**
-     * Builds an {@link OverlayFilesystem} for a workspace-prefix route. The upper layer is the
-     * per-user {@link RemoteFilesystem} backed by {@link BaseStore}; the lower layer is a read-only
-     * {@link LocalFilesystem} rooted at {@code localTemplateDir} so scaffolded template content is
-     * visible as the baseline. {@code virtualMode=true} on the lower so it reports paths anchored
-     * to its own root, which is what {@link CompositeFilesystem}'s route remapping expects.
+     * 目录路由：构建 OverlayFilesystem(上层 Remote + 下层只读 Local)。
+     *
+     * <p>上层负责持久化（写入远程 BaseStore，按用户/session 命名空间隔离），
+     * 下层是本地模板目录（只读基线）。读取时优先查上层，没有则回退到下层模板。
      */
     private OverlayFilesystem overlayRoute(
             Path localTemplateDir, String routeSegment, String agentId) {
@@ -215,10 +226,8 @@ public class RemoteFilesystemSpec {
     }
 
     /**
-     * Builds an {@link OverlayFilesystem} for an exact-file route (e.g. {@code AGENTS.md}).
-     * The upper layer is the per-user {@link RemoteFilesystem} on the {@code root} namespace
-     * segment; the lower layer is the shared workspace-root {@link LocalFilesystem} so the
-     * scaffolded template file ({@code workspace/<filename>}) is visible as the baseline.
+     * 精确文件路由：同 overlayRoute，但下层用的是 workspace 根目录的模板视图。
+     * 用于 AGENTS.md、MEMORY.md、tools.json 这类不在子目录中的单文件。
      */
     private OverlayFilesystem exactFileOverlay(
             String routeSegment, String agentId, LocalFilesystem workspaceTemplate) {
@@ -226,6 +235,10 @@ public class RemoteFilesystemSpec {
         return new OverlayFilesystem(upper, workspaceTemplate);
     }
 
+    /**
+     * 为指定路由段创建 RemoteFilesystem，命名空间 = 基础命名空间 + 路由段。
+     * 例如 USER 模式 + routeSegment="skills" → ["agents", "assistant", "users", "bob", "skills"]
+     */
     private RemoteFilesystem remoteForRoute(String routeSegment, String agentId) {
         NamespaceFactory base = storeNamespace(agentId);
         NamespaceFactory extended =

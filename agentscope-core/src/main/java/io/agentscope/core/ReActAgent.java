@@ -362,6 +362,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        // 如果有ToolUseBlock没有ToolResultBlock--可能是系统崩溃导致没有添加到memory中
         Set<String> pendingIds = getPendingToolUseIds();
 
         // No pending tools -> normal processing
@@ -370,7 +371,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return executeIteration(0);
         }
 
-        // Has pending tools but no input -> resume (execute pending tools directly)
+        // 有pending tool没有result -> 尝试恢复 (直接执行tool调用 execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
             return acting(0);
         }
@@ -386,7 +387,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             validateAndAddToolResults(msgs, pendingIds);
             return hasPendingToolUse() ? acting(0) : executeIteration(0);
         }
-
+        // 有pending tool 且 有 input Msg -> 报错 提示可以通过PendingToolRecoveryHook 处理
         // If PendingToolRecoveryHook is enabled, pending state should have been
         // patched during PreCallEvent. If we still reach here, the hook was disabled
         // and the user did not provide tool results — this is an unrecoverable state.
@@ -542,6 +543,18 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     // ==================== Core ReAct Loop ====================
+    //
+    // Agent 循环通过递归实现（非 while/for），iter 每轮 +1：
+    //
+    //   call()
+    //     └─ executeIteration(0) → reasoning(0)
+    //          ├─ model 没返回 tool_calls → isFinished → 返回 msg（终止）
+    //          ├─ hook 请求停止 → isStopRequested → 返回 msg（终止）
+    //          ├─ iter >= maxIters → summarizing()（终止）
+    //          └─ model 返回 tool_calls → acting(0)
+    //               ├─ 执行工具 → memory 存入 TOOL 结果
+    //               └─ executeIteration(1) → reasoning(1)  ← 递归！
+    //                    └─ ...（继续循环直到满足退出条件）
 
     private Mono<Msg> executeIteration(int iter) {
         return reasoning(iter, false);
@@ -581,12 +594,36 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         })
                 .doOnNext(
                         chunk -> {
+                            // 因为这个context ReasoningContext 只在处理 模型返回的 ASSISTANT 角色响应时被调用。模型只会产出三种
+                            // ContentBlock：
+                            //  LLM API 返回 (ASSISTANT role)
+                            //    ├── reasoning_content → ThinkingBlock   (thinking 模式下的思考过程)
+                            //    ├── content           → TextBlock       (最终文本回答)
+                            //    └── tool_calls        → ToolUseBlock    (工具调用请求)
                             List<Msg> chunkMsgs = context.processChunk(chunk);
                             // Notify streaming hooks for each chunk message
                             for (Msg msg : chunkMsgs) {
                                 notifyReasoningChunk(msg, context).subscribe();
                             }
                         })
+                /*
+                 * then(Mono) 的时序：
+                 *   - doOnNext 已将所有 chunk 累积到 ReasoningContext 中
+                 *     （thinkingAcc、textAcc、toolCallsAcc 三个缓冲区）
+                 *   - then 确保 stream 全部结束后才执行，此时累积完成
+                 *   - Mono.defer 延迟执行，保证 buildFinalMessage() 在正确的时机调用
+                 *   - buildFinalMessage() 将所有累积的 Block 拼接成完整的 Msg(ASSISTANT)
+                 *   - Mono.justOrEmpty：有内容返回 Mono<Msg>，无内容返回 Mono.empty()
+                 *
+                 * ┌─ doOnNext ───────────────┐  ┌─ then(Mono.defer(...))─┐
+                 * │ chunk1 → thinkAcc 累积   │  │ stream 结束             │
+                 * │ chunk2 → textAcc 累积    │  │ buildFinalMessage()     │
+                 * │ chunk3 → toolCallsAcc累积│  │   → Msg(ASSISTANT)     │
+                 * │ ...                      │  │   → 含 ThinkingBlock    │
+                 * └──────────────────────────┘  │     TextBlock          │
+                 *                              │     ToolUseBlock       │
+                 *                              └────────────────────────┘
+                 */
                 .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
                 .onErrorResume(
                         InterruptedException.class,
@@ -607,6 +644,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             }
                             return Mono.error(error);
                         })
+                // 这里的Msg参数是包含一轮完整的LLM对话的所有content<block>，包含thinking、text、toolCalls
                 .flatMap(this::notifyPostReasoning)
                 .flatMap(
                         event -> {
@@ -675,11 +713,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return executeIteration(iter + 1);
         }
 
-        // Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
+        // 注册回调:Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
         toolkit.setInternalChunkCallback(
                 (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
         // Execute only pending tools (those without results in memory)
+        // hook触发 new PreActingEvent(this, toolkit, toolUseBlok)事件
         return notifyPreActingHooks(pendingToolCalls)
                 .flatMap(this::executeToolCalls)
                 .flatMap(
@@ -703,6 +742,25 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             }
 
                             // Process success results through hooks and add to memory
+                            // 遍历所有成功执行的工具结果，依次触发 PostActingHook。
+                            // concatMap 保证每个 tool result 顺序经过 notifyPostActingHook 处理，
+                            // 生成对应的 PostActingEvent。
+                            //
+                            // .last() 的作用：
+                            //   concatMap 会产生 N 个 PostActingEvent（每个成功工具一个），
+                            //   但下游 flatMap 只需要「最终」一个事件来做唯一的决策。
+                            //   使用 .last() 只取最后一个 PostActingEvent，因为：
+                            //   1. 后续 Hook 可能在之前 Hook 设置 stopRequested 的基础上追加信息，
+                            //      只有最后一个事件才携带所有 Hook 处理完毕后的完整状态。
+                            //   2. 如果不用 .last()，每个 PostActingEvent 都会进入 flatMap，
+                            //      导致重复触发 stopRequested / executeIteration 等决策逻辑。
+                            //   3. 下游 flatMap 的三向决策只需要执行一次：
+                            //      - stopRequested=true → 停止并返回结果
+                            //      - 有 pendingPairs → 构建挂起消息
+                            //      - 其他 → 继续下一轮 ReAct 迭代
+                            //
+                            //   注意：.last() 在 Flux 为空时会抛出 NoSuchElementException，
+                            //   但这里有 successPairs.isEmpty() 的提前返回保护，所以不会出现空 Flux。
                             return Flux.fromIterable(successPairs)
                                     .concatMap(this::notifyPostActingHook)
                                     .last()
@@ -804,7 +862,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Notify PostActingEvent hook for a single tool result, build message and add to memory.
+     * 处理单个工具执行结果——通知 PostActingEvent hook，并存入 Agent 记忆。
+     *
+     * <p>在 acting() 阶段，每个工具调用执行完成后都会经过此方法：
+     * <ol>
+     *   <li>将 (ToolUseBlock, ToolResultBlock) 组装为 Msg(TOOL)</li>
+     *   <li>创建 PostActingEvent，让 hook 有机会修改或拦截结果</li>
+     *   <li>hook 全部执行完毕后，将 Msg(TOOL) 存入 memory</li>
+     * </ol>
+     *
+     * <p>存入 memory 后，下一轮 reasoning() 会将该 Msg(TOOL) 作为上下文发给 LLM：
+     *
+     * <pre>{@code
+     *   reasoning          acting                     memory
+     *   ────────          ──────                     ──────
+     *   Msg(ASSISTANT)                               + Msg(ASSISTANT)
+     *     + ToolUseBlock
+     *                       执行 get_weather
+     *                       → ToolResultBlock            + Msg(TOOL)  ← 本方法存入
+     *                          { result }
+     *                                                       ↓
+     *   下一轮 reasoning() 读取 memory → 看到完整的工具调用上下文
+     * }</pre>
      */
     private Mono<PostActingEvent> notifyPostActingHook(
             Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
@@ -1066,6 +1145,18 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
+        // ReasoningChunkEvent 携带两维度的数据：
+        //   - chunkMsg:            本次增量（如 TextBlock("今天")）
+        //   - accumulatedContent:  累积到当前的完整内容（如 TextBlock("今天天气很好")）
+        //
+        // 三次 chunk 到达的示例：
+        //   chunk 1: chunkMsg="今天"     accumulated="今天"
+        //   chunk 2: chunkMsg="天气"     accumulated="今天天气"
+        //   chunk 3: chunkMsg="很好"     accumulated="今天天气很好"
+        //
+        // Hook 消费者可选择：
+        //   event.getMessage()            → 只拿增量，适合 SSE 推前端逐字显示
+        //   event.getAccumulatedMessage()  → 拿完整内容，适合状态快照、日志
         ContentBlock accumulatedContent = null;
         if (content instanceof TextBlock) {
             accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
@@ -1697,11 +1788,15 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
             registerToolsFromHooks(agentToolkit);
 
+            // 如果 enableMetaTool = false：
+            //  - tool group 创建时 active = false → LLM 永远看不到这些工具
+            //  - 没有 reset_equipped_tools，LLM 没办法在运行时改变激活状态
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
             }
 
             // Register PendingToolRecoveryHook if enabled
+            // 如果有pending toolUserBlock 没有ToolResultBlock, 这里补充error 信息的 resultBlock
             if (enablePendingToolRecovery) {
                 hooks.add(new PendingToolRecoveryHook());
             }
@@ -1911,7 +2006,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
-            // Register skill loader tools to toolkit
+            // Register skill loader tools(是获取skill资源文件内容或者SKILL.md本身内容+ active skill的工具) to toolkit
             skillBox.registerSkillLoadTool();
 
             // If auto upload is enabled, upload skill files

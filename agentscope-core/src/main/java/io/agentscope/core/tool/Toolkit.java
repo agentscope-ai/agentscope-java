@@ -517,6 +517,7 @@ public class Toolkit {
                 ExecutionConfig.mergeConfigs(
                         agentExecutionConfig,
                         ExecutionConfig.mergeConfigs(
+                                // ExecutionConfig.TOOL_DEFAULTS:timeout=5min, maxAttempts=1
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
         return executor.executeAll(

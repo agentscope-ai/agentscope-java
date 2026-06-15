@@ -176,6 +176,7 @@ public class AgentService implements InitializingBean {
                             if (toolUse != null && toolUse.getInput() != null) {
                                 captured.putAll(toolUse.getInput());
                             }
+                            //因为 AgentScope 的事件流中，TOOL_RESULT 事件只携带工具输出，不携带工具输入。但前端 SSE 渲染时需要同时展示：
                             pendingToolInputs.offer(captured);
 
                             if (toolUse != null) {

@@ -120,7 +120,7 @@ public class AdminUserController {
 
     @PatchMapping("/{userId}/password")
     public Mono<AdminUserView> resetPassword(
-            @PathVariable String userId,
+            @PathVariable("userId") String userId,
             @RequestBody PasswordResetRequest req,
             Authentication auth) {
         requireAdmin(auth);
@@ -143,7 +143,9 @@ public class AdminUserController {
 
     @PatchMapping("/{userId}/roles")
     public Mono<AdminUserView> updateRoles(
-            @PathVariable String userId, @RequestBody RolesRequest req, Authentication auth) {
+            @PathVariable("userId") String userId,
+            @RequestBody RolesRequest req,
+            Authentication auth) {
         requireAdmin(auth);
         return Mono.fromCallable(
                 () -> {
@@ -170,7 +172,7 @@ public class AdminUserController {
 
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> delete(@PathVariable String userId, Authentication auth) {
+    public Mono<Void> delete(@PathVariable("userId") String userId, Authentication auth) {
         requireAdmin(auth);
         String actor = (String) auth.getPrincipal();
         if (userId.equals(actor)) {

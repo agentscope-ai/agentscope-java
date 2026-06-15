@@ -50,7 +50,7 @@ public class TemplateController {
     }
 
     @GetMapping("/{id}")
-    public Mono<TemplateDetail> get(@PathVariable String id) {
+    public Mono<TemplateDetail> get(@PathVariable("id") String id) {
         return Mono.fromCallable(
                 () ->
                         registry.get(id)

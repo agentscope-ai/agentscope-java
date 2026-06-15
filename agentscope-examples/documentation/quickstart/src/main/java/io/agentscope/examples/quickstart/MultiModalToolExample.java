@@ -45,7 +45,7 @@ public class MultiModalToolExample {
     public static void main(String[] args) throws Exception {
         // Print welcome message
         ExampleUtils.printWelcome(
-                "MultiModal Tool Calling Example",
+                "多媒体 Tool Calling Example",
                 "This example demonstrates how to equip an Agent with multimodal tools.\n"
                         + "The agent has image, audio and video multimodal tools.");
 

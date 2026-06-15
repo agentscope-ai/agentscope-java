@@ -70,7 +70,7 @@ public class AgentShareController {
     }
 
     @GetMapping
-    public Mono<List<AgentShareGrant>> list(@PathVariable String id, Authentication auth) {
+    public Mono<List<AgentShareGrant>> list(@PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -86,7 +86,7 @@ public class AgentShareController {
 
     @PostMapping
     public Mono<List<AgentShareGrant>> add(
-            @PathVariable String id, @RequestBody AddShareRequest req, Authentication auth) {
+            @PathVariable("id") String id, @RequestBody AddShareRequest req, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -171,9 +171,9 @@ public class AgentShareController {
     @DeleteMapping("/{granteeType}/{granteeId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> revoke(
-            @PathVariable String id,
-            @PathVariable String granteeType,
-            @PathVariable String granteeId,
+            @PathVariable("id") String id,
+            @PathVariable("granteeType") String granteeType,
+            @PathVariable("granteeId") String granteeId,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(

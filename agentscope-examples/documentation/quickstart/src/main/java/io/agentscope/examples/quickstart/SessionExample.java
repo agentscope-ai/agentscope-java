@@ -46,7 +46,7 @@ public class SessionExample {
     public static void main(String[] args) throws Exception {
         // Print welcome message
         ExampleUtils.printWelcome(
-                "Session Example",
+                "会话 Example",
                 "This example demonstrates persistent conversation sessions.\n"
                         + "Your conversations are saved and can be resumed later.");
 

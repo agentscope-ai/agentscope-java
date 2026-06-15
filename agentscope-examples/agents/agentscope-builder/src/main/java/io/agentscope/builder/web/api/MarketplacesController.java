@@ -114,7 +114,7 @@ public class MarketplacesController {
 
     @PutMapping("/{id}")
     public Mono<MarketplaceSummary> updateMarketplace(
-            @PathVariable String id,
+            @PathVariable("id") String id,
             @RequestBody MarketplaceWriteRequest req,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
@@ -141,7 +141,7 @@ public class MarketplacesController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteMarketplace(@PathVariable String id, Authentication auth) {
+    public Mono<Void> deleteMarketplace(@PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromRunnable(
                 () -> {
@@ -170,7 +170,8 @@ public class MarketplacesController {
     }
 
     @PostMapping("/{id}/test")
-    public Mono<TestConnectionResult> testExisting(@PathVariable String id, Authentication auth) {
+    public Mono<TestConnectionResult> testExisting(
+            @PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -192,7 +193,8 @@ public class MarketplacesController {
     // -----------------------------------------------------------------
 
     @GetMapping("/{id}/skills")
-    public Mono<List<MarketSkillBrief>> listSkills(@PathVariable String id, Authentication auth) {
+    public Mono<List<MarketSkillBrief>> listSkills(
+            @PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
@@ -217,7 +219,7 @@ public class MarketplacesController {
 
     @GetMapping("/{id}/skills/{name}")
     public Mono<MarketSkillDetail> getSkill(
-            @PathVariable String id, @PathVariable String name, Authentication auth) {
+            @PathVariable("id") String id, @PathVariable("name") String name, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {

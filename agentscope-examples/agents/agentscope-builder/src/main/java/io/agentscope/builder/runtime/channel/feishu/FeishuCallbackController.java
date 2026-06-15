@@ -71,7 +71,7 @@ public class FeishuCallbackController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<String>> callback(
-            @PathVariable String channelId,
+            @PathVariable("channelId") String channelId,
             @RequestHeader(value = "X-Lark-Signature", required = false) String signature,
             @RequestHeader(value = "X-Lark-Request-Timestamp", required = false) String timestamp,
             @RequestHeader(value = "X-Lark-Request-Nonce", required = false) String nonce,

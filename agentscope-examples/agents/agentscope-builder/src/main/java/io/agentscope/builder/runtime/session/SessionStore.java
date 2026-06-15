@@ -37,6 +37,26 @@ import org.slf4j.LoggerFactory;
  * Durable session registry backed by a JSON file ({@code sessions.json}). Mirrors OpenClaw's
  * {@code sessions.json} store that tracks session metadata across restarts.
  *
+ * <h2>Purpose</h2>
+ * 只存储<b>会话元数据</b>（注册表），不存储对话内容本身。对话内容（transcript）由
+ * {@code MemoryFlushHook → SessionTree} 写入独立的 {@code .jsonl / .log.jsonl} 文件。
+ * sessions.json 中的 {@code sessionFilePath} 字段是连接元数据与内容的<b>指针</b>。
+ *
+ * <h2>为什么需要独立的 sessions.json？</h2>
+ * RemoteFilesystem 的文件系统可以列出 agents/{agentId}/sessions/ 下有哪些文件，但无法原生表达：
+ * <ul>
+ *   <li>label（用户自定义名称）
+ *   <li>createdAtMs（创建时间，与文件修改时间不同）
+ *   <li>kind（MAIN vs SUBAGENT）
+ *   <li>gateKey（消息路由 key）
+ *   <li>spawnedBy / spawnDepth（父子会话调用链）
+ * </ul>
+ * 这些元数据是 builder 层的概念，必须由独立的注册表维护。
+ *
+ * <h2>数据模型 vs 存储实现</h2>
+ * StoredEntry 的数据结构对 RemoteFilesystem 完全适用 —— sessionFilePath 是虚拟引用字符串，
+ * 不依赖本地路径。当前实现是本地 JSON 文件，可替换为 BaseStore（Redis/JDBC）后端实现。
+ *
  * <p>Thread-safe: uses a read-write lock so concurrent reads are non-blocking and writes are
  * serialized. File writes are atomic (write to temp, then rename).
  *
@@ -55,9 +75,23 @@ public final class SessionStore {
     private final Map<String, StoredEntry> entries = new LinkedHashMap<>();
 
     /**
-     * JSON-serializable subset of {@link SessionEntry} for disk persistence. Uses
-     * {@code @JsonIgnoreProperties(ignoreUnknown = true)} for forward compatibility when new
-     * fields are added.
+     * JSON-serializable subset of {@link SessionEntry} for disk persistence.
+     *
+     * <h2>字段分两类</h2>
+     * <b>文件系统可推导（冗余但方便缓存）：</b>
+     * agentId、sessionId、userId、lastActivityMs（≈文件修改时间）
+     *
+     * <b>文件系统无法表达（必须由注册表维护）：</b>
+     * label（用户自定义名称，纯展示）、createdAtMs（创建≠修改）、
+     * kind（MAIN/SUBAGENT，文件层级区分不了）、gateKey（消息路由 key）、
+     * spawnedBy/spawnDepth（父子调用链）、sessionKey（跨 agent 唯一标识）
+     *
+     * <b>sessionFilePath</b>：指向 transcript 文件的虚拟引用（通过
+     * WorkspaceManager 解析），不依赖本地路径。当使用 RemoteFilesystem
+     * 时它代表 BaseStore 的 namespace key，而非实际磁盘路径。
+     *
+     * <p>Uses {@code @JsonIgnoreProperties(ignoreUnknown = true)} for forward compatibility
+     * when new fields are added.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record StoredEntry(
@@ -155,7 +189,10 @@ public final class SessionStore {
         }
     }
 
-    /** Updates only the {@code lastActivityMs} for the given key without a full entry replace. */
+    /**
+     * 仅更新 lastActivityMs，避免完整 replace 带来的序列化开销。
+     * 每次对话结束后调用，是整个注册表最频繁的写操作。
+     */
     public void touch(String sessionKey, long lastActivityMs) {
         lock.writeLock().lock();
         try {
@@ -231,6 +268,14 @@ public final class SessionStore {
         return storeFile;
     }
 
+    /**
+     * 原子写入：先写临时文件，再 rename 覆盖原文件。即使写入中途崩溃，
+     * 原文件不受影响（要么完全成功，要么完全不生效）。
+     *
+     * <p>注意：此方法直接操作本地文件系统（java.nio.file），不走
+     * AbstractFilesystem 抽象。如果使用 RemoteFilesystem，需要将整个
+     * SessionStore 替换为 BaseStore 后端实现。
+     */
     private void flushToDisk() {
         try {
             Files.createDirectories(storeFile.getParent());

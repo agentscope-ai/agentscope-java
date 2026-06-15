@@ -90,8 +90,8 @@ public class StreamingWebExample {
          */
         @GetMapping(path = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
         public Flux<String> chat(
-                @RequestParam String message,
-                @RequestParam(defaultValue = "default") String sessionId) {
+                @RequestParam("message") String message,
+                @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
 
             ReActAgent agent =
                     ReActAgent.builder()
@@ -104,6 +104,7 @@ public class StreamingWebExample {
                                             .build())
                             .build();
 
+            // Load session if exists
             Session session = new JsonSession(sessionPath);
             agent.loadIfExists(session, sessionId);
 
@@ -124,7 +125,7 @@ public class StreamingWebExample {
                     .subscribeOn(Schedulers.boundedElastic())
                     .doFinally(
                             signalType -> {
-                                // Save session after completion using SessionLoader
+                                // Save session after completion
                                 agent.saveTo(session, sessionId);
                             })
                     .map(

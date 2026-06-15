@@ -47,8 +47,8 @@ public class ChatController {
      */
     @GetMapping(path = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chat(
-            @RequestParam String message,
-            @RequestParam(defaultValue = "default") String sessionId) {
+            @RequestParam("message") String message,
+            @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
         return agentService.chat(sessionId, message);
     }
 
@@ -60,7 +60,7 @@ public class ChatController {
      * @return Flux of streaming text chunks
      */
     @GetMapping(path = "/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> resume(@RequestParam(defaultValue = "default") String sessionId) {
+    public Flux<String> resume(@RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
         return agentService.resume(sessionId);
     }
 
@@ -71,7 +71,7 @@ public class ChatController {
      * @return Map containing isPaused boolean
      */
     @GetMapping("/paused")
-    public Map<String, Boolean> isPaused(@RequestParam(defaultValue = "default") String sessionId) {
+    public Map<String, Boolean> isPaused(@RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
         return Map.of("isPaused", agentService.isPaused());
     }
 
@@ -84,7 +84,7 @@ public class ChatController {
      */
     @PostMapping("/stop")
     public Map<String, Object> requestStop(
-            @RequestParam(defaultValue = "default") String sessionId) {
+            @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
         agentService.requestStop();
         return Map.of(
                 "stopRequested", true, "message", "Will pause after next plan tool execution");
@@ -98,7 +98,7 @@ public class ChatController {
      */
     @GetMapping("/stop-requested")
     public Map<String, Boolean> isStopRequested(
-            @RequestParam(defaultValue = "default") String sessionId) {
+            @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
         return Map.of("stopRequested", agentService.isStopRequested());
     }
 

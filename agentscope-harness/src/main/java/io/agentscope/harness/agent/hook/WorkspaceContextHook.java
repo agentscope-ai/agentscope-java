@@ -136,6 +136,33 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return 900;
     }
 
+    /**
+     * Injects workspace context into system message. The final appended content is structured as:
+     *
+     * <pre>
+     * ┌──────────────────────────────────────────┐
+     * │  ## Session Context                      │  ← 环境信息（日期/OS/路径/会话ID）
+     * ├──────────────────────────────────────────┤
+     * │  ## Domain Knowledge                     │  ← 指引 LLM 把 knowledge/ 作为领域知识来源
+     * │  ## Memory Recall                        │  ← 指引 LLM 用 memory_search 检索历史记忆
+     * │  ## Memory Persistence                   │  ← 指引 LLM 主动将偏好/决策写入 MEMORY.md
+     * │  ## Workspace                            │  ← 明确工作目录与 AGENTS.md 规范
+     * │  ## Workspace Files (Injected)           │  ← 说明下文 <loaded_context> 的来源
+     * ├──────────────────────────────────────────┤
+     * │  <loaded_context>                        │
+     * │    <agents_context>       AGENTS.md      │  ← persona + 项目规范
+     * │    <memory_context>       MEMORY.md      │  ← 跨会话持久记忆（token 超限时优先截断）
+     * │    <domain_knowledge>     KNOWLEDGE.md   │  ← 领域知识 + knowledge/ 文件列表目录
+     * │    <custom...>            额外文件        │  ← setAdditionalContextFiles 配置的可选文件
+     * │  </loaded_context>                       │
+     * └──────────────────────────────────────────┘
+     * </pre>
+     *
+     * <p>Token budget control: AGENTS.md, knowledge block, session context and additional
+     * files are treated as "fixed" (always fully included). MEMORY.md is elastic — if total
+     * tokens exceed {@link #maxContextTokens} (default 8000), MEMORY.md is truncated and a
+     * notice is appended telling the LLM to use {@code memory_search} for older entries.
+     */
     private void injectWorkspaceContext(PreCallEvent event) {
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         String agentsContent = workspaceManager.readAgentsMd(rc).strip();

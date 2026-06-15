@@ -107,12 +107,83 @@ public class MemoryConsolidator {
      * advances the watermark on success.
      *
      * <p>If no daily files have been touched since the last run, this is a no-op.
+     *
+     * <h3>Consolidation Flow</h3>
+     * <pre>
+     *                     ┌──────────────────┐
+     *                     │ 1. readWatermark │  ← 从 memory/.consolidation_state 读取上次时间戳
+     *                     │    首次运行为 EPOCH │    文件内容如: 2026-06-06T10:30:00Z
+     *                     └────────┬─────────┘
+     *                              │
+     *                     ┌────────▼─────────┐
+     *                     │ 2. readMemoryMd  │  ← 读取当前 MEMORY.md
+     *                     │  + readDailyEntries│   读取 memory/ 下所有 YYYY-MM-DD.md
+     *                     └────────┬─────────┘    仅挑选 modifiedAt > watermark 的文件
+     *                              │
+     *                     ┌────────▼─────────┐
+     *                     │ 3. 检查是否有新的 │  ← dailyEntries 为空？→ 直接返回 Mono.empty()
+     *                     │    daily entries  │
+     *                     └────────┬─────────┘
+     *                              │
+     *                     ┌────────▼─────────┐
+     *                     │ 4. 组装 LLM 请求  │  ← SYSTEM: consolidation prompt（去重/合并规则）
+     *                     │                  │     USER:   "Current MEMORY.md:\n...\n\n
+     *                     │                  │              New daily entries:\n### 2026-06-05.md\n..."
+     *                     └────────┬─────────┘
+     *                              │
+     *                     ┌────────▼─────────┐
+     *                     │ 5. model.stream() │  ← 流式调用 LLM，收集全部 TextBlock 拼接
+     *                     └────────┬─────────┘
+     *                              │
+     *                     ┌────────▼─────────┐
+     *                     │ 6. writeConsolidated│ ← 把 LLM 输出的完整 MEMORY.md 覆盖写入
+     *                     │    writeWatermark  │    把 runStart 时间戳写入 .consolidation_state
+     *                     └──────────────────┘
+     * </pre>
+     *
+     * <h3>Concrete Example</h3>
+     * <pre>
+     * 假设 workspace 当前状态：
+     *   MEMORY.md:                    memory/
+     *   ┌──────────────────┐         ├── .consolidation_state  →  "2026-06-05T18:00:00Z"
+     *   │ - User prefers   │         ├── 2026-06-05.md         →  modifiedAt=2026-06-05T17:00Z  (skip)
+     *   │   short answers  │         ├── 2026-06-06.md         →  modifiedAt=2026-06-06T09:30Z  (include)
+     *   │ - Project uses   │         └── archive/
+     *   │   Java 17        │
+     *   └──────────────────┘
+     *
+     * Step 1: watermark = 2026-06-05T18:00:00Z
+     * Step 2: currentMemory = "- User prefers short answers\n- Project uses Java 17"
+     *         dailyEntries = "### 2026-06-06.md\nUser prefers dark theme\n\n"
+     *         (2026-06-05.md modifiedAt=17:00 早于 watermark，被跳过)
+     * Step 3: dailyEntries 不为空，继续
+     * Step 4: LLM 收到：
+     *         SYSTEM: "You are a memory consolidation assistant..."
+     *         USER:   "Current MEMORY.md:\n
+     *                  - User prefers short answers\n
+     *                  - Project uses Java 17\n\n
+     *                  New daily ledger entries to merge (since 2026-06-05T18:00:00Z):\n
+     *                  ### 2026-06-06.md\n
+     *                  User prefers dark theme\n"
+     * Step 5: LLM 输出去重合并后的 MEMORY.md
+     * Step 6: 写入 MEMORY.md，更新 .consolidation_state = "2026-06-06T10:30:00Z"
+     *
+     * 最终结果：
+     *   MEMORY.md:
+     *   ┌──────────────────────┐
+     *   │ - User prefers:      │
+     *   │   - short answers    │
+     *   │   - dark theme       │   ← 新条目已合并
+     *   │ - Project uses       │
+     *   │   Java 17            │
+     *   └──────────────────────┘
+     * </pre>
      */
     public Mono<Void> consolidate(RuntimeContext rc) {
         Instant watermark = readWatermark(rc);
         Instant runStart = Instant.now();
 
-        String currentMemory = workspaceManager.readMemoryMd(rc);
+        String currentMemory = workspaceManager.readMemoryMd(rc); // MEMORY.md
         String dailyEntries = readDailyEntries(rc, watermark);
 
         if (dailyEntries.isBlank()) {

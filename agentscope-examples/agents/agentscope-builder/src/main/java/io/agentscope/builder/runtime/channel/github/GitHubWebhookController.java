@@ -64,7 +64,7 @@ public class GitHubWebhookController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<String>> webhook(
-            @PathVariable String channelId,
+            @PathVariable("channelId") String channelId,
             @RequestHeader(value = "X-GitHub-Event", required = false) String eventType,
             @RequestHeader(value = "X-GitHub-Delivery", required = false) String deliveryId,
             @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature256,

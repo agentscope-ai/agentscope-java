@@ -26,12 +26,9 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.io.IOException;
 
 /**
- * DashScope API response DTO.
- *
- * <p>This class represents the top-level response structure from DashScope's
- * text-generation and multimodal-generation APIs.
- *
- * <p>Example JSON:
+ * DashScope API 响应 DTO，对应千问 text-generation / multimodal-generation API 的返回。
+ * 对应底层data:{...}中的{}部分
+ * <p>顶层结构：
  * <pre>{@code
  * {
  *   "request_id": "xxx-xxx-xxx",
@@ -42,6 +39,111 @@ import java.io.IOException;
  *     "input_tokens": 10,
  *     "output_tokens": 20
  *   }
+ * }
+ * }</pre>
+ *
+ * <p>AgentScope 只取 choices 数组的第一个元素（对应 ChatResponse 单响应模式）。
+ * 以下是 choices[0] 在各种场景下的结构：
+ *
+ *
+ * <p><b>① 纯文本响应（最常见）：</b>
+ * <pre>{@code
+ * {
+ *   "request_id": "req-xxx",
+ *   "output": {
+ *     "choices": [{
+ *       "message": { "role": "assistant", "content": "你好！有什么可以帮助你的？" },
+ *       "finish_reason": "stop"
+ *     }]
+ *   },
+ *   "usage": { "input_tokens": 10, "output_tokens": 8 }
+ * }
+ * }</pre>
+ *
+ * <p><b>② 带 thinking 的响应：</b>
+ * <pre>{@code
+ * {
+ *   "output": {
+ *     "choices": [{
+ *       "message": {
+ *         "role": "assistant",
+ *         "content": "答案是42。",
+ *         "reasoning_content": "用户问了一个经典问题，我需要思考..."
+ *       },
+ *       "finish_reason": "stop"
+ *     }]
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><b>③ 带 tool_calls 的响应：</b>
+ * <pre>{@code
+ * {
+ *   "output": {
+ *     "choices": [{
+ *       "message": {
+ *         "role": "assistant",
+ *         "content": "",
+ *         "tool_calls": [{
+ *           "id": "call_abc123",
+ *           "type": "function",
+ *           "function": { "name": "get_weather", "arguments": "{\"location\":\"Beijing\"}" }
+ *         }]
+ *       },
+ *       "finish_reason": "tool_calls"
+ *     }]
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><b>④ 带 thinking + tool_calls 的响应：</b>
+ * <pre>{@code
+ * {
+ *   "output": {
+ *     "choices": [{
+ *       "message": {
+ *         "role": "assistant",
+ *         "content": "我来查天气。",
+ *         "reasoning_content": "用户想知道天气，需要调用工具。",
+ *         "tool_calls": [{
+ *           "id": "call_xyz",
+ *           "type": "function",
+ *           "function": { "name": "get_weather", "arguments": "{\"location\":\"Beijing\"}" }
+ *         }]
+ *       },
+ *       "finish_reason": "tool_calls"
+ *     }]
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><b>⑤ 流式中间 chunk（finish_reason 为 null）：</b>
+ * <pre>{@code
+ * {
+ *   "output": {
+ *     "choices": [{
+ *       "message": { "role": "assistant", "content": "今天天气" },
+ *       "finish_reason": null
+ *     }]
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><b>⑥ 流式最后 chunk（只有 finish_reason）：</b>
+ * <pre>{@code
+ * {
+ *   "output": {
+ *     "choices": [{ "finish_reason": "stop" }]
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><b>⑦ 错误响应（output 为 null）：</b>
+ * <pre>{@code
+ * {
+ *   "request_id": "req-xxx",
+ *   "code": "InvalidParameter",
+ *   "message": "Model not found: qwen-nonexistent"
  * }
  * }</pre>
  */

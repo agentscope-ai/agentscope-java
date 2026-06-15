@@ -155,7 +155,8 @@ public class ChannelDirectoryController {
     }
 
     @GetMapping("/api/channels/{channelId}")
-    public Mono<ChannelDetailView> getDetail(@PathVariable String channelId, Authentication auth) {
+    public Mono<ChannelDetailView> getDetail(
+            @PathVariable("channelId") String channelId, Authentication auth) {
         return Mono.fromCallable(
                 () -> {
                     requireAdmin(auth);
@@ -213,7 +214,7 @@ public class ChannelDirectoryController {
 
     @PutMapping("/api/channels/{channelId}")
     public Mono<ChannelDetailView> update(
-            @PathVariable String channelId,
+            @PathVariable("channelId") String channelId,
             @RequestBody ChannelUpsertRequest body,
             Authentication auth) {
         return Mono.fromCallable(
@@ -249,7 +250,7 @@ public class ChannelDirectoryController {
 
     @DeleteMapping("/api/channels/{channelId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> delete(@PathVariable String channelId, Authentication auth) {
+    public Mono<Void> delete(@PathVariable("channelId") String channelId, Authentication auth) {
         return Mono.fromRunnable(
                 () -> {
                     requireAdmin(auth);
@@ -270,13 +271,13 @@ public class ChannelDirectoryController {
 
     @PostMapping("/api/channels/{channelId}/enable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> enable(@PathVariable String channelId, Authentication auth) {
+    public Mono<Void> enable(@PathVariable("channelId") String channelId, Authentication auth) {
         return setDisabled(channelId, false, auth);
     }
 
     @PostMapping("/api/channels/{channelId}/disable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> disable(@PathVariable String channelId, Authentication auth) {
+    public Mono<Void> disable(@PathVariable("channelId") String channelId, Authentication auth) {
         return setDisabled(channelId, true, auth);
     }
 
@@ -306,7 +307,8 @@ public class ChannelDirectoryController {
 
     @PostMapping("/api/agents/{agentId}/channels/{channelId}/default")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> setDefault(@PathVariable String agentId, @PathVariable String channelId) {
+    public Mono<Void> setDefault(
+            @PathVariable("agentId") String agentId, @PathVariable("channelId") String channelId) {
         return Mono.fromRunnable(
                 () ->
                         persistence.mutate(
