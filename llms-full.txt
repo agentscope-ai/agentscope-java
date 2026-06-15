@@ -11460,7 +11460,7 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // The agent is about to call a tool — surface the call info
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // Other events: thinking blocks, tool results, reply end, etc.
         })
@@ -11769,7 +11769,7 @@ agent.streamEvents(new UserMessage("Summarize the README."))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // The agent is about to call a tool — surface the call info
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // Other events: thinking blocks, tool results, reply end, etc.
         })
@@ -16600,7 +16600,7 @@ parent.streamEvents(new UserMessage(message), ctx)
         if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
             System.out.print(prefix + ((TextBlockDeltaEvent) event).getDelta());
         } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolName());
+            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolCallName());
         } else if (event.getType() == AgentEventType.AGENT_START) {
             if (src != null) System.out.println("── child started: " + src);
         } else if (event.getType() == AgentEventType.AGENT_END) {
@@ -16641,7 +16641,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                 if (event instanceof TextBlockDeltaEvent delta) {
                     payload.put("delta", delta.getDelta());
                 } else if (event instanceof ToolCallStartEvent start) {
-                    payload.put("toolName", start.getToolName());
+                    payload.put("toolName", start.getToolCallName());
                 }
                 return ServerSentEvent.<String>builder()
                         .data(objectMapper.writeValueAsString(payload))
@@ -17288,7 +17288,7 @@ To observe task changes in real time through the event stream, listen for `todo_
 ```java
 agent.streamEvents(message)
     .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
-    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolCallName()))
     .doOnNext(e -> {
         // Re-read the latest task list from state
         var tasks = agent.getAgentState(userId, sessionId)
@@ -21619,7 +21619,7 @@ agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // 其他事件：思考块、工具结果、回复结束等
         })
@@ -21928,7 +21928,7 @@ agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // 其他事件：思考块、工具结果、回复结束等
         })
@@ -26758,7 +26758,7 @@ parent.streamEvents(new UserMessage(message), ctx)
         if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
             System.out.print(prefix + ((TextBlockDeltaEvent) event).getDelta());
         } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolName());
+            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolCallName());
         } else if (event.getType() == AgentEventType.AGENT_START) {
             if (src != null) System.out.println("── 子 agent 启动: " + src);
         } else if (event.getType() == AgentEventType.AGENT_END) {
@@ -26799,7 +26799,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                 if (event instanceof TextBlockDeltaEvent delta) {
                     payload.put("delta", delta.getDelta());
                 } else if (event instanceof ToolCallStartEvent start) {
-                    payload.put("toolName", start.getToolName());
+                    payload.put("toolName", start.getToolCallName());
                 }
                 return ServerSentEvent.<String>builder()
                         .data(objectMapper.writeValueAsString(payload))
@@ -27446,7 +27446,7 @@ GET /v1/admin/sessions/{sessionId}/tasks
 ```java
 agent.streamEvents(message)
     .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
-    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolCallName()))
     .doOnNext(e -> {
         // 从 state 中读取最新任务列表
         var tasks = agent.getAgentState(userId, sessionId)

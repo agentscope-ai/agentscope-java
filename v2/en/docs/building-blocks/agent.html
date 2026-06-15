@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
+    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/agent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1218,7 +1218,7 @@ With Toolkit / MCP</label><div class="sd-tab-content docutils">
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(((</span><span class="n">TextBlockDeltaEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getDelta</span><span class="p">());</span>
 <span class="w">            </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TOOL_CALL_START</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="c1">// The agent is about to call a tool — surface the call info</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n[tool] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getToolName</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n[tool] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getToolCallName</span><span class="p">());</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="c1">// Other events: thinking blocks, tool results, reply end, etc.</span>
 <span class="w">        </span><span class="p">})</span>
@@ -1688,7 +1688,7 @@ Middleware</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-15</div>
           </div>
           <div class="right-details">
             <div class="icons">
