@@ -17,8 +17,6 @@ package io.agentscope.builder.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.builder.runtime.gateway.MsgContext;
 import io.agentscope.builder.runtime.session.HistoryResult;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionEntry;
@@ -29,6 +27,8 @@ import io.agentscope.builder.web.session.SessionReadStateStore;
 import io.agentscope.builder.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -50,7 +50,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Session management endpoints, scoped to a specific agent.
+ * AgentStateStore management endpoints, scoped to a specific agent.
  *
  * <ul>
  *   <li>{@code GET /api/agents/{agentId}/sessions/inbox} — paginated session list with previews
@@ -180,7 +180,8 @@ public class SessionController {
                         .orElseThrow(
                                 () ->
                                         new ResponseStatusException(
-                                                HttpStatus.NOT_FOUND, "Session not found: " + key));
+                                                HttpStatus.NOT_FOUND,
+                                                "AgentStateStore not found: " + key));
         String expectedGateKey = expectedChatGateKey(userId, agentId);
         if (!Objects.equals(entry.userId(), userId)
                 || !sessionMatchesAgent(entry, expectedGateKey)) {

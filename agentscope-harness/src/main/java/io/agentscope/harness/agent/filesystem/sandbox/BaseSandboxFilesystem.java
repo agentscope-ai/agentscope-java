@@ -279,7 +279,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String grepOpts = "-rHnF";
         String globPattern = "";
         if (glob != null && !glob.isBlank()) {
-            globPattern = "--include=" + FilesystemUtils.shellQuote(glob);
+            globPattern = "--include=" + FilesystemUtils.shellQuote(stripRecursivePrefix(glob));
         }
         String patternEscaped = FilesystemUtils.shellQuote(pattern);
 
@@ -319,7 +319,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path != null ? path : "/");
-        String escapedPattern = FilesystemUtils.shellQuote(pattern);
+        String escapedPattern = FilesystemUtils.shellQuote(stripRecursivePrefix(pattern));
 
         String cmd =
                 "find " + escapedPath + " -type f -name " + escapedPattern + " 2>/dev/null | sort";
@@ -377,6 +377,21 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         ExecuteResponse result =
                 execute(runtimeContext, "test -e " + escapedPath + " && echo yes || echo no", null);
         return result.output() != null && result.output().strip().startsWith("yes");
+    }
+
+    /**
+     * Strips the recursive glob prefix {@code **&#47;} from a pattern so it can be passed to
+     * tools like {@code find -name} or {@code grep --include=} that match only the filename
+     * portion. For example, {@code **&#47;*.java} becomes {@code *.java}.
+     *
+     * @param pattern the glob pattern, may be {@code null}
+     * @return the pattern with any leading {@code **&#47;} removed, or the original value if absent
+     */
+    private static String stripRecursivePrefix(String pattern) {
+        if (pattern != null && pattern.startsWith("**/")) {
+            return pattern.substring(3);
+        }
+        return pattern;
     }
 
     private static String jsonEscape(String s) {

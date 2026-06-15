@@ -27,7 +27,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
@@ -74,7 +74,7 @@ class ReActAgentMiddlewareIntegrationTest {
     }
 
     /** Records entry/exit at every middleware hook to a shared trace list. */
-    private static final class RecordingMiddleware implements Middleware {
+    private static final class RecordingMiddleware implements MiddlewareBase {
         private final String tag;
         private final List<String> trace;
 
@@ -85,7 +85,10 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":reply:exit"));
         }
@@ -93,6 +96,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reasoning:enter");
@@ -102,6 +106,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":modelCall:enter");
@@ -110,19 +115,22 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":acting:exit"));
         }
 
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             trace.add(tag + ":systemPrompt");
             return Mono.just(currentPrompt);
         }
     }
 
-    private static ReActAgent buildAgent(ChatModelBase model, List<Middleware> middlewares) {
+    private static ReActAgent buildAgent(ChatModelBase model, List<MiddlewareBase> middlewares) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hello-system")

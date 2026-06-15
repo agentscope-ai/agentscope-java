@@ -16,6 +16,7 @@
 
 package io.agentscope.core.model;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,6 +53,7 @@ public class GenerateOptions {
     private final Long seed;
     private final Boolean cacheControl;
     private final Boolean parallelToolCalls;
+    private final ResponseFormat responseFormat;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -82,6 +84,7 @@ public class GenerateOptions {
         this.seed = builder.seed;
         this.cacheControl = builder.cacheControl;
         this.parallelToolCalls = builder.parallelToolCalls;
+        this.responseFormat = builder.responseFormat;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -349,6 +352,19 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets the response format for structured output.
+     *
+     * <p>When set, the model will return a response conforming to the specified format
+     * (e.g., JSON schema). This enables native structured output without requiring a
+     * synthetic tool like {@code generate_response}.
+     *
+     * @return the response format, or null if not set
+     */
+    public ResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -485,6 +501,8 @@ public class GenerateOptions {
                 primary.parallelToolCalls != null
                         ? primary.parallelToolCalls
                         : fallback.parallelToolCalls);
+        builder.responseFormat(
+                primary.responseFormat != null ? primary.responseFormat : fallback.responseFormat);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -538,6 +556,7 @@ public class GenerateOptions {
         private Long seed;
         private Boolean cacheControl;
         private Boolean parallelToolCalls;
+        private ResponseFormat responseFormat;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -812,6 +831,17 @@ public class GenerateOptions {
          */
         public Builder parallelToolCalls(Boolean parallelToolCalls) {
             this.parallelToolCalls = parallelToolCalls;
+            return this;
+        }
+
+        /**
+         * Sets the response format for structured output.
+         *
+         * @param responseFormat the response format configuration
+         * @return this builder instance
+         */
+        public Builder responseFormat(ResponseFormat responseFormat) {
+            this.responseFormat = responseFormat;
             return this;
         }
 

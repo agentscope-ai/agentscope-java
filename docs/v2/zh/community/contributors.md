@@ -9,6 +9,8 @@
 |   ![Chickenlj](https://github.com/chickenlj.png)   | [Chickenlj](https://github.com/chickenlj)       | [github.com/chickenlj](https://github.com/chickenlj)       | 核心贡献者         |
 |  ![LearningGp](https://avatars.githubusercontent.com/u/38268859?s=64&v=4)  | [LearningGp](https://github.com/LearningGp)     | [github.com/LearningGp](https://github.com/LearningGp)     | 核心贡献者 |
 |  ![fang-tech](https://avatars.githubusercontent.com/u/141339556?s=64&v=4)  | [fang-tech](https://github.com/fang-tech)       | [github.com/fang-tech](https://github.com/fang-tech)       | 活跃贡献者         |
+|                 ![flystar32](https://github.com/flystar32.png)             | [flystar32](https://github.com/flystar32)       | [github.com/flystar32](https://github.com/flystar32)       | 活跃贡献者         |
+|                 ![albumenj](https://github.com/albumenj.png)               | [albumenj](https://github.com/albumenj)         | [github.com/albumenj](https://github.com/albumenj)         | 活跃贡献者         |
 |   ![guanxuc](https://avatars.githubusercontent.com/u/86234262?s=64&v=4)    | [guanxuc](https://github.com/guanxuc)           | [github.com/guanxuc](https://github.com/guanxuc)           | 活跃贡献者         |
 |    ![JGoP-L](https://avatars.githubusercontent.com/u/52067013?s=64&v=4)    | [JGoP-L](https://github.com/JGoP-L)             | [github.com/JGoP-L](https://github.com/JGoP-L)             | 活跃贡献者         |
 | ![shiyiyue1102](https://avatars.githubusercontent.com/u/20452676?s=64&v=4) | [shiyiyue1102](https://github.com/shiyiyue1102) | [github.com/shiyiyue1102](https://github.com/shiyiyue1102) | 活跃贡献者         |

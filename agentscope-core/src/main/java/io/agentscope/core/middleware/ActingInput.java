@@ -19,7 +19,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 
 /**
- * Input context for {@link Middleware#onActing}.
+ * Input context for {@link MiddlewareBase#onActing}.
  *
  * @param toolCalls the tool calls to execute
  */

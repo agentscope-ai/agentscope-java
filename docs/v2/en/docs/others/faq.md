@@ -4,7 +4,7 @@ description: "Frequently asked questions about AgentScope Java 2.0"
 ---
 
 :::{dropdown} Is AgentScope Java 2.0 compatible with 1.0?
-AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level breaking changes — including a redesigned agent abstraction and the new event system, permission system, and middleware stack. See the [Changelog](../change-log.md) for details.
+AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level breaking changes — including a redesigned agent abstraction and the new event system, permission system, and middleware stack. See the [V1 Migration Guide](../change-log.md) for details.
 
     For new projects we recommend adopting 2.0 directly to benefit from the new capabilities; the 1.0 docs remain available for existing users.
 :::
@@ -14,7 +14,7 @@ Yes. The repository includes the `agentscope-admin` module, an out-of-the-box we
 :::
 
   :::{dropdown} Will 2.0 ship RAG and long-term memory?
-Yes. `io.agentscope.core.rag` and `io.agentscope.core.memory.LongTermMemory` already exist in the repo, but knowledge bases, document readers and similar components are still being completed — track progress in the changelog and on GitHub releases.
+Yes. `io.agentscope.core.rag` and `io.agentscope.core.memory.LongTermMemory` already exist in the repo, but knowledge bases, document readers and similar components are still being completed — track progress in the [Release Notes](release-notes.md) and on GitHub releases.
 :::
 
   :::{dropdown} Is there a non-Java edition?

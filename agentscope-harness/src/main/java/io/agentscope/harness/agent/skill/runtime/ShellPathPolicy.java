@@ -47,20 +47,35 @@ public final class ShellPathPolicy {
 
     private final Mode mode;
     private final Path workspaceRoot;
+    private final String sandboxPrefix;
 
-    private ShellPathPolicy(Mode mode, Path workspaceRoot) {
+    private ShellPathPolicy(Mode mode, Path workspaceRoot, String sandboxPrefix) {
         this.mode = mode;
         this.workspaceRoot = workspaceRoot;
+        this.sandboxPrefix = sandboxPrefix;
     }
 
     /** No shell is available; every {@code filesRoot} resolves to {@code null}. */
     public static ShellPathPolicy noShell() {
-        return new ShellPathPolicy(Mode.NO_SHELL, null);
+        return new ShellPathPolicy(Mode.NO_SHELL, null, null);
     }
 
-    /** Sandbox mode — paths under {@code /workspace/}. */
+    /** Sandbox mode — paths under the default {@code /workspace/} prefix. */
     public static ShellPathPolicy sandbox() {
-        return new ShellPathPolicy(Mode.SANDBOX, null);
+        return sandbox(SANDBOX_WORKSPACE_PREFIX);
+    }
+
+    /**
+     * Sandbox mode with a custom workspace prefix. Use this when the sandbox backend mounts the
+     * workspace at a non-default location (e.g. {@code /home/agentscope/workspace} for AgentRun).
+     *
+     * @param workspacePrefix absolute path of the workspace root inside the sandbox
+     */
+    public static ShellPathPolicy sandbox(String workspacePrefix) {
+        return new ShellPathPolicy(
+                Mode.SANDBOX,
+                null,
+                workspacePrefix != null ? workspacePrefix : SANDBOX_WORKSPACE_PREFIX);
     }
 
     /** Local-with-shell mode — paths absolute on the host. */
@@ -68,7 +83,7 @@ public final class ShellPathPolicy {
         if (workspaceRoot == null) {
             throw new IllegalArgumentException("workspaceRoot required for LOCAL_WITH_SHELL");
         }
-        return new ShellPathPolicy(Mode.LOCAL_WITH_SHELL, workspaceRoot);
+        return new ShellPathPolicy(Mode.LOCAL_WITH_SHELL, workspaceRoot, null);
     }
 
     public Mode mode() {
@@ -97,7 +112,7 @@ public final class ShellPathPolicy {
 
     private String joinSkills(String skillName) {
         return switch (mode) {
-            case SANDBOX -> SANDBOX_WORKSPACE_PREFIX + "/skills/" + skillName;
+            case SANDBOX -> sandboxPrefix + "/skills/" + skillName;
             case LOCAL_WITH_SHELL ->
                     workspaceRoot.resolve("skills").resolve(skillName).toAbsolutePath().toString();
             case NO_SHELL -> null;
@@ -107,7 +122,7 @@ public final class ShellPathPolicy {
     private String joinCache(String sourceNs, String skillName) {
         return switch (mode) {
             case SANDBOX ->
-                    SANDBOX_WORKSPACE_PREFIX
+                    sandboxPrefix
                             + "/"
                             + MarketplaceStager.CACHE_DIR
                             + "/"

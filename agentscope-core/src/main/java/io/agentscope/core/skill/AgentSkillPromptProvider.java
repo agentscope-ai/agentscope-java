@@ -112,6 +112,30 @@ public class AgentSkillPromptProvider {
             """;
 
     /**
+     * Code-execution instruction used when every visible skill carries its own {@code
+     * <files-root>} (e.g. {@link io.agentscope.core.skill.repository.FileSystemSkillRepository}).
+     * No single root path to substitute — the LLM reads each skill's {@code <files-root>}
+     * directly from the {@code <available_skills>} block.
+     */
+    public static final String DEFAULT_PER_SKILL_CODE_EXECUTION_INSTRUCTION =
+            """
+
+            ## Code Execution
+
+            <code_execution>
+            You have access to the execute_shell_command tool. Each skill in <available_skills>
+            includes a <files-root> element giving the absolute path to that skill's files.
+
+            Workflow:
+            1. After loading a skill, look at its <files-root> in <available_skills>
+            2. List its files:    ls <files-root>/
+            3. Run scripts:       python3 <files-root>/scripts/<script-name>
+            4. Always use absolute paths derived from <files-root>; never invent paths
+            5. If a script exists for the task, run it directly — do not rewrite its logic inline
+            </code_execution>
+            """;
+
+    /**
      * Creates a skill prompt provider.
      *
      * @param registry The skill registry containing registered skills
@@ -158,6 +182,8 @@ public class AgentSkillPromptProvider {
 
         StringBuilder sb = new StringBuilder();
         boolean hasSkills = false;
+        int visibleCount = 0;
+        int withOriginDir = 0;
 
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             String skillId = registered.getSkillId();
@@ -173,6 +199,10 @@ public class AgentSkillPromptProvider {
                 hasSkills = true;
             }
             appendSkill(sb, skill);
+            visibleCount++;
+            if (skill.getOriginDir().isPresent()) {
+                withOriginDir++;
+            }
         }
 
         if (!hasSkills) {
@@ -181,15 +211,39 @@ public class AgentSkillPromptProvider {
 
         sb.append("</available_skills>");
 
-        if (codeExecutionEnabled && uploadDir != null) {
-            String template =
-                    codeExecutionInstruction != null
-                            ? codeExecutionInstruction
-                            : DEFAULT_CODE_EXECUTION_INSTRUCTION;
-            sb.append(template.replace("%s", uploadDir));
+        if (codeExecutionEnabled) {
+            sb.append(resolveCodeExecutionBlock(visibleCount, withOriginDir));
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Picks the code-execution prompt block.
+     *
+     * <ul>
+     *   <li>If a custom template was set via {@link #setCodeExecutionInstruction(String)}, use it
+     *       verbatim ({@code %s} substituted with {@code uploadDir} when both are present).
+     *   <li>If every visible skill has a {@code <files-root>}, use {@link
+     *       #DEFAULT_PER_SKILL_CODE_EXECUTION_INSTRUCTION} — no substitution needed.
+     *   <li>Otherwise fall back to {@link #DEFAULT_CODE_EXECUTION_INSTRUCTION} (single uploadDir).
+     *       Returns empty if {@code uploadDir} is null in this branch, since the template's
+     *       absolute path is required to be meaningful.
+     * </ul>
+     */
+    private String resolveCodeExecutionBlock(int visibleCount, int withOriginDir) {
+        if (codeExecutionInstruction != null) {
+            return uploadDir != null
+                    ? codeExecutionInstruction.replace("%s", uploadDir)
+                    : codeExecutionInstruction;
+        }
+        if (visibleCount > 0 && withOriginDir == visibleCount) {
+            return DEFAULT_PER_SKILL_CODE_EXECUTION_INSTRUCTION;
+        }
+        if (uploadDir != null) {
+            return DEFAULT_CODE_EXECUTION_INSTRUCTION.replace("%s", uploadDir);
+        }
+        return "";
     }
 
     /**
@@ -249,6 +303,14 @@ public class AgentSkillPromptProvider {
             appendXmlNode(sb, entry.getKey(), entry.getValue(), 1);
         }
         appendXmlNode(sb, "skill-id", skill.getSkillId(), 1);
+        // Per-skill files-root: only emitted when code execution is enabled AND the skill
+        // carries an originDir (filesystem-backed). Lets the LLM build absolute shell paths
+        // without going through uploadSkillFiles or guessing layouts.
+        if (codeExecutionEnabled) {
+            skill.getOriginDir()
+                    .ifPresent(
+                            originDir -> appendXmlNode(sb, "files-root", originDir.toString(), 1));
+        }
         sb.append("</skill>\n\n");
     }
 

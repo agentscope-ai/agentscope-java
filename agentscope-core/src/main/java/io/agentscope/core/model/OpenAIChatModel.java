@@ -191,6 +191,11 @@ public class OpenAIChatModel extends ChatModelBase {
         return configuredOptions != null ? configuredOptions.getModelName() : null;
     }
 
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return true;
+    }
+
     /**
      * Creates a new builder for OpenAIChatModel.
      *
