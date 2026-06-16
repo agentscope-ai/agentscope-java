@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -99,6 +100,43 @@ class RuntimeContextTest {
         ToolExecutionContext merged =
                 ToolExecutionContext.merge(run.asToolExecutionContext(), agent);
         assertSame(fromRun, merged.get(PojoA.class));
+    }
+
+    @Test
+    @DisplayName("fork copies extras and keeps call-scoped state isolated")
+    void forkCopiesMetadataAndLeavesAgentStateNull() {
+        ToolExecutionContext toolContext =
+                ToolExecutionContext.builder().register(new PojoB(7)).build();
+        RuntimeContext parent =
+                RuntimeContext.builder()
+                        .sessionId("parent-session")
+                        .userId("parent-user")
+                        .put("traceId", "trace-123")
+                        .put(PojoA.class, new PojoA("typed-parent"))
+                        .toolExecutionContext(toolContext)
+                        .agentState(AgentState.builder().sessionId("agent-state").build())
+                        .build();
+
+        RuntimeContext child = parent.fork("child-session", null);
+        RuntimeContext sibling = parent.fork(null, "child-user");
+
+        assertEquals("child-session", child.getSessionId());
+        assertEquals("parent-user", child.getUserId());
+        assertEquals("trace-123", child.get("traceId"));
+        assertSame(parent.get(PojoA.class), child.get(PojoA.class));
+        assertSame(toolContext, child.getToolExecutionContext());
+        assertNull(child.getAgentState());
+
+        assertEquals("parent-session", sibling.getSessionId());
+        assertEquals("child-user", sibling.getUserId());
+        assertEquals("trace-123", sibling.get("traceId"));
+        assertSame(toolContext, sibling.getToolExecutionContext());
+        assertNull(sibling.getAgentState());
+
+        parent.put("traceId", "changed-parent");
+        child.put("child-only", "yes");
+        assertEquals("trace-123", child.get("traceId"));
+        assertNull(parent.get("child-only"));
     }
 
     @Test
