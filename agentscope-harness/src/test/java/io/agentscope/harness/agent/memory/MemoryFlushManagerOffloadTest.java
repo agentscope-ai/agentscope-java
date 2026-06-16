@@ -77,6 +77,52 @@ class MemoryFlushManagerOffloadTest {
                 entries.stream().map(SessionEntry.MessageEntry::getParentId).toList());
     }
 
+    @Test
+    void offloadMessages_nullAndBlankIds_stillAppendButDoNotBreakStableIds() throws Exception {
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            List<Msg> batch =
+                    List.of(
+                            message("m1", MsgRole.USER, "stable-hello"),
+                            message(null, MsgRole.ASSISTANT, "anonymous-null"),
+                            message("", MsgRole.USER, "anonymous-blank"),
+                            message("m2", MsgRole.ASSISTANT, "stable-world"));
+
+            flushManager.offloadMessages(rc, batch, "agent-a", "session-1");
+            flushManager.offloadMessages(rc, batch, "agent-a", "session-1");
+        }
+
+        Path context = workspace.resolve("agents/agent-a/sessions/session-1.jsonl");
+        SessionTree tree = new SessionTree(context, workspace, null);
+        tree.load();
+
+        List<SessionEntry.MessageEntry> entries = tree.getMessageEntries();
+        assertEquals(6, entries.size());
+        assertEquals(
+                1,
+                entries.stream()
+                        .filter(entry -> "stable-hello".equals(entry.getContent()))
+                        .count());
+        assertEquals(
+                1,
+                entries.stream()
+                        .filter(entry -> "stable-world".equals(entry.getContent()))
+                        .count());
+        assertEquals(
+                2,
+                entries.stream()
+                        .filter(entry -> "anonymous-null".equals(entry.getContent()))
+                        .count());
+        assertEquals(
+                2,
+                entries.stream()
+                        .filter(entry -> "anonymous-blank".equals(entry.getContent()))
+                        .count());
+    }
+
     private static Msg message(String id, MsgRole role, String text) {
         return Msg.builder()
                 .id(id)

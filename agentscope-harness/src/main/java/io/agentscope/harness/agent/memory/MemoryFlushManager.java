@@ -267,6 +267,11 @@ public class MemoryFlushManager {
                     continue;
                 }
                 String entryId = normalizeEntryId(msg.getId());
+                if (entryId == null) {
+                    log.warn(
+                            "Msg without stable ID encountered (role={}); dedup skipped",
+                            msg.getRole());
+                }
                 if (entryId != null && existingIds.contains(entryId)) {
                     continue;
                 }
