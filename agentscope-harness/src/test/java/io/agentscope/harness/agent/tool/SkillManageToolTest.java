@@ -192,6 +192,167 @@ class SkillManageToolTest {
     }
 
     @Test
+    void createWithNullResources_stillWorks() {
+        // resources 不传的情况（向后兼容，默认 null）
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "null-resource-skill",
+                                                "content",
+                                                        validSkillMd(
+                                                                "null-resource-skill",
+                                                                "测试 null resources"))))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(Files.isRegularFile(workspace.resolve("skills/null-resource-skill/SKILL.md")));
+    }
+
+    @Test
+    void createWithEmptyResources_stillWorks() {
+        // resources 为空 map 的边界情况
+        Map<String, String> resources = new HashMap<>();
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "empty-resource-skill",
+                                                "content",
+                                                validSkillMd(
+                                                        "empty-resource-skill", "测试空 resources"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(Files.isRegularFile(workspace.resolve("skills/empty-resource-skill/SKILL.md")));
+    }
+
+    @Test
+    void createWithResources_inDraftMode_writesToDraftsDir() {
+        // draft 模式下 resources 也应该正确写入
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/helper.sh", "echo hello");
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "draft-resource-skill",
+                                                "content",
+                                                validSkillMd("draft-resource-skill", "Draft 模式测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve(
+                                "skills/_drafts/draft-resource-skill/scripts/helper.sh")));
+    }
+
+    @Test
+    void createWithMultipleResourceTypes_writesAll() {
+        // 多种类型的资源文件同时写入
+        Map<String, String> resources = new HashMap<>();
+        resources.put("references/doc.md", "文档内容");
+        resources.put("scripts/run.sh", "echo run");
+        resources.put("templates/output.txt", "{{result}}");
+        resources.put("assets/image.svg", "<svg></svg>");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "multi-type-skill",
+                                                "content",
+                                                validSkillMd("multi-type-skill", "多资源类型测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+
+        // 验证所有 4 种子目录的文件都写入成功
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve("skills/multi-type-skill/references/doc.md")));
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/multi-type-skill/scripts/run.sh")));
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve("skills/multi-type-skill/templates/output.txt")));
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/multi-type-skill/assets/image.svg")));
+    }
+
+    @Test
+    void createWithResourceAbsolutePath_rejects() {
+        // 绝对路径应该被拒绝
+        Map<String, String> resources = new HashMap<>();
+        resources.put("/etc/passwd", "evil");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "absolute-path-skill",
+                                                "content",
+                                                validSkillMd("absolute-path-skill", "绝对路径测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+    }
+
+    @Test
+    void createWithResourceNoSubdir_rejects() {
+        // 没有子目录，直接在根目录写文件应该被拒绝
+        Map<String, String> resources = new HashMap<>();
+        resources.put("evil.sh", "evil content"); // 没有 references/ 等前缀
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "no-subdir-skill",
+                                                "content",
+                                                validSkillMd("no-subdir-skill", "无子目录测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+        assertTrue(text(r).contains("must include a subdirectory"));
+    }
+
+    @Test
     void createRejectsDuplicate() {
         toolDraftDefault
                 .callAsync(

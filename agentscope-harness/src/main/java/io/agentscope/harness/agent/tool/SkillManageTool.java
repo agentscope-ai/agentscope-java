@@ -759,16 +759,15 @@ public class SkillManageTool implements AgentTool {
 
     private static boolean boolOf(Map<String, Object> m, String key) {
         Object v = m.get(key);
-        if (v instanceof Boolean) {
-            return (Boolean) v;
+        if (v instanceof Boolean b) {
+            return b;
         }
-        if (v instanceof String) {
-            return Boolean.parseBoolean((String) v);
+        if (v instanceof String s) {
+            return Boolean.parseBoolean(s);
         }
         return false;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, String> mapOfStrings(Map<String, Object> m, String key) {
         Object v = m.get(key);
         if (v instanceof Map) {
