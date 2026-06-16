@@ -17,6 +17,7 @@ package io.agentscope.core.agui.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -1017,7 +1018,7 @@ class AguiAgentAdapterTest {
                         .orElse(null);
 
         assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
-        assertEquals("msg-r1", reasoningMessageStart.messageId());
+        assertEquals("msg-r1-reasoning", reasoningMessageStart.messageId());
         assertEquals("reasoning", reasoningMessageStart.role());
 
         AguiEvent.ReasoningMessageContent reasoningMessageContent =
@@ -1031,6 +1032,58 @@ class AguiAgentAdapterTest {
         assertTrue(
                 reasoningMessageContent.delta().contains("think about this problem"),
                 "Should contain thinking content");
+    }
+
+    @Test
+    void testReasoningAndTextAnswerHaveDistinctMessageIds() {
+        // Regression: a single assistant Msg carrying both a ThinkingBlock and a TextBlock must
+        // emit REASONING_MESSAGE_* and TEXT_MESSAGE_* with DIFFERENT messageIds. They are
+        // independent AG-UI messages (associated only by runId + order). Reusing one messageId
+        // makes clients collapse reasoning and answer into a single message bubble, folding the
+        // answer into the reasoning/thought panel.
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg msg =
+                Msg.builder()
+                        .id("msg-both")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder().thinking("reasoning here").build(),
+                                TextBlock.builder().text("the answer").build())
+                        .build();
+
+        Event event = new Event(EventType.REASONING, msg, true);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.just(event));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+        assertNotNull(events);
+
+        String reasoningId =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
+                        .map(e -> ((AguiEvent.ReasoningMessageStart) e).messageId())
+                        .findFirst()
+                        .orElse(null);
+        String textId =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> ((AguiEvent.TextMessageStart) e).messageId())
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(reasoningId, "Should emit ReasoningMessageStart");
+        assertNotNull(textId, "Should emit TextMessageStart");
+        assertNotEquals(reasoningId, textId, "reasoning and text must have distinct messageIds");
+        assertEquals("msg-both-reasoning", reasoningId);
+        assertEquals("msg-both", textId);
     }
 
     @Test
