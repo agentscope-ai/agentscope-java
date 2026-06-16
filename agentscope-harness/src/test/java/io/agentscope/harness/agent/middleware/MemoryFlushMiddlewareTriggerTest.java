@@ -17,14 +17,31 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Focused unit test for {@link MemoryFlushMiddleware#shouldFlushNow} — the trigger gate
@@ -207,5 +224,55 @@ class MemoryFlushMiddlewareTriggerTest {
         assertEquals("userB", mw.timerKeyFor(RC_USER_B));
         assertEquals("", mw.timerKeyFor(RC_ANON), "no userId → empty key");
         assertEquals("", mw.timerKeyFor(null), "null rc → empty key");
+    }
+
+    @Test
+    void onAgent_passesThroughDownstreamEvents_andRunsOffloadPath() {
+        WorkspaceManager workspaceManager = mock(WorkspaceManager.class);
+        MemoryFlushMiddleware mw =
+                new MemoryFlushMiddleware(
+                        workspaceManager,
+                        null,
+                        MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
+                        MemoryConfig.FlushTrigger.never());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .sysPrompt("Test agent")
+                        .model(new MockModel("noop"))
+                        .toolkit(new Toolkit())
+                        .build();
+
+        Msg message = Msg.builder().textContent("remember this").build();
+        AgentState state =
+                AgentState.builder()
+                        .sessionId("session-1")
+                        .userId("user-1")
+                        .addMessage(message)
+                        .build();
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .sessionId("session-1")
+                        .userId("user-1")
+                        .agentState(state)
+                        .build();
+
+        CustomEvent downstream = new CustomEvent("downstream");
+        List<AgentEvent> events =
+                mw.onAgent(
+                                agent,
+                                ctx,
+                                new AgentInput(List.of(message)),
+                                in -> Flux.just(downstream))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1, events.size());
+        assertSame(downstream, events.get(0));
+        verify(workspaceManager)
+                .updateSessionIndex(
+                        any(), eq("test-agent"), eq("session-1"), eq("conversation offloaded"));
     }
 }
