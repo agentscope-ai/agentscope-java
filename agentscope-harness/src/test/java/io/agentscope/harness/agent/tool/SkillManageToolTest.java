@@ -163,6 +163,35 @@ class SkillManageToolTest {
     }
 
     @Test
+    void createWithResources_writesReferenceFile() throws Exception {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("references/api-guide.md", "# API 指南\n参考文档内容");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "api-skill",
+                                                "content",
+                                                validSkillMd("api-skill", "API 助手"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        // 验证 reference 文件成功写入
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/api-skill/references/api-guide.md")));
+        assertEquals(
+                "# API 指南\n参考文档内容",
+                Files.readString(workspace.resolve("skills/api-skill/references/api-guide.md")));
+    }
+
+    @Test
     void createRejectsDuplicate() {
         toolDraftDefault
                 .callAsync(

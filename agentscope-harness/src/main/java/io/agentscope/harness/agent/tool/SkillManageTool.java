@@ -175,6 +175,17 @@ public class SkillManageTool implements AgentTool {
                         "Full SKILL.md content (frontmatter + body). Required for "
                                 + "create/edit."));
         properties.put(
+                "resources",
+                Map.of(
+                        "type",
+                        "object",
+                        "description",
+                        "Optional for create: supporting files to include with the skill. "
+                                + "Keys are paths relative to skill root (must start with "
+                                + "references/, templates/, scripts/, or assets/), "
+                                + "values are file contents. All files written atomically "
+                                + "with SKILL.md."));
+        properties.put(
                 "old_string",
                 Map.of(
                         "type", "string",
@@ -255,7 +266,11 @@ public class SkillManageTool implements AgentTool {
         }
         switch (action) {
             case "create":
-                return doCreate(name, stringOf(input, "content"), sessionIdOf(ctx));
+                return doCreate(
+                        name,
+                        stringOf(input, "content"),
+                        mapOfStrings(input, "resources"),
+                        sessionIdOf(ctx));
             case "edit":
                 return doEdit(name, stringOf(input, "content"));
             case "patch":
@@ -292,7 +307,8 @@ public class SkillManageTool implements AgentTool {
     //  Actions
     // ---------------------------------------------------------------------
 
-    private ToolResultBlock doCreate(String name, String content, String sessionId) {
+    private ToolResultBlock doCreate(
+            String name, String content, Map<String, String> resources, String sessionId) {
         if (content == null || content.isBlank()) {
             return ToolResultBlock.error(
                     "Missing 'content' parameter (full SKILL.md including frontmatter).");
@@ -301,6 +317,14 @@ public class SkillManageTool implements AgentTool {
         if (contentErr != null) {
             return ToolResultBlock.error(contentErr);
         }
+        if (resources != null) {
+            for (String path : resources.keySet()) {
+                String err = validateSubFilePath(path);
+                if (err != null) {
+                    return ToolResultBlock.error("Invalid resource path '" + path + "': " + err);
+                }
+            }
+        }
         // Reject if a skill with this name already exists in either repo.
         if (mainRepo.skillExists(name) || draftsRepo.skillExists(name)) {
             return ToolResultBlock.error(
@@ -308,7 +332,7 @@ public class SkillManageTool implements AgentTool {
         }
         AgentSkill skill;
         try {
-            skill = SkillUtil.createFrom(content, null, "agent");
+            skill = SkillUtil.createFrom(content, resources, "agent");
         } catch (Exception e) {
             return ToolResultBlock.error("Failed to parse frontmatter: " + e.getMessage());
         }
@@ -735,12 +759,27 @@ public class SkillManageTool implements AgentTool {
 
     private static boolean boolOf(Map<String, Object> m, String key) {
         Object v = m.get(key);
-        if (v instanceof Boolean b) {
-            return b;
+        if (v instanceof Boolean) {
+            return (Boolean) v;
         }
-        if (v instanceof String s) {
-            return Boolean.parseBoolean(s);
+        if (v instanceof String) {
+            return Boolean.parseBoolean((String) v);
         }
         return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> mapOfStrings(Map<String, Object> m, String key) {
+        Object v = m.get(key);
+        if (v instanceof Map) {
+            Map<String, String> result = new HashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) v).entrySet()) {
+                if (entry.getKey() instanceof String && entry.getValue() instanceof String) {
+                    result.put((String) entry.getKey(), (String) entry.getValue());
+                }
+            }
+            return result.isEmpty() ? null : result;
+        }
+        return null;
     }
 }
