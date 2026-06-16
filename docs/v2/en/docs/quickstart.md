@@ -105,7 +105,7 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // The agent is about to call a tool — surface the call info
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // Other events: thinking blocks, tool results, reply end, etc.
         })
