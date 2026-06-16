@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.processor;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -85,6 +86,23 @@ public class AguiRequestProcessor {
      * @return A ProcessResult containing the agent and event stream
      */
     public ProcessResult process(RunAgentInput input, String headerAgentId, String pathAgentId) {
+        return process(input, headerAgentId, pathAgentId, null);
+    }
+
+    /**
+     * Process an AG-UI request with an explicit runtime context.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable (may be null)
+     * @param runtimeContext Per-call runtime context, or {@code null}
+     * @return A ProcessResult containing the agent and event stream
+     */
+    public ProcessResult process(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            RuntimeContext runtimeContext) {
         String threadId = input.getThreadId();
 
         // Resolve agent ID
@@ -104,7 +122,11 @@ public class AguiRequestProcessor {
 
         // Create adapter and run
         AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-        Flux<AguiEvent> events = adapter.run(effectiveInput);
+        RuntimeContext effectiveRuntimeContext =
+                runtimeContext != null
+                        ? runtimeContext
+                        : RuntimeContext.builder().sessionId(threadId).build();
+        Flux<AguiEvent> events = adapter.run(effectiveInput, effectiveRuntimeContext);
 
         return new ProcessResult(agent, events);
     }

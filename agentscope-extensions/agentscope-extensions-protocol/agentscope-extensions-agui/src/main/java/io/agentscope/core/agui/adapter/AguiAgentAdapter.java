@@ -18,6 +18,7 @@ package io.agentscope.core.agui.adapter;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -89,6 +90,17 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
+        return run(input, null);
+    }
+
+    /**
+     * Run the agent with AG-UI protocol input and a per-call runtime context.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Per-call runtime context, or {@code null}
+     * @return A Flux of AG-UI events
+     */
+    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
         return Flux.defer(
                 () -> {
                     String threadId = input.getThreadId();
@@ -107,13 +119,18 @@ public class AguiAgentAdapter {
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
 
+                    Flux<Event> agentStream =
+                            runtimeContext != null
+                                    ? agent.stream(msgs, options, runtimeContext)
+                                    : agent.stream(msgs, options);
+
                     return Flux.concat(
                                     // Emit RUN_STARTED
                                     Flux.just(new AguiEvent.RunStarted(threadId, runId)),
                                     // Stream agent events and convert to AG-UI events
                                     // Use concatMapIterable to preserve strict event ordering
-                                    agent.stream(msgs, options)
-                                            .concatMapIterable(event -> convertEvent(event, state)),
+                                    agentStream.concatMapIterable(
+                                            event -> convertEvent(event, state)),
                                     // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> finishRun(state)))
                             .onErrorResume(

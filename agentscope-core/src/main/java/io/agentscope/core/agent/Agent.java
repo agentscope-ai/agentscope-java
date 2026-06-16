@@ -17,6 +17,8 @@ package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
+import java.util.List;
+import reactor.core.publisher.Flux;
 
 /**
  * Complete agent interface combining all capabilities.
@@ -96,6 +98,22 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      */
     default io.agentscope.core.state.AgentState getAgentState() {
         return null;
+    }
+
+    /**
+     * Stream execution events with a per-call {@link RuntimeContext}.
+     *
+     * <p>The default implementation preserves backward compatibility by delegating to
+     * {@link #stream(List, StreamOptions)} when an implementation does not override this overload.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param runtimeContext Per-call runtime context, or {@code null}
+     * @return Flux of events emitted during execution
+     */
+    default Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, RuntimeContext runtimeContext) {
+        return stream(msgs, options);
     }
 
     /**

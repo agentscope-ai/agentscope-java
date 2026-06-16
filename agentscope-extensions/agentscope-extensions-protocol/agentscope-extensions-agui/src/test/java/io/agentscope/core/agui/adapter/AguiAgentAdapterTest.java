@@ -22,11 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -81,6 +84,32 @@ class AguiAgentAdapterTest {
         AguiEvent.RunStarted started = (AguiEvent.RunStarted) events.get(0);
         assertEquals("thread-1", started.getThreadId());
         assertEquals("run-1", started.getRunId());
+    }
+
+    @Test
+    void testRunWithRuntimeContextUsesContextAwareStream() {
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().sessionId("session-1").userId("alice").build();
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input, runtimeContext).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(2, events.size());
+
+        ArgumentCaptor<RuntimeContext> captor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(mockAgent).stream(anyList(), any(StreamOptions.class), captor.capture());
+        assertEquals("session-1", captor.getValue().getSessionId());
+        assertEquals("alice", captor.getValue().getUserId());
     }
 
     @Test
