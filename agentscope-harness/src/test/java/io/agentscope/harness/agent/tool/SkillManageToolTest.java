@@ -353,6 +353,25 @@ class SkillManageToolTest {
     }
 
     @Test
+    void createWithInvalidFrontmatter_rejectsWithParseError() {
+        // 构造无效的 YAML frontmatter，触发 SkillUtil.createFrom 抛出异常
+        String invalidContent = "---\nname: test\ndescription: [invalid yaml: :::\n---\nBody";
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "invalid-yaml-skill",
+                                                "content", invalidContent)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+        assertTrue(text(r).contains("Failed to parse frontmatter"));
+    }
+
+    @Test
     void createRejectsDuplicate() {
         toolDraftDefault
                 .callAsync(
