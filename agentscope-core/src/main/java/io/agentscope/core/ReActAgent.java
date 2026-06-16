@@ -980,7 +980,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
         if (model.supportsNativeStructuredOutput()) {
-            return doNativeStructuredCall(msgs, jsonSchema);
+            return doNativeStructuredCall(msgs, jsonSchema)
+                    .onErrorResume(
+                            e -> {
+                                log.warn(
+                                        "Native structured output failed ({}) — falling back to"
+                                                + " synthetic tool path",
+                                        e.getMessage() != null
+                                                ? e.getMessage()
+                                                : e.getClass().getSimpleName());
+                                return doFallbackStructuredCall(msgs, jsonSchema);
+                            });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
     }
@@ -1017,11 +1027,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .strict(true)
                                             .build());
 
+                    int contextSizeBefore = scope.state.contextMutable().size();
+
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
+                                    })
+                            .doOnError(
+                                    e -> {
+                                        scope.rollbackContext(contextSizeBefore);
+                                        scope.nativeResponseFormat = null;
                                     });
                 });
     }
@@ -1801,6 +1818,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
+        /** Roll back context to a given size on fallback, e.g. after native structured output failure. */
+        void rollbackContext(int targetSize) {
+            List<Msg> ctx = state.contextMutable();
+            while (ctx.size() > targetSize) {
+                ctx.remove(ctx.size() - 1);
+            }
+        }
+
         // ==================== Core ReAct Loop ====================
 
         /**
@@ -1850,7 +1875,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         event.getEffectiveGenerateOptions() != null
                                                 ? event.getEffectiveGenerateOptions()
                                                 : buildGenerateOptions();
-                                if (nativeResponseFormat != null) {
+                                if (nativeResponseFormat != null && soTool == null) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
