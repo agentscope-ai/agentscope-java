@@ -161,11 +161,25 @@ public class CompactionMiddleware implements MiddlewareBase {
         if (configTrigger == 0) {
             if (contextWindow > 0) {
                 effectiveTrigger = contextWindow - config.getReserved();
-                log.debug(
-                        "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
-                        contextWindow,
-                        config.getReserved(),
-                        effectiveTrigger);
+                if (effectiveTrigger <= 0) {
+                    // reserved exceeds the model's context window; a negative or zero trigger
+                    // would fire compaction on every call. Clamp to half the context window so
+                    // compaction still activates at a sensible point without thrashing.
+                    effectiveTrigger = Math.max(1, contextWindow / 2);
+                    log.warn(
+                            "Dynamic compaction trigger clamped: contextWindow={} <= reserved={}"
+                                    + "; using proportional trigger={}. Consider reducing"
+                                    + " reserved() for this model.",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                } else {
+                    log.debug(
+                            "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                }
             } else {
                 effectiveTrigger = CompactionConfig.FALLBACK_TRIGGER_TOKENS;
                 log.debug(
