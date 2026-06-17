@@ -44,13 +44,33 @@ public class ToolGroup {
     private final String name;
     private final String description;
     private boolean active;
+    private final ToolGroupScope scope;
     private final Set<String> tools; // Tool names in this group
 
+    /**
+     * Protected constructor for subclass use.
+     *
+     * @param name The group name (required)
+     * @param description The group description
+     * @param active Initial activation state
+     * @param scope The group scope
+     * @param tools Initial set of tool names
+     */
+    protected ToolGroup(
+            String name,
+            String description,
+            boolean active,
+            ToolGroupScope scope,
+            Set<String> tools) {
+        this.name = Objects.requireNonNull(name, "name cannot be null");
+        this.description = description != null ? description : "";
+        this.active = active;
+        this.scope = scope;
+        this.tools = new HashSet<>(tools);
+    }
+
     private ToolGroup(Builder builder) {
-        this.name = Objects.requireNonNull(builder.name, "name cannot be null");
-        this.description = builder.description != null ? builder.description : "";
-        this.active = builder.active;
-        this.tools = new HashSet<>(builder.tools);
+        this(builder.name, builder.description, builder.active, builder.scope, builder.tools);
     }
 
     /**
@@ -87,6 +107,15 @@ public class ToolGroup {
      */
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    /**
+     * Gets the scope of this tool group.
+     *
+     * @return The group scope ({@link ToolGroupScope#META} or {@link ToolGroupScope#EXTERNAL})
+     */
+    public ToolGroupScope getScope() {
+        return scope;
     }
 
     /**
@@ -127,6 +156,21 @@ public class ToolGroup {
     }
 
     /**
+     * Creates a deep copy of this tool group, preserving the concrete type for subclasses.
+     *
+     * @return A new ToolGroup (or subclass) instance with the same state
+     */
+    public ToolGroup copy() {
+        return ToolGroup.builder()
+                .name(name)
+                .description(description)
+                .active(active)
+                .scope(scope)
+                .tools(tools)
+                .build();
+    }
+
+    /**
      * Creates a new builder for constructing ToolGroup instances.
      *
      * @return A new builder instance
@@ -141,6 +185,7 @@ public class ToolGroup {
         private String name;
         private String description = "";
         private boolean active = true;
+        private ToolGroupScope scope = ToolGroupScope.META;
         private Set<String> tools = new HashSet<>();
 
         /**
@@ -173,6 +218,18 @@ public class ToolGroup {
          */
         public Builder active(boolean active) {
             this.active = active;
+            return this;
+        }
+
+        /**
+         * Sets the scope of the tool group.
+         *
+         * @param scope {@link ToolGroupScope#META} (default) for agent-managed,
+         *              {@link ToolGroupScope#EXTERNAL} for developer-managed
+         * @return This builder for method chaining
+         */
+        public Builder scope(ToolGroupScope scope) {
+            this.scope = scope;
             return this;
         }
 

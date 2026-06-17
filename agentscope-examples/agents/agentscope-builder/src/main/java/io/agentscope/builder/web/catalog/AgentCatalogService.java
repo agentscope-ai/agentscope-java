@@ -135,8 +135,8 @@ public class AgentCatalogService {
      *       path is robust against races between session restore and UCA registration.
      * </ul>
      *
-     * <p>Session routing keys are unaffected (the gateway still derives them from {@link
-     * io.agentscope.builder.runtime.gateway.MsgContext#userId()}), so each caller retains an
+     * <p>AgentStateStore routing keys are unaffected (the gateway still derives them from {@link
+     * io.agentscope.harness.agent.gateway.MsgContext#userId()}), so each caller retains an
      * independent conversation thread on a shared agent.
      */
     public String resolveFilesystemUserId(String callerUserId, String agentId) {
@@ -860,8 +860,9 @@ public class AgentCatalogService {
                         builderBootstrap.channelManager()));
         b.toolkit(ucaToolkit);
 
-        // Inject ToolNotificationHook so user-custom agents also publish tool-call events.
-        b.hook(new io.agentscope.builder.web.toolbus.ToolNotificationHook(toolEventBus));
+        // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
+        b.middleware(
+                new io.agentscope.builder.web.toolbus.ToolNotificationMiddleware(toolEventBus));
 
         HarnessAgent agent = b.build();
 

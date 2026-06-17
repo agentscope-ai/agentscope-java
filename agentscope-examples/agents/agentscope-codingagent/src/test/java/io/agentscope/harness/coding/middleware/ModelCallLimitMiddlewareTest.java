@@ -1,0 +1,61 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.harness.coding.middleware;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.middleware.ReasoningInput;
+import java.util.List;
+import java.util.function.Function;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
+
+/** Unit tests for {@link ModelCallLimitMiddleware}. */
+class ModelCallLimitMiddlewareTest {
+
+    @Test
+    void allowsCallsUnderGlobalLimit() {
+        ModelCallLimitMiddleware mw = new ModelCallLimitMiddleware(3);
+        for (int i = 0; i < 3; i++) {
+            StepVerifier.create(invoke(mw)).verifyComplete();
+        }
+        assertEquals(3, mw.getTotalCalls());
+    }
+
+    @Test
+    void terminatesOnLimitExceeded() {
+        ModelCallLimitMiddleware mw = new ModelCallLimitMiddleware(2);
+        invoke(mw).blockLast();
+        invoke(mw).blockLast();
+
+        StepVerifier.create(invoke(mw))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof RuntimeException
+                                        && e.getMessage().contains("Global model call limit"))
+                .verify();
+    }
+
+    private static Flux<AgentEvent> invoke(ModelCallLimitMiddleware mw) {
+        ReasoningInput input = new ReasoningInput(List.of(), List.of(), null);
+        Function<ReasoningInput, Flux<AgentEvent>> next = i -> Flux.empty();
+        return mw.onReasoning(mock(Agent.class), null, input, next);
+    }
+}

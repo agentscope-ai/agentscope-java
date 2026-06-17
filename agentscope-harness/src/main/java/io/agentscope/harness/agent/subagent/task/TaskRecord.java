@@ -49,6 +49,14 @@ public class TaskRecord {
     private Instant lastCheckedAt;
     private Instant lastUpdatedAt;
 
+    /**
+     * When this terminal-state task's result was pushed back to the parent agent as a synthetic
+     * {@code <system-reminder>} message, or {@code null} when not yet delivered. Used by
+     * {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to avoid re-delivering
+     * the same completion every reasoning round.
+     */
+    private Instant deliveredAt;
+
     /** When {@code "agent-protocol"}, this task is driven by {@link AgentProtocolTaskClient}. */
     private String transportType;
 
@@ -181,6 +189,19 @@ public class TaskRecord {
     /** Convenience: update lastCheckedAt to now. */
     public void touchChecked() {
         this.lastCheckedAt = Instant.now();
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(Instant deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    /** Whether this task's completion has been pushed back to the parent agent. */
+    public boolean isDelivered() {
+        return deliveredAt != null;
     }
 
     public String getTransportType() {

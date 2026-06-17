@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.subagent.task;
 
 import io.agentscope.core.agent.RuntimeContext;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Repository for managing background subagent tasks, scoped by session.
@@ -88,4 +89,48 @@ public interface TaskRepository {
      * @return true if the task was found and cancellation was attempted
      */
     boolean cancelTask(RuntimeContext rc, String sessionId, String taskId);
+
+    // ------------------------------------------------------------------------
+    // Phase B-3 — push delivery API.
+    //
+    // Implementations that persist {@link TaskRecord} should override the three methods below to
+    // surface "terminal-but-not-yet-delivered" tasks to the parent agent's reasoning loop. The
+    // default no-op implementations preserve pull-only semantics for in-memory repositories
+    // where the parent process and any task callers share the same JVM and can rely on direct
+    // future completion instead.
+    // ------------------------------------------------------------------------
+
+    /**
+     * Returns terminal-state tasks for the given session whose completions have not yet been
+     * pushed back to the parent agent.
+     *
+     * <p>Implementations should order the result deterministically (typically by completion time
+     * ascending) so the parent agent sees deliveries in the order they actually happened.
+     *
+     * <p>Default returns an empty list — in-memory repositories do not currently support push.
+     */
+    default List<TaskDelivery> findPendingDeliveries(RuntimeContext rc, String sessionId) {
+        return List.of();
+    }
+
+    /**
+     * Stamps the given task as delivered so it does not get pushed again. Idempotent: calling
+     * twice has no effect after the first call.
+     *
+     * <p>Default is a no-op.
+     */
+    default void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        // no-op
+    }
+
+    /**
+     * Whether the given task has already been delivered to the parent agent. Used by
+     * {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware#buildTaskSummary} to omit
+     * already-delivered terminal tasks from the SYSTEM-prompt summary.
+     *
+     * <p>Default returns {@code false}.
+     */
+    default boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        return false;
+    }
 }

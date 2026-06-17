@@ -72,6 +72,7 @@ import io.agentscope.core.skill.util.SkillFileSystemHelper;
  *     List<AgentSkill> allSkills = repository.getAllSkills();
  * }
  * }</pre>
+ *
  */
 public class ClasspathSkillRepository implements AgentSkillRepository {
 

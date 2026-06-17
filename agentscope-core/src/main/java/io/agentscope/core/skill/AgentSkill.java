@@ -16,11 +16,13 @@
 
 package io.agentscope.core.skill;
 
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -61,12 +63,23 @@ import java.util.Set;
  *
  * @see io.agentscope.core.skill.util.SkillUtil
  * @see io.agentscope.core.skill.util.MarkdownSkillParser
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class AgentSkill {
     private final Map<String, Object> metadata;
     private final String skillContent;
     private final Map<String, String> resources;
     private final String source;
+
+    /**
+     * Optional absolute path to the skill's on-disk source directory. When present, the prompt
+     * provider can emit a {@code <files-root>} per skill so the LLM can shell-execute scripts
+     * directly without going through {@code uploadSkillFiles}; the load tool can also use it as
+     * a disk-fallback when an in-memory resource is missing.
+     */
+    private final Path originDir;
 
     /**
      * Creates an AgentSkill with explicit parameters.
@@ -124,6 +137,26 @@ public class AgentSkill {
             String skillContent,
             Map<String, String> resources,
             String source) {
+        this(metadata, skillContent, resources, source, null);
+    }
+
+    /**
+     * Creates an AgentSkill with explicit metadata and an on-disk origin directory.
+     *
+     * @param metadata Skill metadata including required {@code name} and {@code description}
+     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param resources Supporting resources referenced by the skill (can be null)
+     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param originDir Absolute path to the skill's source directory, or {@code null} if not
+     *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
+     * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
+     */
+    public AgentSkill(
+            Map<String, Object> metadata,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            Path originDir) {
         String name = getRequiredMetadataString(metadata, "name");
         String description = getRequiredMetadataString(metadata, "description");
         if (skillContent == null || skillContent.isEmpty()) {
@@ -138,6 +171,7 @@ public class AgentSkill {
         this.skillContent = skillContent;
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
         this.source = source != null ? source : "custom";
+        this.originDir = originDir;
     }
 
     /**
@@ -237,6 +271,17 @@ public class AgentSkill {
     }
 
     /**
+     * Returns the absolute path to this skill's on-disk source directory, when available. Used
+     * by the prompt provider to emit per-skill {@code <files-root>} entries and by the load tool
+     * as a disk-fallback when an in-memory resource is missing.
+     *
+     * @return the origin directory, empty when the skill is not filesystem-backed
+     */
+    public Optional<Path> getOriginDir() {
+        return Optional.ofNullable(originDir);
+    }
+
+    /**
      * Creates a builder initialized with this skill's values.
      *
      * <p>This is useful for creating modified versions of existing skills.
@@ -300,6 +345,7 @@ public class AgentSkill {
         private String skillContent;
         private Map<String, String> resources;
         private String source;
+        private Path originDir;
 
         /**
          * Creates an empty builder.
@@ -319,6 +365,7 @@ public class AgentSkill {
             this.skillContent = baseSkill.skillContent;
             this.resources = new HashMap<>(baseSkill.resources);
             this.source = baseSkill.source;
+            this.originDir = baseSkill.originDir;
         }
 
         /**
@@ -445,13 +492,26 @@ public class AgentSkill {
         }
 
         /**
+         * Sets the on-disk origin directory for this skill. Repositories that materialise a
+         * skill from a local directory should call this so the prompt provider can emit a
+         * {@code <files-root>} and the load tool can fall back to disk reads.
+         *
+         * @param originDir absolute path to the skill's source directory, or {@code null}
+         * @return This builder
+         */
+        public Builder originDir(Path originDir) {
+            this.originDir = originDir;
+            return this;
+        }
+
+        /**
          * Builds the AgentSkill instance.
          *
          * @return A new AgentSkill instance
          * @throws IllegalArgumentException if required fields are missing
          */
         public AgentSkill build() {
-            return new AgentSkill(metadata, skillContent, resources, source);
+            return new AgentSkill(metadata, skillContent, resources, source, originDir);
         }
     }
 

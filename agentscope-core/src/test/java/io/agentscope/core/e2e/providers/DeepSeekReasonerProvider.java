@@ -18,9 +18,7 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.DeepSeekFormatter;
 import io.agentscope.core.formatter.openai.DeepSeekMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
-import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
 import java.util.Set;
@@ -54,12 +52,7 @@ public class DeepSeekReasonerProvider extends BaseModelProvider {
                                         : new DeepSeekFormatter(true))
                         .build();
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(model)
-                .toolkit(toolkit)
-                .structuredOutputReminder(StructuredOutputReminder.PROMPT)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(model).toolkit(toolkit);
     }
 
     @Override
