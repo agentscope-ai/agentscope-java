@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-06-17T10:04:46+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1080,7 +1080,7 @@
 
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sandboxContext</span><span class="p">(</span><span class="n">callCtx</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">SandboxContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">callCtx</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="n">mySandbox</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
@@ -1200,7 +1200,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-17</div>
           </div>
           <div class="right-details">
             <div class="icons">
