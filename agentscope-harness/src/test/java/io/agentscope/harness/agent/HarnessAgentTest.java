@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -26,16 +27,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
@@ -49,11 +53,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
@@ -228,6 +234,46 @@ class HarnessAgentTest {
                 "expected workspace hook to wrap AGENTS.md in agents_context");
         assertTrue(
                 combined.contains(marker), "model should see AGENTS.md body in injected context");
+    }
+
+    @Test
+    void runtimeContextConcreteFilesystemSurvivesSessionDefaulting() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        LocalFilesystem customFilesystem = new LocalFilesystem(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build();
+
+        agent.call(
+                        userText("hi"),
+                        RuntimeContext.builder()
+                                .put(LocalFilesystem.class, customFilesystem)
+                                .build())
+                .block();
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertNotNull(effective.getSessionId());
+        assertSame(customFilesystem, effective.get(AbstractFilesystem.class));
+        assertSame(customFilesystem, effective.get(LocalFilesystem.class));
     }
 
     @Test

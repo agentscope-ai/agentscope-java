@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -32,6 +33,16 @@ class RuntimeContextTest {
         final String id;
 
         PojoA(String id) {
+            this.id = id;
+        }
+    }
+
+    private interface Marker {}
+
+    private static final class MarkerImpl implements Marker {
+        final String id;
+
+        MarkerImpl(String id) {
             this.id = id;
         }
     }
@@ -99,6 +110,29 @@ class RuntimeContextTest {
         ToolExecutionContext merged =
                 ToolExecutionContext.merge(run.asToolExecutionContext(), agent);
         assertSame(fromRun, merged.get(PojoA.class));
+    }
+
+    @Test
+    @DisplayName("builder(source) preserves typed and string extras")
+    void builderCopyPreservesTypedData() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext source =
+                RuntimeContext.builder()
+                        .sessionId("sid-copy")
+                        .userId("user-copy")
+                        .put("plain", "value")
+                        .put(MarkerImpl.class, filesystem)
+                        .build();
+
+        RuntimeContext copy = RuntimeContext.builder(source).build();
+
+        assertEquals("sid-copy", copy.getSessionId());
+        assertEquals("user-copy", copy.getUserId());
+        assertEquals("value", copy.get("plain"));
+        assertSame(filesystem, copy.get(MarkerImpl.class));
+        assertSame(filesystem, copy.get(Marker.class));
+        assertSame(copy, copy.get(RuntimeContext.class));
+        assertInstanceOf(MarkerImpl.class, copy.get(Marker.class));
     }
 
     @Test
