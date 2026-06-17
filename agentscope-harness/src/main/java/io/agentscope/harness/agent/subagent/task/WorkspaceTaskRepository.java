@@ -203,7 +203,9 @@ public class WorkspaceTaskRepository implements TaskRepository {
     /**
      * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
      * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
-     * to the session inbox and enqueue a wakeup signal.
+     * to the session inbox and enqueue a wakeup signal. The {@code result} argument passed to the
+     * callback is {@code null} for failed tasks; callers that need the error message should read
+     * the persisted {@link TaskRecord} directly.
      *
      * <p>Only one callback is supported; a second call replaces the previous one.
      */
@@ -254,6 +256,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
                                                     ? cause.getClass().getSimpleName()
                                                     : err.getClass().getSimpleName());
                             updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
                         } else {
                             updateStatus(
                                     capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
@@ -322,6 +325,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -871,8 +875,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     /**
-     * Callback invoked when a background task reaches terminal COMPLETED state. Implementations
-     * typically push the result to the session inbox and enqueue a wakeup signal.
+     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
+     * Implementations typically push the result to the session inbox and enqueue a wakeup signal.
+     * {@code result} is {@code null} when the task failed; callers should read the persisted
+     * {@link TaskRecord} for the error message.
      */
     @FunctionalInterface
     public interface TaskCompletionCallback {
