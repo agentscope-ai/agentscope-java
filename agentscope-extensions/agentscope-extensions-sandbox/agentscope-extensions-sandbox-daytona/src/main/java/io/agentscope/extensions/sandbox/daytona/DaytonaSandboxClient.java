@@ -57,6 +57,15 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             DaytonaSandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            DaytonaSandboxClientOptions options,
+            String snapshotId) {
         String sessionId = UUID.randomUUID().toString();
         DaytonaSandboxClientOptions merged = merge(options);
 
@@ -70,7 +79,9 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
         state.setWorkspaceRootReady(false);
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            String effectiveSnapshotId =
+                    snapshotId != null && !snapshotId.isBlank() ? snapshotId : sessionId;
+            state.setSnapshot(snapshotSpec.build(effectiveSnapshotId));
         }
 
         log.debug("[sandbox-daytona] Creating sandbox sessionId={}", sessionId);
