@@ -20,6 +20,9 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 
 /**
  * Shell execution tool backed by a {@link AbstractSandboxFilesystem}.
@@ -55,7 +58,11 @@ public class ShellExecuteTool {
                     int timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
-            effectiveCommand = "cd " + workingDirectory + " && " + command;
+            effectiveCommand =
+                    "cd "
+                            + FilesystemUtils.shellQuote(validateWorkingDirectory(workingDirectory))
+                            + " && "
+                            + command;
         }
 
         ExecuteResponse result =
@@ -70,5 +77,42 @@ public class ShellExecuteTool {
             sb.append("\n(output was truncated)");
         }
         return sb.toString();
+    }
+
+    private static String validateWorkingDirectory(String workingDirectory) {
+        if (workingDirectory == null || workingDirectory.isBlank()) {
+            throw new IllegalArgumentException("working_directory must not be null or blank");
+        }
+        if (workingDirectory.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException(
+                    "working_directory must not contain null bytes: " + workingDirectory);
+        }
+        if (isAbsoluteWorkingDirectory(workingDirectory)) {
+            throw new IllegalArgumentException(
+                    "working_directory must be relative: " + workingDirectory);
+        }
+        try {
+            for (Path segment : Path.of(workingDirectory)) {
+                if ("..".equals(segment.toString())) {
+                    throw new IllegalArgumentException(
+                            "working_directory may not contain '..': " + workingDirectory);
+                }
+            }
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException("Invalid working_directory: " + workingDirectory, e);
+        }
+        return workingDirectory;
+    }
+
+    private static boolean isAbsoluteWorkingDirectory(String workingDirectory) {
+        return workingDirectory.startsWith("/")
+                || workingDirectory.startsWith("\\")
+                || isWindowsDriveAbsolute(workingDirectory);
+    }
+
+    private static boolean isWindowsDriveAbsolute(String workingDirectory) {
+        return workingDirectory.length() >= 2
+                && Character.isLetter(workingDirectory.charAt(0))
+                && workingDirectory.charAt(1) == ':';
     }
 }
