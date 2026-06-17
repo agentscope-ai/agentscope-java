@@ -72,15 +72,15 @@ public class RuntimeContextExample {
                         .defaultSessionId("runtime-context-demo")
                         .build();
 
-        int loaded = agent.getAgentState().getContext().size();
-        System.out.println("Loaded " + loaded + " message(s) from session.");
-
         RuntimeContext ctx =
                 RuntimeContext.builder()
                         .userId("alice")
                         .sessionId("runtime-context-demo")
                         .put("request_id", "req-001")
                         .build();
+
+        int loaded = agent.getAgentState(ctx).getContext().size();
+        System.out.println("Loaded " + loaded + " message(s) from session.");
 
         Msg first = agent.call(List.of(new UserMessage("Hi, my name is Alice.")), ctx).block();
         System.out.println("Assistant: " + (first == null ? "" : first.getTextContent()));
@@ -90,7 +90,7 @@ public class RuntimeContextExample {
 
         System.out.println(
                 "Final context size: "
-                        + agent.getAgentState().getContext().size()
+                        + agent.getAgentState(ctx).getContext().size()
                         + " message(s).");
     }
 }

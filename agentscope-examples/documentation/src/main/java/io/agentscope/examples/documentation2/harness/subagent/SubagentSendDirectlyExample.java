@@ -21,6 +21,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
@@ -58,6 +59,7 @@ public class SubagentSendDirectlyExample {
         System.out.println("Channel — Streaming + SubagentExposedEvent");
         System.out.println("=".repeat(60) + "\n");
 
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("orchestrator")
@@ -65,6 +67,7 @@ public class SubagentSendDirectlyExample {
                                 "You are an orchestrator. When asked to research, spawn a "
                                         + "researcher subagent with expose_to_user=true.")
                         .model("dashscope:qwen-plus")
+                        .stateStore(stateStore)
                         .build();
 
         ChatUiChannel chat = agent.channel(ChatUiChannel.create());
@@ -109,7 +112,10 @@ public class SubagentSendDirectlyExample {
         if (subagentId != null) {
             System.out.println("\nTalking directly to subagent: " + subagentId);
 
-            chat.sendToSubagentStream(subagentId, "Focus on LLM agents specifically")
+            chat.sendToSubagentStream(
+                            subagentId,
+                            "Focus on LLM agents specifically. Compare LLM agent frameworks (e.g.,"
+                                    + " LangChain vs. AgentScope vs. LlamaIndex)")
                     .doOnNext(
                             event -> {
                                 if (event instanceof TextBlockDeltaEvent e) {

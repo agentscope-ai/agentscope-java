@@ -35,6 +35,7 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.reflect.Type;
@@ -99,6 +100,7 @@ public class ToolCallingWithConverterExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
