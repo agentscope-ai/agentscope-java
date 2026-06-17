@@ -147,4 +147,32 @@ class OssBaseStoreTest {
         verify(mockOss).deleteObject("test-bucket", "test/store/ns1/my-key.json");
         verify(mockOss).deleteObject("test-bucket", "test/store/ns1/my-key.version");
     }
+
+    @Test
+    void putStripsLeadingSlashFromKey() {
+        store.put(List.of("ns1", "ns2"), "/my-key", Map.of("foo", "bar"));
+        verify(mockOss)
+                .putObject(
+                        eq("test-bucket"),
+                        eq("test/store/ns1/ns2/my-key.json"),
+                        any(InputStream.class));
+    }
+
+    @Test
+    void getStripsLeadingSlashFromKey() {
+        String dataKey = "test/store/ns1/my-key.json";
+        String versionKey = "test/store/ns1/my-key.version";
+
+        when(mockOss.doesObjectExist("test-bucket", dataKey)).thenReturn(true);
+        OSSObject dataObj = new OSSObject();
+        dataObj.setObjectContent(
+                new ByteArrayInputStream("{\"v\":1}".getBytes(StandardCharsets.UTF_8)));
+        when(mockOss.getObject("test-bucket", dataKey)).thenReturn(dataObj);
+
+        when(mockOss.doesObjectExist("test-bucket", versionKey)).thenReturn(false);
+
+        StoreItem item = store.get(List.of("ns1"), "/my-key");
+        assertNotNull(item);
+        assertEquals("/my-key", item.key());
+    }
 }
