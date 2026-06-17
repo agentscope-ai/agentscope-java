@@ -89,6 +89,13 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
     static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_RUN_AT =
             new ConcurrentHashMap<>();
 
+    /**
+     * Entries in {@link #SHARED_LAST_RUN_AT} whose timestamp is older than this threshold
+     * are considered stale and removed on the next cleanup sweep. This bounds the map size
+     * in long-running services with high user/session churn.
+     */
+    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
             MemoryConsolidator consolidator,
@@ -154,6 +161,19 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
     private AtomicReference<Instant> lastRunAtFor(RuntimeContext rc) {
         return SHARED_LAST_RUN_AT.computeIfAbsent(
                 compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
+    }
+
+    /**
+     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
+     * {@link #SHARED_LAST_RUN_AT}. This bounds the map size in long-running services with
+     * high user/session churn — stale entries represent keys that have not run maintenance
+     * recently and are safe to re-create on demand.
+     *
+     * <p>Package-private for unit testing.
+     */
+    static void cleanupStaleEntries() {
+        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
+        SHARED_LAST_RUN_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
     }
 
     /**

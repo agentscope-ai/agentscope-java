@@ -24,6 +24,8 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +50,7 @@ class MemoryFlushMiddlewareTriggerTest {
     @BeforeEach
     void resetSharedTimerMap() {
         MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.clear();
+        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.clear();
     }
 
     /** Creates a USER-scope (default) middleware for trigger-gate tests. */
@@ -248,5 +251,34 @@ class MemoryFlushMiddlewareTriggerTest {
                 mw2.shouldFlushNow(RC_USER_B),
                 "mw2: userB must still win their own independent slot");
         assertFalse(mw1.shouldFlushNow(RC_USER_B), "mw1: userB now throttled in their own window");
+    }
+
+    // ── Stale entry eviction ──────────────────────────────────────────────────
+
+    @Test
+    void cleanupStaleEntries_removesOldEntries() {
+        // Seed the map with a stale entry (timestamp = EPOCH, which is way older than 60min)
+        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
+                "USER:staleUser", new AtomicReference<>(Instant.EPOCH));
+        assertEquals(1, MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.size());
+
+        MemoryFlushMiddleware.cleanupStaleEntries();
+
+        assertTrue(
+                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.isEmpty(),
+                "stale entry (EPOCH timestamp) should be removed");
+    }
+
+    @Test
+    void cleanupStaleEntries_preservesRecentEntries() {
+        // Seed with a recent entry (timestamp = now)
+        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
+                "USER:recentUser", new AtomicReference<>(Instant.now()));
+
+        MemoryFlushMiddleware.cleanupStaleEntries();
+
+        assertTrue(
+                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.containsKey("USER:recentUser"),
+                "recent entry should survive cleanup");
     }
 }

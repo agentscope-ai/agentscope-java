@@ -96,6 +96,13 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
     static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_FLUSH_AT =
             new ConcurrentHashMap<>();
 
+    /**
+     * Entries in {@link #SHARED_LAST_FLUSH_AT} whose timestamp is older than this threshold
+     * are considered stale and removed on the next cleanup sweep. This bounds the map size in
+     * long-running services with high user/session churn.
+     */
+    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
+
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
                 workspaceManager,
@@ -224,6 +231,19 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
     private AtomicReference<Instant> lastFlushAtFor(RuntimeContext rc) {
         return SHARED_LAST_FLUSH_AT.computeIfAbsent(
                 compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
+    }
+
+    /**
+     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
+     * {@link #SHARED_LAST_FLUSH_AT}. This bounds the map size in long-running services with
+     * high user/session churn — stale entries represent keys that have not flushed recently
+     * and are safe to re-create on demand.
+     *
+     * <p>Package-private for unit testing.
+     */
+    static void cleanupStaleEntries() {
+        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
+        SHARED_LAST_FLUSH_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
     }
 
     /**
