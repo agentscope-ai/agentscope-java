@@ -255,7 +255,7 @@ agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
                 System.out.print(((TextBlockDeltaEvent) event).getDelta());
             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                 // 智能体即将调用工具 —— 展示调用信息
-                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolName());
+                System.out.println("\n[tool] " + ((ToolCallStartEvent) event).getToolCallName());
             }
             // 其他事件：思考块、工具结果、回复结束等
         })
