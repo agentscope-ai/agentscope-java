@@ -119,7 +119,7 @@ SandboxContext callCtx = SandboxContext.builder()
 
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("my-session")
-    .sandboxContext(callCtx)      // 覆盖构建时的 defaultSandboxContext
+    .put(SandboxContext.class, callCtx)      // 覆盖构建时的 defaultSandboxContext
     .build();
 
 agent.call(msgs, ctx).block();
@@ -151,7 +151,7 @@ SandboxContext callCtx = SandboxContext.builder()
     .build();
 
 RuntimeContext ctx = RuntimeContext.builder()
-    .sandboxContext(callCtx)
+    .put(SandboxContext.class, callCtx)
     .build();
 
 agent.call(msgs, ctx).block();
@@ -164,11 +164,11 @@ agent.call(msgs, ctx).block();
 Sandbox sharedSandbox = ...;  // 已 start()
 
 agent1.call(msgs1, RuntimeContext.builder()
-    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .put(SandboxContext.class, SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
     .build()).block();
 
 agent2.call(msgs2, RuntimeContext.builder()
-    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .put(SandboxContext.class, SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
     .build()).block();
 
 // 所有 agent 用完后手动 shutdown
