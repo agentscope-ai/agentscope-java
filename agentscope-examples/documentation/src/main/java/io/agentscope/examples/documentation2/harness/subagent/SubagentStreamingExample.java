@@ -23,6 +23,7 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 
@@ -58,11 +59,12 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
  */
 public class SubagentStreamingExample {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         System.out.println("\n" + "=".repeat(60));
         System.out.println("Subagent Streaming — streamEvents() event forwarding");
         System.out.println("=".repeat(60) + "\n");
 
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         // ── Build a parent agent with a programmatic subagent declaration ──
         HarnessAgent agent =
                 HarnessAgent.builder()
@@ -82,7 +84,9 @@ public class SubagentStreamingExample {
                                                 "You are a research assistant. Investigate the"
                                                     + " given topic and provide a concise summary"
                                                     + " with key findings.")
+                                        .persistSession(true)
                                         .build())
+                        .stateStore(stateStore)
                         .build();
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("demo-subagent-stream").build();
@@ -95,13 +99,19 @@ public class SubagentStreamingExample {
                 .blockLast();
 
         System.out.println("\n" + "=".repeat(60));
+
+        Thread.sleep(
+                10000); // Wait a moment to ensure all events are printed before the program exits.
     }
+
+    private static String lastTextSource = null;
 
     private static void handleEvent(AgentEvent event) {
         String source = event.getSource();
         String prefix = (source != null) ? "[" + source + "] " : "";
 
         if (event instanceof AgentStartEvent e) {
+            lastTextSource = null;
             if (source != null) {
                 System.out.printf("%n── child agent started: %s ──%n", source);
             } else {
@@ -109,15 +119,26 @@ public class SubagentStreamingExample {
             }
 
         } else if (event instanceof TextBlockDeltaEvent e) {
-            System.out.print(prefix + e.getDelta());
+            String currentSource = source != null ? source : "__parent__";
+            if (!currentSource.equals(lastTextSource)) {
+                if (lastTextSource != null) {
+                    System.out.println();
+                }
+                System.out.print(prefix);
+                lastTextSource = currentSource;
+            }
+            System.out.print(e.getDelta());
 
         } else if (event instanceof ToolCallStartEvent e) {
+            lastTextSource = null;
             System.out.printf("%n%s[TOOL_CALL] %s%n", prefix, e.getToolCallName());
 
         } else if (event instanceof ToolResultEndEvent e) {
+            lastTextSource = null;
             System.out.printf("%s[TOOL_RESULT_END] state=%s%n", prefix, e.getState());
 
         } else if (event instanceof AgentEndEvent) {
+            lastTextSource = null;
             if (source != null) {
                 System.out.printf("%n── child agent finished: %s ──%n", source);
             } else {

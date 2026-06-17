@@ -16,6 +16,7 @@
 package io.agentscope.examples.documentation2.harness.channel;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
@@ -42,16 +43,19 @@ public class ChannelSendExample {
      *
      * @param args command-line arguments (ignored)
      */
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         System.out.println("\n" + "=".repeat(60));
         System.out.println("Channel — Basic Example");
         System.out.println("=".repeat(60) + "\n");
+
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
 
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .sysPrompt("You are a helpful assistant.")
                         .model("dashscope:qwen-plus")
+                        .stateStore(stateStore)
                         .build();
 
         ChatUiChannel chat = agent.channel(ChatUiChannel.create());
@@ -78,5 +82,7 @@ public class ChannelSendExample {
         Msg sessionB = chat.send(SendOptions.of("user-1", "session-b"), "Topic B").block();
         System.out.println(
                 "Session B: " + (sessionB != null ? sessionB.getTextContent() : "(null)"));
+
+        Thread.sleep(10000); // Wait for async processing to complete before exiting
     }
 }
