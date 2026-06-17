@@ -179,6 +179,8 @@ public class SkillManageTool implements AgentTool {
                 Map.of(
                         "type",
                         "object",
+                        "additionalProperties",
+                        Map.of("type", "string"),
                         "description",
                         "Optional for create: supporting files to include with the skill. "
                                 + "Keys are paths relative to skill root (must start with "
@@ -775,6 +777,8 @@ public class SkillManageTool implements AgentTool {
             for (Map.Entry<?, ?> entry : ((Map<?, ?>) v).entrySet()) {
                 if (entry.getKey() instanceof String && entry.getValue() instanceof String) {
                     result.put((String) entry.getKey(), (String) entry.getValue());
+                } else {
+                    log.warn("mapOfStrings: skipping non-String entry key={}", entry.getKey());
                 }
             }
             return result.isEmpty() ? null : result;

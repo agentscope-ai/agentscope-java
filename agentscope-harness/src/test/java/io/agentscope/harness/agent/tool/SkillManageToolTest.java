@@ -701,6 +701,115 @@ class SkillManageToolTest {
         assertTrue(text(r).contains("pruning"));
     }
 
+    // ---- code review feedback: schema, mapOfStrings logging, boolOf compatibility ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void resourcesSchema_includesAdditionalPropertiesTypeHint() {
+        Map<String, Object> params = toolDraftDefault.getParameters();
+        Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+        Map<String, Object> resourcesSchema = (Map<String, Object>) properties.get("resources");
+        Map<String, Object> additionalProperties =
+                (Map<String, Object>) resourcesSchema.get("additionalProperties");
+
+        assertNotNull(additionalProperties, "resources schema should include additionalProperties");
+        assertEquals(
+                "string",
+                additionalProperties.get("type"),
+                "additionalProperties type should be string");
+    }
+
+    @Test
+    void mapOfStrings_withNonStringValue_skipsEntryAndCreatesSkill() {
+        // 当 resources 包含非字符串值时（如数字），应该被静默跳过并继续创建 skill
+        // mapOfStrings 会过滤掉非字符串条目，只保留 String -> String 的条目
+        Map<String, Object> resourcesWithMixedTypes = new HashMap<>();
+        resourcesWithMixedTypes.put("references/valid.md", "# Valid"); // String 值
+        resourcesWithMixedTypes.put("scripts/count.sh", 42); // 非 String 值，会被跳过
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "mixed-res-skill",
+                                                "content",
+                                                validSkillMd("mixed-res-skill", "测试混合类型 resources"),
+                                                "resources",
+                                                resourcesWithMixedTypes)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        assertTrue(Files.exists(workspace.resolve("skills/mixed-res-skill/references/valid.md")));
+    }
+
+    @Test
+    void boolOf_supportsBooleanAndStringTypes() {
+        // 测试 boolOf 兼容 Boolean 对象和 String 类型（Java 11+ 兼容性）
+        // replace_all 为 Boolean.TRUE 时应该生效
+        String content = "---\nname: bool-test\ndescription: Test\n---\nFoo\nFoo\n";
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bool-test",
+                                        "content", content)))
+                .block();
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "patch",
+                                                "name", "bool-test",
+                                                "old_string", "Foo",
+                                                "new_string", "Bar",
+                                                "replace_all", Boolean.TRUE)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        var loaded = draftsRepo.getSkill("bool-test");
+        // 两个 Foo 都应该被替换为 Bar
+        long barCount = loaded.getSkillContent().lines().filter(l -> l.contains("Bar")).count();
+        assertEquals(2, barCount, "Both Foo entries should be replaced");
+    }
+
+    @Test
+    void boolOf_withStringTrue_parsesCorrectly() {
+        // 测试字符串 "true" 作为 bool 值也能被正确解析
+        String content = "---\nname: bool-str-test\ndescription: Test\n---\nFoo\nFoo\n";
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bool-str-test",
+                                        "content", content)))
+                .block();
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "patch",
+                                                "name", "bool-str-test",
+                                                "old_string", "Foo",
+                                                "new_string", "Bar",
+                                                "replace_all", "true"))) // String 类型的 true
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        var loaded = draftsRepo.getSkill("bool-str-test");
+        long barCount = loaded.getSkillContent().lines().filter(l -> l.contains("Bar")).count();
+        assertEquals(2, barCount, "String 'true' should be parsed as boolean true");
+    }
+
     // ---- sidecar integration (telemetry) ----
 
     @org.junit.jupiter.api.Nested
