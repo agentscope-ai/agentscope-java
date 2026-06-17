@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -158,22 +159,15 @@ public class Fabric8KubernetesPodRuntime {
             throws Exception {
         String root = state.getWorkspaceRoot();
         mkdir(state, root);
-        ContainerResource pod = pod(state);
-        ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
-        try (ExecWatch watch =
-                pod.readingInput(archive)
-                        .writingError(errBuf)
-                        .exec("tar", "-xf", "-", "-C", root)) {
-            Integer exit = watch.exitCode().get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
-            if (exit == null || exit != 0) {
-                throw new SandboxException.SandboxRuntimeException(
-                        SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                        "tar extract failed (exit="
-                                + exit
-                                + "): "
-                                + errBuf.toString(StandardCharsets.UTF_8));
-            }
-        }
+        // Write archive to a temp file via base64 to avoid the Fabric8 WebSocket stdin race:
+        // readingInput() over stdin → EOF closes the WebSocket → K8s exec runtime sends SIGKILL
+        // to the process (exit=137) before tar finishes extracting.
+        byte[] archiveBytes = archive.readAllBytes();
+        String tmpTar = "/tmp/ws-projection-" + System.nanoTime() + ".tar";
+        String b64 = Base64.getEncoder().encodeToString(archiveBytes);
+        exec(state, "echo '" + b64 + "' | base64 -d > " + tmpTar, 60);
+        exec(state, "tar -xf " + tmpTar + " -C " + shellSingleQuote(root), TAR_TIMEOUT_SECONDS);
+        exec(state, "rm -f " + tmpTar, 30);
     }
 
     public void mkdir(KubernetesSandboxState state, String path) throws Exception {
