@@ -35,6 +35,7 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentGenerateTool;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -130,6 +131,9 @@ public class SubagentsMiddleware implements MiddlewareBase {
             1. Spawn with `timeout_seconds=0` to fire-and-forget; the response gives you a task_id.
             2. **Do not poll.** Continue with other work; when the task finishes you'll see a `<system-reminder>` containing its result.
             3. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
+
+            ### Timeout promotion
+            When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
 
             ### Available agent ids
             %s
@@ -253,6 +257,77 @@ public class SubagentsMiddleware implements MiddlewareBase {
             return this;
         }
         this.agentGenerateTool = new AgentGenerateTool(generator, agentManager, filesystem);
+        return this;
+    }
+
+    /** Returns the {@link TaskRepository} used by this middleware. */
+    public TaskRepository getTaskRepository() {
+        return taskRepository;
+    }
+
+    /**
+     * Wires a {@link io.agentscope.harness.agent.bus.MessageBus} so that background task completions are
+     * pushed to the session inbox and a wakeup signal is enqueued. This enables the
+     * {@link io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions
+     * when subagent work finishes.
+     *
+     * <p>Registers a {@link WorkspaceTaskRepository.TaskCompletionCallback} on the underlying
+     * repository (if it is a {@link WorkspaceTaskRepository}). Safe to call multiple times — each
+     * call replaces the previous callback.
+     *
+     * @param messageBus the application message bus
+     * @param agentId the parent agent id (for wakeup routing)
+     * @return this middleware for chaining
+     */
+    public SubagentsMiddleware wireMessageBus(
+            io.agentscope.harness.agent.bus.MessageBus messageBus, String agentId) {
+        if (messageBus == null) {
+            return this;
+        }
+        if (taskRepository instanceof WorkspaceTaskRepository wtr) {
+            wtr.setCompletionCallback(
+                    (rc, taskId, subAgentId, sessionId, result) -> {
+                        String userId = rc != null ? rc.getUserId() : null;
+                        String hintContent =
+                                String.format(
+                                        "<system-notification>Background subagent task '%s'"
+                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                                + "</system-notification>",
+                                        taskId,
+                                        subAgentId,
+                                        result != null ? result : "(no output)");
+                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
+                        java.util.Map<String, Object> hintPayload =
+                                java.util.Map.of(
+                                        "type",
+                                        "hint",
+                                        "id",
+                                        hintId,
+                                        "hint",
+                                        hintContent,
+                                        "source",
+                                        "subagent_task");
+                        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+                        messageBus
+                                .enqueueWakeup(
+                                        userId != null ? userId : "",
+                                        sessionId,
+                                        agentId != null ? agentId : "")
+                                .subscribe(
+                                        unused -> {},
+                                        err ->
+                                                log.warn(
+                                                        "Failed to enqueue wakeup after task {}"
+                                                                + " completion: {}",
+                                                        taskId,
+                                                        err.getMessage()));
+                        log.info(
+                                "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
+                                        + " session={}",
+                                taskId,
+                                sessionId);
+                    });
+        }
         return this;
     }
 

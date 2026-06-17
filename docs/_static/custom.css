@@ -1086,3 +1086,211 @@ table img[src*="githubusercontent.com"] {
   border-radius: 50%;
   vertical-align: middle;
 }
+
+/* ================================================================
+   AI Context Menu — Split pill button (LangChain / Mintlify style)
+   ----------------------------------------------------------------
+   Left:  "Copy page" primary action button
+   Right: "›" dropdown trigger for more AI actions
+   Both share a continuous border forming one rounded pill.
+   ================================================================ */
+
+.ai-ctx {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+
+/* Shared base for both halves of the pill */
+.ai-ctx__primary,
+.ai-ctx__more {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-background-border);
+  background: var(--color-background-primary);
+  color: var(--color-foreground-muted);
+  cursor: pointer;
+  font-family: var(--font-stack);
+  font-size: var(--font-size--small);
+  font-weight: 500;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+
+.ai-ctx__primary:hover,
+.ai-ctx__more:hover {
+  background: var(--color-background-hover);
+  color: var(--color-foreground-primary);
+}
+
+.ai-ctx__primary:focus-visible,
+.ai-ctx__more:focus-visible {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+/* Left: "Copy page" */
+.ai-ctx__primary {
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.5rem 0 0 0.5rem;
+  border-right: none;
+  white-space: nowrap;
+}
+
+.ai-ctx__primary-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ai-ctx__primary-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Right: dropdown trigger */
+.ai-ctx__more {
+  padding: 0.45rem 0.55rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.ai-ctx__chevron {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+  transform: rotate(90deg);
+}
+
+.ai-ctx__chevron svg {
+  width: 8px;
+  height: 14px;
+}
+
+.ai-ctx__more:hover .ai-ctx__chevron {
+  opacity: 0.8;
+}
+
+.ai-ctx--open .ai-ctx__chevron {
+  transform: rotate(270deg);
+  opacity: 0.8;
+}
+
+/* Dropdown menu */
+.ai-ctx__menu {
+  display: none;
+  position: fixed;
+  min-width: 13rem;
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  z-index: 2147483000;
+  overflow: hidden;
+  animation: fadeInUp 0.15s ease-out;
+  padding: 0.25rem 0;
+}
+
+.ai-ctx--open .ai-ctx__menu {
+  display: block;
+}
+
+.ai-ctx__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  background: none;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+  font-size: var(--font-size--small);
+  font-weight: 400;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease-out;
+}
+
+.ai-ctx__item:hover {
+  background: var(--color-background-hover);
+}
+
+.ai-ctx__item:focus-visible {
+  background: var(--color-background-hover);
+  outline: none;
+}
+
+.ai-ctx__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.ai-ctx__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ai-ctx__label {
+  flex: 1;
+}
+
+.ai-ctx__divider {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--color-background-border);
+}
+
+/* Toast notification */
+.ai-ctx-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-foreground-primary);
+  color: var(--color-background-primary);
+  border-radius: 0.5rem;
+  font-family: var(--font-stack);
+  font-size: var(--font-size--small);
+  font-weight: 500;
+  z-index: 2147483001;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.ai-ctx-toast--hide {
+  opacity: 0;
+}
+
+/* Responsive: hide label text on narrow widths, keep icon only */
+@media (max-width: 40rem) {
+  .ai-ctx__primary span:not(.ai-ctx__primary-icon) {
+    display: none;
+  }
+
+  .ai-ctx__primary {
+    padding: 0.35rem 0.45rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-ctx__primary,
+  .ai-ctx__more,
+  .ai-ctx__item,
+  .ai-ctx__chevron,
+  .ai-ctx-toast {
+    transition: none;
+  }
+
+  .ai-ctx__menu {
+    animation: none;
+  }
+}

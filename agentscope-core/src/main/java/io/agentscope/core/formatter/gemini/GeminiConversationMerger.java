@@ -19,6 +19,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -95,8 +96,9 @@ public class GeminiConversationMerger {
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
-                    // Accumulate text in format "name: text"
                     accumulatedText.add(name + ": " + tb.getText());
+                } else if (block instanceof HintBlock hb) {
+                    accumulatedText.add(name + ": " + hb.getHint());
 
                 } else if (block instanceof ThinkingBlock) {
                     // Skip ThinkingBlock - not sent to API

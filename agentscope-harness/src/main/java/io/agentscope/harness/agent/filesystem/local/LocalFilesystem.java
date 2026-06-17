@@ -654,12 +654,40 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (namespaceFactory == null || key == null || key.isBlank()) {
             return key;
         }
+        // Absolute paths identify specific host locations and must not be namespace-scoped.
+        // Prepending a namespace prefix would turn them into relative paths, causing them to
+        // resolve incorrectly under the workspace root (e.g. /abs/path → ns//abs/path).
+        // On Windows, absolute paths start with a drive letter ("C:\") or UNC prefix ("\\"),
+        // not "/", so we must check for those forms explicitly.
+        if (isAbsolutePathString(key)) {
+            return key;
+        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;
         }
         String prefix = String.join("/", ns);
         return prefix + "/" + key;
+    }
+
+    /**
+     * Returns {@code true} when {@code key} looks like an absolute path on any supported OS:
+     * Unix ({@code /...}), Windows drive-letter ({@code C:\} or {@code C:/}), or Windows UNC
+     * ({@code \\server\share}).
+     */
+    private static boolean isAbsolutePathString(String key) {
+        if (key.startsWith("/")) {
+            return true;
+        }
+        // Windows drive-letter: "X:\" or "X:/"
+        if (key.length() >= 3
+                && Character.isLetter(key.charAt(0))
+                && key.charAt(1) == ':'
+                && (key.charAt(2) == '\\' || key.charAt(2) == '/')) {
+            return true;
+        }
+        // Windows UNC: "\\server\share"
+        return key.startsWith("\\\\");
     }
 
     protected String toVirtualPath(Path path) {

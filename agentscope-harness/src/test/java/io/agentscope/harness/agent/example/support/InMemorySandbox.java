@@ -86,7 +86,11 @@ public class InMemorySandbox implements Sandbox {
     public ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
             throws Exception {
         int timeout = timeoutSeconds != null ? timeoutSeconds : defaultTimeoutSeconds;
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
+        String osName = System.getProperty("os.name").toLowerCase();
+        ProcessBuilder pb =
+                osName.contains("win")
+                        ? new ProcessBuilder("cmd.exe", "/c", command)
+                        : new ProcessBuilder("sh", "-c", command);
         pb.directory(workspaceDir.toFile());
         pb.redirectErrorStream(false);
         Process process = pb.start();
