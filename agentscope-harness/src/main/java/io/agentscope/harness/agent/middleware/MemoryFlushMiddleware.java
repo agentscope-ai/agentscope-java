@@ -27,6 +27,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -125,6 +126,13 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        boolean isSandBox = rc.get(Sandbox.class) != null;
+        if (isSandBox) {
+            return next.apply(input)
+                    .concatWith(
+                            reactor.core.publisher.Mono.defer(() -> doFlush(agent, rc))
+                                    .cast(AgentEvent.class));
+        }
         return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
     }
 
