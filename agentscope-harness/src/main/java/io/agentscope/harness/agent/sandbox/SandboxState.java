@@ -17,7 +17,9 @@ package io.agentscope.harness.agent.sandbox;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 
 /**
  * Serializable state of a sandbox, persisted by {@link SessionSandboxStateStore} so a sandbox can
@@ -81,5 +83,16 @@ public abstract class SandboxState {
 
     public void setWorkspaceRootReady(boolean workspaceRootReady) {
         this.workspaceRootReady = workspaceRootReady;
+    }
+
+    // Re-injects the runtime client into RemoteSandboxSnapshot after JSON deserialization.
+    // Must be called before resume() whenever a snapshotSpec is available.
+    public void reconnectSnapshot(SandboxSnapshotSpec spec) {
+        if (spec == null || snapshot == null) {
+            return;
+        }
+        if (snapshot instanceof RemoteSandboxSnapshot remote && remote.getClient() == null) {
+            this.snapshot = spec.build(remote.getId());
+        }
     }
 }

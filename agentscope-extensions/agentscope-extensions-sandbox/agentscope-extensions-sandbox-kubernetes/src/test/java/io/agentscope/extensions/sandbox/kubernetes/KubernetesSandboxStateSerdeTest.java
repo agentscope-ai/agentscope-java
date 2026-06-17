@@ -15,22 +15,30 @@
  */
 package io.agentscope.extensions.sandbox.kubernetes;
 
+import static org.mockito.Mockito.mock;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 class KubernetesSandboxStateSerdeTest {
 
+    private ObjectMapper mapper() {
+        return new ObjectMapper()
+                .findAndRegisterModules()
+                .registerModule(new HarnessSandboxJacksonModule())
+                .registerModule(new KubernetesHarnessSandboxJacksonModule());
+    }
+
     @Test
     void roundTripKubernetesState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule())
-                        .registerModule(new KubernetesHarnessSandboxJacksonModule());
+        ObjectMapper mapper = mapper();
 
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId("s1");
@@ -48,5 +56,72 @@ class KubernetesSandboxStateSerdeTest {
         KubernetesSandboxState k = (KubernetesSandboxState) read;
         Assertions.assertEquals("ns1", k.getNamespace());
         Assertions.assertEquals("p1", k.getPodName());
+    }
+
+    // Verifies RemoteSandboxSnapshot survives a JSON round-trip:
+    // id is preserved, client is null after deserialization (re-injected via reconnectSnapshot).
+    @Test
+    void roundTripKubernetesStateWithRemoteSnapshot() throws Exception {
+        ObjectMapper mapper = mapper();
+
+        RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
+        String snapshotId = "snap-abc";
+
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("s2");
+        state.setNamespace("ns2");
+        state.setSnapshot(new RemoteSandboxSnapshot(mockClient, snapshotId));
+
+        String json = mapper.writeValueAsString(state);
+        SandboxState read = mapper.readValue(json, SandboxState.class);
+
+        Assertions.assertInstanceOf(RemoteSandboxSnapshot.class, read.getSnapshot());
+        RemoteSandboxSnapshot restored = (RemoteSandboxSnapshot) read.getSnapshot();
+        Assertions.assertEquals(snapshotId, restored.getId());
+        Assertions.assertNull(restored.getClient(), "client must be null before reconnect");
+        Assertions.assertFalse(restored.isRestorable(), "not restorable without client");
+    }
+
+    // Verifies reconnectSnapshot re-injects the client so the snapshot becomes usable.
+    @Test
+    void reconnectSnapshotRestoresClient() throws Exception {
+        ObjectMapper mapper = mapper();
+
+        RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
+        String snapshotId = "snap-xyz";
+
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("s3");
+        state.setSnapshot(new RemoteSandboxSnapshot(mockClient, snapshotId));
+
+        String json = mapper.writeValueAsString(state);
+        SandboxState read = mapper.readValue(json, SandboxState.class);
+
+        RemoteSnapshotSpec spec = new RemoteSnapshotSpec(mockClient);
+        read.reconnectSnapshot(spec);
+
+        RemoteSandboxSnapshot reconnected = (RemoteSandboxSnapshot) read.getSnapshot();
+        Assertions.assertNotNull(reconnected.getClient(), "client must be present after reconnect");
+        Assertions.assertEquals(snapshotId, reconnected.getId());
+    }
+
+    // Verifies reconnectSnapshot is a no-op when snapshotSpec is null.
+    @Test
+    void reconnectSnapshot_nullSpec_isNoop() throws Exception {
+        ObjectMapper mapper = mapper();
+
+        RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
+
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("s4");
+        state.setSnapshot(new RemoteSandboxSnapshot(mockClient, "snap-noop"));
+
+        String json = mapper.writeValueAsString(state);
+        SandboxState read = mapper.readValue(json, SandboxState.class);
+
+        read.reconnectSnapshot(null); // must not throw
+
+        RemoteSandboxSnapshot snapshot = (RemoteSandboxSnapshot) read.getSnapshot();
+        Assertions.assertNull(snapshot.getClient(), "client remains null when spec is null");
     }
 }

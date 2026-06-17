@@ -86,6 +86,24 @@ class SandboxManagerIsolationTest {
         verify(stateStore, never()).load(any());
     }
 
+    @Test
+    void priority2_externalSessionState_reconnectsSnapshotBeforeResume() throws Exception {
+        when(externalState.getSessionId()).thenReturn("explicit-id");
+        when(client.resume(externalState)).thenReturn(resumedSandbox);
+
+        SandboxContext ctx =
+                SandboxContext.builder()
+                        .externalSandboxState(externalState)
+                        .snapshotSpec(snapshotSpec)
+                        .build();
+
+        manager.acquire(ctx, null);
+
+        // reconnectSnapshot must be called with the spec before resume
+        verify(externalState).reconnectSnapshot(snapshotSpec);
+        verify(client).resume(externalState);
+    }
+
     // ---- Priority 3: state store hit (session scope) ----
 
     @Test
@@ -103,6 +121,25 @@ class SandboxManagerIsolationTest {
         assertSame(resumedSandbox, result.getSandbox());
         assertEquals(true, result.isSelfManaged());
         verify(client, never()).create(any(), any(), any());
+    }
+
+    @Test
+    void priority3_stateStoreHit_reconnectsSnapshotBeforeResume() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
+        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.resume(resumedState)).thenReturn(resumedSandbox);
+
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1b").build();
+        SandboxContext sCtx =
+                SandboxContext.builder()
+                        .isolationScope(IsolationScope.SESSION)
+                        .snapshotSpec(snapshotSpec)
+                        .build();
+
+        manager.acquire(sCtx, rtx);
+
+        verify(resumedState).reconnectSnapshot(snapshotSpec);
+        verify(client).resume(resumedState);
     }
 
     // ---- Priority 3: state store miss → Priority 4 fresh create ----

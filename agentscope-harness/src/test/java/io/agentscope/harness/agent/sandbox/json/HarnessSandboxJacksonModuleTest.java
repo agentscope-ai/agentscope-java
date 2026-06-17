@@ -16,21 +16,32 @@
 package io.agentscope.harness.agent.sandbox.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.NoopSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import org.junit.jupiter.api.Test;
 
 class HarnessSandboxJacksonModuleTest {
 
+    private ObjectMapper mapper() {
+        return new ObjectMapper()
+                .findAndRegisterModules()
+                .registerModule(new HarnessSandboxJacksonModule());
+    }
+
     @Test
     void roundTripsDockerSandboxState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule());
+        ObjectMapper mapper = mapper();
 
         DockerSandboxState original = new DockerSandboxState();
         original.setSessionId("sess-1");
@@ -42,5 +53,45 @@ class HarnessSandboxJacksonModuleTest {
         assertInstanceOf(DockerSandboxState.class, parsed);
         assertEquals("sess-1", parsed.getSessionId());
         assertEquals(true, parsed.isWorkspaceRootReady());
+    }
+
+    @Test
+    void roundTripsNoopSnapshot() throws Exception {
+        ObjectMapper mapper = mapper();
+        SandboxSnapshot snap = new NoopSandboxSnapshot();
+
+        String json = mapper.writeValueAsString(snap);
+        SandboxSnapshot parsed = mapper.readValue(json, SandboxSnapshot.class);
+
+        assertInstanceOf(NoopSandboxSnapshot.class, parsed);
+        assertFalse(parsed.isRestorable());
+    }
+
+    @Test
+    void roundTripsLocalSnapshot() throws Exception {
+        ObjectMapper mapper = mapper();
+        SandboxSnapshot snap = new LocalSandboxSnapshot("/tmp/snapshots", "snap-local-1");
+
+        String json = mapper.writeValueAsString(snap);
+        SandboxSnapshot parsed = mapper.readValue(json, SandboxSnapshot.class);
+
+        assertInstanceOf(LocalSandboxSnapshot.class, parsed);
+        assertEquals("snap-local-1", parsed.getId());
+    }
+
+    // RemoteSandboxSnapshot: client is null after deserialization, id preserved.
+    @Test
+    void roundTripsRemoteSnapshot_clientNullAfterDeserialize() throws Exception {
+        ObjectMapper mapper = mapper();
+        RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
+        SandboxSnapshot snap = new RemoteSandboxSnapshot(mockClient, "snap-remote-1");
+
+        String json = mapper.writeValueAsString(snap);
+        SandboxSnapshot parsed = mapper.readValue(json, SandboxSnapshot.class);
+
+        assertInstanceOf(RemoteSandboxSnapshot.class, parsed);
+        assertEquals("snap-remote-1", parsed.getId());
+        assertNull(((RemoteSandboxSnapshot) parsed).getClient());
+        assertFalse(parsed.isRestorable());
     }
 }

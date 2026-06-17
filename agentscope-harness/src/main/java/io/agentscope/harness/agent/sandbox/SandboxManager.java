@@ -76,10 +76,12 @@ public class SandboxManager {
 
         // Priority 2: user-supplied state — guard does not apply
         if (sandboxContext.getExternalSandboxState() != null) {
-            Sandbox sandbox = client.resume(sandboxContext.getExternalSandboxState());
+            SandboxState extState = sandboxContext.getExternalSandboxState();
+            extState.reconnectSnapshot(sandboxContext.getSnapshotSpec());
+            Sandbox sandbox = client.resume(extState);
             log.debug(
                     "[sandbox] Priority 2: resuming from explicit state: {}",
-                    sandboxContext.getExternalSandboxState().getSessionId());
+                    extState.getSessionId());
             return SandboxAcquireResult.selfManaged(sandbox);
         }
 
@@ -103,6 +105,7 @@ public class SandboxManager {
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
                         SandboxState state = client.deserializeState(stateJson.get());
+                        state.reconnectSnapshot(sandboxContext.getSnapshotSpec());
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }

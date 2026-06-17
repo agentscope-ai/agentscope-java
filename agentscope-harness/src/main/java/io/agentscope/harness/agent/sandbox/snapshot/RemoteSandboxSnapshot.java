@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
 
@@ -28,9 +32,10 @@ import java.io.InputStream;
  * {@link RemoteSnapshotClient} cannot be serialized. When persisting session state,
  * only the {@code id} is needed — the client is re-injected from the builder at resume time.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RemoteSandboxSnapshot implements SandboxSnapshot {
 
-    private final RemoteSnapshotClient client;
+    @JsonIgnore private final RemoteSnapshotClient client;
     private final String id;
 
     /**
@@ -44,6 +49,20 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
         this.id = id;
     }
 
+    // Deserialization-only constructor: client is null after JSON round-trip,
+    // re-injected via SandboxState.reconnectSnapshot() before use.
+    @JsonCreator
+    public RemoteSandboxSnapshot(@JsonProperty("id") String id) {
+        this.client = null;
+        this.id = id;
+    }
+
+    // Exposes client so SandboxState.reconnectSnapshot() can detect null.
+    @JsonIgnore
+    public RemoteSnapshotClient getClient() {
+        return client;
+    }
+
     /**
      * {@inheritDoc}
      *
@@ -51,6 +70,10 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      */
     @Override
     public void persist(InputStream workspaceArchive) throws Exception {
+        if (client == null) {
+            throw new SandboxException.SnapshotException(
+                    id, "RemoteSnapshotClient not available (state not reconnected)", null);
+        }
         try {
             client.upload(id, workspaceArchive);
         } catch (Exception e) {
@@ -65,6 +88,10 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      */
     @Override
     public InputStream restore() throws Exception {
+        if (client == null) {
+            throw new SandboxException.SnapshotException(
+                    id, "RemoteSnapshotClient not available (state not reconnected)", null);
+        }
         try {
             return client.download(id);
         } catch (Exception e) {
@@ -78,7 +105,11 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      * <p>Checks existence via {@link RemoteSnapshotClient#exists}.
      */
     @Override
+    @JsonIgnore
     public boolean isRestorable() throws Exception {
+        if (client == null) {
+            return false;
+        }
         try {
             return client.exists(id);
         } catch (Exception e) {
@@ -92,6 +123,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     }
 
     @Override
+    @JsonIgnore
     public String getType() {
         return "remote";
     }
