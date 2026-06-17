@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.bus;
+package io.agentscope.harness.agent.bus;
 
 import java.util.Map;
 

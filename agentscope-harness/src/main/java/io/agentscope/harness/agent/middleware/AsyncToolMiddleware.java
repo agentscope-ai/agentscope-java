@@ -17,12 +17,10 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.bus.MessageBus;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -31,7 +29,11 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
+import io.agentscope.harness.agent.bus.AsyncToolRecord;
+import io.agentscope.harness.agent.bus.AsyncToolRegistry;
+import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -75,10 +77,17 @@ public class AsyncToolMiddleware implements MiddlewareBase {
 
     private final MessageBus messageBus;
     private final Duration offloadTimeout;
+    private final AsyncToolRegistry asyncToolRegistry;
 
     public AsyncToolMiddleware(MessageBus messageBus, Duration offloadTimeout) {
+        this(messageBus, offloadTimeout, null);
+    }
+
+    public AsyncToolMiddleware(
+            MessageBus messageBus, Duration offloadTimeout, AsyncToolRegistry asyncToolRegistry) {
         this.messageBus = messageBus;
         this.offloadTimeout = offloadTimeout;
+        this.asyncToolRegistry = asyncToolRegistry;
     }
 
     @Override
@@ -112,6 +121,18 @@ public class AsyncToolMiddleware implements MiddlewareBase {
                                                             "Background tool execution failed"
                                                                     + " after timeout",
                                                             error);
+                                                    if (asyncToolRegistry != null) {
+                                                        String errMsg =
+                                                                error.getMessage() != null
+                                                                        ? error.getMessage()
+                                                                        : error.getClass()
+                                                                                .getSimpleName();
+                                                        for (ToolUseBlock tc : input.toolCalls()) {
+                                                            asyncToolRegistry
+                                                                    .fail(tc.getId(), errMsg)
+                                                                    .subscribe();
+                                                        }
+                                                    }
                                                 }
                                             },
                                             () -> {
@@ -167,7 +188,21 @@ public class AsyncToolMiddleware implements MiddlewareBase {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
 
+        String sessionId = ctx != null ? ctx.getSessionId() : null;
         for (ToolUseBlock toolCall : toolCalls) {
+            if (asyncToolRegistry != null && sessionId != null) {
+                asyncToolRegistry
+                        .register(
+                                new AsyncToolRecord(
+                                        toolCall.getId(),
+                                        sessionId,
+                                        toolCall.getName(),
+                                        toolCall.getId(),
+                                        AsyncToolRecord.RUNNING,
+                                        Instant.now()))
+                        .subscribe();
+            }
+
             String placeholderText =
                     String.format(
                             PLACEHOLDER_TEMPLATE,
@@ -231,11 +266,20 @@ public class AsyncToolMiddleware implements MiddlewareBase {
         Map<String, Object> hintPayload =
                 Map.of("type", "hint", "id", hintId, "hint", hintContent, "source", "tool_output");
 
+        if (asyncToolRegistry != null) {
+            String resultStr = resultText.length() > 0 ? resultText.toString() : "(no output)";
+            for (ToolUseBlock tc : toolCalls) {
+                asyncToolRegistry.complete(tc.getId(), resultStr).subscribe();
+            }
+        }
+
         messageBus.inboxPush(sessionId, hintPayload).subscribe();
 
         String agentId = ctx.get("agentId");
+        String userId = ctx.getUserId();
         messageBus
-                .enqueueWakeup(sessionId, agentId != null ? agentId : "")
+                .enqueueWakeup(
+                        userId != null ? userId : "", sessionId, agentId != null ? agentId : "")
                 .subscribe(
                         unused -> {},
                         error ->

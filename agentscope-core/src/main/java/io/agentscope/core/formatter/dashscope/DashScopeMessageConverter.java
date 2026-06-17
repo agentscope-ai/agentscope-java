@@ -19,6 +19,7 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -126,6 +127,8 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
+            } else if (block instanceof HintBlock hb) {
+                contents.add(DashScopeContentPart.text(hb.getHint()));
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for DashScope");
             } else if (block instanceof ToolResultBlock toolResult) {
@@ -243,8 +246,14 @@ public class DashScopeMessageConverter {
      */
     private String extractTextContent(Msg msg) {
         return msg.getContent().stream()
-                .filter(block -> block instanceof TextBlock)
-                .map(block -> ((TextBlock) block).getText())
+                .filter(block -> block instanceof TextBlock || block instanceof HintBlock)
+                .map(
+                        block -> {
+                            if (block instanceof TextBlock tb) {
+                                return tb.getText();
+                            }
+                            return ((HintBlock) block).getHint();
+                        })
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
     }
 

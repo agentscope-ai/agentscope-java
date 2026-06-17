@@ -113,6 +113,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
     private final boolean ownsExecutor;
     private final ScheduledExecutorService maintenanceScheduler;
 
+    private volatile TaskCompletionCallback completionCallback;
+
     public WorkspaceTaskRepository(WorkspaceManager workspaceManager, String parentAgentId) {
         this(
                 workspaceManager,
@@ -198,6 +200,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
+    /**
+     * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
+     * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
+     * to the session inbox and enqueue a wakeup signal.
+     *
+     * <p>Only one callback is supported; a second call replaces the previous one.
+     */
+    public void setCompletionCallback(TaskCompletionCallback callback) {
+        this.completionCallback = callback;
+    }
+
     @Override
     public BackgroundTask putTask(
             RuntimeContext rc,
@@ -244,6 +257,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         } else {
                             updateStatus(
                                     capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
                         }
                     });
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
@@ -251,7 +265,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     CompletableFuture.supplyAsync(
                             () ->
                                     runLocalSupplier(
-                                            capturedRc, sessionId, taskId, local.execution()),
+                                            capturedRc,
+                                            sessionId,
+                                            taskId,
+                                            subAgentId,
+                                            local.execution()),
                             executor);
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             future =
@@ -277,7 +295,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private String runLocalSupplier(
-            RuntimeContext rc, String sessionId, String taskId, Supplier<String> taskExecution) {
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            Supplier<String> taskExecution) {
         Optional<TaskRecord> latest =
                 workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
         if (latest.isPresent() && latest.get().isCancelRequested()) {
@@ -295,6 +317,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 return null;
             }
             updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -832,5 +855,32 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
         }
         return new BackgroundTask(record.getTaskId(), record.getSubAgentId(), future);
+    }
+
+    private void fireCompletionCallback(
+            RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
+        TaskCompletionCallback cb = this.completionCallback;
+        if (cb == null) {
+            return;
+        }
+        try {
+            cb.onCompleted(rc, taskId, subAgentId, sessionId, result);
+        } catch (Exception e) {
+            log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Callback invoked when a background task reaches terminal COMPLETED state. Implementations
+     * typically push the result to the session inbox and enqueue a wakeup signal.
+     */
+    @FunctionalInterface
+    public interface TaskCompletionCallback {
+        void onCompleted(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                String result);
     }
 }

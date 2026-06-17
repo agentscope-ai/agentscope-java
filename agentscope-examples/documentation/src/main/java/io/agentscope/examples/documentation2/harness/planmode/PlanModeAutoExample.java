@@ -77,7 +77,7 @@ public class PlanModeAutoExample {
 
         Path workspace = Files.createTempDirectory("agentscope-planmode-auto");
 
-//        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        //        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("architect")
@@ -104,7 +104,6 @@ public class PlanModeAutoExample {
                         // The plan banner instructs it to keep shell usage read-only; mutating
                         // file-edit tools remain denied until the plan is approved.
                         .allowShellInPlanMode()
-
                         .enableTaskList()
                         .build();
 

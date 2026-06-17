@@ -26,6 +26,7 @@ import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -541,17 +542,29 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.internalGateway = gw;
     }
 
+    /**
+     * @deprecated Use {@link #call(List, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
         return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
     }
 
+    /**
+     * @deprecated Use {@link #call(List, Class, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         return wrappedCall(
                 msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
     }
 
+    /**
+     * @deprecated Use {@link #call(List, JsonNode, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
         return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
@@ -559,6 +572,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
         return call(List.of(msg), ctx);
+    }
+
+    /**
+     * Calls the agent with a plain text input and per-call {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param ctx  per-call runtime context
+     * @return response message
+     */
+    public Mono<Msg> call(String text, RuntimeContext ctx) {
+        return call(new UserMessage(text), ctx);
     }
 
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
@@ -662,22 +686,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================
 
     /**
-     * Stream fine-grained {@link AgentEvent}s for a single message. Aligns with Python 2.0's
-     * {@code agent.reply_stream()} signature.
-     *
-     * @param msg input message
-     * @return event stream covering the full agent invocation lifecycle
+     * @deprecated Use {@link #streamEvents(Msg, RuntimeContext)} with explicit runtime context.
      */
+    @Deprecated(since = "2.2.0")
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg), RuntimeContext.empty());
     }
 
     /**
-     * Stream fine-grained {@link AgentEvent}s for a list of messages.
-     *
-     * @param msgs input messages
-     * @return event stream covering the full agent invocation lifecycle
+     * @deprecated Use {@link #streamEvents(List, RuntimeContext)} with explicit runtime context.
      */
+    @Deprecated(since = "2.2.0")
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         return streamEvents(msgs, RuntimeContext.empty());
     }
@@ -692,6 +711,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext ctx) {
         return streamEvents(List.of(msg), ctx);
+    }
+
+    /**
+     * @deprecated Use {@link #streamEvents(String, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    public Flux<AgentEvent> streamEvents(String text) {
+        return streamEvents(new UserMessage(text), RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param ctx  runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), ctx);
     }
 
     /**
@@ -1036,8 +1075,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         DistributedStore distributedStore;
 
-        io.agentscope.core.bus.MessageBus messageBus;
+        io.agentscope.harness.agent.bus.MessageBus messageBus;
         java.time.Duration asyncToolTimeout;
+        io.agentscope.harness.agent.bus.AsyncToolRegistry asyncToolRegistry;
 
         private Builder() {}
 
@@ -1564,22 +1604,33 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Sets the {@link io.agentscope.core.bus.MessageBus} for inbox-based message delivery.
+         * Sets the {@link io.agentscope.harness.agent.bus.MessageBus} for inbox-based message delivery.
          * When set, an {@link InboxMiddleware} is automatically registered to drain the session's
          * inbox before each reasoning step.
          */
-        public Builder messageBus(io.agentscope.core.bus.MessageBus messageBus) {
+        public Builder messageBus(io.agentscope.harness.agent.bus.MessageBus messageBus) {
             this.messageBus = messageBus;
             return this;
         }
 
         /**
          * Enables {@link AsyncToolMiddleware} with the given timeout. Requires
-         * {@link #messageBus(io.agentscope.core.bus.MessageBus)} to be set. Tool executions that
+         * {@link #messageBus(io.agentscope.harness.agent.bus.MessageBus)} to be set. Tool executions that
          * exceed the timeout are offloaded to the background; results are delivered via the inbox.
          */
         public Builder asyncToolTimeout(java.time.Duration timeout) {
             this.asyncToolTimeout = timeout;
+            return this;
+        }
+
+        /**
+         * Sets the {@link io.agentscope.harness.agent.bus.AsyncToolRegistry} for tracking async tool
+         * executions. Enables stale async tool detection and cleanup in
+         * {@link InboxMiddleware}. When not set, async tool lifecycle tracking is skipped.
+         */
+        public Builder asyncToolRegistry(
+                io.agentscope.harness.agent.bus.AsyncToolRegistry registry) {
+            this.asyncToolRegistry = registry;
             return this;
         }
 
@@ -1823,6 +1874,46 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     this, resolvedWorkspace, sandboxFs);
         }
 
+        private static void wireTaskRepositoryMessageBus(
+                io.agentscope.harness.agent.subagent.task.TaskRepository repo,
+                io.agentscope.harness.agent.bus.MessageBus bus,
+                String agentId) {
+            if (repo
+                    instanceof
+                    io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository wtr) {
+                wtr.setCompletionCallback(
+                        (rc, taskId, subAgentId, sessionId, result) -> {
+                            String userId = rc != null ? rc.getUserId() : null;
+                            String hintContent =
+                                    String.format(
+                                            "<system-notification>Background subagent task '%s'"
+                                                    + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                                    + "</system-notification>",
+                                            taskId,
+                                            subAgentId,
+                                            result != null ? result : "(no output)");
+                            String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
+                            bus.inboxPush(
+                                            sessionId,
+                                            java.util.Map.of(
+                                                    "type",
+                                                    "hint",
+                                                    "id",
+                                                    hintId,
+                                                    "hint",
+                                                    hintContent,
+                                                    "source",
+                                                    "subagent_task"))
+                                    .subscribe();
+                            bus.enqueueWakeup(
+                                            userId != null ? userId : "",
+                                            sessionId,
+                                            agentId != null ? agentId : "")
+                                    .subscribe();
+                        });
+            }
+        }
+
         public HarnessAgent build() {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
@@ -1854,7 +1945,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
             // ---- DistributedStore auto-wiring ----
             // distributedStore provides storage components; filesystem mode is user's choice.
-            // Priority: explicit builder methods > distributedStore > local defaults
+            // Priority: explicit builder methods > distributedStore > workspace defaults
             if (distributedStore != null) {
                 if (stateStoreOverride == null) {
                     stateStoreOverride = distributedStore.agentStateStore();
@@ -1871,6 +1962,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         sandboxFilesystemSpec.executionGuard(
                                 distributedStore.sandboxExecutionGuard());
                     }
+                }
+                if (messageBus == null) {
+                    messageBus = distributedStore.messageBus();
+                }
+                if (asyncToolRegistry == null) {
+                    asyncToolRegistry = distributedStore.asyncToolRegistry();
                 }
             }
 
@@ -1959,6 +2056,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
                     };
 
+            // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
+            // If not set explicitly or via DistributedStore, fall back to workspace-backed
+            // implementations that use the same AbstractFilesystem as the rest of the agent.
+            if (messageBus == null && filesystem != null) {
+                messageBus =
+                        new io.agentscope.harness.agent.bus.WorkspaceMessageBus(
+                                filesystem, ".agentscope/bus");
+            }
+            if (asyncToolRegistry == null && filesystem != null) {
+                asyncToolRegistry =
+                        new io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry(
+                                filesystem, ".agentscope/bus/async-tools");
+            }
+
             // ---- Middlewares ----
             if (sandboxLifecycleMw != null) {
                 inner.middleware(sandboxLifecycleMw);
@@ -2029,7 +2140,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
             if (messageBus != null) {
-                inner.middleware(new InboxMiddleware(messageBus));
+                inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }
 
             Object capturedSubagentMw = null;
@@ -2039,6 +2150,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             HarnessAgentBuilderSupport.buildDynamicSubagentsMiddleware(
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (dynMw != null) {
+                        if (messageBus != null) {
+                            wireTaskRepositoryMessageBus(
+                                    dynMw.getTaskRepository(), messageBus, agentId);
+                        }
                         inner.middleware(dynMw);
                         for (Object t : dynMw.getTools()) {
                             agentToolkit.registerTool(t);
@@ -2050,6 +2165,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             HarnessAgentBuilderSupport.buildSubagentsMiddleware(
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (subagentsMw != null) {
+                        if (messageBus != null) {
+                            subagentsMw.wireMessageBus(messageBus, agentId);
+                        }
                         inner.middleware(subagentsMw);
                         for (Object t : subagentsMw.getTools()) {
                             agentToolkit.registerTool(t);
@@ -2060,7 +2178,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             if (messageBus != null && asyncToolTimeout != null) {
-                inner.middleware(new AsyncToolMiddleware(messageBus, asyncToolTimeout));
+                inner.middleware(
+                        new AsyncToolMiddleware(messageBus, asyncToolTimeout, asyncToolRegistry));
+            }
+            if (messageBus != null) {
+                agentToolkit.registerTool(
+                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(messageBus));
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----

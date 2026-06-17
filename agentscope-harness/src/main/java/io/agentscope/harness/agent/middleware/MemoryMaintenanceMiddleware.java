@@ -36,6 +36,7 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
@@ -126,7 +127,9 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> maybeRunMaintenance(rc));
+        return next.apply(input)
+                .doOnComplete(
+                        () -> Schedulers.boundedElastic().schedule(() -> maybeRunMaintenance(rc)));
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

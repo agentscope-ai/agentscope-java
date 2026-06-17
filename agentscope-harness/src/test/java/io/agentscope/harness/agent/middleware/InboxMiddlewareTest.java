@@ -20,8 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.bus.InMemoryMessageBus;
-import io.agentscope.core.bus.MessageBus;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.message.HintBlock;
@@ -29,6 +27,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +38,7 @@ import reactor.core.publisher.Flux;
 
 class InboxMiddlewareTest {
 
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir;
     private MessageBus bus;
     private InboxMiddleware middleware;
     private AgentState agentState;
@@ -45,7 +46,9 @@ class InboxMiddlewareTest {
 
     @BeforeEach
     void setUp() {
-        bus = new InMemoryMessageBus();
+        io.agentscope.harness.agent.filesystem.local.LocalFilesystem fs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(tempDir, true, 10);
+        bus = new WorkspaceMessageBus(fs, "/bus");
         middleware = new InboxMiddleware(bus);
         agentState = AgentState.builder().build();
         agentState.setReplyId("reply-1");

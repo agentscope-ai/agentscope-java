@@ -141,6 +141,10 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
         return List.of(subagentTool, taskTool);
     }
 
+    public TaskRepository getTaskRepository() {
+        return taskRepository;
+    }
+
     @Override
     public Flux<AgentEvent> onReasoning(
             Agent agent,

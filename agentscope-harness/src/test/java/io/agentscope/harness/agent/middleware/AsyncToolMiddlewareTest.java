@@ -20,9 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.bus.BusEntry;
-import io.agentscope.core.bus.InMemoryMessageBus;
-import io.agentscope.core.bus.MessageBus;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -32,6 +29,9 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.bus.BusEntry;
+import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,13 +41,16 @@ import reactor.core.publisher.Mono;
 
 class AsyncToolMiddlewareTest {
 
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir;
     private MessageBus bus;
     private AgentState agentState;
     private RuntimeContext ctx;
 
     @BeforeEach
     void setUp() {
-        bus = new InMemoryMessageBus();
+        io.agentscope.harness.agent.filesystem.local.LocalFilesystem fs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(tempDir, true, 10);
+        bus = new WorkspaceMessageBus(fs, "/bus");
         agentState = AgentState.builder().build();
         agentState.setReplyId("reply-1");
         ctx = RuntimeContext.builder().sessionId("session-1").agentState(agentState).build();

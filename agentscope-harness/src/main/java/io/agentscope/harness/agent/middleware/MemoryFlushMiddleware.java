@@ -37,6 +37,7 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that triggers memory flush and message offload at the end of each agent call.
@@ -125,7 +126,17 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
+        return next.apply(input)
+                .doOnComplete(
+                        () ->
+                                doFlush(agent, rc)
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .subscribe(
+                                                null,
+                                                e ->
+                                                        log.warn(
+                                                                "Async memory flush failed: {}",
+                                                                e.getMessage())));
     }
 
     private reactor.core.publisher.Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
