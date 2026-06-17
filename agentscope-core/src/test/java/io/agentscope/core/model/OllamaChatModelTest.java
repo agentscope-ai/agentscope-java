@@ -1027,6 +1027,100 @@ class OllamaChatModelTest {
     }
 
     // ==========================================================================
+    // Null GenerateOptions tests (Issue #1770)
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should stream with null GenerateOptions without NPE")
+    void testStreamWithNullOptions() {
+        String part1 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"done\":false}";
+        String part2 =
+                "{\"model\":\"" + TEST_MODEL_NAME + "\",\"done\":true,\"total_duration\":100}";
+
+        when(httpTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just(part1, part2));
+
+        List<ChatResponse> responses =
+                model.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                null)
+                        .collectList()
+                        .block();
+
+        assertNotNull(responses);
+        assertFalse(responses.isEmpty());
+        ContentBlock content = responses.get(0).getContent().get(0);
+        assertTrue(content instanceof TextBlock);
+        assertEquals("Hello", ((TextBlock) content).getText());
+    }
+
+    @Test
+    @DisplayName("Should stream with null tools and null options (MemoryFlushManager pattern)")
+    void testStreamNullToolsAndNullOptions() {
+        String responseJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Summary"
+                        + " here\"},\"done\":true}";
+        when(httpTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just(responseJson));
+
+        List<Msg> flushInput =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .textContent("Summarize the conversation")
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .textContent("Here are the memories to consolidate")
+                                .build());
+
+        List<ChatResponse> responses = model.stream(flushInput, null, null).collectList().block();
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        ContentBlock content = responses.get(0).getContent().get(0);
+        assertTrue(content instanceof TextBlock);
+        assertEquals("Summary here", ((TextBlock) content).getText());
+    }
+
+    @Test
+    @DisplayName("Should stream with tools but null options")
+    void testStreamWithToolsButNullOptions() {
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("save_note")
+                        .description("Save a note")
+                        .parameters(
+                                Map.of(
+                                        "type", "object",
+                                        "properties", Map.of("text", Map.of("type", "string")),
+                                        "required", List.of("text")))
+                        .build();
+
+        String responseJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
+        when(httpTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just(responseJson));
+
+        assertDoesNotThrow(
+                () ->
+                        model.stream(
+                                        List.of(
+                                                Msg.builder()
+                                                        .role(MsgRole.USER)
+                                                        .textContent("Save this")
+                                                        .build()),
+                                        List.of(tool),
+                                        null)
+                                .blockLast());
+    }
+
+    // ==========================================================================
     // Proxy configuration tests
     // ==========================================================================
 

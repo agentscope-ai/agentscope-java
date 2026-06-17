@@ -141,7 +141,7 @@ public class OllamaChatModel extends ChatModelBase {
         return streamWithHttpClient(
                 messages,
                 tools,
-                options.getToolChoice(),
+                options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
                 true);
     }
