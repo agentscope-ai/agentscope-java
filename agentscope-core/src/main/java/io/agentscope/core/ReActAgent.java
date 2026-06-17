@@ -140,6 +140,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
@@ -821,28 +822,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // filtered out by callInternal before reaching the caller.
                                     boolean isSubagentBusPath =
                                             subscriberCtx.hasKey(SubagentEventBus.CONTEXT_KEY);
-                                    lifecycle
-                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
-                                            .contextWrite(
-                                                    c ->
-                                                            isSubagentBusPath
-                                                                    ? c
-                                                                    : c.put(
-                                                                            AgentEventEmitter
-                                                                                    .CONTEXT_KEY,
-                                                                            (AgentEventEmitter)
-                                                                                    sink::next))
-                                            .doFinally(
-                                                    signal -> {
-                                                        sink.next(new AgentEndEvent(replyId));
-                                                        sink.complete();
-                                                    })
-                                            .contextWrite(subscriberCtx)
-                                            .subscribe(
-                                                    finalMsg ->
-                                                            sink.next(
-                                                                    new AgentResultEvent(finalMsg)),
-                                                    sink::error);
+                                    Disposable lifecycleDisposable =
+                                            lifecycle
+                                                    .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                                    .contextWrite(
+                                                            c ->
+                                                                    isSubagentBusPath
+                                                                            ? c
+                                                                            : c.put(
+                                                                                    AgentEventEmitter
+                                                                                            .CONTEXT_KEY,
+                                                                                    (AgentEventEmitter)
+                                                                                            sink
+                                                                                                    ::next))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new AgentEndEvent(replyId));
+                                                                sink.complete();
+                                                            })
+                                                    .contextWrite(subscriberCtx)
+                                                    .subscribe(
+                                                            finalMsg ->
+                                                                    sink.next(
+                                                                            new AgentResultEvent(
+                                                                                    finalMsg)),
+                                                            sink::error);
+                                    sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
         return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
@@ -2452,44 +2458,53 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     .subscribe();
                                                         });
 
-                                                executeToolCalls(approved)
-                                                        .contextWrite(ctx -> ctx.putAll(parentCtx))
-                                                        .subscribe(
-                                                                results -> {
-                                                                    List<
-                                                                                    Map.Entry<
+                                                Disposable toolCallsDisposable =
+                                                        executeToolCalls(approved)
+                                                                .contextWrite(
+                                                                        ctx ->
+                                                                                ctx.putAll(
+                                                                                        parentCtx))
+                                                                .subscribe(
+                                                                        results -> {
+                                                                            List<
+                                                                                            Map
+                                                                                                            .Entry<
+                                                                                                    ToolUseBlock,
+                                                                                                    ToolResultBlock>>
+                                                                                    merged =
+                                                                                            new ArrayList<>(
+                                                                                                    deniedEntries);
+                                                                            merged.addAll(results);
+                                                                            resultHolder.set(
+                                                                                    merged);
+                                                                            for (Map.Entry<
                                                                                             ToolUseBlock,
-                                                                                            ToolResultBlock>>
-                                                                            merged =
-                                                                                    new ArrayList<>(
-                                                                                            deniedEntries);
-                                                                    merged.addAll(results);
-                                                                    resultHolder.set(merged);
-                                                                    for (Map.Entry<
-                                                                                    ToolUseBlock,
-                                                                                    ToolResultBlock>
-                                                                            entry : results) {
-                                                                        emitToolResultDelta(
-                                                                                sink,
-                                                                                replyId,
-                                                                                entry,
-                                                                                chunkedToolIds);
-                                                                        ToolResultState state =
-                                                                                determineToolResultState(
-                                                                                        entry
-                                                                                                .getValue());
-                                                                        sink.next(
-                                                                                new ToolResultEndEvent(
+                                                                                            ToolResultBlock>
+                                                                                    entry :
+                                                                                            results) {
+                                                                                emitToolResultDelta(
+                                                                                        sink,
                                                                                         replyId,
-                                                                                        entry.getKey()
-                                                                                                .getId(),
-                                                                                        entry.getKey()
-                                                                                                .getName(),
-                                                                                        state));
-                                                                    }
-                                                                    sink.complete();
-                                                                },
-                                                                sink::error);
+                                                                                        entry,
+                                                                                        chunkedToolIds);
+                                                                                ToolResultState
+                                                                                        state =
+                                                                                                determineToolResultState(
+                                                                                                        entry
+                                                                                                                .getValue());
+                                                                                sink.next(
+                                                                                        new ToolResultEndEvent(
+                                                                                                replyId,
+                                                                                                entry.getKey()
+                                                                                                        .getId(),
+                                                                                                entry.getKey()
+                                                                                                        .getName(),
+                                                                                                state));
+                                                                            }
+                                                                            sink.complete();
+                                                                        },
+                                                                        sink::error);
+                                                sink.onCancel(toolCallsDisposable);
                                             }));
 
             return deniedEvents.concatWith(approvedEvents);
