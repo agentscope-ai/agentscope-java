@@ -89,6 +89,7 @@ import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySaveTool;
@@ -373,11 +374,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void close() {
         try {
-            if (ownedWorkspaceIndex != null) {
-                ownedWorkspaceIndex.close();
-            }
+            shutdownTaskRepository();
         } finally {
-            delegate.close();
+            try {
+                if (ownedWorkspaceIndex != null) {
+                    ownedWorkspaceIndex.close();
+                }
+            } finally {
+                delegate.close();
+            }
+        }
+    }
+
+    private void shutdownTaskRepository() {
+        TaskRepository taskRepo = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            taskRepo = sm.getTaskRepository();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            taskRepo = dsm.getTaskRepository();
+        }
+        if (taskRepo instanceof WorkspaceTaskRepository wtr) {
+            wtr.shutdown();
         }
     }
 

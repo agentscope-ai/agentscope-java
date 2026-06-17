@@ -260,6 +260,11 @@ public class SubagentsMiddleware implements MiddlewareBase {
         return this;
     }
 
+    /** Returns the {@link TaskRepository} used by this middleware. */
+    public TaskRepository getTaskRepository() {
+        return taskRepository;
+    }
+
     /**
      * Wires a {@link io.agentscope.harness.agent.bus.MessageBus} so that background task completions are
      * pushed to the session inbox and a wakeup signal is enqueued. This enables the
