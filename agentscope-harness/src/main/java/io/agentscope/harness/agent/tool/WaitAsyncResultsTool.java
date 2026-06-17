@@ -75,14 +75,19 @@ public class WaitAsyncResultsTool {
 
         long deadlineMs = System.currentTimeMillis() + (timeout * 1000L);
 
-        while (System.currentTimeMillis() < deadlineMs) {
+        while (true) {
+            long remainingMs = deadlineMs - System.currentTimeMillis();
+            if (remainingMs <= 0) {
+                break;
+            }
             Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
                 return "Async results have arrived. Continue reasoning — "
                         + "the results will be injected into your context automatically.";
             }
-            Thread.sleep(POLL_INTERVAL_MS);
+            // Cap sleep to the remaining budget so the tool never overshoots the caller's timeout.
+            Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
         }
 
         log.info("wait_async_results: timeout after {}s, session={}", timeout, sessionId);
