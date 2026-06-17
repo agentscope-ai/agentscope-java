@@ -112,7 +112,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             prefix = NacosConstants.A2A_NACOS_DISCOVERY_PREFIX,
             name = "enabled",
             havingValue = "true",
-            matchIfMissing = false)
+            matchIfMissing = true)
     public AgentCardResolver nacosAgentCardResolver() {
         return new NacosAgentCardResolver(a2aService);
     }
@@ -128,7 +128,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             prefix = NacosConstants.A2A_NACOS_REGISTRY_PREFIX,
             name = "enabled",
             havingValue = "true",
-            matchIfMissing = false)
+            matchIfMissing = true)
     public AgentRegistry nacosAgentRegistry(AgentScopeA2aNacosProperties a2aNacosProperties) {
         return NacosAgentRegistry.builder(a2aService)
                 .nacosA2aProperties(buildNacosA2aProperties(a2aNacosProperties))
