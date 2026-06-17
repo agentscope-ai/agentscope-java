@@ -34,4 +34,23 @@ public interface SandboxSnapshotSpec {
      * @return a new snapshot instance configured for the given ID
      */
     SandboxSnapshot build(String snapshotId);
+
+    /**
+     * Attempts to find an existing restorable snapshot in this spec's storage backend.
+     *
+     * <p>When a sandbox is freshly created (Priority 4 in {@code SandboxManager}), the session
+     * ID is randomly generated. If a previous snapshot already exists for the same isolation
+     * slot, this method allows the client to discover and reuse it, ensuring workspace state
+     * survives across sandbox recreations.
+     *
+     * <p>The default implementation returns an empty optional, meaning no existing snapshot
+     * is found. Implementations that can scan their storage backend (e.g., local filesystem)
+     * should override this method.
+     *
+     * @return an existing restorable snapshot, or empty if none is found
+     * @throws Exception if checking for existing snapshots fails
+     */
+    default java.util.Optional<SandboxSnapshot> findRestorable() throws Exception {
+        return java.util.Optional.empty();
+    }
 }

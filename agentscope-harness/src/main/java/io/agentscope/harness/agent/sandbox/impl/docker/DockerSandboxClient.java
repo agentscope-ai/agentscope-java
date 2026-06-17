@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -60,14 +61,34 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             DockerSandboxClientOptions options) {
-        String sessionId = UUID.randomUUID().toString();
-
         String image =
                 options != null && options.getImage() != null ? options.getImage() : "ubuntu:22.04";
         String workspaceRoot =
                 options != null && options.getWorkspaceRoot() != null
                         ? options.getWorkspaceRoot()
                         : "/workspace";
+
+        // Try to find an existing restorable snapshot so we can reuse its session ID.
+        // This ensures that a freshly created sandbox (Priority 4) can still restore
+        // workspace state from a previously persisted snapshot.
+        String sessionId = UUID.randomUUID().toString();
+        SandboxSnapshot existingSnapshot = null;
+        if (snapshotSpec != null) {
+            try {
+                var found = snapshotSpec.findRestorable();
+                if (found.isPresent()) {
+                    existingSnapshot = found.get();
+                    sessionId = existingSnapshot.getId();
+                    log.debug(
+                            "[sandbox-docker] Reusing existing snapshot session: id={}", sessionId);
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "[sandbox-docker] Failed to find restorable snapshot, using new session:"
+                                + " {}",
+                        e.getMessage());
+            }
+        }
 
         DockerSandboxState state = new DockerSandboxState();
         state.setSessionId(sessionId);
@@ -86,7 +107,11 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
         }
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            if (existingSnapshot != null) {
+                state.setSnapshot(existingSnapshot);
+            } else {
+                state.setSnapshot(snapshotSpec.build(sessionId));
+            }
         }
 
         log.debug("[sandbox-docker] Creating new sandbox: id={}, image={}", sessionId, image);
