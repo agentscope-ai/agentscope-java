@@ -57,7 +57,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>A placeholder {@link ToolResultBlock} is written to agent context so the LLM can
  *       continue reasoning</li>
  *   <li>When the background execution completes, the real result is pushed to the session's
- *       inbox as a {@link HintBlock} and a wakeup is enqueued</li>
+ *       inbox as a {@code HintBlock} and a wakeup is enqueued</li>
  * </ol>
  *
  * <p>The {@link InboxMiddleware} drains the inbox on the next reasoning step, making the

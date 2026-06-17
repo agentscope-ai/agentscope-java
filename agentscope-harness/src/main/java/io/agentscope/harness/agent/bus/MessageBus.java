@@ -39,7 +39,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Implementations:
  * <ul>
- *   <li>{@link InMemoryMessageBus} — single-process, no external dependencies</li>
+ *   <li>{@code WorkspaceMessageBus} — single-process, no external dependencies</li>
  * </ul>
  */
 public interface MessageBus extends AutoCloseable {

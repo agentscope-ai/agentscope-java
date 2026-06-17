@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Implementations:
  * <ul>
- *   <li>{@link InMemoryAsyncToolRegistry} — single-process, suitable for testing</li>
+ *   <li>{@code WorkspaceAsyncToolRegistry} — single-process, suitable for testing</li>
  * </ul>
  */
 public interface AsyncToolRegistry {
