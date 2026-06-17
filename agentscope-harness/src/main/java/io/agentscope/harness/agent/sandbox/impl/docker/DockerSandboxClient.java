@@ -60,6 +60,15 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             DockerSandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            DockerSandboxClientOptions options,
+            String snapshotId) {
         String sessionId = UUID.randomUUID().toString();
 
         String image =
@@ -86,7 +95,9 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
         }
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            String effectiveSnapshotId =
+                    snapshotId != null && !snapshotId.isBlank() ? snapshotId : sessionId;
+            state.setSnapshot(snapshotSpec.build(effectiveSnapshotId));
         }
 
         log.debug("[sandbox-docker] Creating new sandbox: id={}, image={}", sessionId, image);

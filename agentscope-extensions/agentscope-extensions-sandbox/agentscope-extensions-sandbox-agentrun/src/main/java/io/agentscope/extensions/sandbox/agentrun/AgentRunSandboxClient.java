@@ -65,6 +65,15 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             AgentRunSandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            AgentRunSandboxClientOptions options,
+            String snapshotId) {
         AgentRunSandboxClientOptions merged = merge(options);
         merged.validate();
 
@@ -85,7 +94,9 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         state.setWorkspaceOnNas(isWorkspaceUnderMounts(merged));
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            String effectiveSnapshotId =
+                    snapshotId != null && !snapshotId.isBlank() ? snapshotId : sessionId;
+            state.setSnapshot(snapshotSpec.build(effectiveSnapshotId));
         }
 
         log.debug(

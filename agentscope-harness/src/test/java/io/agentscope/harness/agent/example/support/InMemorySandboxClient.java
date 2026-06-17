@@ -53,6 +53,15 @@ public class InMemorySandboxClient implements SandboxClient<SandboxClientOptions
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             SandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            SandboxClientOptions options,
+            String snapshotId) {
         createCount.incrementAndGet();
         String sessionId = UUID.randomUUID().toString();
         Path workspaceDir = baseDir.resolve(sessionId);

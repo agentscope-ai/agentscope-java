@@ -214,13 +214,15 @@ public class BuilderConfig {
                 b -> {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.stateStore(stateStore);
-                    // `activity/` is routed to the shared BaseStore so the per-agent audit log
-                    // (written by AgentActivityStore) is visible across pods, not pinned to the
-                    // local disk of whichever pod served the write.
-                    b.filesystem(
-                            new RemoteFilesystemSpec(baseStore)
-                                    .isolationScope(IsolationScope.USER)
-                                    .addSharedPrefix("activity/"));
+                    if (sessionOpt.isPresent()) {
+                        // `activity/` is routed to the shared BaseStore so the per-agent audit
+                        // log (written by AgentActivityStore) is visible across pods, not pinned
+                        // to the local disk of whichever pod served the write.
+                        b.filesystem(
+                                new RemoteFilesystemSpec(baseStore)
+                                        .isolationScope(IsolationScope.USER)
+                                        .addSharedPrefix("activity/"));
+                    }
                 });
 
         BuilderBootstrap bootstrap = builder.build();

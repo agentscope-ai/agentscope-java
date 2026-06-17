@@ -32,6 +32,26 @@ public interface SandboxClient<O extends SandboxClientOptions> {
     Sandbox create(WorkspaceSpec workspaceSpec, SandboxSnapshotSpec snapshotSpec, O options);
 
     /**
+     * Creates a new sandbox with a caller-supplied stable snapshot identifier.
+     *
+     * <p>The {@code snapshotId} is passed to {@link SandboxSnapshotSpec#build(String)} so that
+     * the snapshot file name is deterministic across sandbox re-creations. This allows a
+     * previously-persisted snapshot to be found when the sandbox container/pod is lost but the
+     * snapshot archive survives on disk or in remote storage.
+     *
+     * <p>The default implementation ignores {@code snapshotId} and delegates to
+     * {@link #create(WorkspaceSpec, SandboxSnapshotSpec, SandboxClientOptions)}, preserving
+     * backward compatibility for existing implementations.
+     */
+    default Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            O options,
+            String snapshotId) {
+        return create(workspaceSpec, snapshotSpec, options);
+    }
+
+    /**
      * Resumes a sandbox from previously serialized {@link SandboxState}.
      */
     Sandbox resume(SandboxState state);
