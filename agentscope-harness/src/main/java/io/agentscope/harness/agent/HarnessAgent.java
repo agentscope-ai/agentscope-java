@@ -369,11 +369,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void close() {
         try {
-            if (ownedWorkspaceIndex != null) {
-                ownedWorkspaceIndex.close();
-            }
-        } finally {
             delegate.close();
+        } finally {
+            try {
+                if (workspaceManager != null) {
+                    workspaceManager.close();
+                }
+            } finally {
+                if (ownedWorkspaceIndex != null) {
+                    ownedWorkspaceIndex.close();
+                }
+            }
         }
     }
 

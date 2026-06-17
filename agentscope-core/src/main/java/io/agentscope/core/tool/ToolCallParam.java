@@ -48,6 +48,7 @@ public class ToolCallParam {
     private final ToolUseBlock toolUseBlock;
     private final Map<String, Object> input;
     private final Agent agent;
+    private final ToolExecutionContext legacyContext;
     private final RuntimeContext runtimeContext;
     private final ToolEmitter emitter;
 
@@ -55,6 +56,7 @@ public class ToolCallParam {
         this.toolUseBlock = builder.toolUseBlock;
         this.input = builder.input != null ? new HashMap<>(builder.input) : Collections.emptyMap();
         this.agent = builder.agent;
+        this.legacyContext = builder.legacyContext;
         this.runtimeContext = builder.runtimeContext;
         this.emitter = builder.emitter;
     }
@@ -98,12 +100,19 @@ public class ToolCallParam {
     /**
      * Gets the tool execution context.
      *
-     * @return The execution context derived from RuntimeContext, or null
+     * <p>If this param was built through the deprecated
+     * {@link Builder#context(ToolExecutionContext)} path, the original context is returned
+     * directly to preserve reference semantics. Otherwise a bridged view is created from the
+     * runtime context.
+     *
+     * @return The execution context, or null
      * @deprecated Use {@link #getRuntimeContext()} instead.
      */
     @Deprecated
     public ToolExecutionContext getContext() {
-        return runtimeContext != null ? runtimeContext.asToolExecutionContext() : null;
+        return legacyContext != null
+                ? legacyContext
+                : (runtimeContext != null ? runtimeContext.asToolExecutionContext() : null);
     }
 
     /**
@@ -144,7 +153,8 @@ public class ToolCallParam {
      *
      * <p>Note: The input map structure is copied so that entries can be modified
      * independently, but nested values (typed as Object) remain shared.
-     * Immutable fields (toolUseBlock, agent, context, emitter) are shared by reference.
+     * Immutable fields (toolUseBlock, agent, legacyContext, runtimeContext, emitter) are shared
+     * by reference.
      *
      * @param source The existing ToolCallParam to copy values from
      * @return A new builder pre-populated with the source's values
@@ -162,6 +172,7 @@ public class ToolCallParam {
         private ToolUseBlock toolUseBlock;
         private Map<String, Object> input;
         private Agent agent;
+        private ToolExecutionContext legacyContext;
         private RuntimeContext runtimeContext;
         private ToolEmitter emitter;
 
@@ -171,6 +182,7 @@ public class ToolCallParam {
             this.toolUseBlock = source.toolUseBlock;
             this.input = source.input.isEmpty() ? null : source.input;
             this.agent = source.agent;
+            this.legacyContext = source.legacyContext;
             this.runtimeContext = source.runtimeContext;
             this.emitter = source.emitter;
         }
@@ -216,6 +228,7 @@ public class ToolCallParam {
          */
         public Builder runtimeContext(RuntimeContext runtimeContext) {
             this.runtimeContext = runtimeContext;
+            this.legacyContext = null;
             return this;
         }
 
@@ -228,10 +241,13 @@ public class ToolCallParam {
          */
         @Deprecated
         public Builder context(ToolExecutionContext context) {
+            this.legacyContext = context;
             if (context != null) {
                 RuntimeContext.Builder rcb = RuntimeContext.builder();
                 rcb.toolExecutionContext(context);
                 this.runtimeContext = rcb.build();
+            } else {
+                this.runtimeContext = null;
             }
             return this;
         }

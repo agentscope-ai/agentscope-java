@@ -31,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,6 +57,7 @@ class JsonSessionDefaultLocationTest {
 
     @TempDir Path workspace;
 
+    private final List<AutoCloseable> closeables = new ArrayList<>();
     private String previousStateHome;
 
     @BeforeEach
@@ -66,11 +68,21 @@ class JsonSessionDefaultLocationTest {
 
     @AfterEach
     void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+            TestCleanupSupport.deleteRecursivelyWithRetry(stateHome);
         }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
     }
 
     @Test
@@ -80,11 +92,12 @@ class JsonSessionDefaultLocationTest {
 
         String agentName = "assistant-" + UUID.randomUUID();
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name(agentName)
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").sessionId("s1").build();
         agent.call(userMsg("hi"), rc).block();
@@ -128,11 +141,12 @@ class JsonSessionDefaultLocationTest {
 
         String agentName = "shared-" + UUID.randomUUID();
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name(agentName)
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
 
         agent.call(
                         userMsg("alice"),
@@ -167,11 +181,12 @@ class JsonSessionDefaultLocationTest {
 
         String agentName = "wipe-" + UUID.randomUUID();
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name(agentName)
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .build());
         agent.call(userMsg("hi"), RuntimeContext.builder().sessionId("s1").sessionId("s1").build())
                 .block();
 
@@ -181,6 +196,8 @@ class JsonSessionDefaultLocationTest {
             stateFilesBefore = walk.filter(Files::isRegularFile).count();
         }
         assertTrue(stateFilesBefore > 0, "Pre-condition: state should have been written");
+
+        agent.close();
 
         // Wipe the workspace, leaving state intact.
         try (Stream<Path> walk = Files.walk(workspace)) {

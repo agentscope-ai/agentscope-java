@@ -78,7 +78,7 @@ class ToolCallParamTest {
             assertEquals(toolUseBlock, param.getToolUseBlock());
             assertEquals("value1", param.getInput().get("param1"));
             assertEquals(mockAgent, param.getAgent());
-            assertNotNull(param.getContext());
+            assertSame(context, param.getContext());
             assertNotNull(param.getRuntimeContext());
             assertSame(emitter, param.getEmitter());
         }
@@ -160,6 +160,7 @@ class ToolCallParamTest {
             assertEquals(original.getToolUseBlock(), copy.getToolUseBlock());
             assertEquals(original.getInput(), copy.getInput());
             assertEquals(original.getAgent(), copy.getAgent());
+            assertSame(original.getContext(), copy.getContext());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
             assertSame(original.getEmitter(), copy.getEmitter());
         }
@@ -287,6 +288,7 @@ class ToolCallParamTest {
             // Immutable fields should be the same references
             assertSame(original.getToolUseBlock(), copy.getToolUseBlock());
             assertSame(original.getAgent(), copy.getAgent());
+            assertSame(original.getContext(), copy.getContext());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
         }
 

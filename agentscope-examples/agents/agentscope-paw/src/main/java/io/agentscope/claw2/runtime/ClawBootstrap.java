@@ -80,7 +80,7 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link #start()} — initialize and start all pre-registered channel adapters.
  * </ol>
  */
-public final class ClawBootstrap {
+public final class ClawBootstrap implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ClawBootstrap.class);
     private static final String DEFAULT_MAIN_ID = "default";
@@ -197,6 +197,39 @@ public final class ClawBootstrap {
     public void stop() {
         if (channelManager != null) {
             channelManager.stopAll();
+        }
+    }
+
+    /**
+     * Stops managed channels and closes all agents created by this bootstrap.
+     *
+     * <p>Closing releases workspace indexes and other on-disk resources before callers remove the
+     * claw home directory.
+     */
+    @Override
+    public void close() {
+        RuntimeException failure = null;
+        try {
+            stop();
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+        for (HarnessAgent agent : new LinkedHashSet<>(agents.values())) {
+            if (agent == null) {
+                continue;
+            }
+            try {
+                agent.close();
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 

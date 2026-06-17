@@ -31,12 +31,14 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.TestCleanupSupport;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -76,6 +78,11 @@ import reactor.core.publisher.Flux;
 class RemoteFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
+
+    @AfterEach
+    void cleanup() {
+        TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+    }
 
     // -------------------------------------------------------------------------
     // Scenario A: SESSION scope

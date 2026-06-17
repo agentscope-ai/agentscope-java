@@ -36,9 +36,11 @@ import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,6 +71,20 @@ import reactor.core.publisher.Flux;
 class HarnessAgentIntegrationExampleTest {
 
     @TempDir Path workspace;
+    private final List<AutoCloseable> closeables = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        try {
+            TestCleanupSupport.closeAll(closeables);
+        } finally {
+            TestCleanupSupport.deleteRecursivelyWithRetry(workspace);
+        }
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        return TestCleanupSupport.track(closeables, agent);
+    }
 
     /**
      * Materializes the layout above, builds the main agent, runs one turn, and asserts the stub
@@ -118,13 +134,14 @@ class HarnessAgentIntegrationExampleTest {
 
         Model model = stubModel("integration-main-reply");
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("integration-main")
-                        .description("integration example main agent")
-                        .sysPrompt("You are the main agent in an integration test.")
-                        .model(model)
-                        .workspace(workspace)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("integration-main")
+                                .description("integration example main agent")
+                                .sysPrompt("You are the main agent in an integration test.")
+                                .model(model)
+                                .workspace(workspace)
+                                .build());
 
         Msg reply =
                 agent.call(
@@ -217,7 +234,7 @@ class HarnessAgentIntegrationExampleTest {
                         .orElseThrow(
                                 () -> new AssertionError("missing subagent entry: " + childId));
 
-        Agent sub = child.factory().create(RuntimeContext.empty());
+        HarnessAgent sub = track((HarnessAgent) child.factory().create(RuntimeContext.empty()));
         assertInstanceOf(HarnessAgent.class, sub);
         assertEquals(childId, sub.getName());
 
