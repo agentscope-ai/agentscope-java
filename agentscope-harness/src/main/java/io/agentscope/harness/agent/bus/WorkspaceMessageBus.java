@@ -97,12 +97,30 @@ public class WorkspaceMessageBus implements MessageBus {
                     for (int i = 0; i < count; i++) {
                         FileInfo fi = files.get(i);
                         String content = readFileContent(fi.path());
-                        if (content != null) {
-                            String entryId = extractEntryId(fi.path());
+                        if (content == null) {
+                            // Transient read failure (race with concurrent drain, I/O error).
+                            // Do NOT delete — preserve the entry so the next drain can retry it.
+                            log.warn(
+                                    "queueDrain: failed to read entry {}, skipping without delete",
+                                    fi.path());
+                            continue;
+                        }
+                        String entryId = extractEntryId(fi.path());
+                        try {
                             @SuppressWarnings("unchecked")
                             Map<String, Object> payload =
                                     JsonUtils.getJsonCodec().fromJson(content, Map.class);
                             result.add(new BusEntry(entryId, payload));
+                        } catch (Exception e) {
+                            // Corrupt JSON is unrecoverable; delete to avoid an infinite drain
+                            // loop on the same bad entry, but log so it can be investigated.
+                            log.warn(
+                                    "queueDrain: corrupt JSON in entry {} ({}), deleting to"
+                                            + " unblock queue",
+                                    fi.path(),
+                                    e.getMessage());
+                            fs.delete(RC, fi.path());
+                            continue;
                         }
                         fs.delete(RC, fi.path());
                     }
