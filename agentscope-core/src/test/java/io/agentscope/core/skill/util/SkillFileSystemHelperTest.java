@@ -494,6 +494,88 @@ class SkillFileSystemHelperTest {
                 "OS hidden file should be filtered out on Windows");
     }
 
+    @Test
+    @DisplayName("Should return root skill name when baseDir itself has SKILL.md")
+    void testGetAllSkillNames_RootLevelSkill() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-dir");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-skill\ndescription: Root Skill\n---\nRoot content",
+                StandardCharsets.UTF_8);
+        // Add a subdirectory (e.g. references/) that should be ignored
+        Files.createDirectories(rootSkillDir.resolve("references"));
+        Files.writeString(rootSkillDir.resolve("references/doc.md"), "doc");
+
+        List<String> names = SkillFileSystemHelper.getAllSkillNames(rootSkillDir);
+        assertEquals(1, names.size());
+        assertEquals("root-skill", names.get(0));
+    }
+
+    @Test
+    @DisplayName("Should return root skill when baseDir itself has SKILL.md")
+    void testGetAllSkills_RootLevelSkill() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-dir2");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-skill2\ndescription: Root Skill 2\n---\nRoot content 2",
+                StandardCharsets.UTF_8);
+        Files.writeString(rootSkillDir.resolve("extra.txt"), "extra resource");
+
+        List<AgentSkill> skills = SkillFileSystemHelper.getAllSkills(rootSkillDir, "git-source");
+        assertEquals(1, skills.size());
+        assertEquals("root-skill2", skills.get(0).getName());
+        assertEquals("git-source", skills.get(0).getSource());
+        assertTrue(skills.get(0).getResources().containsKey("extra.txt"));
+    }
+
+    @Test
+    @DisplayName("Should load root skill by name when baseDir itself has SKILL.md")
+    void testLoadSkill_RootLevelSkill() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-dir3");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-skill3\ndescription: Root Skill 3\n---\nRoot content 3",
+                StandardCharsets.UTF_8);
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(rootSkillDir, "root-skill3", "git-source");
+        assertNotNull(skill);
+        assertEquals("root-skill3", skill.getName());
+        assertEquals("Root Skill 3", skill.getDescription());
+    }
+
+    @Test
+    @DisplayName("Should find root skill via skillExists when baseDir itself has SKILL.md")
+    void testSkillExists_RootLevelSkill() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-dir4");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-skill4\ndescription: Root Skill 4\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        assertTrue(SkillFileSystemHelper.skillExists(rootSkillDir, "root-skill4"));
+        assertFalse(SkillFileSystemHelper.skillExists(rootSkillDir, "nonexistent"));
+    }
+
+    @Test
+    @DisplayName("Should throw when root skill name does not match requested name")
+    void testLoadSkill_RootLevelSkillNameMismatch() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-dir5");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: actual-name\ndescription: Actual\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SkillFileSystemHelper.loadSkill(rootSkillDir, "wrong-name", "source"));
+    }
+
     private void createSampleSkill(String name, String description, String content)
             throws IOException {
         Path skillDir = skillsBaseDir.resolve(name);

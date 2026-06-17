@@ -126,10 +126,22 @@ public final class SkillFileSystemHelper {
     /**
      * Retrieves all skill names by parsing SKILL.md metadata in each skill folder.
      *
+     * <p>If {@code baseDir} itself contains a {@code SKILL.md} file, it is treated as a single
+     * skill directory and only that skill's name is returned. Otherwise, subdirectories are
+     * scanned for skills.
+     *
      * @param baseDir The base directory containing skill folders
      * @return A list of skill names sorted alphabetically
      */
     public static List<String> getAllSkillNames(Path baseDir) {
+        // If baseDir itself is a skill directory, return only that skill
+        if (hasSkillFile(baseDir)) {
+            List<String> names = new ArrayList<>();
+            readSkillName(baseDir).ifPresent(names::add);
+            names.sort(String::compareTo);
+            return names;
+        }
+
         List<String> skillNames = new ArrayList<>();
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
@@ -160,6 +172,10 @@ public final class SkillFileSystemHelper {
     /**
      * Retrieves all skills from the base directory.
      *
+     * <p>If {@code baseDir} itself contains a {@code SKILL.md} file, it is treated as a single
+     * skill directory and only that skill is returned. Otherwise, subdirectories are scanned for
+     * skills.
+     *
      * @param baseDir The base directory containing skill folders
      * @param source The source identifier for created skills
      * @param includeResources when {@code false}, each skill's resource map is left empty and
@@ -168,6 +184,17 @@ public final class SkillFileSystemHelper {
      */
     public static List<AgentSkill> getAllSkills(
             Path baseDir, String source, boolean includeResources) {
+        // If baseDir itself is a skill directory, return only that skill
+        if (hasSkillFile(baseDir)) {
+            List<AgentSkill> skills = new ArrayList<>();
+            try {
+                skills.add(loadSkillFromDirectory(baseDir, source, includeResources));
+            } catch (Exception e) {
+                logger.warn("Failed to load skill from '{}': {}", baseDir, e.getMessage(), e);
+            }
+            return skills;
+        }
+
         List<AgentSkill> skills = new ArrayList<>();
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
@@ -461,6 +488,14 @@ public final class SkillFileSystemHelper {
     private static Optional<Path> findSkillDirectoryByName(Path baseDir, String skillName) {
         if (skillName == null || skillName.isEmpty()) {
             return Optional.empty();
+        }
+
+        // Check if baseDir itself is the skill
+        if (hasSkillFile(baseDir)) {
+            String rootName = readSkillName(baseDir).orElse(null);
+            if (skillName.equals(rootName)) {
+                return Optional.of(baseDir);
+            }
         }
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
