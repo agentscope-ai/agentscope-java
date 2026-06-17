@@ -91,7 +91,10 @@ public class AsyncWaitModeExample {
         long start = System.currentTimeMillis();
 
         Msg response =
-                agent.streamEvents(new UserMessage("Call slow_analysis tool and give me a detailed performance analysis"))
+                agent.streamEvents(
+                                new UserMessage(
+                                        "Call slow_analysis tool and give me a detailed performance"
+                                                + " analysis"))
                         .doOnNext(AsyncWaitModeExample::printEvent)
                         .filter(e -> e instanceof AgentResultEvent)
                         .cast(AgentResultEvent.class)
