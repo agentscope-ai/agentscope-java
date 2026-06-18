@@ -66,13 +66,20 @@ public class RuntimeContext {
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
-        for (Map.Entry<Class<?>, Object> e : builder.typedSingletons.entrySet()) {
-            if (e.getValue() == null) {
+        for (Map.Entry<Class<?>, Map<String, Object>> e : builder.typedValues.entrySet()) {
+            Class<?> type = e.getKey();
+            Map<String, Object> values = e.getValue();
+            if (type == null || values == null || values.isEmpty()) {
                 continue;
             }
-            @SuppressWarnings("unchecked")
-            Class<Object> type = (Class<Object>) e.getKey();
-            putValue(TYPED_DEFAULT_KEY, type, e.getValue());
+            for (Map.Entry<String, Object> typedEntry : values.entrySet()) {
+                if (typedEntry.getKey() == null || typedEntry.getValue() == null) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                Class<Object> typedClass = (Class<Object>) type;
+                putValue(typedEntry.getKey(), typedClass, typedEntry.getValue());
+            }
         }
     }
 
@@ -167,7 +174,7 @@ public class RuntimeContext {
         if (type == RuntimeContext.class) {
             return (T) this;
         }
-        return null;
+        return getAssignableValue(TYPED_DEFAULT_KEY, type);
     }
 
     public <T> void put(Class<T> type, T value) {
@@ -193,6 +200,10 @@ public class RuntimeContext {
         if (TYPED_DEFAULT_KEY.equals(key) && type == RuntimeContext.class) {
             return (T) this;
         }
+        T assignable = getAssignableValue(key, type);
+        if (assignable != null) {
+            return assignable;
+        }
         Object fromString = stringAttributes.get(key);
         if (type.isInstance(fromString)) {
             return (T) fromString;
@@ -209,6 +220,10 @@ public class RuntimeContext {
         } else {
             putValue(key, type, value);
         }
+    }
+
+    public static Builder builder(RuntimeContext source) {
+        return new Builder().from(source);
     }
 
     /**
@@ -234,6 +249,42 @@ public class RuntimeContext {
             return null;
         }
         return type.isInstance(o) ? type.cast(o) : null;
+    }
+
+    private <T> T getAssignableValue(String key, Class<T> type) {
+        if (type == null) {
+            return null;
+        }
+        T candidate = null;
+        Class<?> candidateType = null;
+        for (Map.Entry<Class<?>, ConcurrentMap<String, Object>> entry :
+                typedAttributes.entrySet()) {
+            Class<?> storedType = entry.getKey();
+            if (storedType == null || !type.isAssignableFrom(storedType)) {
+                continue;
+            }
+            Map<String, Object> values = entry.getValue();
+            if (values == null) {
+                continue;
+            }
+            Object o = values.get(key);
+            if (o == null || !type.isInstance(o)) {
+                continue;
+            }
+            if (candidate == null) {
+                candidate = type.cast(o);
+                candidateType = storedType;
+                continue;
+            }
+            if (candidateType.equals(storedType)) {
+                continue;
+            }
+            if (candidateType.isAssignableFrom(storedType)) {
+                candidate = type.cast(o);
+                candidateType = storedType;
+            }
+        }
+        return candidate;
     }
 
     private <T> void removeTyped(Class<T> type, String key) {
@@ -275,7 +326,7 @@ public class RuntimeContext {
         private String sessionId;
         private String userId;
         private Map<String, Object> stringExtras;
-        private final Map<Class<?>, Object> typedSingletons = new HashMap<>();
+        private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
 
@@ -314,8 +365,34 @@ public class RuntimeContext {
         }
 
         public <T> Builder put(Class<T> type, T value) {
-            if (type != null) {
-                this.typedSingletons.put(type, value);
+            return put(TYPED_DEFAULT_KEY, type, value);
+        }
+
+        public <T> Builder put(String key, Class<T> type, T value) {
+            if (key == null || type == null || value == null) {
+                return this;
+            }
+            this.typedValues.computeIfAbsent(type, k -> new HashMap<>()).put(key, value);
+            return this;
+        }
+
+        public Builder from(RuntimeContext source) {
+            if (source == null) {
+                return this;
+            }
+            this.sessionId = source.sessionId;
+            this.userId = source.userId;
+            this.agentState = source.agentState;
+            this.toolExecutionContext = source.toolExecutionContext;
+            if (!source.stringAttributes.isEmpty()) {
+                this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
+            }
+            for (Map.Entry<Class<?>, ConcurrentMap<String, Object>> entry :
+                    source.typedAttributes.entrySet()) {
+                if (entry.getValue() == null || entry.getValue().isEmpty()) {
+                    continue;
+                }
+                this.typedValues.put(entry.getKey(), new HashMap<>(entry.getValue()));
             }
             return this;
         }
@@ -349,31 +426,13 @@ public class RuntimeContext {
         @Override
         @SuppressWarnings("unchecked")
         public <T> T get(String key, Class<T> type) {
-            T t = runtimeContext.getValue(key, type);
-            if (t != null) {
-                return t;
-            }
-            if (TYPED_DEFAULT_KEY.equals(key) && type == RuntimeContext.class) {
-                return (T) runtimeContext;
-            }
-            Object fromString = runtimeContext.stringAttributes.get(key);
-            if (type.isInstance(fromString)) {
-                return (T) fromString;
-            }
-            return null;
+            return runtimeContext.get(key, type);
         }
 
         @Override
         @SuppressWarnings("unchecked")
         public <T> T get(Class<T> type) {
-            T t = get(TYPED_DEFAULT_KEY, type);
-            if (t != null) {
-                return t;
-            }
-            if (type == RuntimeContext.class) {
-                return (T) runtimeContext;
-            }
-            return null;
+            return runtimeContext.get(type);
         }
 
         @Override
