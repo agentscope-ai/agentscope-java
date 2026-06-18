@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -29,6 +30,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
+import io.agentscope.core.skill.DynamicSkillMiddleware;
+import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
@@ -122,5 +126,46 @@ class ReActAgentNewLoopBuilderTest {
         StepVerifier.create(agent.observe(List.of(m2))).verifyComplete();
 
         assertEquals(2, agent.getAgentState().getContext().size());
+    }
+
+    @Test
+    void dynamicSkillMiddlewareFactoryReceivesDeepCopiedToolkit() {
+        Toolkit originalToolkit = new Toolkit();
+
+        class CapturingMiddleware extends DynamicSkillMiddleware {
+            final Toolkit capturedToolkit;
+
+            CapturingMiddleware(
+                    List<AgentSkillRepository> repos, Toolkit toolkit, SkillFilter filter) {
+                super(repos, toolkit, filter);
+                this.capturedToolkit = toolkit;
+            }
+        }
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test")
+                        .sysPrompt("sys")
+                        .model(newFakeModel())
+                        .toolkit(originalToolkit)
+                        .dynamicSkillMiddleware(
+                                agentToolkit -> {
+                                    CapturingMiddleware mw =
+                                            new CapturingMiddleware(
+                                                    List.of(), agentToolkit, SkillFilter.all());
+                                    return mw;
+                                })
+                        .build();
+
+        List<MiddlewareBase> mws = agent.getMiddlewares();
+        CapturingMiddleware mw =
+                (CapturingMiddleware)
+                        mws.stream()
+                                .filter(m -> m instanceof CapturingMiddleware)
+                                .findFirst()
+                                .orElseThrow(() -> new AssertionError("factory not invoked"));
+
+        assertNotSame(originalToolkit, mw.capturedToolkit);
+        assertSame(agent.getToolkit(), mw.capturedToolkit);
     }
 }
