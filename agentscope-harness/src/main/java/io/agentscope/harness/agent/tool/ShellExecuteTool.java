@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.function.Function;
 
 /**
  * Shell execution tool backed by a {@link AbstractSandboxFilesystem}.
@@ -80,6 +81,11 @@ public class ShellExecuteTool {
     }
 
     private static String validateWorkingDirectory(String workingDirectory) {
+        return validateWorkingDirectory(workingDirectory, Path::of);
+    }
+
+    static String validateWorkingDirectory(
+            String workingDirectory, Function<String, Path> pathParser) {
         if (workingDirectory == null || workingDirectory.isBlank()) {
             throw new IllegalArgumentException("working_directory must not be null or blank");
         }
@@ -92,7 +98,7 @@ public class ShellExecuteTool {
                     "working_directory must be relative: " + workingDirectory);
         }
         try {
-            for (Path segment : Path.of(workingDirectory)) {
+            for (Path segment : pathParser.apply(workingDirectory)) {
                 if ("..".equals(segment.toString())) {
                     throw new IllegalArgumentException(
                             "working_directory may not contain '..': " + workingDirectory);

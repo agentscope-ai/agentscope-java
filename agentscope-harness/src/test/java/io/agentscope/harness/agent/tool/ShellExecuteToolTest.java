@@ -29,6 +29,8 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -75,5 +77,59 @@ class ShellExecuteToolTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> tool.execute(runtimeContext, "pwd", "safe/../../outside", 15));
+    }
+
+    @Test
+    void executeLeavesCommandUnchangedWhenWorkingDirectoryIsMissing() {
+        AbstractSandboxFilesystem sandbox = mock(AbstractSandboxFilesystem.class);
+        ShellExecuteTool tool = new ShellExecuteTool(sandbox);
+        RuntimeContext runtimeContext = RuntimeContext.builder().sessionId("sess-1").build();
+
+        when(sandbox.execute(any(), anyString(), anyInt()))
+                .thenReturn(new ExecuteResponse(null, 0, false));
+
+        String result = tool.execute(runtimeContext, "pwd", null, 15);
+
+        assertEquals("Exit code: 0\n", result);
+
+        ArgumentCaptor<String> commandCaptor = ArgumentCaptor.forClass(String.class);
+        verify(sandbox).execute(same(runtimeContext), commandCaptor.capture(), eq(15));
+        assertEquals("pwd", commandCaptor.getValue());
+    }
+
+    @Test
+    void executeAppendsTruncatedMarkerWhenSandboxResultIsTruncated() {
+        AbstractSandboxFilesystem sandbox = mock(AbstractSandboxFilesystem.class);
+        ShellExecuteTool tool = new ShellExecuteTool(sandbox);
+        RuntimeContext runtimeContext = RuntimeContext.builder().sessionId("sess-1").build();
+
+        when(sandbox.execute(any(), anyString(), anyInt()))
+                .thenReturn(new ExecuteResponse("hello", 0, true));
+
+        String result = tool.execute(runtimeContext, "pwd", "nested dir", 15);
+
+        assertEquals("Exit code: 0\n\nhello\n(output was truncated)", result);
+    }
+
+    @Test
+    void validateWorkingDirectoryRejectsNullOrBlank() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ShellExecuteTool.validateWorkingDirectory(null, Path::of));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ShellExecuteTool.validateWorkingDirectory("   ", Path::of));
+    }
+
+    @Test
+    void validateWorkingDirectoryWrapsParserFailures() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ShellExecuteTool.validateWorkingDirectory(
+                                "safe/path",
+                                value -> {
+                                    throw new InvalidPathException(value, "forced failure");
+                                }));
     }
 }
