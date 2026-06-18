@@ -75,35 +75,37 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test Agent\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        // Alice writes MEMORY.md
-        agent.call(userMsg("alice here"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        RuntimeContext.builder().userId("alice").build(),
-                        "MEMORY.md",
-                        "alice's notes");
+            // Alice writes MEMORY.md
+            agent.call(userMsg("alice here"), ctx("s1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.builder().userId("alice").build(),
+                            "MEMORY.md",
+                            "alice's notes");
 
-        // Verify alice's data is under workspace/alice/
-        Path aliceMemory = workspace.resolve("alice/MEMORY.md");
-        assertTrue(Files.isRegularFile(aliceMemory), "MEMORY.md should be under alice/ namespace");
-        assertEquals("alice's notes", Files.readString(aliceMemory, StandardCharsets.UTF_8));
+            // Verify alice's data is under workspace/alice/
+            Path aliceMemory = workspace.resolve("alice/MEMORY.md");
+            assertTrue(
+                    Files.isRegularFile(aliceMemory), "MEMORY.md should be under alice/ namespace");
+            assertEquals("alice's notes", Files.readString(aliceMemory, StandardCharsets.UTF_8));
 
-        // Verify no MEMORY.md at workspace root
-        assertFalse(
-                Files.isRegularFile(workspace.resolve("MEMORY.md")),
-                "MEMORY.md should NOT exist at workspace root when userId isolation is active");
+            // Verify no MEMORY.md at workspace root
+            assertFalse(
+                    Files.isRegularFile(workspace.resolve("MEMORY.md")),
+                    "MEMORY.md should NOT exist at workspace root when userId isolation is active");
 
-        // Verify bob's namespace is empty
-        assertFalse(
-                Files.exists(workspace.resolve("bob/MEMORY.md")),
-                "bob's namespace should be empty");
+            // Verify bob's namespace is empty
+            assertFalse(
+                    Files.exists(workspace.resolve("bob/MEMORY.md")),
+                    "bob's namespace should be empty");
+        }
     }
 
     /**
@@ -116,50 +118,55 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        // Write files as alice
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
-        AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
-        RuntimeContext rt = RuntimeContext.builder().userId("alice").build();
+            // Write files as alice
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
+            RuntimeContext rt = RuntimeContext.builder().userId("alice").build();
 
-        fs.uploadFiles(
-                rt,
-                List.of(
-                        Map.entry("MEMORY.md", "notes".getBytes(StandardCharsets.UTF_8)),
-                        Map.entry("memory/2024-01-01.md", "daily".getBytes(StandardCharsets.UTF_8)),
-                        Map.entry("docs/readme.txt", "hello".getBytes(StandardCharsets.UTF_8))));
+            fs.uploadFiles(
+                    rt,
+                    List.of(
+                            Map.entry("MEMORY.md", "notes".getBytes(StandardCharsets.UTF_8)),
+                            Map.entry(
+                                    "memory/2024-01-01.md",
+                                    "daily".getBytes(StandardCharsets.UTF_8)),
+                            Map.entry(
+                                    "docs/readme.txt", "hello".getBytes(StandardCharsets.UTF_8))));
 
-        // Glob for *.md at root — should find MEMORY.md, memory/2024-01-01.md
-        GlobResult glob = fs.glob(rt, "*.md", "/");
-        assertTrue(glob.isSuccess());
-        assertFalse(glob.matches().isEmpty(), "glob should find .md files");
+            // Glob for *.md at root — should find MEMORY.md, memory/2024-01-01.md
+            GlobResult glob = fs.glob(rt, "*.md", "/");
+            assertTrue(glob.isSuccess());
+            assertFalse(glob.matches().isEmpty(), "glob should find .md files");
 
-        for (FileInfo fi : glob.matches()) {
-            String path = fi.path();
-            // Path should NOT contain the namespace prefix "alice/"
-            assertFalse(
-                    path.startsWith("alice/"),
-                    "glob result path should not contain namespace prefix: " + path);
+            for (FileInfo fi : glob.matches()) {
+                String path = fi.path();
+                // Path should NOT contain the namespace prefix "alice/"
+                assertFalse(
+                        path.startsWith("alice/"),
+                        "glob result path should not contain namespace prefix: " + path);
 
-            // Round-trip: read the path returned by glob
-            ReadResult read = fs.read(rt, path, 0, 0);
-            assertTrue(read.isSuccess(), "read() should succeed with glob-returned path: " + path);
-            assertNotNull(read.fileData(), "fileData should not be null for: " + path);
-        }
+                // Round-trip: read the path returned by glob
+                ReadResult read = fs.read(rt, path, 0, 0);
+                assertTrue(
+                        read.isSuccess(), "read() should succeed with glob-returned path: " + path);
+                assertNotNull(read.fileData(), "fileData should not be null for: " + path);
+            }
 
-        // Glob in a subdirectory
-        GlobResult memGlob = fs.glob(rt, "*.md", "memory/");
-        assertTrue(memGlob.isSuccess());
-        assertFalse(memGlob.matches().isEmpty(), "glob in memory/ should find files");
-        for (FileInfo fi : memGlob.matches()) {
-            ReadResult read = fs.read(rt, fi.path(), 0, 0);
-            assertTrue(read.isSuccess(), "read() should succeed for: " + fi.path());
+            // Glob in a subdirectory
+            GlobResult memGlob = fs.glob(rt, "*.md", "memory/");
+            assertTrue(memGlob.isSuccess());
+            assertFalse(memGlob.matches().isEmpty(), "glob in memory/ should find files");
+            for (FileInfo fi : memGlob.matches()) {
+                ReadResult read = fs.read(rt, fi.path(), 0, 0);
+                assertTrue(read.isSuccess(), "read() should succeed for: " + fi.path());
+            }
         }
     }
 
@@ -171,36 +178,38 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
-        AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
-        RuntimeContext rt = RuntimeContext.empty();
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
+            RuntimeContext rt = RuntimeContext.empty();
 
-        fs.uploadFiles(
-                rt,
-                List.of(
-                        Map.entry(
-                                "memory/notes.md",
-                                "important finding".getBytes(StandardCharsets.UTF_8))));
+            fs.uploadFiles(
+                    rt,
+                    List.of(
+                            Map.entry(
+                                    "memory/notes.md",
+                                    "important finding".getBytes(StandardCharsets.UTF_8))));
 
-        GrepResult grep = fs.grep(rt, "important", ".", "*.md");
-        assertTrue(grep.isSuccess());
-        assertFalse(grep.matches().isEmpty(), "grep should find the pattern");
+            GrepResult grep = fs.grep(rt, "important", ".", "*.md");
+            assertTrue(grep.isSuccess());
+            assertFalse(grep.matches().isEmpty(), "grep should find the pattern");
 
-        for (var match : grep.matches()) {
-            String path = match.path();
-            assertFalse(
-                    path.startsWith("alice/"),
-                    "grep result path should not contain namespace prefix: " + path);
+            for (var match : grep.matches()) {
+                String path = match.path();
+                assertFalse(
+                        path.startsWith("alice/"),
+                        "grep result path should not contain namespace prefix: " + path);
 
-            ReadResult read = fs.read(rt, path, 0, 0);
-            assertTrue(read.isSuccess(), "read() should succeed for grep-returned path: " + path);
+                ReadResult read = fs.read(rt, path, 0, 0);
+                assertTrue(
+                        read.isSuccess(), "read() should succeed for grep-returned path: " + path);
+            }
         }
     }
 
@@ -212,36 +221,39 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
-        AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
-        RuntimeContext rt = RuntimeContext.empty();
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
+            RuntimeContext rt = RuntimeContext.empty();
 
-        fs.uploadFiles(
-                rt,
-                List.of(
-                        Map.entry("docs/a.txt", "aaa".getBytes(StandardCharsets.UTF_8)),
-                        Map.entry("docs/b.txt", "bbb".getBytes(StandardCharsets.UTF_8))));
+            fs.uploadFiles(
+                    rt,
+                    List.of(
+                            Map.entry("docs/a.txt", "aaa".getBytes(StandardCharsets.UTF_8)),
+                            Map.entry("docs/b.txt", "bbb".getBytes(StandardCharsets.UTF_8))));
 
-        var ls = fs.ls(rt, "docs");
-        assertTrue(ls.isSuccess());
-        assertFalse(ls.entries().isEmpty(), "ls should list files in docs/");
+            var ls = fs.ls(rt, "docs");
+            assertTrue(ls.isSuccess());
+            assertFalse(ls.entries().isEmpty(), "ls should list files in docs/");
 
-        for (FileInfo fi : ls.entries()) {
-            String path = fi.path();
-            assertFalse(
-                    path.startsWith("alice/"),
-                    "ls result path should not contain namespace prefix: " + path);
+            for (FileInfo fi : ls.entries()) {
+                String path = fi.path();
+                assertFalse(
+                        path.startsWith("alice/"),
+                        "ls result path should not contain namespace prefix: " + path);
 
-            if (!path.endsWith("/")) {
-                ReadResult read = fs.read(rt, path, 0, 0);
-                assertTrue(read.isSuccess(), "read() should succeed for ls-returned path: " + path);
+                if (!path.endsWith("/")) {
+                    ReadResult read = fs.read(rt, path, 0, 0);
+                    assertTrue(
+                            read.isSuccess(),
+                            "read() should succeed for ls-returned path: " + path);
+                }
             }
         }
     }
@@ -254,34 +266,35 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("conversation start"), ctx("session-1", "alice")).block();
+            agent.call(userMsg("conversation start"), ctx("session-1", "alice")).block();
 
-        // Write session data through the workspace manager
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        RuntimeContext.builder().userId("alice").build(),
-                        "agents/assistant/sessions/session-1.jsonl",
-                        "session data");
+            // Write session data through the workspace manager
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.builder().userId("alice").build(),
+                            "agents/assistant/sessions/session-1.jsonl",
+                            "session data");
 
-        // Verify session data is under alice's namespace
-        Path aliceSessionFile =
-                workspace.resolve("alice/agents/assistant/sessions/session-1.jsonl");
-        assertTrue(
-                Files.isRegularFile(aliceSessionFile),
-                "AgentStateStore file should be under alice/ namespace");
+            // Verify session data is under alice's namespace
+            Path aliceSessionFile =
+                    workspace.resolve("alice/agents/assistant/sessions/session-1.jsonl");
+            assertTrue(
+                    Files.isRegularFile(aliceSessionFile),
+                    "AgentStateStore file should be under alice/ namespace");
 
-        // Verify no session file at workspace root
-        Path rootSessionFile = workspace.resolve("agents/assistant/sessions/session-1.jsonl");
-        assertFalse(
-                Files.isRegularFile(rootSessionFile),
-                "AgentStateStore file should NOT exist at workspace root");
+            // Verify no session file at workspace root
+            Path rootSessionFile = workspace.resolve("agents/assistant/sessions/session-1.jsonl");
+            assertFalse(
+                    Files.isRegularFile(rootSessionFile),
+                    "AgentStateStore file should NOT exist at workspace root");
+        }
     }
 
     /**
@@ -292,22 +305,23 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
-        Path sessionDir =
-                agent.getWorkspaceManager()
-                        .getSessionDir(
-                                RuntimeContext.builder().userId("alice").build(), "assistant");
-        assertTrue(
-                sessionDir.toString().contains("alice"),
-                "getSessionDir should include namespace: " + sessionDir);
+            Path sessionDir =
+                    agent.getWorkspaceManager()
+                            .getSessionDir(
+                                    RuntimeContext.builder().userId("alice").build(), "assistant");
+            assertTrue(
+                    sessionDir.toString().contains("alice"),
+                    "getSessionDir should include namespace: " + sessionDir);
+        }
     }
 
     /**
@@ -318,21 +332,22 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
-        Path memDir =
-                agent.getWorkspaceManager()
-                        .getMemoryDir(RuntimeContext.builder().userId("alice").build());
-        assertTrue(
-                memDir.toString().contains("alice"),
-                "getMemoryDir should include namespace: " + memDir);
+            Path memDir =
+                    agent.getWorkspaceManager()
+                            .getMemoryDir(RuntimeContext.builder().userId("alice").build());
+            assertTrue(
+                    memDir.toString().contains("alice"),
+                    "getMemoryDir should include namespace: " + memDir);
+        }
     }
 
     /**
@@ -355,60 +370,68 @@ class LocalFilesystemUserIsolationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
-        // Write memory and session data
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        RuntimeContext.builder().userId("alice").build(),
-                        "MEMORY.md",
-                        "memory content");
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        RuntimeContext.builder().userId("alice").build(), "memory/note.md", "note");
+            // Write memory and session data
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.builder().userId("alice").build(),
+                            "MEMORY.md",
+                            "memory content");
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.builder().userId("alice").build(),
+                            "memory/note.md",
+                            "note");
 
-        // Only AGENTS.md should exist at workspace root (it's a shared config file, pre-existing).
-        // Namespace-isolated runtime data should be under alice/.
-        // agents/ is permitted only for the agent-scoped orphan-sweep marker; verified below.
-        try (Stream<Path> rootEntries = Files.list(workspace)) {
-            List<String> rootNames =
-                    rootEntries
-                            .map(p -> p.getFileName().toString())
-                            .filter(
-                                    n ->
-                                            !n.equals("AGENTS.md")
-                                                    && !n.equals("alice")
-                                                    && !n.equals("agents"))
-                            .toList();
-            assertTrue(
-                    rootNames.isEmpty(),
-                    "Only AGENTS.md, alice/, and (optionally) agents/ should exist at workspace"
-                            + " root, but found: "
-                            + rootNames);
-        }
-
-        // If agents/ exists at the root, it must only contain the orphan-sweep marker.
-        // agent_state.json no longer lives inside the workspace (moved to
-        // ~/.agentscope/state/<agentId>/), so any other file under agents/ is a regression.
-        Path rootAgents = workspace.resolve("agents");
-        if (Files.isDirectory(rootAgents)) {
-            try (Stream<Path> walk = Files.walk(rootAgents)) {
-                List<String> unexpected =
-                        walk.filter(Files::isRegularFile)
-                                .map(p -> rootAgents.relativize(p).toString().replace('\\', '/'))
-                                .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
+            // Only AGENTS.md should exist at workspace root (it's a shared config file,
+            // pre-existing). Namespace-isolated runtime data should be under alice/.
+            // agents/ is permitted only for the agent-scoped orphan-sweep marker; verified below.
+            try (Stream<Path> rootEntries = Files.list(workspace)) {
+                List<String> rootNames =
+                        rootEntries
+                                .map(p -> p.getFileName().toString())
+                                .filter(
+                                        n ->
+                                                !n.equals("AGENTS.md")
+                                                        && !n.equals("alice")
+                                                        && !n.equals("agents"))
                                 .toList();
                 assertTrue(
-                        unexpected.isEmpty(),
-                        "workspace/agents/ should contain only tasks/_sweep.marker but found: "
-                                + unexpected);
+                        rootNames.isEmpty(),
+                        "Only AGENTS.md, alice/, and (optionally) agents/ should exist at workspace"
+                                + " root, but found: "
+                                + rootNames);
+            }
+
+            // If agents/ exists at the root, it must only contain the orphan-sweep marker.
+            // agent_state.json no longer lives inside the workspace (moved to
+            // ~/.agentscope/state/<agentId>/), so any other file under agents/ is a regression.
+            Path rootAgents = workspace.resolve("agents");
+            if (Files.isDirectory(rootAgents)) {
+                try (Stream<Path> walk = Files.walk(rootAgents)) {
+                    List<String> unexpected =
+                            walk.filter(Files::isRegularFile)
+                                    .map(
+                                            p ->
+                                                    rootAgents
+                                                            .relativize(p)
+                                                            .toString()
+                                                            .replace('\\', '/'))
+                                    .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
+                                    .toList();
+                    assertTrue(
+                            unexpected.isEmpty(),
+                            "workspace/agents/ should contain only tasks/_sweep.marker but found: "
+                                    + unexpected);
+                }
             }
         }
     }

@@ -296,8 +296,10 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
+        final boolean capturedDisableCompaction = b.disableCompaction;
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                 b.toolResultEvictionConfig;
+        final boolean capturedDisableToolResultEviction = b.disableToolResultEviction;
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
@@ -344,9 +346,16 @@ final class HarnessAgentBuilderSupport {
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
-            if (capturedCompactionConfig != null) sub.compaction(capturedCompactionConfig);
-            if (capturedToolResultEvictionConfig != null)
+            if (capturedDisableCompaction) {
+                sub.disableCompaction();
+            } else if (capturedCompactionConfig != null) {
+                sub.compaction(capturedCompactionConfig);
+            }
+            if (capturedDisableToolResultEviction) {
+                sub.disableToolResultEviction();
+            } else if (capturedToolResultEvictionConfig != null) {
                 sub.toolResultEviction(capturedToolResultEvictionConfig);
+            }
 
             sub.hooks(capturedHooks);
 
