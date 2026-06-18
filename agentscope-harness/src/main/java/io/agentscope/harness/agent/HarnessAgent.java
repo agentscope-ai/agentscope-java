@@ -860,28 +860,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * RuntimeContext (consumed by {@code ReActAgent.activateSlotForContext}).
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        String ctxSessionId = ctx.getSessionId();
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        String ctxSessionId = source.getSessionId();
         if (ctxSessionId == null || ctxSessionId.isBlank()) {
             ctxSessionId = getName();
         }
+        AbstractFilesystem sourceFs = source.get(AbstractFilesystem.class);
         SandboxContext sandboxCtx =
-                ctx.get(SandboxContext.class) != null
-                        ? ctx.get(SandboxContext.class)
+                source.get(SandboxContext.class) != null
+                        ? source.get(SandboxContext.class)
                         : defaultSandboxContext;
         AbstractFilesystem fs = workspaceManager != null ? workspaceManager.getFilesystem() : null;
 
-        if (ctxSessionId.equals(ctx.getSessionId())
-                && sandboxCtx == ctx.get(SandboxContext.class)
-                && (fs == null || fs == ctx.get(AbstractFilesystem.class))) {
-            return ctx;
+        if (ctxSessionId.equals(source.getSessionId())
+                && sandboxCtx == source.get(SandboxContext.class)
+                && (fs == null || sourceFs != null)) {
+            return source;
         }
-        RuntimeContext.Builder b =
-                RuntimeContext.builder()
-                        .sessionId(ctxSessionId)
-                        .userId(ctx.getUserId())
-                        .putAll(ctx.getExtra())
-                        .put(SandboxContext.class, sandboxCtx);
-        if (fs != null) {
+        RuntimeContext.Builder b = RuntimeContext.builder(source).sessionId(ctxSessionId);
+        b.put(SandboxContext.class, sandboxCtx);
+        if (sourceFs == null && fs != null) {
             b.put(AbstractFilesystem.class, fs);
         }
         if (workspaceManager != null) {

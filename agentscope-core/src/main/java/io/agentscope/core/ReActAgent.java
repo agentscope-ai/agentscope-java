@@ -612,10 +612,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return RuntimeContext.empty();
         }
         if (toolExecutionContext != null) {
-            return RuntimeContext.builder()
-                    .userId(run.getUserId())
-                    .sessionId(run.getSessionId())
-                    .agentState(run.getAgentState())
+            return RuntimeContext.builder(run)
                     .toolExecutionContext(
                             ToolExecutionContext.merge(
                                     run.asToolExecutionContext(), toolExecutionContext))
