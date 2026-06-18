@@ -290,6 +290,7 @@ public class AgentSpawnTool {
         if (canonLabel != null) {
             labelToKey.put(canonLabel.toLowerCase(), key);
         }
+        persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
         if (parentState != null
@@ -422,6 +423,7 @@ public class AgentSpawnTool {
 
     @Tool(
             name = "agent_send",
+            stateInjected = true,
             description =
                     """
                     Send a message to an existing subagent. Use the exact string from the \
@@ -431,6 +433,7 @@ public class AgentSpawnTool {
                     """)
     public Mono<String> agentSend(
             RuntimeContext runtimeContext,
+            AgentState parentState,
             @ToolParam(
                             name = "agent_key",
                             description =
@@ -476,14 +479,21 @@ public class AgentSpawnTool {
         } else {
             key = labelToKey.get(label.trim().toLowerCase());
             if (key == null) {
+                key = tryResolveLabelFromState(parentState, label.trim());
+            }
+            if (key == null) {
                 return Mono.just("Error: Unknown label: " + label.trim());
             }
         }
 
-        SpawnedAgent spawned = agentsByKey.get(key);
-        if (spawned == null) {
+        SpawnedAgent resolved = agentsByKey.get(key);
+        if (resolved == null) {
+            resolved = tryRestoreFromState(parentState, key, runtimeContext);
+        }
+        if (resolved == null) {
             return Mono.just("Error: Unknown agent_key: " + key);
         }
+        final SpawnedAgent spawned = resolved;
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
@@ -790,6 +800,73 @@ public class AgentSpawnTool {
             log.warn("agent execution failed: agentId={}", agentId, reportable);
             sink.success(header + "\nstatus: error\nerror: " + errStr);
         }
+    }
+
+    private void persistSpawnEntry(
+            AgentState parentState,
+            String key,
+            String agentId,
+            String sessionId,
+            String label,
+            int depth) {
+        if (parentState == null) {
+            return;
+        }
+        parentState
+                .getToolContext()
+                .putSpawnEntry(
+                        key,
+                        new io.agentscope.core.state.ToolContextState.SpawnEntry(
+                                key, agentId, sessionId, label, depth));
+    }
+
+    private String tryResolveLabelFromState(AgentState parentState, String label) {
+        if (parentState == null) {
+            return null;
+        }
+        String lowerLabel = label.toLowerCase();
+        for (io.agentscope.core.state.ToolContextState.SpawnEntry entry :
+                parentState.getToolContext().getSpawnRegistry().values()) {
+            if (entry.label() != null && entry.label().toLowerCase().equals(lowerLabel)) {
+                return entry.key();
+            }
+        }
+        return null;
+    }
+
+    private SpawnedAgent tryRestoreFromState(
+            AgentState parentState, String key, RuntimeContext runtimeContext) {
+        if (parentState == null) {
+            return null;
+        }
+        io.agentscope.core.state.ToolContextState.SpawnEntry entry =
+                parentState.getToolContext().getSpawnRegistry().get(key);
+        if (entry == null) {
+            return null;
+        }
+        Optional<Agent> agentOpt =
+                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+        if (agentOpt.isEmpty()) {
+            log.warn(
+                    "Failed to restore subagent from state: agentId={} not found in registry",
+                    entry.agentId());
+            return null;
+        }
+        SpawnedAgent restored =
+                new SpawnedAgent(
+                        key,
+                        entry.agentId(),
+                        entry.sessionId(),
+                        entry.label(),
+                        agentOpt.get(),
+                        entry.depth());
+        agentsByKey.put(key, restored);
+        if (entry.label() != null) {
+            labelToKey.put(entry.label().toLowerCase(), key);
+        }
+        log.info(
+                "Restored subagent from persisted state: key={}, agentId={}", key, entry.agentId());
+        return restored;
     }
 
     private static String textOf(Msg msg) {
