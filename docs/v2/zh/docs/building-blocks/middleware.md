@@ -122,6 +122,7 @@ ReActAgent agent =
 
 ```java
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
@@ -137,7 +138,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
         System.out.println("[agent] start for " + agent.getName());
         return next.apply(input)
                 .doOnComplete(() -> System.out.println("[agent] end for " + agent.getName()));
@@ -145,20 +146,20 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
         System.out.println("[reasoning] start");
         return next.apply(input).doOnComplete(() -> System.out.println("[reasoning] end"));
     }
 
     @Override
     public Flux<AgentEvent> onModelCall(
-            Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
         System.out.println("[model_call] " + input.model().getClass().getSimpleName());
         return next.apply(input).doOnComplete(() -> System.out.println("[model_call] done"));
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         System.out.println("[system_prompt] length=" + currentPrompt.length());
         return Mono.just(currentPrompt);
     }
@@ -181,7 +182,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
 ### 读取 RuntimeContext
 
-`MiddlewareBase` 的所有 hook 都把 `Agent` 作为首个参数传进来。通过 `agent.getRuntimeContext()` 可拿到本次 `call` / `stream` 绑定的 [`RuntimeContext`](./agent.md#runtimecontext-per-call-上下文)——既能读会话字段，也能按类型 / 按 key 取属性，还能反向写入来给下游 hook 和 tool 传值。
+`MiddlewareBase` 的所有 hook 都将本次 `call` / `stream` 绑定的 [`RuntimeContext`](./agent.md#runtimecontext-per-call-上下文) 作为第二个参数直接传入——既能读会话字段，也能按类型 / 按 key 取属性，还能反向写入来给下游 hook 和 tool 传值。
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -197,16 +198,13 @@ public class RequestContextMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-        RuntimeContext rc = agent.getRuntimeContext();
-        if (rc != null) {
-            System.out.printf(
-                    "[req] user=%s session=%s reqId=%s%n",
-                    rc.getUserId(),
-                    rc.getSessionId(),
-                    rc.get("request_id"));
-            rc.put("trace_id", java.util.UUID.randomUUID().toString());  // 后续 hook / tool 可读
-        }
+            Agent agent, RuntimeContext ctx, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        System.out.printf(
+                "[req] user=%s session=%s reqId=%s%n",
+                ctx.getUserId(),
+                ctx.getSessionId(),
+                ctx.get("request_id"));
+        ctx.put("trace_id", java.util.UUID.randomUUID().toString());  // 后续 hook / tool 可读
         return next.apply(input);
     }
 }
@@ -214,7 +212,6 @@ public class RequestContextMiddleware implements MiddlewareBase {
 
 注意点：
 
-- `agent.getRuntimeContext()` 只在 `call` 期间非 null；未运行时调用返回 `null`。
 - 同一份 `RuntimeContext` 在整个 reply 内被各层 hook / tool 共享，使用线程安全的内部 map，可以安全地 `put` 写入。
 - 不要把请求级状态缓存到 middleware 实例字段——一个 middleware 实例通常被多个 agent / call 复用；要么放进 `RuntimeContext`，要么用 Reactor `contextWrite`。
 - 若 builder 上同时配置了全局 `toolExecutionContext`，框架在分发给 tool 时会把它合并到 per-call context 之后（per-call 优先级更高）。
