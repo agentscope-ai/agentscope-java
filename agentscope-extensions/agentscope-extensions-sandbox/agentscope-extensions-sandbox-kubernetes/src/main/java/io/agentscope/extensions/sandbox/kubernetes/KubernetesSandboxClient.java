@@ -143,12 +143,10 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
     }
 
     private KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
-        KubernetesSandboxClientOptions base =
-                defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
+        KubernetesSandboxClientOptions o = copy(defaultOptions);
         if (callOptions == null) {
-            return copy(base);
+            return o;
         }
-        KubernetesSandboxClientOptions o = copy(base);
         if (callOptions.getKubernetesClient() != null) {
             o.setKubernetesClient(callOptions.getKubernetesClient());
         }
