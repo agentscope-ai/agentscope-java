@@ -23,6 +23,7 @@ import com.anthropic.models.messages.MessageParam.Role;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -125,22 +126,27 @@ public class AnthropicMessageConverter {
         List<ContentBlockParam> contentBlocks = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(tb.getText()).build()));
-            } else if (block instanceof HintBlock hb) {
+            } else if (normalizedBlock instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
-            } else if (block instanceof ThinkingBlock thinkingBlock) {
+            } else if (normalizedBlock instanceof ThinkingBlock thinkingBlock) {
                 // Anthropic supports thinking blocks natively
                 contentBlocks.add(
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder()
                                         .text(thinkingBlock.getThinking())
                                         .build()));
-            } else if (block instanceof ImageBlock ib) {
+            } else if (normalizedBlock instanceof ImageBlock ib) {
                 try {
                     ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
                     contentBlocks.add(ContentBlockParam.ofImage(imageParam));
@@ -198,11 +204,16 @@ public class AnthropicMessageConverter {
             List<?> outputList = (List<?>) output;
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
-                    if (cb instanceof TextBlock tb) {
+                    ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(cb);
+                    if (normalizedBlock == null) {
+                        continue;
+                    }
+
+                    if (normalizedBlock instanceof TextBlock tb) {
                         blocks.add(
                                 ToolResultBlockParam.Content.Block.ofText(
                                         TextBlockParam.builder().text(tb.getText()).build()));
-                    } else if (cb instanceof ImageBlock ib) {
+                    } else if (normalizedBlock instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
                             blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));

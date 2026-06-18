@@ -18,8 +18,11 @@ package io.agentscope.core.formatter.ollama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -88,6 +91,38 @@ class OllamaMessageConverterTest {
         assertNotNull(ollamaMsg);
         assertEquals("assistant", ollamaMsg.getRole());
         assertEquals("I'm doing well, thank you!", ollamaMsg.getContent());
+    }
+
+    @Test
+    @DisplayName("Should convert user message with DataBlock image")
+    void testConvertUserMessageWithDataBlockImage() {
+        String base64Data = "iVBORw0KGgo=";
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data(base64Data)
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        dataBlock))
+                        .build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("user", ollamaMsg.getRole());
+        assertEquals("Look at this", ollamaMsg.getContent());
+        assertNotNull(ollamaMsg.getImages());
+        assertEquals(1, ollamaMsg.getImages().size());
+        assertTrue(ollamaMsg.getImages().contains(base64Data));
     }
 
     @Test

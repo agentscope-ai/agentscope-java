@@ -19,6 +19,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -89,10 +90,15 @@ public class GeminiMessageConverter {
             List<Part> parts = new ArrayList<>();
 
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock tb) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock tb) {
                     parts.add(Part.builder().text(tb.getText()).build());
 
-                } else if (block instanceof ToolUseBlock tub) {
+                } else if (normalizedBlock instanceof ToolUseBlock tub) {
                     // Prioritize using content field (raw arguments string), fallback to input map
                     Map<String, Object> args;
                     if (tub.getContent() != null && !tub.getContent().isEmpty()) {
@@ -135,7 +141,7 @@ public class GeminiMessageConverter {
 
                     parts.add(partBuilder.build());
 
-                } else if (block instanceof ToolResultBlock trb) {
+                } else if (normalizedBlock instanceof ToolResultBlock trb) {
                     // IMPORTANT: Tool result as independent Content with "user" role
                     String textOutput = convertToolResultToString(trb.getOutput());
 
@@ -163,19 +169,19 @@ public class GeminiMessageConverter {
                     // Skip adding to current message parts
                     continue;
 
-                } else if (block instanceof ImageBlock ib) {
+                } else if (normalizedBlock instanceof ImageBlock ib) {
                     parts.add(mediaConverter.convertToInlineDataPart(ib));
 
-                } else if (block instanceof AudioBlock ab) {
+                } else if (normalizedBlock instanceof AudioBlock ab) {
                     parts.add(mediaConverter.convertToInlineDataPart(ab));
 
-                } else if (block instanceof VideoBlock vb) {
+                } else if (normalizedBlock instanceof VideoBlock vb) {
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
 
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     parts.add(Part.builder().text(hb.getHint()).build());
 
-                } else if (block instanceof ThinkingBlock) {
+                } else if (normalizedBlock instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
                     continue;
 
@@ -223,18 +229,23 @@ public class GeminiMessageConverter {
         List<String> textualOutput = new ArrayList<>();
 
         for (ContentBlock block : output) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 textualOutput.add(tb.getText());
 
-            } else if (block instanceof ImageBlock ib) {
+            } else if (normalizedBlock instanceof ImageBlock ib) {
                 String reference = convertMediaBlockToTextReference(ib, "image");
                 textualOutput.add(reference);
 
-            } else if (block instanceof AudioBlock ab) {
+            } else if (normalizedBlock instanceof AudioBlock ab) {
                 String reference = convertMediaBlockToTextReference(ab, "audio");
                 textualOutput.add(reference);
 
-            } else if (block instanceof VideoBlock vb) {
+            } else if (normalizedBlock instanceof VideoBlock vb) {
                 String reference = convertMediaBlockToTextReference(vb, "video");
                 textualOutput.add(reference);
             }
@@ -296,11 +307,12 @@ public class GeminiMessageConverter {
      * @return The source object
      */
     private Source extractSourceFromBlock(ContentBlock block) {
-        if (block instanceof ImageBlock ib) {
+        ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+        if (normalizedBlock instanceof ImageBlock ib) {
             return ib.getSource();
-        } else if (block instanceof AudioBlock ab) {
+        } else if (normalizedBlock instanceof AudioBlock ab) {
             return ab.getSource();
-        } else if (block instanceof VideoBlock vb) {
+        } else if (normalizedBlock instanceof VideoBlock vb) {
             return vb.getSource();
         }
         throw new IllegalArgumentException("Unsupported block type: " + block.getClass());

@@ -15,6 +15,14 @@
  */
 package io.agentscope.core.formatter;
 
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Source;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -30,6 +38,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +48,16 @@ import org.slf4j.LoggerFactory;
  * Provides methods for processing images, audio, and other media types.
  */
 public class MediaUtils {
+
+    /**
+     * Canonical media kinds used to adapt unified {@link DataBlock} instances back to the legacy
+     * media-specific block types expected by provider formatters.
+     */
+    public enum MediaKind {
+        IMAGE,
+        AUDIO,
+        VIDEO
+    }
 
     private static final Logger log = LoggerFactory.getLogger(MediaUtils.class);
 
@@ -275,6 +294,122 @@ public class MediaUtils {
 
             default -> "application/octet-stream";
         };
+    }
+
+    /**
+     * Infer the media kind from a content block.
+     *
+     * @param block the content block
+     * @return image, audio, or video kind; {@code null} if the block is not media or cannot be
+     *     classified
+     */
+    public static MediaKind inferMediaKind(ContentBlock block) {
+        if (block instanceof ImageBlock) {
+            return MediaKind.IMAGE;
+        } else if (block instanceof AudioBlock) {
+            return MediaKind.AUDIO;
+        } else if (block instanceof VideoBlock) {
+            return MediaKind.VIDEO;
+        } else if (block instanceof DataBlock dataBlock) {
+            return inferMediaKind(dataBlock.getSource(), dataBlock.getName());
+        }
+        return null;
+    }
+
+    /**
+     * Infer the media kind from a source object.
+     *
+     * @param source the source to inspect
+     * @return image, audio, or video kind; {@code null} if the source cannot be classified
+     */
+    public static MediaKind inferMediaKind(Source source) {
+        return inferMediaKind(source, null);
+    }
+
+    /**
+     * Infer the media kind from a source object with an optional fallback path/name.
+     *
+     * @param source the source to inspect
+     * @param fallbackPath a file path or file name used when the source metadata is ambiguous
+     * @return image, audio, or video kind; {@code null} if the source cannot be classified
+     */
+    public static MediaKind inferMediaKind(Source source, String fallbackPath) {
+        if (source == null) {
+            return null;
+        }
+
+        String mediaType = null;
+        if (source instanceof URLSource urlSource) {
+            mediaType = determineMediaType(urlSource.getUrl());
+        } else if (source instanceof Base64Source base64Source) {
+            mediaType = base64Source.getMediaType();
+        }
+
+        MediaKind kind = inferMediaKindFromMediaType(mediaType);
+        if (kind != null) {
+            return kind;
+        }
+
+        if (fallbackPath != null && !fallbackPath.isBlank()) {
+            return inferMediaKindFromMediaType(determineMediaType(fallbackPath));
+        }
+
+        return null;
+    }
+
+    /**
+     * Convert a unified {@link DataBlock} back into the legacy media-specific block type expected
+     * by provider formatters.
+     *
+     * @param dataBlock the unified data block
+     * @return an {@link ImageBlock}, {@link AudioBlock}, or {@link VideoBlock}; {@code null} when
+     *     the media kind cannot be inferred
+     */
+    public static ContentBlock toLegacyMediaBlock(DataBlock dataBlock) {
+        if (dataBlock == null) {
+            return null;
+        }
+        MediaKind kind = inferMediaKind(dataBlock.getSource(), dataBlock.getName());
+        if (kind == null) {
+            return null;
+        }
+
+        return switch (kind) {
+            case IMAGE -> ImageBlock.builder().source(dataBlock.getSource()).build();
+            case AUDIO -> AudioBlock.builder().source(dataBlock.getSource()).build();
+            case VIDEO -> VideoBlock.builder().source(dataBlock.getSource()).build();
+        };
+    }
+
+    /**
+     * Normalize a content block so formatter code can keep working with the legacy media-specific
+     * block types.
+     *
+     * @param block the original content block
+     * @return the original block, a legacy media block derived from {@link DataBlock}, or
+     *     {@code null} if the block cannot be normalized
+     */
+    public static ContentBlock normalizeMediaBlock(ContentBlock block) {
+        if (block instanceof DataBlock dataBlock) {
+            return toLegacyMediaBlock(dataBlock);
+        }
+        return block;
+    }
+
+    private static MediaKind inferMediaKindFromMediaType(String mediaType) {
+        if (mediaType == null || mediaType.isBlank()) {
+            return null;
+        }
+
+        String lower = mediaType.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("image/")) {
+            return MediaKind.IMAGE;
+        } else if (lower.startsWith("audio/")) {
+            return MediaKind.AUDIO;
+        } else if (lower.startsWith("video/")) {
+            return MediaKind.VIDEO;
+        }
+        return null;
     }
 
     /**

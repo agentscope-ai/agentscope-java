@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -757,6 +759,34 @@ class OllamaMultiAgentFormatterTest {
 
         // Assert
         assertEquals("Result: 42", result);
+    }
+
+    @Test
+    @DisplayName("Should format tool result with DataBlock image")
+    void testFormatToolResultWithDataBlockImage() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call123")
+                        .name("get_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Image ready").build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg toolMsg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(toolMsg));
+
+        assertEquals(1, formatted.size());
+        assertEquals("tool", formatted.get(0).getRole());
+        assertEquals("Image ready", formatted.get(0).getContent());
     }
 
     // Helper method to concatenate lists

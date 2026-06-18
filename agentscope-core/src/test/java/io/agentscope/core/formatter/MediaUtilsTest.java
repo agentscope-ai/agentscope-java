@@ -22,6 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.URLSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -195,6 +200,38 @@ class MediaUtilsTest {
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType(null));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType(""));
+    }
+
+    @Test
+    @DisplayName("Should infer media kind from DataBlock")
+    void testInferMediaKindFromDataBlock() {
+        DataBlock imageData =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .build();
+
+        ContentBlock normalized = MediaUtils.normalizeMediaBlock(imageData);
+
+        assertNotNull(normalized);
+        assertTrue(normalized instanceof ImageBlock);
+    }
+
+    @Test
+    @DisplayName("Should preserve base64 DataBlock as legacy image block")
+    void testNormalizeBase64DataBlock() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        ContentBlock normalized = MediaUtils.normalizeMediaBlock(dataBlock);
+
+        assertNotNull(normalized);
+        assertTrue(normalized instanceof ImageBlock);
     }
 
     @Test

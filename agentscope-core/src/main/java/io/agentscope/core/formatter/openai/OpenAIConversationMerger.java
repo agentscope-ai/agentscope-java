@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.AudioBlock;
@@ -118,18 +119,23 @@ public class OpenAIConversationMerger {
             blocks = new ArrayList<>();
         }
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);
                 }
                 textBuffer.append(tb.getText()).append("\n");
-            } else if (block instanceof HintBlock hb) {
+            } else if (normalizedBlock instanceof HintBlock hb) {
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);
                 }
                 textBuffer.append(hb.getHint()).append("\n");
 
-            } else if (block instanceof ImageBlock imageBlock) {
+            } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                 // Flush existing text to a content part
                 if (textBuffer.length() > 0) {
                     allParts.add(OpenAIContentPart.text(textBuffer.toString()));
@@ -162,7 +168,7 @@ public class OpenAIConversationMerger {
                             .append("]\n");
                 }
 
-            } else if (block instanceof VideoBlock videoBlock) {
+            } else if (normalizedBlock instanceof VideoBlock videoBlock) {
                 // Flush existing text to a content part
                 if (textBuffer.length() > 0) {
                     allParts.add(OpenAIContentPart.text(textBuffer.toString()));
@@ -195,7 +201,7 @@ public class OpenAIConversationMerger {
                             .append("]\n");
                 }
 
-            } else if (block instanceof AudioBlock audioBlock) {
+            } else if (normalizedBlock instanceof AudioBlock audioBlock) {
                 // Flush existing text
                 if (textBuffer.length() > 0) {
                     allParts.add(OpenAIContentPart.text(textBuffer.toString()));
@@ -258,7 +264,7 @@ public class OpenAIConversationMerger {
                             .append("]\n");
                 }
 
-            } else if (block instanceof ThinkingBlock thinkingBlock) {
+            } else if (normalizedBlock instanceof ThinkingBlock thinkingBlock) {
                 // Include ThinkingBlock in conversation history for models that support reasoning
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);
@@ -272,7 +278,7 @@ public class OpenAIConversationMerger {
                         textBuffer.append("[Thinking]: ").append(thinking).append("\n");
                     }
                 }
-            } else if (block instanceof ToolResultBlock toolResult) {
+            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                 // Use provided converter to handle multimodal content in tool results
                 String resultText = toolResultConverter.apply(toolResult.getOutput());
                 String finalResultText =

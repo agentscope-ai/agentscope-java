@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
@@ -92,12 +93,17 @@ public class DashScopeConversationMerger {
 
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
-                if (block instanceof TextBlock tb) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock tb) {
                     textAccumulator.append(name).append(": ").append(tb.getText()).append("\n");
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     textAccumulator.append(name).append(": ").append(hb.getHint()).append("\n");
 
-                } else if (block instanceof ImageBlock imageBlock) {
+                } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                     // Preserve images for multimodal content
                     try {
                         DashScopeContentPart imageContent =
@@ -109,7 +115,7 @@ public class DashScopeConversationMerger {
                         textAccumulator.append(name).append(": [Image - processing failed]\n");
                     }
 
-                } else if (block instanceof VideoBlock videoBlock) {
+                } else if (normalizedBlock instanceof VideoBlock videoBlock) {
                     try {
                         String videoUrl = mediaConverter.convertVideoBlockToUrl(videoBlock);
                         // Add video URL to text
@@ -197,12 +203,17 @@ public class DashScopeConversationMerger {
             String name = nameExtractor.apply(msg);
 
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock tb) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock tb) {
                     accumulatedText.add(name + ": " + tb.getText());
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     accumulatedText.add(name + ": " + hb.getHint());
 
-                } else if (block instanceof ImageBlock imageBlock) {
+                } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                     // Flush accumulated text before adding image
                     if (!accumulatedText.isEmpty()) {
                         content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
@@ -221,7 +232,7 @@ public class DashScopeConversationMerger {
                                         "[Image - processing failed: " + e.getMessage() + "]"));
                     }
 
-                } else if (block instanceof AudioBlock audioBlock) {
+                } else if (normalizedBlock instanceof AudioBlock audioBlock) {
                     // Flush accumulated text before adding audio
                     if (!accumulatedText.isEmpty()) {
                         content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
@@ -240,7 +251,7 @@ public class DashScopeConversationMerger {
                                         "[Audio - processing failed: " + e.getMessage() + "]"));
                     }
 
-                } else if (block instanceof VideoBlock videoBlock) {
+                } else if (normalizedBlock instanceof VideoBlock videoBlock) {
                     // Flush accumulated text before adding video
                     if (!accumulatedText.isEmpty()) {
                         content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));

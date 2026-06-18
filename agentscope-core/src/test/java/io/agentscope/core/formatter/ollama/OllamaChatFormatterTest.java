@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -524,6 +526,34 @@ class OllamaChatFormatterTest {
         assertEquals(model, request.getModel());
         assertEquals(messages, request.getMessages());
         assertEquals(stream, request.getStream());
+    }
+
+    @Test
+    @DisplayName("Should format user message with DataBlock image")
+    void testFormatUserMessageWithDataBlockImage() {
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Describe this image:").build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(userMsg));
+
+        assertEquals(1, formatted.size());
+        assertEquals("user", formatted.get(0).getRole());
+        assertEquals("Describe this image:", formatted.get(0).getContent());
+        assertNotNull(formatted.get(0).getImages());
+        assertEquals(1, formatted.get(0).getImages().size());
+        assertEquals("iVBORw0KGgo=", formatted.get(0).getImages().get(0));
     }
 
     // Helper method to concatenate lists

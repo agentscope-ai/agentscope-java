@@ -20,6 +20,8 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
+import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -196,7 +198,11 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
             if (block instanceof String text) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(TextBlockParam.builder().text(text).build()));
-            } else if (block instanceof ImageBlock ib) {
+            } else if (block instanceof ContentBlock contentBlock) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(contentBlock);
+                if (!(normalizedBlock instanceof ImageBlock ib)) {
+                    continue;
+                }
                 try {
                     ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
                     contentBlocks.add(ContentBlockParam.ofImage(imageParam));

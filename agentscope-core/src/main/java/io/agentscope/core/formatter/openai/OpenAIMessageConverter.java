@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -161,9 +162,14 @@ public class OpenAIMessageConverter {
         List<OpenAIContentPart> contentParts = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 contentParts.add(OpenAIContentPart.text(tb.getText()));
-            } else if (block instanceof ImageBlock ib) {
+            } else if (normalizedBlock instanceof ImageBlock ib) {
                 try {
                     Source source = ib.getSource();
                     if (source == null) {
@@ -180,7 +186,7 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Image - processing failed: " + errorMsg + "]"));
                 }
-            } else if (block instanceof AudioBlock ab) {
+            } else if (normalizedBlock instanceof AudioBlock ab) {
                 try {
                     // OpenAI expects base64 audio in input_audio format
                     Source source = ab.getSource();
@@ -228,11 +234,11 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Audio - processing failed: " + errorMsg + "]"));
                 }
-            } else if (block instanceof HintBlock hb) {
+            } else if (normalizedBlock instanceof HintBlock hb) {
                 contentParts.add(OpenAIContentPart.text(hb.getHint()));
-            } else if (block instanceof ThinkingBlock) {
+            } else if (normalizedBlock instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for OpenAI");
-            } else if (block instanceof VideoBlock vb) {
+            } else if (normalizedBlock instanceof VideoBlock vb) {
                 try {
                     Source source = vb.getSource();
                     if (source == null) {
@@ -249,9 +255,9 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Video - processing failed: " + errorMsg + "]"));
                 }
-            } else if (block instanceof ToolUseBlock) {
+            } else if (normalizedBlock instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
-            } else if (block instanceof ToolResultBlock) {
+            } else if (normalizedBlock instanceof ToolResultBlock) {
                 log.warn("ToolResultBlock is not supported in user messages");
             }
         }
@@ -430,9 +436,7 @@ public class OpenAIMessageConverter {
             return false;
         }
         for (ContentBlock block : blocks) {
-            if (block instanceof ImageBlock
-                    || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+            if (MediaUtils.inferMediaKind(block) != null) {
                 return true;
             }
         }

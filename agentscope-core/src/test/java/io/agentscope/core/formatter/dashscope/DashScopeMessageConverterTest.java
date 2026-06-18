@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -352,6 +354,34 @@ class DashScopeMessageConverterTest {
         assertEquals("http://example.com/image.png", dsMsg.getContentAsList().get(0).getImage());
         assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
         assertEquals("oss://example.com/image.png", dsMsg.getContentAsList().get(2).getImage());
+    }
+
+    @Test
+    void testConvertMessageWithMixedTextAndDataBlockImage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("描述这张图：").build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertTrue(dsMsg.isMultimodal());
+        List<DashScopeContentPart> parts = dsMsg.getContentAsList();
+        assertEquals(2, parts.size());
+        assertEquals("描述这张图：", parts.get(0).getText());
+        assertNotNull(parts.get(1).getImage());
+        assertTrue(parts.get(1).getImage().startsWith("data:image/png;base64,"));
     }
 
     @Test
