@@ -551,6 +551,150 @@ class AgentScopeAgentExecutorTest {
         }
     }
 
+    @Nested
+    @DisplayName("Session ID Resolution Tests")
+    class SessionIdResolutionTests {
+
+        @Test
+        @DisplayName("Should use contextId as sessionId when contextId is present")
+        void testSessionIdFromContextId() throws JSONRPCError {
+            // Given: contextId is set, no metadata sessionId
+            String taskId = UUID.randomUUID().toString();
+            String contextId = "context-session-123";
+
+            when(mockContext.getTaskId()).thenReturn(taskId);
+            when(mockContext.getContextId()).thenReturn(contextId);
+
+            Message mockMessage = mock(Message.class);
+            when(mockMessage.getTaskId()).thenReturn(taskId);
+            when(mockMessage.getContextId()).thenReturn(contextId);
+            when(mockMessage.getParts()).thenReturn(List.of(new TextPart("hello")));
+            when(mockMessage.getMetadata()).thenReturn(null); // No metadata at all
+            when(mockContext.getMessage()).thenReturn(mockMessage);
+
+            MessageSendParams mockParams = mock(MessageSendParams.class);
+            when(mockContext.getParams()).thenReturn(mockParams);
+            when(mockParams.message()).thenReturn(mockMessage);
+
+            when(mockContext.getCallContext()).thenReturn(serverCallContext);
+            when(serverCallContext.getState()).thenReturn(Map.of());
+
+            AtomicReference<AgentRequestOptions> capturedOptions = new AtomicReference<>();
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                capturedOptions.set(invocation.getArgument(1));
+                                return Flux.just(
+                                        new Event(
+                                                EventType.REASONING,
+                                                Msg.builder().textContent("response").build(),
+                                                true));
+                            });
+
+            doAnswer(invocation -> null).when(mockEventQueue).enqueueEvent(any(Message.class));
+
+            // When
+            executor.execute(mockContext, mockEventQueue);
+
+            // Then: sessionId should come from contextId
+            assertNotNull(capturedOptions.get());
+            assertEquals(contextId, capturedOptions.get().getSessionId());
+        }
+
+        @Test
+        @DisplayName("Should fallback to metadata sessionId when contextId is empty")
+        void testSessionIdFallbackToMetadata() throws JSONRPCError {
+            // Given: contextId is empty, metadata has sessionId
+            String taskId = UUID.randomUUID().toString();
+            String metadataSessionId = "metadata-session-456";
+
+            when(mockContext.getTaskId()).thenReturn(taskId);
+            when(mockContext.getContextId()).thenReturn(""); // Empty contextId
+
+            Message mockMessage = mock(Message.class);
+            when(mockMessage.getTaskId()).thenReturn(taskId);
+            when(mockMessage.getContextId()).thenReturn("");
+            when(mockMessage.getParts()).thenReturn(List.of(new TextPart("hello")));
+            when(mockMessage.getMetadata()).thenReturn(Map.of("sessionId", metadataSessionId));
+            when(mockContext.getMessage()).thenReturn(mockMessage);
+
+            MessageSendParams mockParams = mock(MessageSendParams.class);
+            when(mockContext.getParams()).thenReturn(mockParams);
+            when(mockParams.message()).thenReturn(mockMessage);
+
+            when(mockContext.getCallContext()).thenReturn(serverCallContext);
+            when(serverCallContext.getState()).thenReturn(Map.of());
+
+            AtomicReference<AgentRequestOptions> capturedOptions = new AtomicReference<>();
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                capturedOptions.set(invocation.getArgument(1));
+                                return Flux.just(
+                                        new Event(
+                                                EventType.REASONING,
+                                                Msg.builder().textContent("response").build(),
+                                                true));
+                            });
+
+            doAnswer(invocation -> null).when(mockEventQueue).enqueueEvent(any(Message.class));
+
+            // When
+            executor.execute(mockContext, mockEventQueue);
+
+            // Then: sessionId should fallback to metadata
+            assertNotNull(capturedOptions.get());
+            assertEquals(metadataSessionId, capturedOptions.get().getSessionId());
+        }
+
+        @Test
+        @DisplayName("Should prefer contextId over metadata sessionId when both present")
+        void testContextIdTakesPrecedenceOverMetadata() throws JSONRPCError {
+            // Given: both contextId and metadata sessionId are set
+            String taskId = UUID.randomUUID().toString();
+            String contextId = "context-id-wins";
+            String metadataSessionId = "metadata-id-loses";
+
+            when(mockContext.getTaskId()).thenReturn(taskId);
+            when(mockContext.getContextId()).thenReturn(contextId);
+
+            Message mockMessage = mock(Message.class);
+            when(mockMessage.getTaskId()).thenReturn(taskId);
+            when(mockMessage.getContextId()).thenReturn(contextId);
+            when(mockMessage.getParts()).thenReturn(List.of(new TextPart("hello")));
+            when(mockMessage.getMetadata()).thenReturn(Map.of("sessionId", metadataSessionId));
+            when(mockContext.getMessage()).thenReturn(mockMessage);
+
+            MessageSendParams mockParams = mock(MessageSendParams.class);
+            when(mockContext.getParams()).thenReturn(mockParams);
+            when(mockParams.message()).thenReturn(mockMessage);
+
+            when(mockContext.getCallContext()).thenReturn(serverCallContext);
+            when(serverCallContext.getState()).thenReturn(Map.of());
+
+            AtomicReference<AgentRequestOptions> capturedOptions = new AtomicReference<>();
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                capturedOptions.set(invocation.getArgument(1));
+                                return Flux.just(
+                                        new Event(
+                                                EventType.REASONING,
+                                                Msg.builder().textContent("response").build(),
+                                                true));
+                            });
+
+            doAnswer(invocation -> null).when(mockEventQueue).enqueueEvent(any(Message.class));
+
+            // When
+            executor.execute(mockContext, mockEventQueue);
+
+            // Then: contextId should take precedence
+            assertNotNull(capturedOptions.get());
+            assertEquals(contextId, capturedOptions.get().getSessionId());
+        }
+    }
+
     @Test
     @DisplayName("Should handle exception during execution")
     void testHandleExceptionDuringExecution() throws JSONRPCError {

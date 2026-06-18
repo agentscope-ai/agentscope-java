@@ -128,7 +128,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
         requestOptions.setUserId(getUserId(message));
-        requestOptions.setSessionId(getSessionId(message));
+        requestOptions.setSessionId(getSessionId(context, message));
         return requestOptions;
     }
 
@@ -139,7 +139,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         return "";
     }
 
-    private String getSessionId(Message message) {
+    /**
+     * Extract sessionId from the A2A request.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *     <li>A2A protocol standard field: {@code Message.contextId} (via {@code RequestContext.getContextId()}).</li>
+     *     <li>Backward-compatible fallback: {@code Message.metadata["sessionId"]}.</li>
+     * </ol>
+     *
+     * <p>This ensures any standard A2A client that sets {@code contextId} on the message
+     * can be correctly routed to per-session state without requiring a custom metadata key.
+     *
+     * @param context the request context containing the resolved contextId
+     * @param message the original A2A message
+     * @return the sessionId, or empty string if not found
+     */
+    private String getSessionId(RequestContext context, Message message) {
+        // Prefer the protocol-standard contextId field
+        String contextId = context.getContextId();
+        if (contextId != null && !contextId.isEmpty()) {
+            return contextId;
+        }
+        // Backward-compatible fallback: read from metadata
         if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
             return String.valueOf(message.getMetadata().get("sessionId"));
         }
