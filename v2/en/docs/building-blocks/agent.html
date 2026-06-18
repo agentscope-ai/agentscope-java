@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
+    <meta property="article:modified_time" content="2026-06-18T08:05:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/agent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1292,7 +1292,7 @@ With Toolkit / MCP</label><div class="sd-tab-content docutils">
 <h3>Who reads it<a class="headerlink" href="#who-reads-it" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Tools</strong> (<code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> methods and <code class="docutils literal notranslate"><span class="pre">ToolBase.callAsync</span></code>) — see <a class="reference internal" href="tool.html#receiving-context"><span class="std std-ref">Tool — Receiving context</span></a>.</p></li>
-<li><p><strong>Middleware</strong> (every <code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code> hook) — call <code class="docutils literal notranslate"><span class="pre">agent.getRuntimeContext()</span></code>. See <a class="reference internal" href="middleware.html#reading-runtimecontext"><span class="std std-ref">Middleware — Reading RuntimeContext</span></a>.</p></li>
+<li><p><strong>Middleware</strong> (every <code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code> hook) — received as the second parameter <code class="docutils literal notranslate"><span class="pre">ctx</span></code>. See <a class="reference internal" href="middleware.html#reading-runtimecontext"><span class="std std-ref">Middleware — Reading RuntimeContext</span></a>.</p></li>
 <li><p><strong>All threads within the same call</strong> — the internal maps are <code class="docutils literal notranslate"><span class="pre">ConcurrentMap</span></code>s, so hooks and tools can read/write the same instance to coordinate.</p></li>
 </ul>
 </section>
@@ -1688,7 +1688,7 @@ Middleware</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-06-18</div>
           </div>
           <div class="right-details">
             <div class="icons">

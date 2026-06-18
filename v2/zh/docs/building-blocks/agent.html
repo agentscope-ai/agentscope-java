@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="消息与事件" href="message-and-event.html"><link rel="prev" title="快速开始" href="../quickstart.html">
+    <meta property="article:modified_time" content="2026-06-18T08:05:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="消息与事件" href="message-and-event.html"><link rel="prev" title="快速开始" href="../quickstart.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/agent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1292,7 +1292,7 @@
 <h3>谁能读到<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Tool</strong>（<code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> 方法或 <code class="docutils literal notranslate"><span class="pre">ToolBase.callAsync</span></code>）—— 见 <a class="reference internal" href="tool.html#context"><span class="std std-ref">Tool — 接收 Context</span></a>。</p></li>
-<li><p><strong>Middleware</strong>（<code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code> 所有 hook）—— 通过 <code class="docutils literal notranslate"><span class="pre">agent.getRuntimeContext()</span></code> 取当前实例。详见 <a class="reference internal" href="middleware.html#runtimecontext"><span class="std std-ref">Middleware — 读取 RuntimeContext</span></a>。</p></li>
+<li><p><strong>Middleware</strong>（<code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code> 所有 hook）—— 作为第二个参数 <code class="docutils literal notranslate"><span class="pre">ctx</span></code> 直接传入。详见 <a class="reference internal" href="middleware.html#runtimecontext"><span class="std std-ref">Middleware — 读取 RuntimeContext</span></a>。</p></li>
 <li><p><strong>同一次调用的所有线程</strong>—— <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 内部使用 <code class="docutils literal notranslate"><span class="pre">ConcurrentMap</span></code>，hook / tool 之间可以读写同一实例做协调。</p></li>
 </ul>
 </section>
@@ -1688,7 +1688,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-06-18</div>
           </div>
           <div class="right-details">
             <div class="icons">
