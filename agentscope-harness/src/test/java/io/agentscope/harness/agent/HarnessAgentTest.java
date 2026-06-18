@@ -18,6 +18,8 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -26,21 +28,27 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -49,11 +57,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
@@ -228,6 +239,158 @@ class HarnessAgentTest {
                 "expected workspace hook to wrap AGENTS.md in agents_context");
         assertTrue(
                 combined.contains(marker), "model should see AGENTS.md body in injected context");
+    }
+
+    @Test
+    void runtimeContextConcreteFilesystemSurvivesSessionDefaulting() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        LocalFilesystem customFilesystem = new LocalFilesystem(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build();
+
+        agent.call(
+                        userText("hi"),
+                        RuntimeContext.builder()
+                                .put(LocalFilesystem.class, customFilesystem)
+                                .build())
+                .block();
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertNotNull(effective.getSessionId());
+        assertSame(customFilesystem, effective.get(AbstractFilesystem.class));
+        assertSame(customFilesystem, effective.get(LocalFilesystem.class));
+    }
+
+    @Test
+    void runtimeContextNullInputGetsDefaultSessionAndSandbox() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), (RuntimeContext) null).block();
+        }
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertEquals("t", effective.getSessionId());
+        assertSame(agentFilesystem, effective.get(AbstractFilesystem.class));
+        assertNull(effective.get(SandboxContext.class));
+        assertNull(effective.getUserId());
+    }
+
+    @Test
+    void runtimeContextAlreadyDefaultedReturnsSourceWhenNothingChanges() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        SandboxContext sandboxContext =
+                SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        RuntimeContext source =
+                RuntimeContext.builder()
+                        .sessionId("t")
+                        .put(SandboxContext.class, sandboxContext)
+                        .put(AbstractFilesystem.class, agentFilesystem)
+                        .build();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), source).block();
+        }
+
+        assertSame(source, seen.get());
+    }
+
+    @Test
+    void runtimeContextSandboxSpecProvidesDefaultSandboxContext() throws Exception {
+        Files.createDirectories(workspace);
+
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        spec.isolationScope(IsolationScope.SESSION);
+        InMemorySandboxClient client = spec.getClient();
+        client.resetCounts();
+        Model model = stubModel("assistant-done");
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+        String sessionId = "sandbox-" + UUID.randomUUID();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
+                        .filesystem(spec)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), RuntimeContext.builder().sessionId(sessionId).build())
+                    .block();
+        }
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertNotNull(effective.get(SandboxContext.class));
+        assertEquals(1, client.getCreateCount());
     }
 
     @Test
