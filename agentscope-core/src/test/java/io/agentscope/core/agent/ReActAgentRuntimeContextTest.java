@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -37,9 +38,11 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -143,6 +146,42 @@ class ReActAgentRuntimeContextTest {
                         .getContext()
                         .stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
+    }
+
+    @Test
+    void buildMergedRuntimeContextCopiesTypedData() throws Exception {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(new MockModel("ok"))
+                        .toolkit(new Toolkit())
+                        .toolExecutionContext(
+                                ToolExecutionContext.builder()
+                                        .register(new SharedPojo("toolkit"))
+                                        .build())
+                        .build();
+
+        RuntimeContext callContext =
+                RuntimeContext.builder()
+                        .userId("user-1")
+                        .put(SharedPojo.class, new SharedPojo("from-call"))
+                        .build();
+
+        Method method =
+                ReActAgent.class.getDeclaredMethod(
+                        "buildMergedRuntimeContext", RuntimeContext.class);
+        method.setAccessible(true);
+
+        RuntimeContext merged = (RuntimeContext) method.invoke(agent, callContext);
+        RuntimeContext mergedFromNull = (RuntimeContext) method.invoke(agent, new Object[] {null});
+
+        assertNotNull(merged);
+        assertEquals("user-1", merged.getUserId());
+        assertSame(callContext.get(SharedPojo.class), merged.get(SharedPojo.class));
+        assertEquals("from-call", merged.asToolExecutionContext().get(SharedPojo.class).value);
+        assertNotNull(mergedFromNull);
+        assertSame(agent.getToolExecutionContext(), mergedFromNull.getToolExecutionContext());
     }
 
     private static String lastToolText(ReActAgent agent, String userId, String sessionId) {

@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.Source;
@@ -122,6 +123,11 @@ public class OpenAIConversationMerger {
                     appendNamePrefix(textBuffer, agentName);
                 }
                 textBuffer.append(tb.getText()).append("\n");
+            } else if (block instanceof HintBlock hb) {
+                if (includePrefix) {
+                    appendNamePrefix(textBuffer, agentName);
+                }
+                textBuffer.append(hb.getHint()).append("\n");
 
             } else if (block instanceof ImageBlock imageBlock) {
                 // Flush existing text to a content part

@@ -77,7 +77,7 @@ public class PlanModeAutoExample {
 
         Path workspace = Files.createTempDirectory("agentscope-planmode-auto");
 
-        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        //        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("architect")
@@ -98,7 +98,6 @@ public class PlanModeAutoExample {
                                 new LocalFilesystemSpec().projectWritable(true).inheritEnv(true))
                         // Keep runs independent: state lives only for this JVM, so a paused
                         // plan_exit can never leak into the next run.
-                        .stateStore(stateStore)
                         .enablePlanMode()
                         // Opt in: let the model run the shell read-only during plan mode so it can
                         // investigate (cat / ls / grep / git log) and produce a realistic plan.
