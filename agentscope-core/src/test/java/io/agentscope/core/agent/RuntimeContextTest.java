@@ -136,6 +136,28 @@ class RuntimeContextTest {
     }
 
     @Test
+    @DisplayName("typed keyed access falls back to assignable singleton values")
+    void keyedTypedAccessFallsBackToAssignableSingleton() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext ctx =
+                RuntimeContext.builder().put("filesystem", MarkerImpl.class, filesystem).build();
+
+        assertSame(filesystem, ctx.get("filesystem", Marker.class));
+        assertSame(filesystem, ctx.get("filesystem", MarkerImpl.class));
+        assertNull(ctx.get("missing", Marker.class));
+    }
+
+    @Test
+    @DisplayName("builder(source) tolerates null and preserves empty contexts")
+    void builderCopyHandlesNullSource() {
+        RuntimeContext empty = RuntimeContext.builder((RuntimeContext) null).build();
+
+        assertNull(empty.getSessionId());
+        assertNull(empty.getUserId());
+        assertNull(empty.get("missing", Marker.class));
+    }
+
+    @Test
     @DisplayName("concurrent puts on distinct keys from multiple threads")
     void threadSafety() throws Exception {
         RuntimeContext ctx = RuntimeContext.empty();
