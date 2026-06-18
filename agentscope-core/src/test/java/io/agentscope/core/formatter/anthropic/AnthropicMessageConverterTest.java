@@ -25,9 +25,11 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -359,6 +361,40 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                 List.of(
                                         TextBlock.builder().text("Look at this:").build(),
                                         ImageBlock.builder().source(imageSource).build(),
+                                        TextBlock.builder().text("What is it?").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(3, blocks.size());
+        assertTrue(blocks.get(0).isText());
+        assertTrue(blocks.get(1).isImage());
+        assertTrue(blocks.get(2).isText());
+    }
+
+    @Test
+    void testConvertMixedContentBlocksWithDataBlock() {
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .data("ZmFrZSBpbWFnZSBjb250ZW50")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this:").build(),
+                                        unknownBlock,
+                                        imageBlock,
                                         TextBlock.builder().text("What is it?").build()))
                         .build();
 

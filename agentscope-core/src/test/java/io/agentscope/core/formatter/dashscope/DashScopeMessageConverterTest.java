@@ -29,6 +29,7 @@ import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -382,6 +383,38 @@ class DashScopeMessageConverterTest {
         assertEquals("描述这张图：", parts.get(0).getText());
         assertNotNull(parts.get(1).getImage());
         assertTrue(parts.get(1).getImage().startsWith("data:image/png;base64,"));
+    }
+
+    @Test
+    void testConvertMessageWithUnknownDataBlockSkipped() {
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("look").build(),
+                                        unknownBlock,
+                                        imageBlock))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertTrue(dsMsg.isMultimodal());
+        List<DashScopeContentPart> parts = dsMsg.getContentAsList();
+        assertEquals(2, parts.size());
+        assertEquals("look", parts.get(0).getText());
+        assertNotNull(parts.get(1).getImage());
     }
 
     @Test

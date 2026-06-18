@@ -19,14 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Source;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -217,21 +222,81 @@ class MediaUtilsTest {
     }
 
     @Test
-    @DisplayName("Should preserve base64 DataBlock as legacy image block")
-    void testNormalizeBase64DataBlock() {
-        DataBlock dataBlock =
+    @DisplayName("Should infer media kind from legacy audio and video blocks")
+    void testInferMediaKindFromLegacyAudioAndVideoBlocks() {
+        AudioBlock audioBlock =
+                AudioBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/audio.wav").build())
+                        .build();
+
+        VideoBlock videoBlock =
+                VideoBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/video.mp4").build())
+                        .build();
+
+        assertEquals(MediaUtils.MediaKind.AUDIO, MediaUtils.inferMediaKind(audioBlock));
+        assertEquals(MediaUtils.MediaKind.VIDEO, MediaUtils.inferMediaKind(videoBlock));
+    }
+
+    @Test
+    @DisplayName("Should infer audio and video DataBlock kinds from base64 sources")
+    void testInferMediaKindFromBase64DataBlocks() {
+        DataBlock audioData =
                 DataBlock.builder()
                         .source(
                                 Base64Source.builder()
-                                        .mediaType("image/png")
-                                        .data("iVBORw0KGgo=")
+                                        .mediaType("audio/wav")
+                                        .data(
+                                                "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQAAAAA=")
                                         .build())
                         .build();
 
-        ContentBlock normalized = MediaUtils.normalizeMediaBlock(dataBlock);
+        DataBlock videoData =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("video/mp4")
+                                        .data("ZmlsZS1kYXRh")
+                                        .build())
+                        .build();
 
-        assertNotNull(normalized);
-        assertTrue(normalized instanceof ImageBlock);
+        assertEquals(MediaUtils.MediaKind.AUDIO, MediaUtils.inferMediaKind(audioData));
+        assertEquals(MediaUtils.MediaKind.VIDEO, MediaUtils.inferMediaKind(videoData));
+
+        assertTrue(MediaUtils.toLegacyMediaBlock(audioData) instanceof AudioBlock);
+        assertTrue(MediaUtils.toLegacyMediaBlock(videoData) instanceof VideoBlock);
+
+        assertTrue(MediaUtils.normalizeMediaBlock(audioData) instanceof AudioBlock);
+        assertTrue(MediaUtils.normalizeMediaBlock(videoData) instanceof VideoBlock);
+    }
+
+    @Test
+    @DisplayName("Should fall back to file name when source media type is ambiguous")
+    void testInferMediaKindFromFallbackName() {
+        DataBlock audioData =
+                DataBlock.builder().source(new Source() {}).name("recording.wav").build();
+        DataBlock videoData = DataBlock.builder().source(new Source() {}).name("clip.mp4").build();
+
+        assertEquals(MediaUtils.MediaKind.AUDIO, MediaUtils.inferMediaKind(audioData));
+        assertEquals(MediaUtils.MediaKind.VIDEO, MediaUtils.inferMediaKind(videoData));
+        assertTrue(MediaUtils.toLegacyMediaBlock(audioData) instanceof AudioBlock);
+        assertTrue(MediaUtils.toLegacyMediaBlock(videoData) instanceof VideoBlock);
+    }
+
+    @Test
+    @DisplayName("Should return null for unknown media kinds and preserve non-Data blocks")
+    void testUnknownMediaKindsAndNormalizeIdentity() {
+        DataBlock unknownData = DataBlock.builder().source(new Source() {}).build();
+        TextBlock textBlock = TextBlock.builder().text("hello").build();
+
+        assertNull(MediaUtils.inferMediaKind((Source) null));
+        assertNull(MediaUtils.inferMediaKind((ContentBlock) null));
+        assertNull(MediaUtils.inferMediaKind(unknownData));
+        assertNull(MediaUtils.toLegacyMediaBlock(null));
+        assertNull(MediaUtils.normalizeMediaBlock(null));
+        assertNull(MediaUtils.toLegacyMediaBlock(unknownData));
+        assertNull(MediaUtils.normalizeMediaBlock(unknownData));
+        assertSame(textBlock, MediaUtils.normalizeMediaBlock(textBlock));
     }
 
     @Test

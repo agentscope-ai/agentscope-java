@@ -26,9 +26,11 @@ import io.agentscope.core.formatter.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -330,6 +332,43 @@ class OpenAIMessageConverterTest {
         List<OpenAIContentPart> content = result.getContentAsList();
         assertNotNull(content);
         assertTrue(content.size() >= 2, "Should contain both text and image");
+    }
+
+    @Test
+    @DisplayName("Should normalize DataBlock multimodal content and skip unknown blocks")
+    void testDataBlockMultimodalContent() {
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .data(
+                                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("See this image").build(),
+                                        unknownBlock,
+                                        imageBlock))
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, true);
+
+        assertNotNull(result);
+        assertEquals("user", result.getRole());
+        assertTrue(result.isMultimodal());
+        List<OpenAIContentPart> parts = result.getContentAsList();
+        assertNotNull(parts);
+        assertEquals(2, parts.size());
+        assertEquals("See this image", parts.get(0).getText());
+        assertNotNull(parts.get(1).getImageUrl());
+        assertTrue(parts.get(1).getImageUrl().getUrl().startsWith("data:image/png;base64,"));
     }
 
     @Test
