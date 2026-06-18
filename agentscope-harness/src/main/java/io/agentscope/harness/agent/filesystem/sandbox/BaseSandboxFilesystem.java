@@ -78,7 +78,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "/*; do "
                         + "  if [ -d \"$f\" ]; then echo \"DIR:$f\"; "
                         + "  elif [ -f \"$f\" ]; then "
-                        + "    size=$(wc -c < \"$f\" 2>/dev/null | tr -d '[:space:]'); "
+                        + "    size=$(stat -c '%s' \"$f\" 2>/dev/null); "
                         + "    size=${size:-0}; "
                         + "    printf 'FILE:%s\\t%s\\n' \"$f\" \"$size\"; "
                         + "  fi; "

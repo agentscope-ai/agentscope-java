@@ -71,6 +71,8 @@ class BaseSandboxFilesystemTest {
 
         assertTrue(result.isSuccess());
         assertFalse(result.entries().isEmpty());
+        assertTrue(filesystem.lastCommand.startsWith("for f in '/workspace'/*; do"));
+        assertTrue(filesystem.lastCommand.contains("stat -c '%s'"));
         assertEquals(12L, result.entries().stream()
                 .filter(entry -> entry.path().equals("/workspace/readme.txt"))
                 .findFirst()
@@ -91,8 +93,9 @@ class BaseSandboxFilesystemTest {
         public ExecuteResponse execute(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             lastCommand = command;
-            if ("for f in '/workspace'/*; do   if [ -d \"$f\" ]; then echo \"DIR:$f\";   elif [ -f \"$f\" ]; then     size=$(wc -c < \"$f\" 2>/dev/null | tr -d '[:space:]');     size=${size:-0};     printf 'FILE:%s\\t%s\\n' \"$f\" \"$size\";   fi; done 2>/dev/null"
-                    .equals(command)) {
+            if (command.startsWith("for f in ")
+                    && command.contains("stat -c '%s'")
+                    && command.contains("printf 'FILE:%s\\t%s\\n'")) {
                 return new ExecuteResponse(
                         "DIR:/workspace/docs\nFILE:/workspace/readme.txt\t12\n", 0, false);
             }
