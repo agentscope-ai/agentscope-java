@@ -20,9 +20,10 @@ public class MysqlJdbcStoreDialect implements JdbcStoreDialect {
 
     @Override
     public String getCreateTableSql() {
+        // Keep the composite primary key under InnoDB's utf8mb4 3072-byte limit.
         return "CREATE TABLE IF NOT EXISTS %s ("
-                + "  namespace_path VARCHAR(768)  NOT NULL,"
-                + "  item_key       VARCHAR(190)  NOT NULL,"
+                + "  namespace_path VARCHAR(512)  NOT NULL,"
+                + "  item_key       VARCHAR(255)  NOT NULL,"
                 + "  value_json     LONGTEXT      NOT NULL,"
                 + "  version        BIGINT        NOT NULL,"
                 + "  updated_at     BIGINT        NOT NULL,"
