@@ -2051,8 +2051,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 stateStore,
                                 resolvedAgentId,
                                 executionGuard);
-                sandboxLifecycleMw =
-                        new SandboxLifecycleMiddleware(sandboxManager);
+                sandboxLifecycleMw = new SandboxLifecycleMiddleware(sandboxManager);
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
