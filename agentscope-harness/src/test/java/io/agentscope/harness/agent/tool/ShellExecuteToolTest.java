@@ -62,6 +62,15 @@ class ShellExecuteToolTest {
                 () -> tool.execute(runtimeContext, "pwd", "/tmp", 15));
         assertThrows(
                 IllegalArgumentException.class,
+                () -> tool.execute(runtimeContext, "pwd", "C:\\tmp", 15));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute(runtimeContext, "pwd", "\\\\server\\share", 15));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute(runtimeContext, "pwd", "safe\0dir", 15));
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> tool.execute(runtimeContext, "pwd", "../outside", 15));
         assertThrows(
                 IllegalArgumentException.class,

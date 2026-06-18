@@ -83,6 +83,10 @@ public class ShellExecuteTool {
         if (workingDirectory == null || workingDirectory.isBlank()) {
             throw new IllegalArgumentException("working_directory must not be null or blank");
         }
+        if (workingDirectory.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException(
+                    "working_directory must not contain null bytes: " + workingDirectory);
+        }
         if (isAbsoluteWorkingDirectory(workingDirectory)) {
             throw new IllegalArgumentException(
                     "working_directory must be relative: " + workingDirectory);

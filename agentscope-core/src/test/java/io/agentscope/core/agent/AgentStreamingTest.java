@@ -47,6 +47,7 @@ class AgentStreamingTest {
     static class TestStreamingAgent extends AgentBase {
         private String responseText = "Test response";
         private boolean shouldFail = false;
+        private final AtomicInteger legacyStreamCallCount = new AtomicInteger();
 
         TestStreamingAgent(String name) {
             super(name);
@@ -58,6 +59,10 @@ class AgentStreamingTest {
 
         void setShouldFail(boolean shouldFail) {
             this.shouldFail = shouldFail;
+        }
+
+        int getLegacyStreamCallCount() {
+            return legacyStreamCallCount.get();
         }
 
         @Override
@@ -73,6 +78,12 @@ class AgentStreamingTest {
                             .content(TextBlock.builder().text(responseText).build())
                             .build();
             return Mono.just(response);
+        }
+
+        @Override
+        public reactor.core.publisher.Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
+            legacyStreamCallCount.incrementAndGet();
+            return super.stream(msgs, options);
         }
 
         @Override
@@ -229,6 +240,29 @@ class AgentStreamingTest {
         assertFalse(events.isEmpty());
         Event lastEvent = events.get(events.size() - 1);
         assertEquals(EventType.AGENT_RESULT, lastEvent.getType());
+    }
+
+    @Test
+    void testThreeArgStreamFallsBackToLegacyImplementation() {
+        TestStreamingAgent agent = new TestStreamingAgent("test-agent");
+        agent.setResponseText("Response");
+
+        List<Msg> inputMsgs =
+                List.of(
+                        Msg.builder()
+                                .name("user")
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StreamOptions options = StreamOptions.builder().build();
+        RuntimeContext runtimeContext = RuntimeContext.builder().sessionId("sess-1").build();
+
+        List<Event> events = new ArrayList<>();
+        agent.stream(inputMsgs, options, runtimeContext).doOnNext(events::add).blockLast();
+
+        assertFalse(events.isEmpty());
+        assertEquals(1, agent.getLegacyStreamCallCount());
     }
 
     @Test
