@@ -15,36 +15,21 @@
  */
 package io.agentscope.extensions.oss;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.OSSClientBuilder;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
-import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.net.URI;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * Convenience {@link SandboxSnapshotSpec} for Alibaba Cloud OSS snapshot storage.
+ * Convenience {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec} for
+ * S3-compatible snapshot storage.
  */
 public class OssSnapshotSpec extends RemoteSnapshotSpec {
 
-    /**
-     * Creates an OSS snapshot spec from an existing OSS client.
-     *
-     * @param ossClient initialized OSS client
-     * @param bucketName target bucket
-     * @param keyPrefix key prefix (optional, may be null/blank)
-     */
-    public OssSnapshotSpec(OSS ossClient, String bucketName, String keyPrefix) {
-        super(new OssRemoteSnapshotClient(ossClient, bucketName, keyPrefix));
+    public OssSnapshotSpec(S3Client s3Client, String bucketName, String keyPrefix) {
+        super(new OssRemoteSnapshotClient(s3Client, bucketName, keyPrefix));
     }
 
-    /**
-     * Creates an OSS snapshot spec from endpoint/credential settings.
-     *
-     * @param endpoint OSS endpoint (e.g. oss-cn-hangzhou.aliyuncs.com)
-     * @param accessKeyId access key id
-     * @param accessKeySecret access key secret
-     * @param bucketName target bucket
-     * @param keyPrefix key prefix (optional, may be null/blank)
-     */
     public OssSnapshotSpec(
             String endpoint,
             String accessKeyId,
@@ -52,7 +37,8 @@ public class OssSnapshotSpec extends RemoteSnapshotSpec {
             String bucketName,
             String keyPrefix) {
         this(
-                new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret),
+                S3ObjectStoreSupport.buildClient(
+                        URI.create(endpoint), Region.US_EAST_1, accessKeyId, accessKeySecret),
                 bucketName,
                 keyPrefix);
     }

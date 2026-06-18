@@ -15,62 +15,34 @@
  */
 package io.agentscope.extensions.oss;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.ListObjectsV2Request;
-import com.aliyun.oss.model.ListObjectsV2Result;
-import com.aliyun.oss.model.OSSObject;
-import com.aliyun.oss.model.OSSObjectSummary;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 /**
- * Alibaba Cloud OSS backed {@link BaseStore} for the harness remote filesystem.
- *
- * <p>Items are stored as JSON objects in OSS. The object key layout is:
- *
- * <pre>
- * {keyPrefix}{namespace[0]}/{namespace[1]}/.../{key}.json       — item data
- * {keyPrefix}{namespace[0]}/{namespace[1]}/.../{key}.version    — version counter
- * </pre>
- *
- * <p>Usage:
- *
- * <pre>{@code
- * OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
- *
- * BaseStore store = OssBaseStore.builder()
- *     .ossClient(ossClient)
- *     .bucketName("my-agentscope-bucket")
- *     .keyPrefix("agentscope/store/")
- *     .build();
- *
- * HarnessAgent agent = HarnessAgent.builder()
- *     .filesystem(new RemoteFilesystemSpec(store))
- *     .build();
- * }</pre>
+ * S3-compatible object storage backed {@link BaseStore} for the harness remote filesystem.
  */
 public class OssBaseStore implements BaseStore {
 
     private static final String DEFAULT_KEY_PREFIX = "agentscope/store/";
     private static final String JSON_SUFFIX = ".json";
+    private static final String LIST_SUFFIX = ".list.json";
     private static final String VERSION_SUFFIX = ".version";
 
-    private final OSS ossClient;
+    private final S3Client s3Client;
     private final String bucketName;
     private final String keyPrefix;
 
     private OssBaseStore(Builder builder) {
-        this.ossClient = Objects.requireNonNull(builder.ossClient, "ossClient must not be null");
+        this.s3Client = Objects.requireNonNull(builder.s3Client, "s3Client must not be null");
         if (builder.bucketName == null || builder.bucketName.isBlank()) {
             throw new IllegalArgumentException("bucketName must not be blank");
         }
@@ -105,10 +77,8 @@ public class OssBaseStore implements BaseStore {
         String dataKey = dataObjectKey(namespace, key);
         String versionKey = versionObjectKey(namespace, key);
         try {
-            String json = JsonUtils.getJsonCodec().toJson(value);
-            putString(dataKey, json);
-            long currentVersion = readVersion(versionKey);
-            putString(versionKey, String.valueOf(currentVersion + 1));
+            putString(dataKey, JsonUtils.getJsonCodec().toJson(value));
+            putString(versionKey, String.valueOf(readVersion(versionKey) + 1));
         } catch (Exception e) {
             throw new RuntimeException("Failed to put item: " + key, e);
         }
@@ -124,8 +94,7 @@ public class OssBaseStore implements BaseStore {
             if (currentVersion != expectedVersion) {
                 return false;
             }
-            String json = JsonUtils.getJsonCodec().toJson(value);
-            putString(dataKey, json);
+            putString(dataKey, JsonUtils.getJsonCodec().toJson(value));
             putString(versionKey, String.valueOf(currentVersion + 1));
             return true;
         } catch (Exception e) {
@@ -138,43 +107,28 @@ public class OssBaseStore implements BaseStore {
         String prefix = namespacePrefix(namespace);
         try {
             List<String> dataKeys = new ArrayList<>();
-            String continuationToken = null;
-            do {
-                ListObjectsV2Request request = new ListObjectsV2Request(bucketName);
-                request.setPrefix(prefix);
-                request.setMaxKeys(1000);
-                if (continuationToken != null) {
-                    request.setContinuationToken(continuationToken);
+            for (String key : listAllKeys(prefix)) {
+                if (key.endsWith(JSON_SUFFIX) && !key.endsWith(LIST_SUFFIX)) {
+                    dataKeys.add(key);
                 }
-                ListObjectsV2Result result = ossClient.listObjectsV2(request);
-                for (OSSObjectSummary summary : result.getObjectSummaries()) {
-                    String k = summary.getKey();
-                    if (k.endsWith(JSON_SUFFIX) && !k.endsWith(VERSION_SUFFIX)) {
-                        dataKeys.add(k);
-                    }
-                }
-                continuationToken = result.isTruncated() ? result.getNextContinuationToken() : null;
-            } while (continuationToken != null);
+            }
 
             Collections.sort(dataKeys);
-
             int start = Math.min(offset, dataKeys.size());
             int end = Math.min(start + limit, dataKeys.size());
-            List<String> page = dataKeys.subList(start, end);
-
-            List<StoreItem> items = new ArrayList<>(page.size());
-            for (String dataKey : page) {
+            List<StoreItem> items = new ArrayList<>(end - start);
+            for (String dataKey : dataKeys.subList(start, end)) {
                 String itemKey =
                         dataKey.substring(prefix.length(), dataKey.length() - JSON_SUFFIX.length());
                 String json = getString(dataKey);
                 if (json != null) {
-                    Map<String, Object> val =
+                    Map<String, Object> value =
                             JsonUtils.getJsonCodec().fromJson(json, new TypeReference<>() {});
-                    String vk =
-                            dataKey.substring(0, dataKey.length() - JSON_SUFFIX.length())
-                                    + VERSION_SUFFIX;
-                    long version = readVersion(vk);
-                    items.add(new StoreItem(itemKey, val, version));
+                    long version =
+                            readVersion(
+                                    dataKey.substring(0, dataKey.length() - JSON_SUFFIX.length())
+                                            + VERSION_SUFFIX);
+                    items.add(new StoreItem(itemKey, value, version));
                 }
             }
             return items;
@@ -188,16 +142,14 @@ public class OssBaseStore implements BaseStore {
         String dataKey = dataObjectKey(namespace, key);
         String versionKey = versionObjectKey(namespace, key);
         try {
-            ossClient.deleteObject(bucketName, dataKey);
-            if (ossClient.doesObjectExist(bucketName, versionKey)) {
-                ossClient.deleteObject(bucketName, versionKey);
-            }
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder().bucket(bucketName).key(dataKey).build());
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder().bucket(bucketName).key(versionKey).build());
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete item: " + key, e);
         }
     }
-
-    // ---- internal helpers ----
 
     private String dataObjectKey(List<String> namespace, String key) {
         return namespacePrefix(namespace) + stripLeadingSlashes(key) + JSON_SUFFIX;
@@ -239,45 +191,34 @@ public class OssBaseStore implements BaseStore {
     }
 
     private void putString(String objectKey, String content) {
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        ossClient.putObject(bucketName, objectKey, new ByteArrayInputStream(bytes));
+        S3ObjectStoreSupport.putString(s3Client, bucketName, objectKey, content);
     }
 
     private String getString(String objectKey) {
-        if (!ossClient.doesObjectExist(bucketName, objectKey)) {
-            return null;
-        }
-        try (OSSObject obj = ossClient.getObject(bucketName, objectKey);
-                InputStream is = obj.getObjectContent()) {
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to read OSS object: " + objectKey, e);
-        }
+        return S3ObjectStoreSupport.getString(s3Client, bucketName, objectKey);
+    }
+
+    private List<String> listAllKeys(String prefix) {
+        return S3ObjectStoreSupport.listAllKeys(s3Client, bucketName, prefix);
     }
 
     private static String normalizePrefix(String prefix) {
-        if (prefix == null || prefix.isBlank()) {
-            return DEFAULT_KEY_PREFIX;
-        }
-        String p = prefix.replace('\\', '/');
-        while (p.startsWith("/")) {
-            p = p.substring(1);
-        }
-        if (!p.isEmpty() && !p.endsWith("/")) {
-            p = p + "/";
-        }
-        return p.isEmpty() ? DEFAULT_KEY_PREFIX : p;
+        return S3ObjectStoreSupport.normalizePrefix(prefix, DEFAULT_KEY_PREFIX);
     }
 
     public static class Builder {
 
-        private OSS ossClient;
+        private S3Client s3Client;
         private String bucketName;
         private String keyPrefix = DEFAULT_KEY_PREFIX;
 
-        public Builder ossClient(OSS ossClient) {
-            this.ossClient = ossClient;
+        public Builder s3Client(S3Client s3Client) {
+            this.s3Client = s3Client;
             return this;
+        }
+
+        public Builder ossClient(S3Client s3Client) {
+            return s3Client(s3Client);
         }
 
         public Builder bucketName(String bucketName) {

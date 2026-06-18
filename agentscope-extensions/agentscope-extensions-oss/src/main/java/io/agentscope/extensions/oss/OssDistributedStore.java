@@ -15,55 +15,50 @@
  */
 package io.agentscope.extensions.oss;
 
-import com.aliyun.oss.OSS;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Objects;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * Alibaba Cloud OSS-backed {@link DistributedStore}.
- *
- * <p>Usage:
- * <pre>{@code
- * OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
- *
- * HarnessAgent agent = HarnessAgent.builder()
- *     .name("my-agent")
- *     .model("dashscope:qwen-plus")
- *     .distributedStore(OssDistributedStore.create(ossClient, "my-bucket", "agentscope/"))
- *     .build();
- * }</pre>
+ * S3-compatible object storage-backed {@link DistributedStore}.
  */
 public class OssDistributedStore implements DistributedStore {
 
-    private final OSS ossClient;
+    private final S3Client s3Client;
     private final String bucketName;
     private final String keyPrefix;
 
-    private OssDistributedStore(OSS ossClient, String bucketName, String keyPrefix) {
-        this.ossClient = Objects.requireNonNull(ossClient, "ossClient");
+    private OssDistributedStore(S3Client s3Client, String bucketName, String keyPrefix) {
+        this.s3Client = Objects.requireNonNull(s3Client, "s3Client");
         this.bucketName = Objects.requireNonNull(bucketName, "bucketName");
         this.keyPrefix = keyPrefix != null ? keyPrefix : "agentscope/";
     }
 
-    /**
-     * Creates an OSS distributed store.
-     *
-     * @param ossClient initialized OSS client
-     * @param bucketName target bucket name
-     * @param keyPrefix object key prefix (e.g. {@code "agentscope/"})
-     * @return a new OSS distributed store
-     */
-    public static OssDistributedStore create(OSS ossClient, String bucketName, String keyPrefix) {
-        return new OssDistributedStore(ossClient, bucketName, keyPrefix);
+    public static OssDistributedStore create(
+            S3Client s3Client, String bucketName, String keyPrefix) {
+        return new OssDistributedStore(s3Client, bucketName, keyPrefix);
+    }
+
+    public static OssDistributedStore create(
+            String endpoint,
+            String accessKeyId,
+            String accessKeySecret,
+            String bucketName,
+            String keyPrefix) {
+        return create(
+                S3ObjectStoreSupport.buildClient(
+                        java.net.URI.create(endpoint), accessKeyId, accessKeySecret),
+                bucketName,
+                keyPrefix);
     }
 
     @Override
     public AgentStateStore agentStateStore() {
         return OssAgentStateStore.builder()
-                .ossClient(ossClient)
+                .s3Client(s3Client)
                 .bucketName(bucketName)
                 .keyPrefix(keyPrefix + "state/")
                 .build();
@@ -72,7 +67,7 @@ public class OssDistributedStore implements DistributedStore {
     @Override
     public BaseStore baseStore() {
         return OssBaseStore.builder()
-                .ossClient(ossClient)
+                .s3Client(s3Client)
                 .bucketName(bucketName)
                 .keyPrefix(keyPrefix + "store/")
                 .build();
@@ -80,6 +75,6 @@ public class OssDistributedStore implements DistributedStore {
 
     @Override
     public SandboxSnapshotSpec sandboxSnapshotSpec() {
-        return new OssSnapshotSpec(ossClient, bucketName, keyPrefix + "snapshot/");
+        return new OssSnapshotSpec(s3Client, bucketName, keyPrefix + "snapshot/");
     }
 }

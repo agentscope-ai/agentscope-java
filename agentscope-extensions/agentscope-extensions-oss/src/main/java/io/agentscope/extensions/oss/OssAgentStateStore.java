@@ -15,53 +15,31 @@
  */
 package io.agentscope.extensions.oss;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.DeleteObjectsRequest;
-import com.aliyun.oss.model.ListObjectsV2Request;
-import com.aliyun.oss.model.ListObjectsV2Result;
-import com.aliyun.oss.model.OSSObject;
-import com.aliyun.oss.model.OSSObjectSummary;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 /**
- * Alibaba Cloud OSS backed {@link AgentStateStore}.
+ * S3-compatible object storage backed {@link AgentStateStore}.
  *
- * <p>State objects are stored as JSON files in an OSS bucket with the following key layout:
+ * <p>State objects are stored as JSON files in an object storage bucket with the following key
+ * layout:
  *
  * <pre>
- * {keyPrefix}{userId}/{sessionId}/{stateKey}.json       — single State value
- * {keyPrefix}{userId}/{sessionId}/{stateKey}.list.json  — List&lt;State&gt; as JSON array
- * {keyPrefix}{userId}/{sessionId}/{stateKey}.list.hash  — hash for incremental append detection
+ * {keyPrefix}{userId}/{sessionId}/{stateKey}.json       - single State value
+ * {keyPrefix}{userId}/{sessionId}/{stateKey}.list.json  - List&lt;State&gt; as JSON array
+ * {keyPrefix}{userId}/{sessionId}/{stateKey}.list.hash  - hash for incremental append detection
  * </pre>
- *
- * <p>Usage:
- *
- * <pre>{@code
- * OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
- *
- * AgentStateStore store = OssAgentStateStore.builder()
- *     .ossClient(ossClient)
- *     .bucketName("my-agentscope-bucket")
- *     .keyPrefix("agentscope/state/")
- *     .build();
- *
- * HarnessAgent agent = HarnessAgent.builder()
- *     .stateStore(store)
- *     .build();
- * }</pre>
  */
 public class OssAgentStateStore implements AgentStateStore {
 
@@ -71,12 +49,12 @@ public class OssAgentStateStore implements AgentStateStore {
     private static final String LIST_SUFFIX = ".list.json";
     private static final String HASH_SUFFIX = ".list.hash";
 
-    private final OSS ossClient;
+    private final S3Client s3Client;
     private final String bucketName;
     private final String keyPrefix;
 
     private OssAgentStateStore(Builder builder) {
-        this.ossClient = Objects.requireNonNull(builder.ossClient, "ossClient must not be null");
+        this.s3Client = Objects.requireNonNull(builder.s3Client, "s3Client must not be null");
         if (builder.bucketName == null || builder.bucketName.isBlank()) {
             throw new IllegalArgumentException("bucketName must not be blank");
         }
@@ -90,10 +68,9 @@ public class OssAgentStateStore implements AgentStateStore {
 
     @Override
     public void save(String userId, String sessionId, String key, State value) {
-        String objectKey = stateObjectKey(userId, sessionId, key);
         try {
-            String json = JsonUtils.getJsonCodec().toJson(value);
-            putString(objectKey, json);
+            putString(
+                    stateObjectKey(userId, sessionId, key), JsonUtils.getJsonCodec().toJson(value));
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
         }
@@ -119,12 +96,9 @@ public class OssAgentStateStore implements AgentStateStore {
 
             boolean needsFullRewrite =
                     ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
-
             if (needsFullRewrite || values.size() != existingCount) {
-                String json = JsonUtils.getJsonCodec().toJson(values);
-                putString(listKey, json);
+                putString(listKey, JsonUtils.getJsonCodec().toJson(values));
             }
-
             putString(hashKey, currentHash);
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
@@ -134,9 +108,8 @@ public class OssAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        String objectKey = stateObjectKey(userId, sessionId, key);
         try {
-            String json = getString(objectKey);
+            String json = getString(stateObjectKey(userId, sessionId, key));
             if (json == null) {
                 return Optional.empty();
             }
@@ -149,9 +122,8 @@ public class OssAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        String listKey = listObjectKey(userId, sessionId, key);
         try {
-            String json = getString(listKey);
+            String json = getString(listObjectKey(userId, sessionId, key));
             if (json == null) {
                 return List.of();
             }
@@ -169,13 +141,9 @@ public class OssAgentStateStore implements AgentStateStore {
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        String prefix = sessionPrefix(userId, sessionId);
         try {
-            ListObjectsV2Request request = new ListObjectsV2Request(bucketName);
-            request.setPrefix(prefix);
-            request.setMaxKeys(1);
-            ListObjectsV2Result result = ossClient.listObjectsV2(request);
-            return result.getObjectSummaries() != null && !result.getObjectSummaries().isEmpty();
+            return S3ObjectStoreSupport.hasObjectsWithPrefix(
+                    s3Client, bucketName, sessionPrefix(userId, sessionId));
         } catch (Exception e) {
             throw new RuntimeException("Failed to check session existence", e);
         }
@@ -183,9 +151,8 @@ public class OssAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId) {
-        String prefix = sessionPrefix(userId, sessionId);
         try {
-            List<String> keys = listAllKeys(prefix);
+            List<String> keys = listAllKeys(sessionPrefix(userId, sessionId));
             if (!keys.isEmpty()) {
                 deleteKeys(keys);
             }
@@ -197,18 +164,21 @@ public class OssAgentStateStore implements AgentStateStore {
     @Override
     public void delete(String userId, String sessionId, String key) {
         try {
-            String stateKey = stateObjectKey(userId, sessionId, key);
-            String listKey = listObjectKey(userId, sessionId, key);
-            String hashKey = hashObjectKey(userId, sessionId, key);
-            if (ossClient.doesObjectExist(bucketName, stateKey)) {
-                ossClient.deleteObject(bucketName, stateKey);
-            }
-            if (ossClient.doesObjectExist(bucketName, listKey)) {
-                ossClient.deleteObject(bucketName, listKey);
-            }
-            if (ossClient.doesObjectExist(bucketName, hashKey)) {
-                ossClient.deleteObject(bucketName, hashKey);
-            }
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(stateObjectKey(userId, sessionId, key))
+                            .build());
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(listObjectKey(userId, sessionId, key))
+                            .build());
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(hashObjectKey(userId, sessionId, key))
+                            .build());
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete state key: " + key, e);
         }
@@ -235,10 +205,8 @@ public class OssAgentStateStore implements AgentStateStore {
 
     @Override
     public void close() {
-        ossClient.shutdown();
+        s3Client.close();
     }
-
-    // ---- internal helpers ----
 
     private String stateObjectKey(String userId, String sessionId, String key) {
         return sessionPrefix(userId, sessionId) + key + JSON_SUFFIX;
@@ -264,72 +232,41 @@ public class OssAgentStateStore implements AgentStateStore {
     }
 
     private void putString(String objectKey, String content) {
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        ossClient.putObject(bucketName, objectKey, new ByteArrayInputStream(bytes));
+        S3ObjectStoreSupport.putString(s3Client, bucketName, objectKey, content);
     }
 
     private String getString(String objectKey) {
-        if (!ossClient.doesObjectExist(bucketName, objectKey)) {
-            return null;
-        }
-        try (OSSObject obj = ossClient.getObject(bucketName, objectKey);
-                InputStream is = obj.getObjectContent()) {
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to read OSS object: " + objectKey, e);
-        }
+        return S3ObjectStoreSupport.getString(s3Client, bucketName, objectKey);
     }
 
     private List<String> listAllKeys(String prefix) {
-        List<String> keys = new ArrayList<>();
-        String continuationToken = null;
-        do {
-            ListObjectsV2Request request = new ListObjectsV2Request(bucketName);
-            request.setPrefix(prefix);
-            request.setMaxKeys(1000);
-            if (continuationToken != null) {
-                request.setContinuationToken(continuationToken);
-            }
-            ListObjectsV2Result result = ossClient.listObjectsV2(request);
-            for (OSSObjectSummary summary : result.getObjectSummaries()) {
-                keys.add(summary.getKey());
-            }
-            continuationToken = result.isTruncated() ? result.getNextContinuationToken() : null;
-        } while (continuationToken != null);
-        return keys;
+        return S3ObjectStoreSupport.listAllKeys(s3Client, bucketName, prefix);
     }
 
     private void deleteKeys(List<String> keys) {
-        for (int i = 0; i < keys.size(); i += 1000) {
-            List<String> batch = keys.subList(i, Math.min(i + 1000, keys.size()));
-            ossClient.deleteObjects(
-                    new DeleteObjectsRequest(bucketName).withKeys(batch).withQuiet(true));
-        }
+        S3ObjectStoreSupport.deleteKeys(s3Client, bucketName, keys);
     }
 
     private static String normalizePrefix(String prefix) {
-        if (prefix == null || prefix.isBlank()) {
-            return DEFAULT_KEY_PREFIX;
-        }
-        String p = prefix.replace('\\', '/');
-        while (p.startsWith("/")) {
-            p = p.substring(1);
-        }
-        if (!p.isEmpty() && !p.endsWith("/")) {
-            p = p + "/";
-        }
-        return p.isEmpty() ? DEFAULT_KEY_PREFIX : p;
+        return S3ObjectStoreSupport.normalizePrefix(prefix, DEFAULT_KEY_PREFIX);
     }
 
     public static class Builder {
 
-        private OSS ossClient;
+        private S3Client s3Client;
         private String bucketName;
         private String keyPrefix = DEFAULT_KEY_PREFIX;
 
-        public Builder ossClient(OSS ossClient) {
-            this.ossClient = ossClient;
+        public Builder s3Client(S3Client s3Client) {
+            this.s3Client = s3Client;
             return this;
+        }
+
+        /**
+         * Backwards-compatible alias for {@link #s3Client(S3Client)}.
+         */
+        public Builder ossClient(S3Client s3Client) {
+            return s3Client(s3Client);
         }
 
         public Builder bucketName(String bucketName) {

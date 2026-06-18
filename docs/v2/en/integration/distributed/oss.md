@@ -1,6 +1,6 @@
-# Alibaba Cloud OSS
+# S3-Compatible Object Storage
 
-`agentscope-extensions-oss` provides distributed storage backed by Alibaba Cloud Object Storage Service (OSS), ideal for large-capacity data and Alibaba Cloud ecosystems.
+`agentscope-extensions-oss` provides distributed storage backed by S3-compatible object storage such as MinIO, AWS S3, or Alibaba Cloud OSS.
 
 ## Dependency
 
@@ -17,55 +17,29 @@
 ```java
 import io.agentscope.extensions.oss.OssDistributedStore;
 
-OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
-DistributedStore store = OssDistributedStore.create(ossClient, "my-bucket", "agentscope/");
-
-HarnessAgent agent = HarnessAgent.builder()
-    .distributedStore(store)
-    .filesystem(new RemoteFilesystemSpec()
-            .isolationScope(IsolationScope.USER))
-    .build();
+OssDistributedStore store = OssDistributedStore.create(
+    "http://localhost:9000",
+    "minioadmin",
+    "minioadmin",
+    "my-bucket",
+    "agentscope/");
 ```
 
 ## Components Provided
 
 ### 1. OssAgentStateStore
 
-Agent state persisted to OSS objects.
+Agent state persisted to object storage objects.
 
 ### 2. OssBaseStore
 
-Workspace filesystem KV storage to OSS objects.
+Workspace filesystem KV storage to object storage objects.
 
 ### 3. OssSnapshotSpec
 
-Sandbox snapshots to OSS — the best choice for large workspace archives.
-
-### Not Provided: SandboxExecutionGuard
-
-Object storage is unsuitable for distributed locking. Mix in a Redis guard:
-
-```java
-DistributedStore ossStore = OssDistributedStore.create(ossClient, "my-bucket", "agentscope/");
-
-DistributedStore mixed = DistributedStore.builder()
-    .agentStateStore(ossStore.agentStateStore())
-    .baseStore(ossStore.baseStore())
-    .sandboxSnapshotSpec(ossStore.sandboxSnapshotSpec())
-    .sandboxExecutionGuard(RedisDistributedStore.fromJedis(jedis).sandboxExecutionGuard())
-    .build();
-```
-
-## When to Use
-
-| Scenario | Recommendation |
-|----------|---------------|
-| Large snapshots (>100MB workspaces) | **First choice**: OSS |
-| Alibaba Cloud ecosystem | OSS |
-| Need sandbox concurrency lock | Mix OSS + Redis |
-| Lowest latency | Redis |
+Sandbox snapshots stored in object storage.
 
 ## Security
 
-- Use RAM Role + STS temporary credentials in production — avoid hardcoded AK/SK
-- Configure bucket lifecycle rules (e.g. 7-day auto-expiry) to control storage costs
+- Use short-lived credentials in production when possible.
+- Configure bucket lifecycle rules to control storage costs.
