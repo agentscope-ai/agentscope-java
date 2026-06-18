@@ -753,6 +753,38 @@ class DashScopeMessageConverterTest {
     }
 
     @Test
+    void testToolResultWithDataBlockImage() {
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_456")
+                        .name("get_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Here is a cat image").build(),
+                                        imageBlock))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_456", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Here is a cat image", dsMsg.getContentAsList().get(0).getText());
+        assertNotNull(dsMsg.getContentAsList().get(1).getImage());
+    }
+
+    @Test
     void testToolResultWithTextImageAudioBlocks() {
         // Test that tool result with TextBlock + ImageBlock + AudioBlock returns 3 content parts
         DashScopeMessageConverter conv =

@@ -438,6 +438,91 @@ class OllamaChatFormatterTest {
     }
 
     @Test
+    @DisplayName("Should format messages with promote tool result DataBlock images")
+    void testFormatMessagesWithPromoteToolResultDataBlockImages() {
+        OllamaChatFormatter formatterWithPromote = new OllamaChatFormatter(true);
+
+        Msg systemMsg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("You're a helpful assistant.").build())
+                        .build();
+
+        Msg assistantToolCall =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                Arrays.asList(
+                                        ToolUseBlock.builder()
+                                                .id("1")
+                                                .name("get_capital")
+                                                .input(Collections.singletonMap("country", "Japan"))
+                                                .build()))
+                        .build();
+
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        Msg toolResultMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("system")
+                        .content(
+                                Arrays.asList(
+                                        ToolResultBlock.builder()
+                                                .id("1")
+                                                .name("get_capital")
+                                                .output(
+                                                        Arrays.asList(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "The capital is"
+                                                                                        + " Tokyo.")
+                                                                        .build(),
+                                                                dataBlock))
+                                                .build()))
+                        .build();
+
+        Msg assistantResponse =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(TextBlock.builder().text("The capital of Japan is Tokyo.").build())
+                        .build();
+
+        List<OllamaMessage> formatted =
+                formatterWithPromote.format(
+                        concatLists(
+                                List.of(systemMsg),
+                                List.of(assistantToolCall),
+                                List.of(toolResultMsg),
+                                List.of(assistantResponse)));
+
+        assertTrue(formatted.size() >= 5);
+        assertEquals("tool", formatted.get(2).getRole());
+        assertNotNull(formatted.get(2).getContent());
+        assertTrue(formatted.get(2).getContent().contains("The capital is Tokyo."));
+        assertTrue(
+                formatted.stream()
+                        .anyMatch(
+                                message ->
+                                        "user".equals(message.getRole())
+                                                && message.getContent() != null
+                                                && message.getContent()
+                                                        .contains(
+                                                                "image contents from the tool"
+                                                                        + " result")));
+    }
+
+    @Test
     @DisplayName("Should parse response correctly")
     void testParseResponse() {
         // Arrange

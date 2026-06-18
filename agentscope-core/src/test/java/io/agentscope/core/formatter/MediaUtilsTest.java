@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -34,6 +35,9 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -421,6 +425,62 @@ class MediaUtilsTest {
         String url = "src/test/java/io/agentscope/core/formatter/MediaUtilsTest.java";
 
         assertNotNull(MediaUtils.urlToInputStream(url));
+    }
+
+    @Test
+    @DisplayName("Should download and encode remote content via HTTP")
+    void testDownloadUrlToBase64AndProtocolDataUrlWithHttpServer() throws IOException {
+        byte[] payload = "hello world".getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext(
+                "/image.png",
+                exchange -> {
+                    exchange.getResponseHeaders().add("Content-Type", "image/png");
+                    exchange.sendResponseHeaders(200, payload.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(payload);
+                    }
+                });
+        server.start();
+
+        try {
+            String url = "http://localhost:" + server.getAddress().getPort() + "/image.png";
+
+            String base64 = MediaUtils.downloadUrlToBase64(url);
+            assertEquals(Base64.getEncoder().encodeToString(payload), base64);
+
+            try (InputStream inputStream = MediaUtils.urlToInputStream(url)) {
+                assertEquals(
+                        "hello world",
+                        new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
+            }
+
+            String dataUrl = MediaUtils.urlToBase64DataUrl(url);
+            assertTrue(dataUrl.startsWith("data:image/png;base64,"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("Should throw when remote download returns a non-200 status")
+    void testDownloadUrlToBase64HttpError() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext(
+                "/missing.png",
+                exchange -> {
+                    exchange.sendResponseHeaders(404, -1);
+                    exchange.close();
+                });
+        server.start();
+
+        try {
+            String url = "http://localhost:" + server.getAddress().getPort() + "/missing.png";
+
+            assertThrows(IOException.class, () -> MediaUtils.downloadUrlToBase64(url));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

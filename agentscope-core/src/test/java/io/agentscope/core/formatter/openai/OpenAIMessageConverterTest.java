@@ -28,6 +28,7 @@ import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
@@ -225,6 +226,25 @@ class OpenAIMessageConverterTest {
         assertNotNull(result);
         assertEquals("system", result.getRole());
         assertEquals("You are a helpful assistant", result.getContentAsString());
+    }
+
+    @Test
+    @DisplayName("Should apply cache control metadata to converted messages")
+    void testCacheControlFromMetadata() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .metadata(metadata)
+                        .content(List.of(TextBlock.builder().text("Cache me").build()))
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertNotNull(result);
+        assertNotNull(result.getCacheControl());
     }
 
     @Test

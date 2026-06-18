@@ -270,6 +270,44 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertToolResultBlockWithDataBlockImage() {
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_456")
+                                                .name("search")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Tool output")
+                                                                        .build(),
+                                                                imageBlock))
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isToolResult());
+    }
+
+    @Test
     void testConvertToolResultBlockWithTextBlock() {
         TextBlock textBlock = TextBlock.builder().text("Tool output").build();
         Msg msg =

@@ -22,10 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.HintBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -35,7 +39,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -165,6 +172,62 @@ class AbstractBaseFormatterTest {
                         List.of(DataBlock.builder().source(new Source() {}).build())));
     }
 
+    @Test
+    @DisplayName("Should extract text content and honor formatter helpers")
+    void testExtractTextAndHelpers() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("tool")
+                        .output(List.of(TextBlock.builder().text("tool output").build()))
+                        .build();
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE, true);
+
+        Msg textMsg =
+                Msg.builder()
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("hello").build(),
+                                        new HintBlock(null, "hint"),
+                                        ThinkingBlock.builder().thinking("skip me").build()))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        Msg toolMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .metadata(metadata)
+                        .content(List.of(toolResult))
+                        .build();
+
+        assertEquals("hello\nhint", formatter.renderText(textMsg));
+        assertEquals("tool output", formatter.renderText(toolMsg));
+        assertEquals("Assistant", formatter.renderRoleLabel(MsgRole.ASSISTANT));
+        assertTrue(formatter.shouldBypassHistory(toolMsg));
+        assertFalse(
+                formatter.shouldBypassHistory(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("x").build()))
+                                .build()));
+        assertEquals(
+                0.7,
+                formatter.optionOrDefault(
+                        GenerateOptions.builder().temperature(0.7).build(),
+                        GenerateOptions.builder().temperature(0.5).build(),
+                        GenerateOptions::getTemperature),
+                1e-6);
+        assertEquals(
+                0.5,
+                formatter.optionOrDefault(
+                        null,
+                        GenerateOptions.builder().temperature(0.5).build(),
+                        GenerateOptions::getTemperature),
+                1e-6);
+    }
+
     private static final class TestFormatter extends AbstractBaseFormatter<Object, Object, Object> {
 
         @Override
@@ -190,6 +253,26 @@ class AbstractBaseFormatterTest {
 
         String renderToolResult(List<ContentBlock> output) {
             return convertToolResultToString(output);
+        }
+
+        String renderText(Msg msg) {
+            return extractTextContent(msg);
+        }
+
+        String renderRoleLabel(MsgRole role) {
+            return formatRoleLabel(role);
+        }
+
+        @Override
+        protected boolean shouldBypassHistory(Msg msg) {
+            return super.shouldBypassHistory(msg);
+        }
+
+        <T> T optionOrDefault(
+                GenerateOptions options,
+                GenerateOptions defaultOptions,
+                Function<GenerateOptions, T> getter) {
+            return getOptionOrDefault(options, defaultOptions, getter);
         }
     }
 }

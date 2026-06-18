@@ -28,6 +28,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -167,6 +168,33 @@ class OllamaMessageConverterTest {
         assertEquals("tool", ollamaMsg.getRole());
         assertEquals("Tool result output", ollamaMsg.getContent());
         assertEquals("call123", ollamaMsg.getToolCallId());
+        assertEquals("test_tool", ollamaMsg.getName());
+    }
+
+    @Test
+    @DisplayName("Should convert tool result message with DataBlock image")
+    void testConvertToolResultMessageWithDataBlockImage() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .build();
+
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call456",
+                        "test_tool",
+                        List.of(TextBlock.builder().text("Tool result output").build(), dataBlock),
+                        null);
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("tool", ollamaMsg.getRole());
+        assertTrue(ollamaMsg.getContent().contains("Tool result output"));
+        assertTrue(ollamaMsg.getContent().contains("The returned image can be found at:"));
+        assertTrue(ollamaMsg.getContent().contains("image.png"));
+        assertEquals("call456", ollamaMsg.getToolCallId());
         assertEquals("test_tool", ollamaMsg.getName());
     }
 
