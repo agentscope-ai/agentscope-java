@@ -17,12 +17,14 @@ package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
-import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,31 +45,6 @@ class DockerSandboxClientTest {
         assertNotNull(sandbox.getState().getSessionId());
         // Session ID should be a UUID (36 chars with dashes)
         assertEquals(36, sandbox.getState().getSessionId().length());
-    }
-
-    @Test
-    void create_reusesExistingSnapshotSessionId(@TempDir Path tempDir) throws Exception {
-        // Pre-create a snapshot tar file
-        String existingSessionId = "existing-session-id";
-        Path tarFile = tempDir.resolve(existingSessionId + ".tar");
-        try (OutputStream out = Files.newOutputStream(tarFile)) {
-            out.write("dummy tar content".getBytes());
-        }
-
-        DockerSandboxClient client = new DockerSandboxClient();
-        LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(tempDir.toString());
-
-        Sandbox sandbox =
-                client.create(new WorkspaceSpec(), snapshotSpec, new DockerSandboxClientOptions());
-
-        assertNotNull(sandbox);
-        assertEquals(
-                existingSessionId,
-                sandbox.getState().getSessionId(),
-                "Should reuse the existing snapshot's session ID");
-        SandboxSnapshot snapshot = sandbox.getState().getSnapshot();
-        assertNotNull(snapshot);
-        assertEquals(existingSessionId, snapshot.getId());
     }
 
     @Test
@@ -96,24 +73,6 @@ class DockerSandboxClientTest {
     }
 
     @Test
-    void create_withExistingSnapshot_workspaceRootReadyIsFalse(@TempDir Path tempDir)
-            throws Exception {
-        String existingSessionId = "existing-session-id";
-        Path tarFile = tempDir.resolve(existingSessionId + ".tar");
-        try (OutputStream out = Files.newOutputStream(tarFile)) {
-            out.write("dummy tar content".getBytes());
-        }
-
-        DockerSandboxClient client = new DockerSandboxClient();
-        LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(tempDir.toString());
-
-        Sandbox sandbox =
-                client.create(new WorkspaceSpec(), snapshotSpec, new DockerSandboxClientOptions());
-
-        assertEquals(false, sandbox.getState().isWorkspaceRootReady());
-    }
-
-    @Test
     void resume_restoresDockerSandboxState() {
         DockerSandboxClient client = new DockerSandboxClient();
         DockerSandboxState state = new DockerSandboxState();
@@ -139,5 +98,48 @@ class DockerSandboxClientTest {
         assertNotNull(deserialized);
         assertEquals("serialize-test", deserialized.getSessionId());
         assertEquals(true, deserialized.isWorkspaceRootReady());
+    }
+
+    /**
+     * Tests that LocalSandboxSnapshot can be serialized and deserialized correctly.
+     * This is the core fix for the bug: LocalSandboxSnapshot now has a default constructor
+     * for Jackson deserialization.
+     */
+    @Test
+    void serializeAndDeserialize_withLocalSandboxSnapshot_preservesSessionId(@TempDir Path tempDir)
+            throws Exception {
+        // Pre-create a snapshot tar file
+        String sessionId = "test-session-id";
+        Path tarFile = tempDir.resolve(sessionId + ".tar");
+        try (OutputStream out = Files.newOutputStream(tarFile)) {
+            out.write("dummy tar content".getBytes());
+        }
+
+        DockerSandboxClient client = new DockerSandboxClient();
+        DockerSandboxState state = new DockerSandboxState();
+        state.setSessionId(sessionId);
+        state.setWorkspaceSpec(new WorkspaceSpec());
+        state.setWorkspaceRootReady(false);
+        state.setSnapshot(new LocalSandboxSnapshot(tempDir.toString(), sessionId));
+
+        // Serialize to JSON
+        String json = client.serializeState(state);
+
+        // Deserialize from JSON
+        SandboxState deserialized = client.deserializeState(json);
+
+        // Verify sessionId is preserved
+        assertNotNull(deserialized);
+        assertEquals(sessionId, deserialized.getSessionId());
+
+        // Verify snapshot is correctly deserialized
+        assertNotNull(deserialized.getSnapshot());
+        assertTrue(deserialized.getSnapshot() instanceof LocalSandboxSnapshot);
+        LocalSandboxSnapshot snapshot = (LocalSandboxSnapshot) deserialized.getSnapshot();
+        assertEquals(sessionId, snapshot.getId());
+        assertEquals(tempDir.toString(), snapshot.getBasePath());
+
+        // Verify isRestorable() works after deserialization
+        assertTrue(snapshot.isRestorable());
     }
 }

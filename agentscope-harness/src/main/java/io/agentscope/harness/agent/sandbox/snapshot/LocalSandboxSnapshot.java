@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
@@ -36,10 +37,11 @@ import java.util.UUID;
  * <p>Security: {@code id} must be a single path segment with no {@code /} or {@code ..}
  * characters to prevent path traversal attacks.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class LocalSandboxSnapshot implements SandboxSnapshot {
 
-    private final String basePath;
-    private final String id;
+    private String basePath;
+    private String id;
 
     /**
      * Creates a local snapshot.
@@ -53,6 +55,9 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
         this.basePath = basePath;
         this.id = id;
     }
+
+    /** Default constructor for Jackson deserialization. */
+    public LocalSandboxSnapshot() {}
 
     /**
      * {@inheritDoc}
@@ -133,6 +138,24 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
      */
     public String getBasePath() {
         return basePath;
+    }
+
+    /**
+     * Sets the base directory for Jackson deserialization.
+     *
+     * @param basePath directory where snapshot tar files are stored
+     */
+    public void setBasePath(String basePath) {
+        this.basePath = basePath;
+    }
+
+    /**
+     * Sets the snapshot id for Jackson deserialization.
+     *
+     * @param id unique identifier for this snapshot
+     */
+    public void setId(String id) {
+        this.id = id;
     }
 
     private static void validateId(String id) {

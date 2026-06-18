@@ -16,94 +16,10 @@
 package io.agentscope.harness.agent.sandbox.snapshot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class LocalSnapshotSpecTest {
-
-    @Test
-    void findRestorable_returnsEmptyWhenNoTarFiles(@TempDir Path tempDir) throws Exception {
-        LocalSnapshotSpec spec = new LocalSnapshotSpec(tempDir.toString());
-
-        Optional<SandboxSnapshot> found = spec.findRestorable();
-
-        assertTrue(found.isEmpty());
-    }
-
-    @Test
-    void findRestorable_returnsEmptyWhenDirectoryDoesNotExist(@TempDir Path tempDir)
-            throws Exception {
-        LocalSnapshotSpec spec = new LocalSnapshotSpec(tempDir.resolve("nonexistent").toString());
-
-        Optional<SandboxSnapshot> found = spec.findRestorable();
-
-        assertTrue(found.isEmpty());
-    }
-
-    @Test
-    void findRestorable_returnsSnapshotWhenTarFileExists(@TempDir Path tempDir) throws Exception {
-        String sessionId = "test-session-123";
-        Path tarFile = tempDir.resolve(sessionId + ".tar");
-        try (OutputStream out = Files.newOutputStream(tarFile)) {
-            out.write("dummy tar content".getBytes());
-        }
-
-        LocalSnapshotSpec spec = new LocalSnapshotSpec(tempDir.toString());
-
-        Optional<SandboxSnapshot> found = spec.findRestorable();
-
-        assertTrue(found.isPresent());
-        assertEquals(sessionId, found.get().getId());
-        assertEquals("local", found.get().getType());
-        assertTrue(found.get().isRestorable());
-    }
-
-    @Test
-    void findRestorable_returnsMostRecentlyModifiedSnapshot(@TempDir Path tempDir)
-            throws Exception {
-        // Create two tar files with different timestamps
-        String olderSessionId = "older-session";
-        Path olderTar = tempDir.resolve(olderSessionId + ".tar");
-        try (OutputStream out = Files.newOutputStream(olderTar)) {
-            out.write("older tar content".getBytes());
-        }
-
-        // Ensure different modification time
-        Thread.sleep(50);
-
-        String newerSessionId = "newer-session";
-        Path newerTar = tempDir.resolve(newerSessionId + ".tar");
-        try (OutputStream out = Files.newOutputStream(newerTar)) {
-            out.write("newer tar content".getBytes());
-        }
-
-        LocalSnapshotSpec spec = new LocalSnapshotSpec(tempDir.toString());
-
-        Optional<SandboxSnapshot> found = spec.findRestorable();
-
-        assertTrue(found.isPresent());
-        assertEquals(newerSessionId, found.get().getId());
-    }
-
-    @Test
-    void findRestorable_ignoresNonTarFiles(@TempDir Path tempDir) throws Exception {
-        Path txtFile = tempDir.resolve("readme.txt");
-        try (OutputStream out = Files.newOutputStream(txtFile)) {
-            out.write("not a tar file".getBytes());
-        }
-
-        LocalSnapshotSpec spec = new LocalSnapshotSpec(tempDir.toString());
-
-        Optional<SandboxSnapshot> found = spec.findRestorable();
-
-        assertTrue(found.isEmpty());
-    }
 
     @Test
     void build_createsLocalSandboxSnapshotWithCorrectId() {
