@@ -73,6 +73,7 @@ import reactor.core.publisher.Mono;
 @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("RAG In-Memory Storage E2E Tests")
+@org.junit.jupiter.api.extension.ExtendWith(io.agentscope.core.e2e.E2ETestCondition.class)
 class RAGInMemoryE2ETest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(120);

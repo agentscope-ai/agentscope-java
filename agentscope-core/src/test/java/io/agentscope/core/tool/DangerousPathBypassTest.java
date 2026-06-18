@@ -16,10 +16,12 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -105,7 +107,7 @@ class DangerousPathBypassTest {
         Files.writeString(sshConfig, "Host *\n");
 
         Path link = tempDir.resolve("innocent-link");
-        Files.createSymbolicLink(link, sshConfig);
+        createSymbolicLinkOrSkip(link, sshConfig);
 
         assertTrue(PROBE.check(link.toString()));
     }
@@ -116,8 +118,16 @@ class DangerousPathBypassTest {
         Files.writeString(envFile, "SECRET=value\n");
 
         Path link = tempDir.resolve("config.txt");
-        Files.createSymbolicLink(link, envFile);
+        createSymbolicLinkOrSkip(link, envFile);
 
         assertTrue(PROBE.check(link.toString()));
+    }
+
+    private static void createSymbolicLinkOrSkip(Path link, Path target) throws IOException {
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (FileSystemException e) {
+            assumeTrue(false, "Symlink creation is not permitted on this Windows runner");
+        }
     }
 }

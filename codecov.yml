@@ -31,3 +31,6 @@ coverage:
         threshold: 5%
 ignore:
   - "agentscope-examples/**/*"
+  - "**/src/test/**"
+  - "docs/**/*"
+  - "**/pom.xml"

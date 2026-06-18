@@ -5,7 +5,7 @@ AgentScope unifies all components that need distributed persistence under the `D
 ## Quick Start
 
 ```java
-// Redis — one-line setup
+// Redis - one-line setup
 DistributedStore store = RedisDistributedStore.fromJedis(
         new JedisPooled("redis://localhost:6379"));
 
@@ -25,9 +25,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
 | Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
 | Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | - | `JdbcSandboxExecutionGuard` |
 
-> OSS does not provide `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.
+> OSS does not provide `SandboxExecutionGuard` - object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.
 
 ## Mixed Stores
 
@@ -54,19 +54,19 @@ HarnessAgent.builder()
 
 ## Components
 
-### AgentStateStore — Agent State Persistence
+### AgentStateStore - Agent State Persistence
 
 Conversation context, compaction summaries, permission rules, Plan Mode state, addressed by `(userId, sessionId)`. Auto-wired by `distributedStore`; can be overridden via `.stateStore(...)`.
 
-### BaseStore — Workspace Filesystem KV
+### BaseStore - Workspace Filesystem KV
 
 Storage provider for `RemoteFilesystemSpec`, routing `MEMORY.md`, `memory/`, `skills/`, `sessions/` to shared KV storage. Auto-injected into `RemoteFilesystemSpec` when using the no-arg constructor.
 
-### SandboxSnapshotSpec — Sandbox Snapshots
+### SandboxSnapshotSpec - Sandbox Snapshots
 
 Persists Docker/K8s sandbox workspace as tar archives for cross-call recovery. Auto-wired into `SandboxFilesystemSpec` by `distributedStore`.
 
-### SandboxExecutionGuard — Sandbox Concurrency Lock
+### SandboxExecutionGuard - Sandbox Concurrency Lock
 
 Distributed lock for `AGENT` / `GLOBAL` isolation scope under multi-replica deployment. Auto-wired into `SandboxFilesystemSpec` by `distributedStore`.
 
@@ -80,6 +80,6 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 
 ## Store Documentation
 
-- [Redis](redis.md) — full capability coverage, recommended for multi-replica production
-- [MySQL / JDBC](mysql.md) — for existing relational database infrastructure
-- [Alibaba Cloud OSS](oss.md) — object storage, best for large-capacity snapshots
+- [Redis](redis.md) - full capability coverage, recommended for multi-replica production
+- [MySQL / JDBC](mysql.md) - for existing relational database infrastructure
+- [S3-Compatible Object Storage](oss.md) - object storage, best for large-capacity snapshots

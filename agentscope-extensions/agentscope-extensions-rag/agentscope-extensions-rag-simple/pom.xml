@@ -36,6 +36,15 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
+        <!-- Shared E2E test condition from agentscope-core test fixtures. -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- DashScope Java SDK -->
         <dependency>
             <groupId>com.alibaba</groupId>

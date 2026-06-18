@@ -38,6 +38,15 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Shared E2E test condition from agentscope-core test fixtures. -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Alibaba Bailian SDK for Knowledge Base -->
         <dependency>
             <groupId>com.aliyun</groupId>

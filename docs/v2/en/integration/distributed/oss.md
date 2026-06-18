@@ -1,6 +1,6 @@
 # S3-Compatible Object Storage
 
-`agentscope-extensions-oss` provides distributed storage backed by S3-compatible object storage such as MinIO, AWS S3, or Alibaba Cloud OSS.
+`agentscope-extensions-oss` provides distributed storage backed by S3-compatible object storage such as MinIO, AWS S3, or Alibaba Cloud OSS. It uses the AWS SDK `S3Client` against an S3-compatible endpoint, so it is a compatibility layer for S3-style object storage rather than a direct Alibaba Cloud OSS SDK wrapper.
 
 ## Dependency
 

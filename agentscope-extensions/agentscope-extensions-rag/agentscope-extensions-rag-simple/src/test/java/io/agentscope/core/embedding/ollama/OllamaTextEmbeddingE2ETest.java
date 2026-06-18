@@ -37,6 +37,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @DisplayName("OllamaTextEmbedding E2E Tests")
 @EnabledIfEnvironmentVariable(named = "OLLAMA_RUNNING", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(io.agentscope.core.e2e.E2ETestCondition.class)
 class OllamaTextEmbeddingE2ETest {
 
     private static final String MODEL_NAME = "nomic-embed-text:latest";
