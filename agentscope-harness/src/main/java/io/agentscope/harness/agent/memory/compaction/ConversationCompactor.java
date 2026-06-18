@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -96,8 +97,12 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
-        // Step 1: Lightweight arg truncation (non-LLM). Runs at a lower threshold than
-        List<Msg> messages = truncateArgs(conversationMessages, config.getTruncateArgsConfig());
+        // Step 1a: Lightweight arg truncation (non-LLM).
+        // Step 1b: Aggregate tool-result pruning (non-LLM).
+        List<Msg> messages =
+                pruneToolResults(
+                        truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
+                        config.getPruneConfig());
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
@@ -475,6 +480,107 @@ public class ConversationCompactor {
     // -------------------------------------------------------------------------
     // Argument truncation (pre-summarization, non-LLM)
     // -------------------------------------------------------------------------
+
+    /**
+     * Aggregate tool-result pruning: walks backward through TOOL messages, protects the most
+     * recent {@code protectTokens} worth of tool output, then replaces older oversized tool
+     * results with a head+tail preview when the total prunable amount exceeds
+     * {@code minimumTokens}.
+     *
+     * <p>Non-LLM operation. Returns the original list if no pruning occurred.
+     */
+    List<Msg> pruneToolResults(List<Msg> messages, CompactionConfig.PruneConfig pruneConfig) {
+        if (pruneConfig == null || messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        int protectBudget = pruneConfig.getProtectTokens();
+        int maxChars = pruneConfig.getMaxOutputChars();
+        Set<String> excluded = pruneConfig.getExcludedTools();
+
+        int protectedTokens = 0;
+        int prunableTokens = 0;
+        List<int[]> toPrune = new ArrayList<>();
+
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            if (msg.getRole() != MsgRole.TOOL) {
+                continue;
+            }
+            List<ContentBlock> blocks = msg.getContent();
+            if (blocks == null) {
+                continue;
+            }
+            for (int j = blocks.size() - 1; j >= 0; j--) {
+                if (!(blocks.get(j) instanceof ToolResultBlock tr)) {
+                    continue;
+                }
+                if (tr.getName() != null && excluded.contains(tr.getName())) {
+                    continue;
+                }
+                String text = extractToolResultText(tr);
+                if (text.isBlank()) {
+                    continue;
+                }
+                int tokens = TokenCounterUtil.calculateToken(List.of(msg));
+                if (protectedTokens < protectBudget) {
+                    protectedTokens += tokens;
+                    continue;
+                }
+                if (text.length() > maxChars) {
+                    prunableTokens += tokens;
+                    toPrune.add(new int[] {i, j});
+                }
+            }
+        }
+
+        if (prunableTokens < pruneConfig.getMinimumTokens() || toPrune.isEmpty()) {
+            return messages;
+        }
+
+        List<Msg> result = new ArrayList<>(messages);
+        for (int[] pos : toPrune) {
+            int msgIdx = pos[0];
+            int blockIdx = pos[1];
+            Msg msg = result.get(msgIdx);
+            List<ContentBlock> newBlocks = new ArrayList<>(msg.getContent());
+            ToolResultBlock tr = (ToolResultBlock) newBlocks.get(blockIdx);
+            String text = extractToolResultText(tr);
+            String preview = buildPrunePreview(text, maxChars);
+            ToolResultBlock pruned =
+                    ToolResultBlock.builder()
+                            .id(tr.getId())
+                            .name(tr.getName())
+                            .output(List.of(TextBlock.builder().text(preview).build()))
+                            .build();
+            newBlocks.set(blockIdx, pruned);
+            result.set(
+                    msgIdx,
+                    Msg.builder()
+                            .id(msg.getId())
+                            .name(msg.getName())
+                            .role(msg.getRole())
+                            .content(newBlocks)
+                            .metadata(msg.getMetadata())
+                            .timestamp(msg.getTimestamp())
+                            .build());
+        }
+
+        log.info("Pruned {} tool results (~{} tokens freed)", toPrune.size(), prunableTokens);
+        return result;
+    }
+
+    private static String buildPrunePreview(String text, int maxChars) {
+        int half = maxChars / 2;
+        String head = text.substring(0, Math.min(half, text.length()));
+        String tail =
+                text.length() > half ? text.substring(Math.max(text.length() - half, half)) : "";
+        int removed = text.length() - head.length() - tail.length();
+        if (removed <= 0) {
+            return text;
+        }
+        return head + "\n\n...(" + removed + " chars pruned)...\n\n" + tail;
+    }
 
     /**
      * Truncates large {@code ToolUseBlock} argument values in old messages.

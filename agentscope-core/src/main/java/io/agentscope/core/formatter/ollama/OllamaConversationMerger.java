@@ -18,6 +18,7 @@ package io.agentscope.core.formatter.ollama;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -67,6 +68,8 @@ public class OllamaConversationMerger {
                             .append(": ")
                             .append(((TextBlock) block).getText())
                             .append("\n");
+                } else if (block instanceof HintBlock hb) {
+                    textAccumulator.append(name).append(": ").append(hb.getHint()).append("\n");
                 } else if (block instanceof ImageBlock) {
                     ImageBlock imageBlock = (ImageBlock) block;
                     if (imageBlock.getSource() instanceof Base64Source) {

@@ -28,6 +28,7 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 
 /**
  * PermissionContextExample - Demonstrates the {@link PermissionContextState} permission engine.
@@ -70,8 +71,8 @@ public class PermissionContextExample {
         System.out.println("=".repeat(60));
         System.out.println(
                 "Demonstrates how PermissionContextState controls tool access.\n"
-                        + "read_file is explicitly allowed; write_file requires confirmation;\n"
-                        + "delete_file is permanently denied.");
+                    + "Mode: DEFAULT (ask for everything unless a rule matches).\n"
+                    + "read_file → allow rule; write_file → ask rule; delete_file → deny rule.");
         System.out.println("=".repeat(60) + "\n");
 
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
@@ -80,18 +81,25 @@ public class PermissionContextExample {
 
         // ── Build the permission context ───────────────────────────────────────────────
         //
-        // Rule evaluation order (first match wins):
+        // Rule evaluation order (first match wins, see PermissionEngine):
         //   1. Explicit deny rules
-        //   2. Explicit allow rules
-        //   3. Explicit ask rules
-        //   4. Per-tool self-check (ToolBase.checkPermissions)
-        //   5. Mode-based default
+        //   2. Explicit ask rules
+        //   3. Tool-specific checks (EXPLORE/ACCEPT_EDITS mode + ToolBase.checkPermissions)
+        //   4. Explicit allow rules
+        //   5. BYPASS fallback
+        //   6. Default ASK (or DENY under DONT_ASK mode)
         PermissionContextState permCtx =
                 PermissionContextState.builder()
-                        // Global mode: auto-allow read-only tools, ask for write tools
-                        .mode(PermissionMode.EXPLORE)
-                        // Tool-specific allow rule: always allow read_file with null pattern
-                        // (null ruleContent matches every invocation of this tool)
+                        // Global mode: DEFAULT asks for everything unless an explicit rule matches.
+                        // The three rules below demonstrate each behavior:
+                        //   - read_file  → explicit ALLOW  → auto-allowed
+                        //   - write_file → explicit ASK    → pauses for confirmation
+                        //   - delete_file → explicit DENY  → permanently denied
+                        //
+                        // Note: EXPLORE mode auto-denies non-readOnly tools before allow rules
+                        // are checked, so it should only be used with ToolBase tools that set
+                        // readOnly(true).
+                        .mode(PermissionMode.DEFAULT)
                         .addAllowRule(
                                 "read_file",
                                 new PermissionRule(
@@ -99,12 +107,10 @@ public class PermissionContextExample {
                                         null,
                                         PermissionBehavior.ALLOW,
                                         "userSettings"))
-                        // Tool-specific ask rule: ask before writing
                         .addAskRule(
                                 "write_file",
                                 new PermissionRule(
                                         "write_file", null, PermissionBehavior.ASK, "userSettings"))
-                        // Tool-specific deny rule: never allow deletes
                         .addDenyRule(
                                 "delete_file",
                                 new PermissionRule(
@@ -129,6 +135,7 @@ public class PermissionContextExample {
                                         .build())
                         .toolkit(toolkit)
                         .permissionContext(permCtx)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         // ── Test: read_file → should be allowed automatically ─────────────────────────
@@ -175,7 +182,7 @@ public class PermissionContextExample {
          * @param path file path to read
          * @return simulated file content
          */
-        @Tool(name = "read_file", description = "Read a file at the given path")
+        @Tool(name = "read_file", readOnly = true, description = "Read a file at the given path")
         public String readFile(
                 @ToolParam(name = "path", description = "Absolute file path") String path) {
             return "Simulated content of: " + path;

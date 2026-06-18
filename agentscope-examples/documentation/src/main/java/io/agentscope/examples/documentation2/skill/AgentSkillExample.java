@@ -25,6 +25,7 @@ import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
@@ -107,6 +108,7 @@ public class AgentSkillExample {
                                         .build())
                         .toolkit(toolkit)
                         .skillRepository(skillRepo) // replaces .skillBox(skillBox)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));

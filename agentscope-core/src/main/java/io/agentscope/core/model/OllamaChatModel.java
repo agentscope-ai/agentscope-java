@@ -141,7 +141,7 @@ public class OllamaChatModel extends ChatModelBase {
         return streamWithHttpClient(
                 messages,
                 tools,
-                options.getToolChoice(),
+                options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
                 true);
     }
@@ -242,6 +242,7 @@ public class OllamaChatModel extends ChatModelBase {
         private Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
+        private int contextWindowSize = -1;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -320,25 +321,31 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
         public OllamaChatModel build() {
-            // 1. Get base OllamaOptions (copy if exists, or create new)
             OllamaOptions finalOptions =
                     defaultOptions != null
                             ? defaultOptions.copy()
                             : OllamaOptions.builder().build();
 
-            // 2. Merge ExecutionConfig directly
-            // Priority: user config > MODEL_DEFAULTS
             ExecutionConfig mergedConfig =
                     ExecutionConfig.mergeConfigs(
                             finalOptions.getExecutionConfig(), ExecutionConfig.MODEL_DEFAULTS);
 
-            // 3. Set merged config back
             finalOptions.setExecutionConfig(mergedConfig);
 
             HttpTransport transport = resolveTransport();
 
-            return new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, transport);
+            OllamaChatModel model =
+                    new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, transport);
+            if (contextWindowSize >= 0) {
+                model.setContextWindowSize(contextWindowSize);
+            }
+            return model;
         }
 
         /**

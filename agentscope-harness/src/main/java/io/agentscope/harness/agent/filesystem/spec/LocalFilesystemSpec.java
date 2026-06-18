@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.spec;
 
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
@@ -58,6 +59,8 @@ public class LocalFilesystemSpec {
      * they fall under one of the configured roots (project + workspace + additionalRoots).
      */
     private LocalFsMode mode = LocalFsMode.ROOTED;
+
+    private IsolationScope isolationScope;
 
     /**
      * User project root (lower layer of the resulting {@link OverlayFilesystem}). The agent reads
@@ -171,6 +174,24 @@ public class LocalFilesystemSpec {
         }
         this.mode = mode;
         return this;
+    }
+
+    /**
+     * Sets the isolation scope controlling how file paths are namespaced per user, session, or
+     * agent. Defaults to {@link IsolationScope#USER} (consistent with
+     * {@link RemoteFilesystemSpec} and sandbox specs).
+     *
+     * @param scope isolation scope
+     * @return this spec
+     */
+    public LocalFilesystemSpec isolationScope(IsolationScope scope) {
+        this.isolationScope = scope;
+        return this;
+    }
+
+    /** Returns the configured isolation scope, or {@code null} to use the default. */
+    public IsolationScope getIsolationScope() {
+        return isolationScope;
     }
 
     /**

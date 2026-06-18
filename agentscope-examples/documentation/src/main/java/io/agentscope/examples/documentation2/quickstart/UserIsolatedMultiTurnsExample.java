@@ -20,6 +20,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.nio.file.Files;
@@ -41,6 +42,8 @@ public class UserIsolatedMultiTurnsExample {
                         .stream(true)
                         .build();
 
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+
         // 3. Build HarnessAgent: workspace injection, session persistence, and trace logging
         //    are enabled by default; compaction is explicitly configured here
         HarnessAgent agent =
@@ -49,6 +52,7 @@ public class UserIsolatedMultiTurnsExample {
                         .sysPrompt("You are a note-taking assistant.")
                         .model(model)
                         .workspace(workspace)
+                        .stateStore(stateStore)
                         .compaction(
                                 CompactionConfig.builder()
                                         .triggerMessages(30)
