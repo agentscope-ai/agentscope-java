@@ -98,7 +98,12 @@ public class DockerFilesystemSpec extends SandboxFilesystemSpec {
 
     @Override
     protected SandboxClient<?> createClient() {
-        return client != null ? client : options.createClient();
+        if (client != null) {
+            return client;
+        }
+        SandboxSnapshotSpec effective =
+                getSnapshotSpecOverride() != null ? getSnapshotSpecOverride() : snapshotSpec();
+        return new DockerSandboxClient(null, effective);
     }
 
     @Override

@@ -16,8 +16,10 @@
 package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -267,6 +269,54 @@ class SandboxManagerIsolationTest {
         manager.clearState(sCtx, rtx);
 
         verify(stateStore).delete(any());
+    }
+
+    // ---- archive ----
+
+    @Test
+    void archive_stateStoreHit_stopsAndShutdownAndReturnsJson() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
+        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.resume(resumedState)).thenReturn(resumedSandbox);
+        when(resumedSandbox.getState()).thenReturn(resumedState);
+        when(client.serializeState(resumedState)).thenReturn("archived-json");
+
+        SandboxIsolationKey key = new SandboxIsolationKey(IsolationScope.USER, "user-42");
+        Optional<String> result = manager.archive(key);
+
+        assertTrue(result.isPresent());
+        assertEquals("archived-json", result.get());
+        verify(resumedSandbox).stop();
+        verify(resumedSandbox).shutdown();
+        verify(stateStore).delete(key);
+    }
+
+    @Test
+    void archive_stateStoreMiss_returnsEmpty() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.empty());
+
+        SandboxIsolationKey key = new SandboxIsolationKey(IsolationScope.USER, "user-99");
+        Optional<String> result = manager.archive(key);
+
+        assertFalse(result.isPresent());
+    }
+
+    @Test
+    void archiveForUser_delegatesWithCorrectKey() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.empty());
+
+        manager.archiveForUser("user-42");
+
+        verify(stateStore).load(any());
+    }
+
+    @Test
+    void archiveForSession_delegatesWithCorrectKey() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.empty());
+
+        manager.archiveForSession("sess-42");
+
+        verify(stateStore).load(any());
     }
 
     // ---- keepAlive: stop() called, shutdown() skipped ----

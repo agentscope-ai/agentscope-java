@@ -39,7 +39,7 @@ public final class SandboxIsolationKey {
     private final IsolationScope scope;
     private final String value;
 
-    private SandboxIsolationKey(IsolationScope scope, String value) {
+    SandboxIsolationKey(IsolationScope scope, String value) {
         this.scope = scope;
         this.value = value;
     }
