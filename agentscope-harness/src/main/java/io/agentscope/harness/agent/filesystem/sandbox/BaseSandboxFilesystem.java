@@ -77,7 +77,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + escapedPath
                         + "/*; do "
                         + "  if [ -d \"$f\" ]; then echo \"DIR:$f\"; "
-                        + "  elif [ -f \"$f\" ]; then echo \"FILE:$f\"; fi; "
+                        + "  elif [ -f \"$f\" ]; then "
+                        + "    size=$(wc -c < \"$f\" 2>/dev/null | tr -d '[:space:]'); "
+                        + "    size=${size:-0}; "
+                        + "    printf 'FILE:%s\\t%s\\n' \"$f\" \"$size\"; "
+                        + "  fi; "
                         + "done 2>/dev/null";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
@@ -88,7 +92,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 if (line.startsWith("DIR:")) {
                     entries.add(FileInfo.ofDir(line.substring(4), ""));
                 } else if (line.startsWith("FILE:")) {
-                    entries.add(FileInfo.ofFile(line.substring(5), 0, ""));
+                    String payload = line.substring(5);
+                    int separator = payload.lastIndexOf('\t');
+                    if (separator >= 0) {
+                        String filePath = payload.substring(0, separator);
+                        long size = 0L;
+                        try {
+                            size = Long.parseLong(payload.substring(separator + 1).trim());
+                        } catch (NumberFormatException ignored) {
+                            // fall back to 0 when the sandbox does not return a parseable size
+                        }
+                        entries.add(FileInfo.ofFile(filePath, size, ""));
+                    } else {
+                        entries.add(FileInfo.ofFile(payload, 0, ""));
+                    }
                 }
             }
         }

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -62,6 +63,21 @@ class BaseSandboxFilesystemTest {
                 result.matches().stream().map(match -> match.path()).collect(Collectors.toList()));
     }
 
+    @Test
+    void ls_reportsActualFileSizeInsteadOfZero() {
+        FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+        var result = filesystem.ls(RT, "/workspace");
+
+        assertTrue(result.isSuccess());
+        assertFalse(result.entries().isEmpty());
+        assertEquals(12L, result.entries().stream()
+                .filter(entry -> entry.path().equals("/workspace/readme.txt"))
+                .findFirst()
+                .orElseThrow()
+                .size());
+    }
+
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
         private String lastCommand;
@@ -75,6 +91,11 @@ class BaseSandboxFilesystemTest {
         public ExecuteResponse execute(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             lastCommand = command;
+            if ("for f in '/workspace'/*; do   if [ -d \"$f\" ]; then echo \"DIR:$f\";   elif [ -f \"$f\" ]; then     size=$(wc -c < \"$f\" 2>/dev/null | tr -d '[:space:]');     size=${size:-0};     printf 'FILE:%s\\t%s\\n' \"$f\" \"$size\";   fi; done 2>/dev/null"
+                    .equals(command)) {
+                return new ExecuteResponse(
+                        "DIR:/workspace/docs\nFILE:/workspace/readme.txt\t12\n", 0, false);
+            }
             if ("find '/workspace' -type f -name '*.md' 2>/dev/null | sort".equals(command)) {
                 return new ExecuteResponse(
                         "/workspace/README.md\n/workspace/docs/guide.md\n", 0, false);
