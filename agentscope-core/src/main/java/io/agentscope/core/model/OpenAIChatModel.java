@@ -221,6 +221,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
+        private int contextWindowSize = -1;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -367,6 +368,11 @@ public class OpenAIChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
         /**
          * Builds the OpenAIChatModel instance.
          *
@@ -404,7 +410,12 @@ public class OpenAIChatModel extends ChatModelBase {
             Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> fmt =
                     formatter != null ? formatter : new OpenAIChatFormatter();
 
-            return new OpenAIChatModel(client, fmt, effectiveOptions);
+            OpenAIChatModel model = new OpenAIChatModel(client, fmt, effectiveOptions);
+            model.setContextWindowSize(
+                    contextWindowSize >= 0
+                            ? contextWindowSize
+                            : ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
+            return model;
         }
 
         /**

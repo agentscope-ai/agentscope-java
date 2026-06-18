@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent;
 
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import java.util.List;
 
 /**
  * Controls how agent state is isolated and shared across calls.
@@ -82,5 +84,44 @@ public enum IsolationScope {
      * <p>Use with care: all agents and users that share the same store will compete to write
      * the global slot.
      */
-    GLOBAL
+    GLOBAL;
+
+    /**
+     * Creates a {@link NamespaceFactory} that derives the filesystem namespace prefix from the
+     * {@link io.agentscope.core.agent.RuntimeContext} according to this scope.
+     *
+     * <ul>
+     *   <li>{@link #USER} — prefix with {@code userId}; falls back to {@code sessionId} when
+     *       {@code userId} is absent.
+     *   <li>{@link #SESSION} — prefix with {@code sessionId}.
+     *   <li>{@link #AGENT} / {@link #GLOBAL} — no prefix (workspace is already per-agent).
+     * </ul>
+     *
+     * @return a namespace factory consistent with this scope
+     */
+    public NamespaceFactory toNamespaceFactory() {
+        return switch (this) {
+            case USER ->
+                    rc -> {
+                        if (rc == null) {
+                            return List.of();
+                        }
+                        String uid = rc.getUserId();
+                        if (uid != null && !uid.isBlank()) {
+                            return List.of(uid);
+                        }
+                        String sid = rc.getSessionId();
+                        return (sid != null && !sid.isBlank()) ? List.of(sid) : List.of();
+                    };
+            case SESSION ->
+                    rc -> {
+                        if (rc == null) {
+                            return List.of();
+                        }
+                        String sid = rc.getSessionId();
+                        return (sid != null && !sid.isBlank()) ? List.of(sid) : List.of();
+                    };
+            case AGENT, GLOBAL -> rc -> List.of();
+        };
+    }
 }
