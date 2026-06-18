@@ -148,6 +148,9 @@ class RuntimeContextTest {
         child.put("child-only", "yes");
         assertEquals("trace-123", child.get("traceId"));
         assertNull(parent.get("child-only"));
+    }
+
+    @Test
     @DisplayName("builder(source) preserves typed and string extras")
     void builderCopyPreservesTypedData() {
         MarkerImpl filesystem = new MarkerImpl("filesystem");
