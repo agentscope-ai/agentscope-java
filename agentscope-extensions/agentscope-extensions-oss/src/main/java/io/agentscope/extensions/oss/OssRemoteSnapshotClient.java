@@ -25,6 +25,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
  * {@link RemoteSnapshotClient} backed by S3-compatible object storage.
@@ -48,7 +49,7 @@ public class OssRemoteSnapshotClient implements RemoteSnapshotClient {
     public void upload(String snapshotId, InputStream data) throws Exception {
         byte[] bytes = data.readAllBytes();
         s3Client.putObject(
-                builder -> builder.bucket(bucketName).key(objectKey(snapshotId)).build(),
+                PutObjectRequest.builder().bucket(bucketName).key(objectKey(snapshotId)).build(),
                 RequestBody.fromBytes(bytes));
     }
 
