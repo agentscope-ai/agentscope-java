@@ -139,7 +139,7 @@ public class SandboxManager {
         }
     }
 
-    public void release(SandboxAcquireResult result) {
+    public void release(SandboxAcquireResult result, SandboxContext sandboxContext) {
         if (result == null) {
             return;
         }
@@ -162,10 +162,13 @@ public class SandboxManager {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
         }
 
-        try {
-            sandbox.shutdown();
-        } catch (Exception e) {
-            log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+        boolean keepAlive = sandboxContext != null && sandboxContext.isKeepAlive();
+        if (!keepAlive) {
+            try {
+                sandbox.shutdown();
+            } catch (Exception e) {
+                log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+            }
         }
     }
 

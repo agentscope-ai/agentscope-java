@@ -268,4 +268,30 @@ class SandboxManagerIsolationTest {
 
         verify(stateStore).delete(any());
     }
+
+    // ---- keepAlive: stop() called, shutdown() skipped ----
+
+    @Test
+    void keepAlive_true_stopsButDoesNotShutdown() throws Exception {
+        Sandbox sandbox = mock(Sandbox.class);
+        SandboxAcquireResult result = SandboxAcquireResult.selfManaged(sandbox);
+        SandboxContext ctx = SandboxContext.builder().keepAlive(true).build();
+
+        manager.release(result, ctx);
+
+        verify(sandbox).stop();
+        verify(sandbox, never()).shutdown();
+    }
+
+    @Test
+    void keepAlive_false_stopsAndShutdown() throws Exception {
+        Sandbox sandbox = mock(Sandbox.class);
+        SandboxAcquireResult result = SandboxAcquireResult.selfManaged(sandbox);
+        SandboxContext ctx = SandboxContext.builder().keepAlive(false).build();
+
+        manager.release(result, ctx);
+
+        verify(sandbox).stop();
+        verify(sandbox).shutdown();
+    }
 }
