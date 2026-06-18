@@ -15,10 +15,19 @@
  */
 package io.agentscope.extensions.sandbox.kubernetes;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.mock;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -48,5 +57,39 @@ class KubernetesSandboxStateSerdeTest {
         KubernetesSandboxState k = (KubernetesSandboxState) read;
         Assertions.assertEquals("ns1", k.getNamespace());
         Assertions.assertEquals("p1", k.getPodName());
+    }
+
+    @Test
+    void resumeReInjectsSnapshotClient() {
+        // Build a state with RemoteSandboxSnapshot that has id but client=null (simulating
+        // deserialization)
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("test-session");
+        state.setNamespace("default");
+        state.setContainerName("agent");
+        state.setWorkspaceRoot("/workspace");
+        state.setImage("ubuntu:24.04");
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot("/workspace");
+        state.setWorkspaceSpec(spec);
+        state.setWorkspaceRootReady(false);
+
+        RemoteSandboxSnapshot snapshotWithNullClient =
+                new RemoteSandboxSnapshot(null, "snap-id-123");
+        state.setSnapshot(snapshotWithNullClient);
+
+        // Client with snapshotSpec that can rebuild the client
+        RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
+        SandboxSnapshotSpec snapshotSpec = id -> new RemoteSandboxSnapshot(mockClient, id);
+        KubernetesSandboxClient client =
+                new KubernetesSandboxClient(
+                        new KubernetesSandboxClientOptions(), null, snapshotSpec);
+
+        KubernetesSandbox sandbox = (KubernetesSandbox) client.resume(state);
+
+        SandboxSnapshot rebuilt = sandbox.getState().getSnapshot();
+        assertNotNull(rebuilt);
+        assertEquals("snap-id-123", rebuilt.getId());
+        assertInstanceOf(RemoteSandboxSnapshot.class, rebuilt);
     }
 }

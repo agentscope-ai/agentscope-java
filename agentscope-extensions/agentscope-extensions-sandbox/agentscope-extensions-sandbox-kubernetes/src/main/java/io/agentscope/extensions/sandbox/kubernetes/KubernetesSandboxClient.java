@@ -36,13 +36,14 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
 
     private final ObjectMapper objectMapper;
     private final KubernetesSandboxClientOptions defaultOptions;
+    private final SandboxSnapshotSpec snapshotSpec;
 
     public KubernetesSandboxClient() {
-        this(new KubernetesSandboxClientOptions(), null);
+        this(new KubernetesSandboxClientOptions(), null, null);
     }
 
     public KubernetesSandboxClient(KubernetesSandboxClientOptions defaultOptions) {
-        this(defaultOptions, null);
+        this(defaultOptions, null, null);
     }
 
     /**
@@ -52,6 +53,19 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
      */
     public KubernetesSandboxClient(
             KubernetesSandboxClientOptions defaultOptions, ObjectMapper objectMapper) {
+        this(defaultOptions, objectMapper, null);
+    }
+
+    /**
+     * @param defaultOptions template options merged into each {@link #create} call
+     * @param objectMapper optional; when null a default mapper is created
+     * @param snapshotSpec used in {@link #resume} to re-inject the snapshot client after
+     *     deserialization. When null, the snapshot field is left as-is (backward-compatible).
+     */
+    public KubernetesSandboxClient(
+            KubernetesSandboxClientOptions defaultOptions,
+            ObjectMapper objectMapper,
+            SandboxSnapshotSpec snapshotSpec) {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
         this.objectMapper =
@@ -61,6 +75,7 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
                                 .findAndRegisterModules()
                                 .registerModule(new HarnessSandboxJacksonModule())
                                 .registerModule(new KubernetesHarnessSandboxJacksonModule());
+        this.snapshotSpec = snapshotSpec;
     }
 
     @Override
@@ -99,6 +114,10 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         if (!(state instanceof KubernetesSandboxState k8s)) {
             throw new IllegalArgumentException(
                     "Expected KubernetesSandboxState but got: " + state.getClass().getName());
+        }
+        // Re-inject snapshot client lost during JSON serialization
+        if (snapshotSpec != null && k8s.getSnapshot() != null) {
+            k8s.setSnapshot(snapshotSpec.build(k8s.getSnapshot().getId()));
         }
         KubernetesSandboxClientOptions merged = merge(null);
         KubernetesClient kc = resolveClient(merged);
