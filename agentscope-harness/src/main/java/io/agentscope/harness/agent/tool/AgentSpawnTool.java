@@ -34,6 +34,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.SessionIdUtils;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -42,17 +43,16 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -290,6 +290,7 @@ public class AgentSpawnTool {
         if (canonLabel != null) {
             labelToKey.put(canonLabel.toLowerCase(), key);
         }
+        persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
         if (parentState != null
@@ -398,30 +399,23 @@ public class AgentSpawnTool {
                     canonLabel);
         }
 
-        // Sync-local execution. Returns Mono<String> so that ToolMethodInvoker's flatMap
-        // propagates the Reactor Context into the deferContextual below.
+        // Sync-local execution with timeout promotion: if the agent doesn't finish within the
+        // timeout, its in-flight execution is promoted to an async task instead of being lost.
         final String finalTask = task.trim();
         final String finalSpawnInfo = spawnInfo;
         final String finalSubagentId = subagentId;
         final String finalLabel = canonLabel;
         return withSubagentExposedEvent(
-                execLocalSync(agent, sessionId, currentUserId, finalTask, spawned, runtimeContext)
-                        .timeout(Duration.ofMillis(timeoutMs))
-                        .map(
-                                reply -> {
-                                    String text = reply != null ? reply.getTextContent() : "";
-                                    return finalSpawnInfo + "\nstatus: ok\nreply:\n" + text;
-                                })
-                        .onErrorResume(
-                                e -> {
-                                    String err =
-                                            e.getMessage() != null
-                                                    ? e.getMessage()
-                                                    : e.getClass().getSimpleName();
-                                    log.warn("agent_spawn execute failed: agentId={}", agentId, e);
-                                    return Mono.just(
-                                            finalSpawnInfo + "\nstatus: error\nerror: " + err);
-                                }),
+                execWithTimeoutPromotion(
+                        agent,
+                        sessionId,
+                        currentUserId,
+                        finalTask,
+                        spawned,
+                        runtimeContext,
+                        finalSpawnInfo,
+                        timeoutMs,
+                        agentId),
                 finalSubagentId,
                 agentId,
                 sessionId,
@@ -430,6 +424,7 @@ public class AgentSpawnTool {
 
     @Tool(
             name = "agent_send",
+            stateInjected = true,
             description =
                     """
                     Send a message to an existing subagent. Use the exact string from the \
@@ -439,6 +434,7 @@ public class AgentSpawnTool {
                     """)
     public Mono<String> agentSend(
             RuntimeContext runtimeContext,
+            AgentState parentState,
             @ToolParam(
                             name = "agent_key",
                             description =
@@ -484,14 +480,21 @@ public class AgentSpawnTool {
         } else {
             key = labelToKey.get(label.trim().toLowerCase());
             if (key == null) {
+                key = tryResolveLabelFromState(parentState, label.trim());
+            }
+            if (key == null) {
                 return Mono.just("Error: Unknown label: " + label.trim());
             }
         }
 
-        SpawnedAgent spawned = agentsByKey.get(key);
-        if (spawned == null) {
+        SpawnedAgent resolved = agentsByKey.get(key);
+        if (resolved == null) {
+            resolved = tryRestoreFromState(parentState, key, runtimeContext);
+        }
+        if (resolved == null) {
             return Mono.just("Error: Unknown agent_key: " + key);
         }
+        final SpawnedAgent spawned = resolved;
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
@@ -552,28 +555,16 @@ public class AgentSpawnTool {
         }
 
         final String finalKey = key;
-        return execLocalSync(
-                        spawned.agent(),
-                        spawned.sessionId(),
-                        currentUserId,
-                        message.trim(),
-                        spawned,
-                        runtimeContext)
-                .timeout(Duration.ofMillis(timeoutMs))
-                .map(
-                        reply -> {
-                            String text = reply != null ? reply.getTextContent() : "";
-                            return "agent_key: " + finalKey + "\nstatus: ok\nreply:\n" + text;
-                        })
-                .onErrorResume(
-                        e -> {
-                            String err =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            log.warn("agent_send failed: key={}", finalKey, e);
-                            return Mono.just("Error: " + err);
-                        });
+        return execWithTimeoutPromotion(
+                spawned.agent(),
+                spawned.sessionId(),
+                currentUserId,
+                message.trim(),
+                spawned,
+                runtimeContext,
+                "agent_key: " + finalKey,
+                timeoutMs,
+                spawned.agentId());
     }
 
     @Tool(name = "agent_list", description = "List active subagents spawned by this agent.")
@@ -692,6 +683,211 @@ public class AgentSpawnTool {
                     // ── Path 3: non-streaming ──
                     return agentManager.invokeAgent(agent, parentCtx, sessionId, userId, prompt);
                 });
+    }
+
+    /**
+     * Executes a local subagent with timeout promotion: if the agent doesn't finish within
+     * {@code timeoutMs}, the in-flight execution is promoted to an async background task instead
+     * of being cancelled and lost.
+     *
+     * <p>The key mechanism is a {@link CompletableFuture} bridge that decouples execution from
+     * observation. The Mono from {@link #execLocalSync} is subscribed with Reactor Context
+     * propagation (so streaming events flow during the sync wait period), and its result feeds
+     * the bridge. A race future derived from the bridge adds a timeout without cancelling the
+     * original:
+     *
+     * <ul>
+     *   <li>Agent finishes before timeout → normal result returned
+     *   <li>Timeout fires first → bridge (still running) is registered in {@link TaskRepository}
+     *       as an {@link TaskRunSpec.AdoptedTaskRunSpec}, and a {@code task_id} is returned
+     *   <li>Agent errors → error message returned
+     * </ul>
+     */
+    private Mono<String> execWithTimeoutPromotion(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String task,
+            SpawnedAgent spawned,
+            RuntimeContext runtimeContext,
+            String header,
+            long timeoutMs,
+            String agentId) {
+
+        return Mono.deferContextual(
+                parentCtx ->
+                        Mono.<String>create(
+                                sink -> {
+                                    CompletableFuture<Msg> bridge = new CompletableFuture<>();
+
+                                    execLocalSync(
+                                                    agent,
+                                                    sessionId,
+                                                    userId,
+                                                    task,
+                                                    spawned,
+                                                    runtimeContext)
+                                            .contextWrite(
+                                                    c -> reactor.util.context.Context.of(parentCtx))
+                                            .subscribe(
+                                                    bridge::complete,
+                                                    bridge::completeExceptionally,
+                                                    () -> {
+                                                        if (!bridge.isDone()) {
+                                                            bridge.complete(null);
+                                                        }
+                                                    });
+
+                                    // Race against timeout without cancelling the bridge.
+                                    // thenApply(m -> m) creates a dependent future so orTimeout
+                                    // completes the race copy, not the original bridge.
+                                    CompletableFuture<Msg> race = bridge.thenApply(m -> m);
+                                    race.orTimeout(timeoutMs, TimeUnit.MILLISECONDS);
+
+                                    race.whenComplete(
+                                            (msg, err) -> {
+                                                if (err != null) {
+                                                    handleExecError(
+                                                            err,
+                                                            bridge,
+                                                            runtimeContext,
+                                                            header,
+                                                            timeoutMs,
+                                                            agentId,
+                                                            sink);
+                                                } else {
+                                                    sink.success(
+                                                            header
+                                                                    + "\nstatus: ok\nreply:\n"
+                                                                    + textOf(msg));
+                                                }
+                                            });
+                                }));
+    }
+
+    /**
+     * Handles errors from the race future in {@link #execWithTimeoutPromotion}. Separated to keep
+     * the lambda readable — it distinguishes timeout (→ promote) from real errors (→ report).
+     */
+    private void handleExecError(
+            Throwable err,
+            CompletableFuture<Msg> bridge,
+            RuntimeContext runtimeContext,
+            String header,
+            long timeoutMs,
+            String agentId,
+            reactor.core.publisher.MonoSink<String> sink) {
+
+        Throwable cause = err instanceof CompletionException ? err.getCause() : err;
+        if (cause instanceof TimeoutException) {
+            String taskId = "task_" + UUID.randomUUID();
+            String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+            CompletableFuture<String> textFuture = bridge.thenApply(AgentSpawnTool::textOf);
+            taskRepository.putTask(
+                    runtimeContext,
+                    taskId,
+                    agentId,
+                    parentSessionId,
+                    new TaskRunSpec.AdoptedTaskRunSpec(textFuture));
+            log.info(
+                    "agent_spawn sync timeout after {}ms, promoted to async: agentId={}, taskId={}",
+                    timeoutMs,
+                    agentId,
+                    taskId);
+            sink.success(header + "\n" + formatTimeoutPromoted(taskId, timeoutMs));
+        } else {
+            Throwable reportable = cause != null ? cause : err;
+            String errStr =
+                    reportable.getMessage() != null
+                            ? reportable.getMessage()
+                            : reportable.getClass().getSimpleName();
+            log.warn("agent execution failed: agentId={}", agentId, reportable);
+            sink.success(header + "\nstatus: error\nerror: " + errStr);
+        }
+    }
+
+    private void persistSpawnEntry(
+            AgentState parentState,
+            String key,
+            String agentId,
+            String sessionId,
+            String label,
+            int depth) {
+        if (parentState == null) {
+            return;
+        }
+        parentState
+                .getToolContext()
+                .putSpawnEntry(
+                        key,
+                        new io.agentscope.core.state.ToolContextState.SpawnEntry(
+                                key, agentId, sessionId, label, depth));
+    }
+
+    private String tryResolveLabelFromState(AgentState parentState, String label) {
+        if (parentState == null) {
+            return null;
+        }
+        String lowerLabel = label.toLowerCase();
+        for (io.agentscope.core.state.ToolContextState.SpawnEntry entry :
+                parentState.getToolContext().getSpawnRegistry().values()) {
+            if (entry.label() != null && entry.label().toLowerCase().equals(lowerLabel)) {
+                return entry.key();
+            }
+        }
+        return null;
+    }
+
+    private SpawnedAgent tryRestoreFromState(
+            AgentState parentState, String key, RuntimeContext runtimeContext) {
+        if (parentState == null) {
+            return null;
+        }
+        io.agentscope.core.state.ToolContextState.SpawnEntry entry =
+                parentState.getToolContext().getSpawnRegistry().get(key);
+        if (entry == null) {
+            return null;
+        }
+        Optional<Agent> agentOpt =
+                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+        if (agentOpt.isEmpty()) {
+            log.warn(
+                    "Failed to restore subagent from state: agentId={} not found in registry",
+                    entry.agentId());
+            return null;
+        }
+        SpawnedAgent restored =
+                new SpawnedAgent(
+                        key,
+                        entry.agentId(),
+                        entry.sessionId(),
+                        entry.label(),
+                        agentOpt.get(),
+                        entry.depth());
+        agentsByKey.put(key, restored);
+        if (entry.label() != null) {
+            labelToKey.put(entry.label().toLowerCase(), key);
+        }
+        log.info(
+                "Restored subagent from persisted state: key={}, agentId={}", key, entry.agentId());
+        return restored;
+    }
+
+    private static String textOf(Msg msg) {
+        return msg != null ? msg.getTextContent() : "";
+    }
+
+    private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
+        return String.format(
+                """
+                status: timeout_promoted
+                task_id: %s
+                The task exceeded the %ds sync timeout but is still running in the background. \
+                Use task_output(task_id='%s', block=false) to check status, \
+                or wait — completed tasks are pushed back to you automatically. \
+                Do NOT retry the same task.\
+                """,
+                taskId, timeoutMs / 1000, taskId);
     }
 
     /**
@@ -932,29 +1128,16 @@ public class AgentSpawnTool {
 
         final String finalTask = task.trim();
         final String finalSpawnInfo = spawnInfo;
-        return execLocalSync(
-                        spawned.agent(),
-                        spawned.sessionId(),
-                        currentUserId,
-                        finalTask,
-                        spawned,
-                        runtimeContext)
-                .timeout(Duration.ofMillis(timeoutMs))
-                .map(
-                        reply -> {
-                            String text = reply != null ? reply.getTextContent() : "";
-                            return finalSpawnInfo + "\nstatus: ok\nreply:\n" + text;
-                        })
-                .onErrorResume(
-                        e -> {
-                            String err =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            log.warn(
-                                    "agent_spawn execute failed: agentId={}", spawned.agentId(), e);
-                            return Mono.just(finalSpawnInfo + "\nstatus: error\nerror: " + err);
-                        });
+        return execWithTimeoutPromotion(
+                spawned.agent(),
+                spawned.sessionId(),
+                currentUserId,
+                finalTask,
+                spawned,
+                runtimeContext,
+                finalSpawnInfo,
+                timeoutMs,
+                spawned.agentId());
     }
 
     /**
@@ -962,18 +1145,10 @@ public class AgentSpawnTool {
      * always produce the same key, enabling subagent state recovery across parent calls.
      */
     static String deterministicHash(String parentSessionId, String agentId, String label) {
-        String seed =
-                (parentSessionId != null ? parentSessionId : "anon")
-                        + "/"
-                        + agentId
-                        + (label != null ? "/" + label : "");
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(seed.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest, 0, 6);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
+        String parent = parentSessionId != null ? parentSessionId : "anon";
+        return label != null
+                ? SessionIdUtils.deterministicHash(parent, agentId, label)
+                : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
     /**

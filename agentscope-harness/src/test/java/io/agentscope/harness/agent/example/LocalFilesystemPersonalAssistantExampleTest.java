@@ -86,6 +86,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build()) {
+
             // Call 1: write a note to MEMORY.md through the workspace manager
             agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
             agent.getWorkspaceManager()
@@ -129,6 +130,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build()) {
+
             // Alice writes during her session
             agent.call(userMsg("alice here"), ctx("session-alice", "alice")).block();
             agent.getWorkspaceManager()
@@ -160,6 +162,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build()) {
+
             // Write a file from the host process (simulating a user placing a document in the
             // workspace)
             Path doc = workspace.resolve("document.txt");

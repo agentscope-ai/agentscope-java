@@ -236,6 +236,10 @@ public class RuntimeContext {
         if (TYPED_DEFAULT_KEY.equals(key) && type == RuntimeContext.class) {
             return (T) this;
         }
+        Object fromString = stringAttributes.get(key);
+        if (type.isInstance(fromString)) {
+            return (T) fromString;
+        }
         return null;
     }
 
