@@ -27,7 +27,6 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -128,18 +127,6 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        boolean isSandBox = rc.get(Sandbox.class) != null;
-        if (isSandBox) {
-            return next.apply(input)
-                    .concatWith(
-                            doFlush(agent, rc)
-                                    .onErrorResume(
-                                            e -> {
-                                                log.warn("Sandbox Memory flush failed: {}", e.getMessage());
-                                                return Mono.empty();
-                                            })
-                                    .then(Mono.empty()));
-        }
         return next.apply(input)
                 .concatWith(
                         doFlush(agent, rc)
@@ -149,7 +136,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
                                             log.warn("Memory flush failed: {}", e.getMessage());
                                             return Mono.empty();
                                         })
-                                .then(Mono.empty()));
+                                .then(Mono.<AgentEvent>empty()));
     }
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {

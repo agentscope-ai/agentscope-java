@@ -21,7 +21,6 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
-import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -39,25 +38,14 @@ import org.slf4j.LoggerFactory;
  * via the volatile {@code sandbox} field by {@link
  * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}.
  */
-public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements SandboxAware {
+public class SandboxBackedFilesystem extends BaseSandboxFilesystem {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
     private final String fsId;
-    private volatile Sandbox sandbox;
 
     public SandboxBackedFilesystem() {
         this.fsId = "sandbox-" + UUID.randomUUID().toString().substring(0, 8);
-    }
-
-    @Override
-    public void setSandbox(Sandbox sandbox) {
-        this.sandbox = sandbox;
-    }
-
-    @Override
-    public Sandbox getSandbox() {
-        return sandbox;
     }
 
     @Override
@@ -68,7 +56,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         try {
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
@@ -91,7 +79,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
         for (Map.Entry<String, byte[]> file : files) {
@@ -135,7 +123,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
@@ -171,8 +159,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         return results;
     }
 
-    private Sandbox requireSandbox() {
-        Sandbox s = sandbox;
+    private Sandbox requireSandbox(RuntimeContext runtimeContext) {
+        Sandbox s = runtimeContext != null ? runtimeContext.get(Sandbox.class) : null;
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
                     "No active sandbox — sandbox filesystem used outside of a call context");
