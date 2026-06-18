@@ -189,7 +189,7 @@ class AgentSpawnToolRuntimeContextTest {
         assertNotNull(agentKey);
         assertTrue(repo.specs.isEmpty());
 
-        String sendReply = tool.agentSend(parent, agentKey, null, "follow-up", 0).block();
+        String sendReply = tool.agentSend(parent, null, agentKey, null, "follow-up", 0).block();
         assertNotNull(sendReply);
         assertTrue(sendReply.startsWith("status: accepted"));
         assertEquals(1, repo.specs.size());
