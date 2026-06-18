@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -33,6 +34,16 @@ class RuntimeContextTest {
         final String id;
 
         PojoA(String id) {
+            this.id = id;
+        }
+    }
+
+    private interface Marker {}
+
+    private static final class MarkerImpl implements Marker {
+        final String id;
+
+        MarkerImpl(String id) {
             this.id = id;
         }
     }
@@ -137,6 +148,48 @@ class RuntimeContextTest {
         child.put("child-only", "yes");
         assertEquals("trace-123", child.get("traceId"));
         assertNull(parent.get("child-only"));
+    @DisplayName("builder(source) preserves typed and string extras")
+    void builderCopyPreservesTypedData() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext source =
+                RuntimeContext.builder()
+                        .sessionId("sid-copy")
+                        .userId("user-copy")
+                        .put("plain", "value")
+                        .put(MarkerImpl.class, filesystem)
+                        .build();
+
+        RuntimeContext copy = RuntimeContext.builder(source).build();
+
+        assertEquals("sid-copy", copy.getSessionId());
+        assertEquals("user-copy", copy.getUserId());
+        assertEquals("value", copy.get("plain"));
+        assertSame(filesystem, copy.get(MarkerImpl.class));
+        assertSame(filesystem, copy.get(Marker.class));
+        assertSame(copy, copy.get(RuntimeContext.class));
+        assertInstanceOf(MarkerImpl.class, copy.get(Marker.class));
+    }
+
+    @Test
+    @DisplayName("typed keyed access falls back to assignable singleton values")
+    void keyedTypedAccessFallsBackToAssignableSingleton() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext ctx =
+                RuntimeContext.builder().put("filesystem", MarkerImpl.class, filesystem).build();
+
+        assertSame(filesystem, ctx.get("filesystem", Marker.class));
+        assertSame(filesystem, ctx.get("filesystem", MarkerImpl.class));
+        assertNull(ctx.get("missing", Marker.class));
+    }
+
+    @Test
+    @DisplayName("builder(source) tolerates null and preserves empty contexts")
+    void builderCopyHandlesNullSource() {
+        RuntimeContext empty = RuntimeContext.builder((RuntimeContext) null).build();
+
+        assertNull(empty.getSessionId());
+        assertNull(empty.getUserId());
+        assertNull(empty.get("missing", Marker.class));
     }
 
     @Test
