@@ -43,6 +43,7 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -2074,16 +2075,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
             // If not set explicitly or via DistributedStore, fall back to workspace-backed
-            // implementations that use the same AbstractFilesystem as the rest of the agent.
-            if (messageBus == null && filesystem != null) {
+            // implementations. When the agent's filesystem is sandbox-backed, bus and
+            // async-tool-registry I/O is routed through a host-side LocalFilesystem rooted at
+            // the workspace: bus state must outlive sandbox sessions (which are torn down per
+            // IsolationScope), and async-tool/subagent completion callbacks fire outside any
+            // per-call RuntimeContext so they have no active sandbox to reach.
+            AbstractFilesystem busFilesystem =
+                    filesystem instanceof SandboxBackedFilesystem
+                            ? new LocalFilesystem(resolvedWorkspace)
+                            : filesystem;
+            if (messageBus == null && busFilesystem != null) {
                 messageBus =
                         new io.agentscope.harness.agent.bus.WorkspaceMessageBus(
-                                filesystem, ".agentscope/bus");
+                                busFilesystem, ".agentscope/bus");
             }
-            if (asyncToolRegistry == null && filesystem != null) {
+            if (asyncToolRegistry == null && busFilesystem != null) {
                 asyncToolRegistry =
                         new io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry(
-                                filesystem, ".agentscope/bus/async-tools");
+                                busFilesystem, ".agentscope/bus/async-tools");
             }
 
             // ---- Middlewares ----
