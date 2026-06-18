@@ -73,11 +73,13 @@ class BaseSandboxFilesystemTest {
         assertFalse(result.entries().isEmpty());
         assertTrue(filesystem.lastCommand.startsWith("for f in '/workspace'/*; do"));
         assertTrue(filesystem.lastCommand.contains("stat -c '%s'"));
-        assertEquals(12L, result.entries().stream()
-                .filter(entry -> entry.path().equals("/workspace/readme.txt"))
-                .findFirst()
-                .orElseThrow()
-                .size());
+        assertEquals(
+                12L,
+                result.entries().stream()
+                        .filter(entry -> entry.path().equals("/workspace/readme.txt"))
+                        .findFirst()
+                        .orElseThrow()
+                        .size());
     }
 
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
