@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
@@ -219,6 +220,18 @@ public class Fabric8KubernetesPodRuntime {
                 requests.put("memory", new Quantity(templateOptions.getMemoryRequest()));
             }
             cb.withResources(rb.withRequests(requests).build());
+        }
+
+        // Inject environment variables from WorkspaceSpec (parity with DockerSandbox)
+        WorkspaceSpec wsEnv = state.getWorkspaceSpec();
+        if (wsEnv != null && wsEnv.getEnvironment() != null) {
+            List<EnvVar> envVars = new ArrayList<>();
+            for (Map.Entry<String, String> e : wsEnv.getEnvironment().entrySet()) {
+                envVars.add(new EnvVar(e.getKey(), e.getValue(), null));
+            }
+            if (!envVars.isEmpty()) {
+                cb.withEnv(envVars);
+            }
         }
 
         List<Volume> bindVolumes = new ArrayList<>();
