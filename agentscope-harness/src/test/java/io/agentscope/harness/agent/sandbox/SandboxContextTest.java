@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
@@ -39,6 +40,19 @@ class SandboxContextTest {
     void keepAliveWhenSetFalseReturnsFalse() {
         SandboxContext ctx = SandboxContext.builder().keepAlive(false).build();
         assertFalse(ctx.isKeepAlive());
+    }
+
+    @Test
+    void specKeepAliveDefaultsToFalse() {
+        DockerFilesystemSpec spec = new DockerFilesystemSpec();
+        assertFalse(spec.isKeepAlive());
+    }
+
+    @Test
+    void specKeepAliveSetAndGet() {
+        DockerFilesystemSpec spec = new DockerFilesystemSpec();
+        assertSame(spec, spec.keepAlive(true));
+        assertTrue(spec.isKeepAlive());
     }
 
     @Test
