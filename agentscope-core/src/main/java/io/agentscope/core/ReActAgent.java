@@ -2224,10 +2224,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             private void flushAllToolCalls(List<AgentEvent> events) {
-                for (Map.Entry<String, String> tc : new ArrayList<>(startedToolCalls.entrySet())) {
+                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
                     events.add(new ToolCallEndEvent(replyId, tc.getKey(), tc.getValue()));
-                    startedToolCalls.remove(tc.getKey());
                 }
+                startedToolCalls.clear();
             }
 
             private void flushAll(List<AgentEvent> events) {
