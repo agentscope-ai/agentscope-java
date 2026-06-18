@@ -3627,6 +3627,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Path skillWorkDir;
 
+        /**
+         * Optional factory for custom {@link DynamicSkillMiddleware} subclass. When set, the
+         * factory is invoked inside {@link #build()} with the deep-copied {@link Toolkit} so the
+         * custom middleware shares the same toolkit instance used by the agent.
+         *
+         * <p>This is useful when you need a middleware that calls the agent's toolkit for
+         * per-request tool registration (e.g. binding skill-load tools). By receiving the
+         * deep-copied toolkit directly, the custom middleware avoids the state-mismatch problem
+         * of constructing the middleware externally before {@code build()} runs.
+         *
+         * <p>When {@code null} (the default), {@link #build()} creates a standard
+         * {@link DynamicSkillMiddleware} if skill repositories have been registered.
+         */
+        private Function<Toolkit, DynamicSkillMiddleware> dynamicSkillMiddlewareFactory;
+
         private Builder() {}
 
         /**
@@ -4153,6 +4168,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Provides a factory that creates a custom {@link DynamicSkillMiddleware} instance inside
+         * {@link #build()} instead of the default. The factory receives the deep-copied
+         * {@link Toolkit} that the agent will use, so custom subclasses can safely reference it.
+         *
+         * <p>Example usage:
+         * <pre>{@code
+         * ReActAgent.builder()
+         *     .dynamicSkillMiddleware(agentToolkit ->
+         *             new MyCustomMiddleware(skillRepos, agentToolkit, skillFilter))
+         *     .build();
+         * }</pre>
+         *
+         * <p>When this factory is set, the builder's own {@code skillRepositories} list is
+         * ignored — the factory is fully responsible for providing the middleware. Pass
+         * {@code null} (the default) to let {@link #build()} create a standard
+         * {@link DynamicSkillMiddleware} from the registered skill repositories.
+         *
+         * @param factory a function that accepts the deep-copied {@link Toolkit} and returns a
+         *                {@link DynamicSkillMiddleware} instance; may be {@code null}
+         * @return this builder instance for method chaining
+         */
+        public Builder dynamicSkillMiddleware(Function<Toolkit, DynamicSkillMiddleware> factory) {
+            this.dynamicSkillMiddlewareFactory = factory;
+            return this;
+        }
+
+        /**
          * Returns a new {@link Builder} pre-populated with the given agent's observable
          * configuration: name, description, system prompt, model, maxIters, generateOptions, and
          * a defensive copy of the toolkit.
@@ -4329,14 +4371,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (skillBox != null) {
                 configureSkillBox(agentToolkit);
             }
-            if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
-                middlewares.add(
-                        new DynamicSkillMiddleware(
-                                List.copyOf(skillRepositories),
-                                agentToolkit,
-                                skillFilter != null ? skillFilter : SkillFilter.all(),
-                                skillCodeExecutionEnabled,
-                                skillWorkDir));
+            if (dynamicSkillsEnabled) {
+                DynamicSkillMiddleware mw = null;
+                if (dynamicSkillMiddlewareFactory != null) {
+                    mw = dynamicSkillMiddlewareFactory.apply(agentToolkit);
+                } else if (!skillRepositories.isEmpty()) {
+                    mw =
+                            new DynamicSkillMiddleware(
+                                    List.copyOf(skillRepositories),
+                                    agentToolkit,
+                                    skillFilter != null ? skillFilter : SkillFilter.all(),
+                                    skillCodeExecutionEnabled,
+                                    skillWorkDir);
+                }
+                if (mw != null) {
+                    middlewares.add(mw);
+                }
             }
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);
