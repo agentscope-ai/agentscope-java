@@ -63,6 +63,11 @@ public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     }
 
     @Override
+    public boolean supportsNativeStructuredOutput() {
+        return false;
+    }
+
+    @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         GLMFormatter.applyGLMToolChoice(request, toolChoice);
     }

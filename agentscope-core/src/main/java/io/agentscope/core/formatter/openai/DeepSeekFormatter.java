@@ -78,6 +78,11 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         return false;
     }
 
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return false;
+    }
+
     /**
      * Apply DeepSeek-specific message format fixes.
      *

@@ -197,6 +197,19 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         return true;
     }
 
+    /**
+     * Whether this formatter's backend supports native structured output via
+     * {@code response_format} with {@code json_schema}.
+     *
+     * <p>Subclasses should override this to return {@code false} for providers that don't
+     * support {@code response_format} (e.g., DeepSeek, GLM).
+     *
+     * @return true if native structured output is supported, false otherwise
+     */
+    public boolean supportsNativeStructuredOutput() {
+        return true;
+    }
+
     @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         // Only apply tool_choice if tools are present

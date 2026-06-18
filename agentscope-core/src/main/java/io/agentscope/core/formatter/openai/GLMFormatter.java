@@ -65,6 +65,11 @@ public class GLMFormatter extends OpenAIChatFormatter {
     }
 
     @Override
+    public boolean supportsNativeStructuredOutput() {
+        return false;
+    }
+
+    @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         applyGLMToolChoice(request, toolChoice);
     }

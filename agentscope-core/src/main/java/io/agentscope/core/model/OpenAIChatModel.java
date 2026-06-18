@@ -193,7 +193,10 @@ public class OpenAIChatModel extends ChatModelBase {
 
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return true;
+        if (formatter instanceof OpenAIChatFormatter openAiFormatter) {
+            return openAiFormatter.supportsNativeStructuredOutput();
+        }
+        return false;
     }
 
     /**

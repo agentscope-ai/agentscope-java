@@ -93,4 +93,9 @@ public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     protected boolean supportsStrict() {
         return false;
     }
+
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return false;
+    }
 }
