@@ -50,6 +50,16 @@ class DefaultToolEmitterTest {
     }
 
     @Test
+    @DisplayName("getToolUseBlock() should be accessible via ToolEmitter interface without casting")
+    void testGetToolUseBlockViaInterface() {
+        ToolEmitter emitter = new DefaultToolEmitter(testToolUseBlock, null);
+
+        assertNotNull(emitter.getToolUseBlock());
+        assertSame(testToolUseBlock, emitter.getToolUseBlock());
+        assertEquals("call_test", emitter.getToolUseBlock().getId());
+    }
+
+    @Test
     @DisplayName("emit() should not throw when callback is null")
     void testEmitWithNullCallback() {
         DefaultToolEmitter emitter = new DefaultToolEmitter(testToolUseBlock, null);

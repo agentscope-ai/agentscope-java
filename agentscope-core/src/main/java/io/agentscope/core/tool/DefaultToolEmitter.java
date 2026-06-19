@@ -24,12 +24,8 @@ import java.util.function.BiConsumer;
  *
  * <p>Created internally by the framework when a tool method declares a ToolEmitter parameter. Each
  * tool invocation gets its own DefaultToolEmitter instance.
- *
- * <p>Users can cast a {@link ToolEmitter} to {@code DefaultToolEmitter} to access the underlying
- * {@link ToolUseBlock} (e.g. to obtain the {@code toolCallId} for asynchronous session restoration
- * after a {@link ToolSuspendException}).
  */
-public class DefaultToolEmitter implements ToolEmitter {
+class DefaultToolEmitter implements ToolEmitter {
 
     private final ToolUseBlock toolUseBlock;
     private final BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
@@ -40,7 +36,7 @@ public class DefaultToolEmitter implements ToolEmitter {
      * @param toolUseBlock The tool use block identifying the tool call
      * @param chunkCallback Callback to deliver chunks to hooks (may be null)
      */
-    public DefaultToolEmitter(
+    DefaultToolEmitter(
             ToolUseBlock toolUseBlock, BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback) {
         this.toolUseBlock = toolUseBlock;
         this.chunkCallback = chunkCallback;
@@ -51,6 +47,7 @@ public class DefaultToolEmitter implements ToolEmitter {
      *
      * @return the tool use block
      */
+    @Override
     public ToolUseBlock getToolUseBlock() {
         return toolUseBlock;
     }

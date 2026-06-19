@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 
 /**
  * Interface for emitting streaming responses during tool execution.
@@ -55,6 +56,23 @@ import io.agentscope.core.message.ToolResultBlock;
  *     return ToolResultBlock.text("Task completed successfully");
  * }
  * }</pre>
+ *
+ * <p><b>Async Session Restoration Example:</b>
+ *
+ * <pre>{@code
+ * @Tool(name = "async_task", description = "Task that may suspend")
+ * public ToolResultBlock execute(
+ *     @ToolParam(name = "input") String input,
+ *     ToolEmitter emitter
+ * ) {
+ *     if (needsToSuspend(input)) {
+ *         String toolCallId = emitter.getToolUseBlock().getId();
+ *         // Persist toolCallId for later resumption
+ *         throw new ToolSuspendException("Waiting for external event");
+ *     }
+ *     return ToolResultBlock.text("Done");
+ * }
+ * }</pre>
  */
 public interface ToolEmitter {
 
@@ -68,4 +86,21 @@ public interface ToolEmitter {
      * @param chunk The chunk to emit
      */
     void emit(ToolResultBlock chunk);
+
+    /**
+     * Returns the {@link ToolUseBlock} associated with this tool invocation, containing the
+     * {@code toolCallId} and other metadata.
+     *
+     * <p>This is useful when a tool method throws {@link ToolSuspendException} to suspend
+     * execution and needs the {@code toolCallId} to asynchronously resume the session later
+     * via {@code ToolResultBlock.of(toolCallId, ...)}.
+     *
+     * <p>For no-op emitters (when no chunk callback is configured), this method returns
+     * {@code null}.
+     *
+     * @return the tool use block, or {@code null} if not available
+     */
+    default ToolUseBlock getToolUseBlock() {
+        return null;
+    }
 }
