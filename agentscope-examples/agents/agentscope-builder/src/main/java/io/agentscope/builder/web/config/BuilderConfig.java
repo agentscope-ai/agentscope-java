@@ -227,7 +227,9 @@ public class BuilderConfig {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.stateStore(stateStore);
                     if (localStore) {
-                        b.filesystem(new LocalFilesystemSpec().isolationScope(IsolationScope.USER));
+                        b.filesystem(
+                                new LocalFilesystemSpec()
+                                        .isolationScope(IsolationScope.USER));
                     } else {
                         b.filesystem(
                                 new RemoteFilesystemSpec(baseStore)
@@ -292,7 +294,8 @@ public class BuilderConfig {
      * {@link RemoteFilesystemSpec}.
      */
     private static boolean isLocalStateStore(AgentStateStore store) {
-        return store instanceof InMemoryAgentStateStore || store instanceof JsonFileAgentStateStore;
+        return store instanceof InMemoryAgentStateStore
+                || store instanceof JsonFileAgentStateStore;
     }
 
     private Path resolveCwd() {
