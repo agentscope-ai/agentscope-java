@@ -66,8 +66,11 @@ import io.agentscope.core.message.ToolUseBlock;
  *     ToolEmitter emitter
  * ) {
  *     if (needsToSuspend(input)) {
- *         String toolCallId = emitter.getToolUseBlock().getId();
- *         // Persist toolCallId for later resumption
+ *         ToolUseBlock toolUseBlock = emitter.getToolUseBlock();
+ *         if (toolUseBlock != null) {
+ *             String toolCallId = toolUseBlock.getId();
+ *             // Persist toolCallId for later resumption
+ *         }
  *         throw new ToolSuspendException("Waiting for external event");
  *     }
  *     return ToolResultBlock.text("Done");
