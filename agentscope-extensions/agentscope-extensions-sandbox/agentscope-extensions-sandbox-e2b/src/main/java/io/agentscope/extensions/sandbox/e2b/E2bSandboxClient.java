@@ -56,6 +56,15 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             E2bSandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            E2bSandboxClientOptions options,
+            String snapshotId) {
         String sessionId = UUID.randomUUID().toString();
         E2bSandboxClientOptions merged = merge(options);
 
@@ -70,7 +79,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         state.setSandboxDomain(merged.getDomain());
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            String effectiveSnapshotId =
+                    snapshotId != null && !snapshotId.isBlank() ? snapshotId : sessionId;
+            state.setSnapshot(snapshotSpec.build(effectiveSnapshotId));
         }
 
         log.debug("[sandbox-e2b] Creating sandbox sessionId={}", sessionId);

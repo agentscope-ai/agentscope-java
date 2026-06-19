@@ -122,6 +122,8 @@ public class SandboxManager {
                             ? sandboxContext.getWorkspaceSpec().copy()
                             : new WorkspaceSpec();
 
+            String snapshotId = scopeKey.map(SandboxIsolationKey::getValue).orElse(null);
+
             @SuppressWarnings("unchecked")
             SandboxClient<SandboxClientOptions> typedClient =
                     (SandboxClient<SandboxClientOptions>) client;
@@ -129,7 +131,8 @@ public class SandboxManager {
                     typedClient.create(
                             spec,
                             sandboxContext.getSnapshotSpec(),
-                            sandboxContext.getClientOptions());
+                            sandboxContext.getClientOptions(),
+                            snapshotId);
             return SandboxAcquireResult.selfManaged(sandbox, lease);
 
         } catch (Exception e) {

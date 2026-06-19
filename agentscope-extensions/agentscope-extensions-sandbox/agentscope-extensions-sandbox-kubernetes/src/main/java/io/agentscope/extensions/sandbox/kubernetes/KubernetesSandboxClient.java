@@ -68,6 +68,15 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
             WorkspaceSpec workspaceSpec,
             SandboxSnapshotSpec snapshotSpec,
             KubernetesSandboxClientOptions options) {
+        return create(workspaceSpec, snapshotSpec, options, null);
+    }
+
+    @Override
+    public Sandbox create(
+            WorkspaceSpec workspaceSpec,
+            SandboxSnapshotSpec snapshotSpec,
+            KubernetesSandboxClientOptions options,
+            String snapshotId) {
         String sessionId = UUID.randomUUID().toString();
         KubernetesSandboxClientOptions merged = merge(options);
 
@@ -82,7 +91,9 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         state.setWorkspaceRootReady(false);
 
         if (snapshotSpec != null) {
-            state.setSnapshot(snapshotSpec.build(sessionId));
+            String effectiveSnapshotId =
+                    snapshotId != null && !snapshotId.isBlank() ? snapshotId : sessionId;
+            state.setSnapshot(snapshotSpec.build(effectiveSnapshotId));
         }
 
         KubernetesClient kc = resolveClient(merged);
@@ -132,12 +143,10 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
     }
 
     private KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
-        KubernetesSandboxClientOptions base =
-                defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
+        KubernetesSandboxClientOptions o = copy(defaultOptions);
         if (callOptions == null) {
-            return copy(base);
+            return o;
         }
-        KubernetesSandboxClientOptions o = copy(base);
         if (callOptions.getKubernetesClient() != null) {
             o.setKubernetesClient(callOptions.getKubernetesClient());
         }
