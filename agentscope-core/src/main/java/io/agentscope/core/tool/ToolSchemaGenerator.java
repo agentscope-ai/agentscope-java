@@ -55,15 +55,12 @@ class ToolSchemaGenerator {
 
     @SuppressWarnings("unchecked")
     private void addAdditionalPropertiesFalseRecursively(Map<String, Object> schema) {
-        if (!"object".equals(schema.get("type"))) {
-            return;
+        // Only inject additionalProperties=false on object-type nodes
+        if ("object".equals(schema.get("type")) && !schema.containsKey("additionalProperties")) {
+            schema.put("additionalProperties", false);
         }
-        // Skip if user already set additionalProperties explicitly
-        if (schema.containsKey("additionalProperties")) {
-            return;
-        }
-        schema.put("additionalProperties", false);
 
+        // Always recurse into children regardless of this node's type
         Object propsObj = schema.get("properties");
         if (propsObj instanceof Map) {
             Map<String, Object> props = (Map<String, Object>) propsObj;

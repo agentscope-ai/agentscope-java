@@ -206,4 +206,33 @@ class ToolSchemaGeneratorTest {
 
         assertEquals(false, schema.get("additionalProperties"));
     }
+
+    @Test
+    @DisplayName("Should recurse into array items even when root is not object type")
+    void testRecurseIntoArrayItems() throws Exception {
+        Method recMethod =
+                ToolSchemaGenerator.class.getDeclaredMethod(
+                        "addAdditionalPropertiesFalseRecursively", Map.class);
+        recMethod.setAccessible(true);
+
+        // Array with object items — the array itself is not an object,
+        // but its items should still be recursed into
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "array");
+        Map<String, Object> itemsObj = new HashMap<>();
+        itemsObj.put("type", "object");
+        Map<String, Object> nestedProp = new HashMap<>();
+        nestedProp.put("type", "object");
+        itemsObj.put("properties", Map.of("nested", nestedProp));
+        schema.put("items", itemsObj);
+
+        recMethod.invoke(generator, schema);
+
+        // Array itself should NOT have additionalProperties (not an object)
+        assertNull(schema.get("additionalProperties"));
+        // But items object SHOULD have additionalProperties=false
+        assertEquals(false, itemsObj.get("additionalProperties"));
+        // And deeply nested objects should also get it
+        assertEquals(false, nestedProp.get("additionalProperties"));
+    }
 }

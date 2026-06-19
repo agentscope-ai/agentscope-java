@@ -245,4 +245,30 @@ class ToolAnnotationTest {
                 validationError,
                 "Default behavior should allow extra params (backward compatible)");
     }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName(
+            "strict=true should inject additionalProperties=false even when additionalProperties"
+                    + " defaults to true")
+    void testStrictOverridesAdditionalProperties() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "strict_tool", description = "Strict tool", strict = true)
+                    public String execute(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+
+        assertTrue(
+                schema.containsKey("additionalProperties"),
+                "Schema should contain additionalProperties=false when strict=true");
+        assertEquals(
+                false,
+                schema.get("additionalProperties"),
+                "strict=true should force additionalProperties=false");
+    }
 }

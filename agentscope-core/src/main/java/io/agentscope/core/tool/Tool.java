@@ -90,7 +90,9 @@ public @interface Tool {
      * Whether to enable strict schema mode for this tool.
      *
      * <p>When enabled, compatible model providers can enforce stronger adherence to the declared
-     * JSON schema for tool arguments.
+     * JSON schema for tool arguments. This also automatically injects
+     * {@code additionalProperties: false} into all object types in the generated schema, as
+     * required by OpenAI's strict mode (otherwise the request is rejected with 400 Bad Request).
      *
      * @return true to enable strict mode for this tool
      */
@@ -139,6 +141,10 @@ public @interface Tool {
      * cause a validation error, preventing the LLM from hallucinating undefined parameters.
      *
      * <p>This setting is applied recursively to all nested objects within the generated schema.
+     *
+     * <p>Note: when {@link #strict()} is enabled, this setting is overridden to {@code false}
+     * because OpenAI strict mode requires all object types to have
+     * {@code additionalProperties: false}.
      *
      * @return {@code true} to allow additional properties (default, backward compatible), {@code
      *     false} to disallow

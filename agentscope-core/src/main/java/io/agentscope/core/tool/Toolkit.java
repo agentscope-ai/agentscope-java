@@ -373,8 +373,12 @@ public class Toolkit {
                                 presetParameters != null
                                         ? presetParameters.keySet()
                                         : Collections.emptySet();
+                        // strict=true requires additionalProperties=false on all object types
+                        // (OpenAI rejects with 400 otherwise)
+                        boolean allowAdditional =
+                                toolAnnotation.additionalProperties() && !toolAnnotation.strict();
                         return schemaGenerator.generateParameterSchema(
-                                method, excludeParams, toolAnnotation.additionalProperties());
+                                method, excludeParams, allowAdditional);
                     }
 
                     @Override
