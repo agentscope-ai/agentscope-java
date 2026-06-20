@@ -30,6 +30,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -58,6 +59,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -480,6 +482,81 @@ class HarnessAgentTest {
         assertTrue(
                 names.contains(expectedName),
                 "subagents/*.md declaration should use filename as name");
+    }
+
+    @Test
+    void parentMiddleware_propagatesToBuiltinAndMarkdownSubagents() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for middleware propagation regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger systemPromptHits = new AtomicInteger();
+        Model model = stubModel("done");
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Flux<AgentEvent> onAgent(
+                                            Agent agent,
+                                            RuntimeContext ctx,
+                                            io.agentscope.core.middleware.AgentInput input,
+                                            java.util.function.Function<
+                                                            io.agentscope.core.middleware
+                                                                    .AgentInput,
+                                                            Flux<AgentEvent>>
+                                                    next) {
+                                        systemPromptHits.incrementAndGet();
+                                        return next.apply(input);
+                                    }
+                                });
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        RuntimeContext parentContext =
+                RuntimeContext.builder().userId("u").sessionId("parent").build();
+
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+        assertEquals(
+                1, systemPromptHits.get(), "general-purpose subagent should inherit middleware");
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+        assertEquals(
+                2,
+                systemPromptHits.get(),
+                "markdown-declared subagent should inherit parent middleware too");
     }
 
     @Test
