@@ -64,6 +64,7 @@ import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.HarnessRuntimeMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
@@ -1360,9 +1361,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
-            if (middlewares != null) {
-                for (MiddlewareBase middleware : middlewares) {
+        public Builder middlewares(List<? extends MiddlewareBase> middlewareList) {
+            if (middlewareList != null) {
+                for (MiddlewareBase middleware : middlewareList) {
                     middleware(middleware);
                 }
             }
@@ -1374,33 +1375,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Keep only observable registrations from the source agent.
             List<MiddlewareBase> copyable = new ArrayList<>(middlewares.size());
             for (MiddlewareBase middleware : middlewares) {
-                if (middleware != null && !isHarnessRuntimeMiddleware(middleware)) {
+                if (middleware != null && !(middleware instanceof HarnessRuntimeMiddleware)) {
                     copyable.add(middleware);
                 }
             }
             return copyable;
-        }
-
-        private static boolean isHarnessRuntimeMiddleware(MiddlewareBase middleware) {
-            return middleware instanceof SandboxLifecycleMiddleware
-                    || middleware instanceof AgentTraceMiddleware
-                    || middleware instanceof WorkspaceContextMiddleware
-                    || middleware instanceof AtPathExpansionMiddleware
-                    || middleware instanceof MemoryFlushMiddleware
-                    || middleware instanceof MemoryMaintenanceMiddleware
-                    || middleware instanceof CompactionMiddleware
-                    || middleware instanceof ToolResultEvictionMiddleware
-                    || middleware instanceof InboxMiddleware
-                    || middleware instanceof DynamicSubagentsMiddleware
-                    || middleware instanceof SubagentsMiddleware
-                    || middleware instanceof AsyncToolMiddleware
-                    || middleware
-                            instanceof io.agentscope.harness.agent.middleware.PlanModeMiddleware
-                    || middleware
-                            instanceof io.agentscope.harness.agent.middleware.SkillUsageMiddleware
-                    || middleware
-                            instanceof io.agentscope.harness.agent.middleware.SkillCuratorMiddleware
-                    || middleware instanceof HarnessSkillMiddleware;
         }
 
         public Builder stateStore(AgentStateStore stateStore) {

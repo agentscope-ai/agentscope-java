@@ -28,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -48,6 +49,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
@@ -557,6 +559,99 @@ class HarnessAgentTest {
                 2,
                 systemPromptHits.get(),
                 "markdown-declared subagent should inherit parent middleware too");
+    }
+
+    @Test
+    void fromAgent_filtersRuntimeMiddlewareAndStillPropagatesUserMiddleware() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for fromAgent regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger userMiddlewareHits = new AtomicInteger();
+        MiddlewareBase userMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            io.agentscope.core.middleware.AgentInput input,
+                            java.util.function.Function<
+                                            io.agentscope.core.middleware.AgentInput,
+                                            Flux<AgentEvent>>
+                                    next) {
+                        userMiddlewareHits.incrementAndGet();
+                        return next.apply(input);
+                    }
+                };
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .model(stubModel("done"))
+                        .toolkit(new Toolkit())
+                        .middlewares(List.of(userMiddleware, new AgentTraceMiddleware()))
+                        .build();
+
+        HarnessAgent.Builder builder =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        HarnessAgent child = builder.build();
+
+        long copiedUserMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m == userMiddleware)
+                        .count();
+        long agentTraceMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m instanceof AgentTraceMiddleware)
+                        .count();
+        assertEquals(1, copiedUserMiddlewareCount, "user middleware should copy once");
+        assertEquals(
+                1,
+                agentTraceMiddlewareCount,
+                "runtime AgentTraceMiddleware should not be duplicated when cloning");
+
+        RuntimeContext parentContext = RuntimeContext.builder().sessionId("parent").build();
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+
+        assertEquals(
+                2,
+                userMiddlewareHits.get(),
+                "fromAgent should still propagate user middleware into subagents");
     }
 
     @Test
