@@ -17,6 +17,7 @@ package io.agentscope.extensions.oss;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,12 +26,16 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
@@ -40,6 +45,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
@@ -158,13 +164,37 @@ class S3ObjectStoreSupportTest {
     }
 
     @Test
-    void buildClient_usesConfiguredEndpointAndRegion() {
-        S3Client client =
-                S3ObjectStoreSupport.buildClient(
-                        URI.create("http://localhost:9000"), Region.US_WEST_2, "ak", "sk");
+    void buildClient_usesEndpointOverridePathStyleAndAwsSigV4() throws Exception {
+        AtomicReference<String> requestPath = new AtomicReference<>();
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    requestPath.set(exchange.getRequestURI().getRawPath());
+                    authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                    exchange.sendResponseHeaders(200, -1);
+                    exchange.close();
+                });
+        server.start();
 
-        assertEquals(
-                "software.amazon.awssdk.services.s3.DefaultS3Client", client.getClass().getName());
-        client.close();
+        try (S3Client client =
+                S3ObjectStoreSupport.buildClient(
+                        URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                        Region.US_WEST_2,
+                        "ak",
+                        "sk")) {
+            client.putObject(
+                    PutObjectRequest.builder().bucket("test-bucket").key("my-key.txt").build(),
+                    RequestBody.fromString("hello"));
+        } finally {
+            server.stop(0);
+        }
+
+        assertEquals("/test-bucket/my-key.txt", requestPath.get());
+        assertNotNull(authorization.get());
+        assertTrue(authorization.get().contains("AWS4-HMAC-SHA256"));
+        assertTrue(authorization.get().contains("Credential=ak/"));
+        assertTrue(authorization.get().contains("/us-west-2/s3/aws4_request"));
     }
 }
