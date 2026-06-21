@@ -32,6 +32,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class WakeupDispatcherTest {
@@ -115,6 +116,44 @@ class WakeupDispatcherTest {
         assertEquals("sess-pre", target.wokenSessions.get(0));
     }
 
+    @Test
+    @DisplayName("Startup drain processes all pre-existing wakeups across multiple batches")
+    void initialDrain_processesMoreThanOneBatch() {
+        int wakeupCount = 65;
+        for (int i = 0; i < wakeupCount; i++) {
+            String sessionId = "sess-pre-" + i;
+            target.addKnown(sessionId);
+            messageBus
+                    .queuePush(
+                            "agentscope:wakeups",
+                            Map.of(
+                                    "userId", "user-1",
+                                    "sessionId", sessionId,
+                                    "agentId", "agent-main"))
+                    .block();
+        }
+
+        dispatcher.start();
+
+        assertEquals(wakeupCount, target.wokenSessions.size());
+    }
+
+    @Test
+    @DisplayName("Startup subscribes before draining the durable wakeup queue")
+    void startup_subscribesBeforeInitialDrain() {
+        String sessionId = "sess-startup-race";
+        target.addKnown(sessionId);
+        messageBus =
+                new EnqueueOnSubscribeMessageBus(
+                        new LocalFilesystem(tmpDir, true, 10), "/bus", sessionId);
+        dispatcher = new WakeupDispatcher(messageBus, target);
+
+        dispatcher.start();
+
+        assertEquals(1, target.wokenSessions.size());
+        assertEquals(sessionId, target.wokenSessions.get(0));
+    }
+
     // ------------------------------------------------------------------
     //  Test double
     // ------------------------------------------------------------------
@@ -155,6 +194,32 @@ class WakeupDispatcherTest {
                 return true;
             }
             return wakeupLatch.await(timeout, unit);
+        }
+    }
+
+    private static final class EnqueueOnSubscribeMessageBus extends WorkspaceMessageBus {
+
+        private final String sessionId;
+
+        private EnqueueOnSubscribeMessageBus(
+                LocalFilesystem filesystem, String busRoot, String sessionId) {
+            super(filesystem, busRoot);
+            this.sessionId = sessionId;
+        }
+
+        @Override
+        public Flux<Map<String, Object>> subscribeWakeup() {
+            return Flux.defer(
+                    () -> {
+                        queuePush(
+                                        "agentscope:wakeups",
+                                        Map.of(
+                                                "userId", "user-1",
+                                                "sessionId", sessionId,
+                                                "agentId", "agent-main"))
+                                .block();
+                        return Flux.never();
+                    });
         }
     }
 }

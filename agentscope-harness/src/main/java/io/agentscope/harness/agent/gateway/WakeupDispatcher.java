@@ -70,11 +70,10 @@ public class WakeupDispatcher implements AutoCloseable {
     }
 
     /**
-     * Starts the dispatcher: performs an initial drain of any queued wakeups (to pick up signals
-     * produced while this process was down), then subscribes to the live signal channel.
+     * Starts the dispatcher: subscribes to the live signal channel, then performs an initial drain
+     * of any queued wakeups produced while this process was down.
      */
     public void start() {
-        drainAndDispatch();
         subscription =
                 messageBus
                         .subscribeWakeup()
@@ -85,6 +84,7 @@ public class WakeupDispatcher implements AutoCloseable {
                                                 "WakeupDispatcher subscription error; "
                                                         + "dispatcher is dead",
                                                 err));
+        drainAndDispatch();
         log.info("WakeupDispatcher started");
     }
 
@@ -100,14 +100,20 @@ public class WakeupDispatcher implements AutoCloseable {
 
     private void drainAndDispatch() {
         try {
-            List<BusEntry> entries =
-                    messageBus.queueDrain("agentscope:wakeups", MAX_DRAIN_COUNT).block();
-            if (entries == null || entries.isEmpty()) {
-                return;
-            }
+            while (true) {
+                List<BusEntry> entries =
+                        messageBus.queueDrain("agentscope:wakeups", MAX_DRAIN_COUNT).block();
+                if (entries == null || entries.isEmpty()) {
+                    return;
+                }
 
-            for (BusEntry entry : entries) {
-                dispatch(entry.payload());
+                for (BusEntry entry : entries) {
+                    dispatch(entry.payload());
+                }
+
+                if (entries.size() < MAX_DRAIN_COUNT) {
+                    return;
+                }
             }
         } catch (Exception e) {
             log.warn("WakeupDispatcher: drainAndDispatch failed", e);
