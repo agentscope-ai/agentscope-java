@@ -593,7 +593,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
-        ((CallExecution) callScope).systemMsg = systemMsg;
+        CallExecution ce = (CallExecution) callScope;
+        ce.systemMsg = systemMsg;
+        syncToolkitToState(ce.state);
     }
 
     @Override
@@ -610,8 +612,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return RuntimeContext.empty();
         }
         if (toolExecutionContext != null) {
-            return RuntimeContext.builder()
-                    .agentState(run.getAgentState())
+            return RuntimeContext.builder(run)
                     .toolExecutionContext(
                             ToolExecutionContext.merge(
                                     run.asToolExecutionContext(), toolExecutionContext))
@@ -634,6 +635,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
         return callInternal(msgs, context, m -> doCall(m, outputSchema));
+    }
+
+    /**
+     * Calls the agent with a plain text input and per-call {@link RuntimeContext}.
+     *
+     * @param text    input text (wrapped into a {@link UserMessage})
+     * @param context per-call runtime context
+     * @return response message
+     */
+    public Mono<Msg> call(String text, RuntimeContext context) {
+        return call(List.of(new UserMessage(text)), context);
+    }
+
+    /**
+     * Calls the agent with a plain text input, structured output class, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text                 input text (wrapped into a {@link UserMessage})
+     * @param structuredOutputClass class defining the structure
+     * @param context              per-call runtime context
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, Class<?> structuredOutputClass, RuntimeContext context) {
+        return call(List.of(new UserMessage(text)), structuredOutputClass, context);
     }
 
     /**
@@ -903,6 +928,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return streamEvents(List.of(msg), context);
     }
 
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text) {
+        return streamEvents(new UserMessage(text));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param text    input text (wrapped into a {@link UserMessage})
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text, RuntimeContext context) {
+        return streamEvents(new UserMessage(text), context);
+    }
+
     // ==================== Protected API ====================
 
     /**
@@ -1071,6 +1118,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedUsage,
                                                                 aggregatedThinking);
                                             }
+                                            scope.state.contextMutable().add(out);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
@@ -1974,6 +2022,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // HITL stop
                                 if (event.isStopRequested()) {
+                                    if (eventMsg == null) {
+                                        return Mono.empty();
+                                    }
                                     return Mono.just(
                                             eventMsg.withGenerateReason(
                                                     GenerateReason.REASONING_STOP_REQUESTED));
@@ -1990,7 +2041,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
-                                    return Mono.just(eventMsg);
+                                    return Mono.justOrEmpty(eventMsg);
                                 }
 
                                 // Continue to acting
@@ -2242,6 +2293,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 buildSuspendedMsg(pendingPairs));
                                                     }
 
+                                                    syncToolkitToState(state);
                                                     return executeIteration(iter + 1);
                                                 });
                             });
@@ -2770,11 +2822,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     byId ->
                             Flux.fromIterable(toolCalls)
                                     .concatMap(
-                                            use ->
-                                                    STRUCTURED_OUTPUT_TOOL_NAME.equals(
-                                                                    use.getName())
-                                                            ? executeStructuredTool(use)
-                                                            : Mono.just(byId.get(use.getId())))
+                                            use -> {
+                                                if (STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                                                        use.getName())) {
+                                                    return executeStructuredTool(use);
+                                                }
+                                                ToolResultBlock result = byId.get(use.getId());
+                                                if (result == null) {
+                                                    return Mono.just(
+                                                            buildErrorToolResult(
+                                                                    use.getId(),
+                                                                    "Internal error: missing tool"
+                                                                            + " result for '"
+                                                                            + use.getName()
+                                                                            + "'"));
+                                                }
+                                                return Mono.just(result);
+                                            })
                                     .collectList());
         }
 
@@ -4242,6 +4306,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         public ReActAgent build() {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
+
+            // Rebind externally-constructed middleware that holds a reference to the
+            // original (pre-copy) toolkit so it uses the agent's actual instance.
+            for (MiddlewareBase mw : middlewares) {
+                if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
+                    aware.rebindToolkit(agentToolkit);
+                }
+            }
 
             registerToolsFromHooks(agentToolkit);
 

@@ -19,6 +19,7 @@ import io.agentscope.core.formatter.ollama.dto.OllamaFunction;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaToolCall;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -163,8 +164,9 @@ public class OllamaMessageConverter {
                         block -> {
                             if (block instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
+                            } else if (block instanceof HintBlock hb) {
+                                return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
-                                // Extract text from tool result output
                                 return toolResult.getOutput().stream()
                                         .filter(output -> output instanceof TextBlock)
                                         .map(output -> ((TextBlock) output).getText());
@@ -186,8 +188,9 @@ public class OllamaMessageConverter {
                         block -> {
                             if (block instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
+                            } else if (block instanceof HintBlock hb) {
+                                return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
-                                // Extract text from tool result output
                                 return toolResult.getOutput().stream()
                                         .filter(output -> output instanceof TextBlock)
                                         .map(output -> ((TextBlock) output).getText());

@@ -139,6 +139,7 @@ sphinx:
       - notice-bar.js
       - mermaid-zoom.js
       - version.js
+      - ai-context-menu.js
 
     html_context:
       # Version switcher

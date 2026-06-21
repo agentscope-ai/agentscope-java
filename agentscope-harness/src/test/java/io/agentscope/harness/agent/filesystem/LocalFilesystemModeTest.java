@@ -22,13 +22,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -134,5 +137,58 @@ class LocalFilesystemModeTest {
         ReadResult r = fs.read(RuntimeContext.empty(), file.toString(), 0, 0);
         assertTrue(r.isSuccess(), "UNRESTRICTED should accept any absolute path");
         assertEquals("free", r.fileData().content());
+    }
+
+    // ==================== Namespace + absolute path tests ====================
+
+    private static final NamespaceFactory USER_NS = rc -> List.of("user-1");
+
+    @Test
+    void rooted_absolutePathNotCorruptedByNamespace(@TempDir Path workspace, @TempDir Path project)
+            throws IOException {
+        Path projectFile = project.resolve("Main.java");
+        Files.writeString(projectFile, "class Main {}", StandardCharsets.UTF_8);
+
+        PathPolicy policy = PathPolicy.of(project, workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, policy, 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, projectFile.toString(), 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "absolute path should resolve correctly, got: " + r.error());
+        assertEquals("class Main {}", r.fileData().content());
+    }
+
+    @Test
+    void rooted_absolutePathLsNotCorruptedByNamespace(
+            @TempDir Path workspace, @TempDir Path project) throws IOException {
+        Path subDir = project.resolve("src");
+        Files.createDirectories(subDir);
+        Files.writeString(subDir.resolve("App.java"), "class App {}", StandardCharsets.UTF_8);
+
+        PathPolicy policy = PathPolicy.of(project, workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, policy, 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        LsResult r = fs.ls(rc, subDir.toString());
+        assertTrue(r.isSuccess());
+        assertFalse(r.entries().isEmpty(), "ls should find files in the project directory");
+    }
+
+    @Test
+    void rooted_relativePathStillNamespaced(@TempDir Path workspace) throws IOException {
+        Path nsDir = workspace.resolve("user-1");
+        Files.createDirectories(nsDir);
+        Files.writeString(nsDir.resolve("notes.md"), "hello", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, "notes.md", 0, 0);
+        assertTrue(r.isSuccess(), () -> "relative path should be namespaced, got: " + r.error());
+        assertEquals("hello", r.fileData().content());
     }
 }
