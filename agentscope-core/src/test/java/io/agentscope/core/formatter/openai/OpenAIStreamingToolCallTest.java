@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ToolCallsAccumulator;
 import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -251,6 +252,86 @@ class OpenAIStreamingToolCallTest {
     }
 
     @Test
+    @DisplayName("Should merge malformed trailing chunk with non-null name")
+    void testMalformedTrailingChunkWithNameStillAccumulates() {
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+
+        OpenAIResponse firstChunkResponse = new OpenAIResponse();
+        firstChunkResponse.setId("chatcmpl-tool");
+        firstChunkResponse.setObject("chat.completion.chunk");
+
+        OpenAIChoice firstChoice = new OpenAIChoice();
+        firstChoice.setIndex(0);
+
+        OpenAIMessage firstDelta = new OpenAIMessage();
+        List<OpenAIToolCall> firstToolCalls = new ArrayList<>();
+
+        OpenAIToolCall firstToolCall = new OpenAIToolCall();
+        firstToolCall.setId("call_abc123");
+        firstToolCall.setIndex(0);
+        firstToolCall.setType("function");
+
+        OpenAIFunction firstFunction = new OpenAIFunction();
+        firstFunction.setName("retrieveFromMemory");
+        firstFunction.setArguments("{\"keywords\":[\"关注\"]");
+        firstToolCall.setFunction(firstFunction);
+        firstToolCalls.add(firstToolCall);
+
+        firstDelta.setToolCalls(firstToolCalls);
+        firstChoice.setDelta(firstDelta);
+        firstChunkResponse.setChoices(List.of(firstChoice));
+
+        ChatResponse firstChunk = parser.parseResponse(firstChunkResponse, Instant.now());
+        firstChunk.getContent().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .forEach(accumulator::add);
+
+        OpenAIResponse malformedTrailingResponse = new OpenAIResponse();
+        malformedTrailingResponse.setId("chatcmpl-tool");
+        malformedTrailingResponse.setObject("chat.completion.chunk");
+
+        OpenAIChoice trailingChoice = new OpenAIChoice();
+        trailingChoice.setIndex(0);
+
+        OpenAIMessage trailingDelta = new OpenAIMessage();
+        List<OpenAIToolCall> trailingToolCalls = new ArrayList<>();
+
+        OpenAIToolCall trailingToolCall = new OpenAIToolCall();
+        trailingToolCall.setId(null);
+        trailingToolCall.setIndex(0);
+        trailingToolCall.setType("function");
+
+        OpenAIFunction trailingFunction = new OpenAIFunction();
+        trailingFunction.setName("retrieveFromMemory");
+        trailingFunction.setArguments("}");
+        trailingToolCall.setFunction(trailingFunction);
+        trailingToolCalls.add(trailingToolCall);
+
+        trailingDelta.setToolCalls(trailingToolCalls);
+        trailingChoice.setDelta(trailingDelta);
+        malformedTrailingResponse.setChoices(List.of(trailingChoice));
+
+        ChatResponse trailingChunk = parser.parseResponse(malformedTrailingResponse, Instant.now());
+        trailingChunk.getContent().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .forEach(accumulator::add);
+
+        List<ToolUseBlock> accumulatedToolCalls = accumulator.buildAllToolCalls();
+
+        assertEquals(1, accumulatedToolCalls.size());
+        ToolUseBlock accumulated = accumulatedToolCalls.get(0);
+        assertEquals("call_abc123", accumulated.getId());
+        assertEquals("retrieveFromMemory", accumulated.getName());
+        assertEquals("{\"keywords\":[\"关注\"]}", accumulated.getContent());
+        assertNotNull(accumulated.getInput());
+        assertEquals(1, accumulated.getInput().size());
+        assertTrue(accumulated.getInput().containsKey("keywords"));
+        assertEquals(List.of("关注"), accumulated.getInput().get("keywords"));
+    }
+
+    @Test
     @DisplayName("Should handle tool call with null arguments")
     void testToolCallWithNullArguments() {
         OpenAIResponse response = new OpenAIResponse();
@@ -289,5 +370,111 @@ class OpenAIStreamingToolCallTest {
         ToolUseBlock toolUse = (ToolUseBlock) block;
         assertEquals("call_null", toolUse.getId());
         assertEquals("null_args_tool", toolUse.getName());
+    }
+
+    @Test
+    @DisplayName("Should generate streaming ID when first chunk has no ID")
+    void testStreamingToolCallGeneratesIdWhenMissing() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId(null);
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName("lookup_weather");
+        function.setArguments("");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertTrue(toolUse.getId().startsWith("streaming_"));
+        assertEquals("lookup_weather", toolUse.getName());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should keep raw content when complete streaming JSON is malformed")
+    void testStreamingToolCallMalformedCompleteJsonKeepsRawContent() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId("call_bad_json");
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName("broken_tool");
+        function.setArguments("{\"city\":}");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("call_bad_json", toolUse.getId());
+        assertEquals("broken_tool", toolUse.getName());
+        assertEquals("{\"city\":}", toolUse.getContent());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should emit placeholder fragment when chunk only carries thought signature")
+    void testStreamingToolCallThoughtSignatureOnlyFragment() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId("call_sig_only");
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+        toolCall.setThoughtSignature("signature_only");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName(null);
+        function.setArguments("");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, toolUse.getName());
+        assertEquals("", toolUse.getId());
+        assertEquals(
+                "signature_only",
+                toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
     }
 }

@@ -26,16 +26,19 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
+import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -314,6 +317,46 @@ class OpenAIChatFormatterTest {
         assertNotNull(chatResponse.getUsage());
         assertEquals(10, chatResponse.getUsage().getInputTokens());
         assertEquals(20, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    @DisplayName("Should parse malformed named streaming tool fragment through formatter")
+    void testParseMalformedNamedStreamingToolFragment() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-123");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName("retrieveFromMemory");
+        function.setArguments("}");
+
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId(null);
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+        toolCall.setFunction(function);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        delta.setRole("assistant");
+        delta.setToolCalls(List.of(toolCall));
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = formatter.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        assertNotNull(chatResponse.getContent());
+        assertEquals(1, chatResponse.getContent().size());
+        ContentBlock contentBlock = chatResponse.getContent().get(0);
+        assertInstanceOf(ToolUseBlock.class, contentBlock);
+
+        ToolUseBlock toolUseBlock = (ToolUseBlock) contentBlock;
+        assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, toolUseBlock.getName());
+        assertEquals("", toolUseBlock.getId());
+        assertEquals("}", toolUseBlock.getContent());
     }
 
     @Test
