@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
@@ -35,6 +36,7 @@ import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -158,20 +161,54 @@ public class Fabric8KubernetesPodRuntime {
             throws Exception {
         String root = state.getWorkspaceRoot();
         mkdir(state, root);
-        ContainerResource pod = pod(state);
+
+        // Two-phase approach to avoid the Fabric8 WebSocket stdin race:
+        // readingInput() pipes InputStream to WebSocket stdin, but after EOF the stdin
+        // channel is never closed (K8s WebSocket v4 has no per-channel close). When
+        // ExecWatch.close() finally closes the WebSocket, K8s may SIGKILL the process
+        // before tar finishes extracting (exit=137). This mirrors the pattern Fabric8's
+        // own PodUpload uses: redirectingInput() + "cat > tmpfile" for the stdin phase,
+        // then a separate exec for tar extraction.
+        String tmpTar = "/tmp/ws-hydrate-" + Math.abs(state.getSessionId().hashCode()) + ".tar";
+
+        // Phase 1: Stream archive to a temp file via stdin.
+        // "cat" exits immediately on EOF — no post-EOF work, no SIGKILL race.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
+        CompletableFuture<Integer> uploadExit;
         try (ExecWatch watch =
-                pod.readingInput(archive)
+                pod(state)
+                        .redirectingInput()
                         .writingError(errBuf)
-                        .exec("tar", "-xf", "-", "-C", root)) {
-            Integer exit = watch.exitCode().get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
-            if (exit == null || exit != 0) {
+                        .exec("sh", "-c", "cat > " + tmpTar)) {
+            try (OutputStream stdin = watch.getInput()) {
+                archive.transferTo(stdin);
+            }
+            uploadExit = watch.exitCode();
+        }
+        try {
+            Integer code = uploadExit.get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
+            if (code == null || code != 0) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                        "tar extract failed (exit="
-                                + exit
+                        "archive upload failed (exit="
+                                + code
                                 + "): "
                                 + errBuf.toString(StandardCharsets.UTF_8));
+            }
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                    "archive upload to pod timed out");
+        }
+
+        // Phase 2: Extract from the temp file — no stdin involved, no race.
+        try {
+            exec(state, "tar -xf " + tmpTar + " -C " + shellSingleQuote(root), TAR_TIMEOUT_SECONDS);
+        } finally {
+            try {
+                exec(state, "rm -f " + tmpTar, 30);
+            } catch (Exception ignored) {
+                log.debug("[sandbox-k8s] Failed to clean up temp archive {}", tmpTar);
             }
         }
     }
@@ -219,6 +256,18 @@ public class Fabric8KubernetesPodRuntime {
                 requests.put("memory", new Quantity(templateOptions.getMemoryRequest()));
             }
             cb.withResources(rb.withRequests(requests).build());
+        }
+
+        // Inject environment variables from WorkspaceSpec (parity with DockerSandbox)
+        WorkspaceSpec wsEnv = state.getWorkspaceSpec();
+        if (wsEnv != null && wsEnv.getEnvironment() != null) {
+            List<EnvVar> envVars = new ArrayList<>();
+            for (Map.Entry<String, String> e : wsEnv.getEnvironment().entrySet()) {
+                envVars.add(new EnvVar(e.getKey(), e.getValue(), null));
+            }
+            if (!envVars.isEmpty()) {
+                cb.withEnv(envVars);
+            }
         }
 
         List<Volume> bindVolumes = new ArrayList<>();

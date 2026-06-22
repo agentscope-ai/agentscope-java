@@ -629,13 +629,23 @@ public class RemoteFilesystem implements AbstractFilesystem {
             if (page.isEmpty()) {
                 break;
             }
-            all.addAll(page);
+            for (StoreItem item : page) {
+                all.add(normalizeItemKey(item));
+            }
             if (page.size() < pageSize) {
                 break;
             }
             offset += pageSize;
         }
         return all;
+    }
+
+    private static StoreItem normalizeItemKey(StoreItem item) {
+        String key = item.key();
+        if (key != null && !key.startsWith("/")) {
+            return new StoreItem("/" + key, item.value(), item.version());
+        }
+        return item;
     }
 
     private static FileData convertItemToFileData(StoreItem item) {
