@@ -8,6 +8,9 @@ description: "From single-node prototype to multi-replica deployment: component 
 **Fastest path to production**: use `DistributedStore` to configure all distributed components at once:
 
 ```java
+import redis.clients.jedis.JedisPooled;
+
+JedisPooled jedis = new JedisPooled("redis://localhost:6379");
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 // or MysqlDistributedStore.create(dataSource);
 // or OssDistributedStore.create(ossClient, bucket, prefix);
