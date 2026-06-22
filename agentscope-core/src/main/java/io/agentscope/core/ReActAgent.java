@@ -4332,6 +4332,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
+            // Rebind externally-constructed middleware that holds a reference to the
+            // original (pre-copy) toolkit so it uses the agent's actual instance.
+            for (MiddlewareBase mw : middlewares) {
+                if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
+                    aware.rebindToolkit(agentToolkit);
+                }
+            }
+
             registerToolsFromHooks(agentToolkit);
 
             if (enableMetaTool) {
