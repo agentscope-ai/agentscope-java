@@ -145,12 +145,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
                 ExecResult result = active.exec(runtimeContext, cmd, null);
                 if (result.ok()) {
+                    // MIME decoder tolerates wrapped base64 output from GNU `base64`.
                     byte[] decoded =
-                            Base64.getDecoder()
+                            Base64.getMimeDecoder()
                                     .decode(
-                                            result.stdout()
-                                                    .trim()
-                                                    .getBytes(StandardCharsets.UTF_8));
+                                            result.stdout() != null ? result.stdout().strip() : "");
                     results.add(FileDownloadResponse.success(path, decoded));
                 } else {
                     results.add(FileDownloadResponse.fail(path, result.combinedOutput()));
