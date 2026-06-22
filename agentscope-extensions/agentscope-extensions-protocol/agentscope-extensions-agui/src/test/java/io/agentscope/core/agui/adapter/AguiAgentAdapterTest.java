@@ -418,21 +418,20 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should have: RunStarted, Raw(error), RunFinished
+        // Should have: RunStarted, RunError, RunFinished
         assertTrue(events.size() >= 3);
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
 
-        // Find error event
-        AguiEvent.Raw errorEvent =
+        // Find RunError event
+        AguiEvent.RunError errorEvent =
                 events.stream()
-                        .filter(e -> e instanceof AguiEvent.Raw)
-                        .map(e -> (AguiEvent.Raw) e)
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(errorEvent, "Should have error Raw event");
-        Map<String, Object> errorData = (Map<String, Object>) errorEvent.rawEvent();
-        assertTrue(errorData.containsKey("error"));
+        assertNotNull(errorEvent, "Should have RunError event");
+        assertTrue(errorEvent.message().contains("Agent error"));
 
         assertInstanceOf(AguiEvent.RunFinished.class, events.get(events.size() - 1));
     }

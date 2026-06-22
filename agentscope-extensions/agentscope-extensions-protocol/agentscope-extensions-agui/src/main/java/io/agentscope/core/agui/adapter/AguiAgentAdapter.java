@@ -109,7 +109,8 @@ public class AguiAgentAdapter {
 
                     return Flux.concat(
                                     // Emit RUN_STARTED
-                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                    Flux.just(
+                                            new AguiEvent.RunStarted(threadId, runId, null, input)),
                                     // Stream agent events and convert to AG-UI events
                                     // Use concatMapIterable to preserve strict event ordering
                                     agent.stream(msgs, options)
@@ -118,17 +119,14 @@ public class AguiAgentAdapter {
                                     Flux.defer(() -> finishRun(state)))
                             .onErrorResume(
                                     error -> {
-                                        // On error, emit RawEvent with error info followed by
-                                        // RunFinished
+                                        // Emit RunError with error info, then RunFinished
                                         String errorMessage =
                                                 error.getMessage() != null
                                                         ? error.getMessage()
                                                         : error.getClass().getSimpleName();
                                         return Flux.just(
-                                                new AguiEvent.Raw(
-                                                        threadId,
-                                                        runId,
-                                                        Map.of("error", errorMessage)),
+                                                new AguiEvent.RunError(
+                                                        threadId, runId, errorMessage, null),
                                                 new AguiEvent.RunFinished(threadId, runId));
                                     });
                 });
