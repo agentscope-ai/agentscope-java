@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * Represents token usage information for chat completion responses.
  *
@@ -26,6 +29,7 @@ public class ChatUsage {
     private final int inputTokens;
     private final int outputTokens;
     private final double time;
+    private final Integer cachedTokens;
 
     /**
      * Creates a new ChatUsage instance.
@@ -34,10 +38,16 @@ public class ChatUsage {
      * @param outputTokens the number of tokens used for the output/generated response
      * @param time the execution time in seconds
      */
-    public ChatUsage(int inputTokens, int outputTokens, double time) {
+    @JsonCreator
+    public ChatUsage(
+            @JsonProperty("inputTokens") int inputTokens,
+            @JsonProperty("outputTokens") int outputTokens,
+            @JsonProperty("time") double time,
+            @JsonProperty("cachedTokens") Integer cachedTokens) {
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
         this.time = time;
+        this.cachedTokens = cachedTokens;
     }
 
     /**
@@ -77,6 +87,15 @@ public class ChatUsage {
     }
 
     /**
+     * Gets the number of cached prompt tokens.
+     *
+     * @return the number of cached tokens, or null if not reported by the provider
+     */
+    public Integer getCachedTokens() {
+        return cachedTokens;
+    }
+
+    /**
      * Creates a new builder for ChatUsage.
      *
      * @return a new Builder instance
@@ -92,6 +111,7 @@ public class ChatUsage {
         private int inputTokens;
         private int outputTokens;
         private double time;
+        private Integer cachedTokens;
 
         /**
          * Sets the number of input tokens.
@@ -127,12 +147,23 @@ public class ChatUsage {
         }
 
         /**
+         * Sets the number of cached prompt tokens.
+         *
+         * @param cachedTokens the number of cached tokens
+         * @return this builder instance
+         */
+        public Builder cachedTokens(Integer cachedTokens) {
+            this.cachedTokens = cachedTokens;
+            return this;
+        }
+
+        /**
          * Builds a new ChatUsage instance with the set values.
          *
          * @return a new ChatUsage instance
          */
         public ChatUsage build() {
-            return new ChatUsage(inputTokens, outputTokens, time);
+            return new ChatUsage(inputTokens, outputTokens, time, cachedTokens);
         }
     }
 }
