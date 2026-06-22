@@ -83,6 +83,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -2119,7 +2120,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, model))
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
                     .doOnNext(this::publishEvent);
         }
 
@@ -3107,7 +3108,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             summaryModelCallCore)
-                    .apply(new ModelCallInput(messages, null, options, model))
+                    .apply(new ModelCallInput(messages, null, options, modelForCall()))
                     .doOnNext(this::publishEvent);
         }
 
@@ -3362,6 +3363,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Start with user-configured generateOptions if available
         GenerateOptions baseOptions = generateOptions;
 
+        // Layer the agent-level retry budget underneath explicit per-call settings.
+        if (modelConfig != null) {
+            GenerateOptions retryBudgetOptions =
+                    GenerateOptions.builder()
+                            .executionConfig(
+                                    ExecutionConfig.builder()
+                                            .maxAttempts(modelConfig.maxRetries())
+                                            .build())
+                            .build();
+            baseOptions = GenerateOptions.mergeOptions(baseOptions, retryBudgetOptions);
+        }
+
         // If modelExecutionConfig is set, merge it into the options
         if (modelExecutionConfig != null) {
             GenerateOptions execConfigOptions =
@@ -3370,6 +3383,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
+    }
+
+    private Model modelForCall() {
+        Model fallbackModel = modelConfig.fallbackModel();
+        if (fallbackModel == null) {
+            return model;
+        }
+
+        AtomicReference<Model> activeModel = new AtomicReference<>(model);
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                return primaryFlux.switchOnFirst(
+                        (signal, flux) -> {
+                            if (signal.isOnError()) {
+                                Throwable error = signal.getThrowable();
+                                activeModel.set(fallbackModel);
+                                log.warn(
+                                        "Primary model {} failed, switching to fallback {}",
+                                        model.getModelName(),
+                                        fallbackModel.getModelName(),
+                                        error);
+                                return fallbackModel.stream(messages, tools, options);
+                            }
+                            return flux;
+                        });
+            }
+
+            @Override
+            public String getModelName() {
+                return activeModel.get().getModelName();
+            }
+        };
     }
 
     @Override
@@ -4282,6 +4330,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             b.model = agent.getModel();
             b.maxIters = agent.getMaxIters();
             b.generateOptions = agent.getGenerateOptions();
+            ModelConfig srcModelConfig = agent.getModelConfig();
+            if (srcModelConfig != null) {
+                b.flatMaxRetries = srcModelConfig.maxRetries();
+                b.flatFallbackModel = srcModelConfig.fallbackModel();
+            }
             b.toolkit = agent.getToolkit().copy();
             return b;
         }
