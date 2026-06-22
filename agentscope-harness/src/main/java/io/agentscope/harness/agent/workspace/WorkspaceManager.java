@@ -33,10 +33,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -729,6 +731,87 @@ public class WorkspaceManager implements AutoCloseable {
         // Best-effort: record upload size in index (no local file to stat from)
         if (index != null) {
             index.upsert(normalized, content.getBytes(StandardCharsets.UTF_8).length, null);
+        }
+    }
+
+    // ==================== Skill self-learning helpers====================
+
+    /**
+     * Detection helper for the heuristic used by {@link #writeDraftSkillFile} and
+     * {@link #moveSkill}: returns {@code true} when the lower layer of an overlay is a
+     * non-local KV / remote backend (e.g. {@code RemoteFilesystem}). Drafts on such
+     * stores should be stored on the lower layer so external approval systems can read
+     * them across replicas.
+     */
+    private static boolean isRemoteLowerLayer(AbstractFilesystem fs) {
+        if (!(fs instanceof OverlayFilesystem overlay)) {
+            return false;
+        }
+        AbstractFilesystem lower = overlay.lower();
+        if (lower == null) {
+            return false;
+        }
+        String name = lower.getClass().getSimpleName();
+        // Non-local KV / KV-overlay implementations expose their content cross-replica.
+        return name.contains("Remote") || name.contains("Kv") || name.contains("KV");
+    }
+
+    /**
+     * Write a single file under {@code skills/_drafts/} (or whatever drafts dir the caller
+     * passes). When the underlying filesystem is an {@link OverlayFilesystem} backed by a
+     * {@code RemoteFilesystem} lower layer, the draft is written directly to that lower layer
+     * so it is visible to other replicas / external approval systems. Otherwise it goes
+     * through the standard upper-layer write path.
+     *
+     * @param rc the runtime context (passed straight through to the filesystem)
+     * @param relativePath workspace-relative path (must include the drafts prefix)
+     * @param content UTF-8 content
+     */
+    public void writeDraftSkillFile(RuntimeContext rc, String relativePath, String content) {
+        if (relativePath == null || content == null) {
+            return;
+        }
+        String normalized = normalizeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (filesystem instanceof OverlayFilesystem overlay && isRemoteLowerLayer(filesystem)) {
+            // Cross-replica draft: target the shared (lower) backend directly.
+            overlay.lower()
+                    .uploadFiles(
+                            rc,
+                            List.of(
+                                    Map.entry(
+                                            normalized, content.getBytes(StandardCharsets.UTF_8))));
+            return;
+        }
+        // Default path — same as writeUtf8WorkspaceRelative.
+        writeUtf8WorkspaceRelative(rc, relativePath, content);
+    }
+
+    /**
+     * Move a directory inside the workspace (used by promotion: {@code skills/_drafts/<x>}
+     * → {@code skills/<x>}). Best-effort — falls back to the underlying filesystem's native
+     * {@code move} when available; returns {@code true} on success.
+     */
+    public boolean moveSkill(RuntimeContext rc, String fromRelative, String toRelative) {
+        if (fromRelative == null || toRelative == null || filesystem == null) {
+            return false;
+        }
+        String src = normalizeRelativePath(fromRelative);
+        String dst = normalizeRelativePath(toRelative);
+        if (src.isEmpty() || dst.isEmpty()) {
+            return false;
+        }
+        try {
+            // For overlay+remote-lower setups: source might live on lower (drafts) and we
+            // want destination to also be on lower so it stays cross-replica. The overlay
+            // contract handles this transparently via its own move.
+            WriteResult r = filesystem.move(rc, src, dst);
+            return r.isSuccess();
+        } catch (Exception e) {
+            log.warn("moveSkill {} → {} failed: {}", src, dst, e.getMessage());
+            return false;
         }
     }
 

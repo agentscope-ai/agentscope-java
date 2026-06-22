@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -112,6 +113,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
     private final boolean ownsExecutor;
     private final ScheduledExecutorService maintenanceScheduler;
 
+    private volatile TaskCompletionCallback completionCallback;
+
     public WorkspaceTaskRepository(WorkspaceManager workspaceManager, String parentAgentId) {
         this(
                 workspaceManager,
@@ -197,6 +200,19 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
+    /**
+     * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
+     * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
+     * to the session inbox and enqueue a wakeup signal. The {@code result} argument passed to the
+     * callback is {@code null} for failed tasks; callers that need the error message should read
+     * the persisted {@link TaskRecord} directly.
+     *
+     * <p>Only one callback is supported; a second call replaces the previous one.
+     */
+    public void setCompletionCallback(TaskCompletionCallback callback) {
+        this.completionCallback = callback;
+    }
+
     @Override
     public BackgroundTask putTask(
             RuntimeContext rc,
@@ -220,12 +236,43 @@ public class WorkspaceTaskRepository implements TaskRepository {
         String localKey = localKey(sessionId, taskId);
         CompletableFuture<String> future;
 
-        if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
+        if (spec instanceof TaskRunSpec.AdoptedTaskRunSpec adopted) {
+            // The future is already running (promoted from a timed-out sync execution).
+            // Skip executor submission; just wire up status-tracking callbacks.
+            future = adopted.future();
+            updateStatus(capturedRc, sessionId, taskId, TaskStatus.RUNNING, null, null);
+            final String sid = sessionId;
+            future.whenComplete(
+                    (result, err) -> {
+                        if (err != null) {
+                            Throwable cause =
+                                    err instanceof java.util.concurrent.CompletionException
+                                            ? err.getCause()
+                                            : err;
+                            String errMsg =
+                                    cause != null && cause.getMessage() != null
+                                            ? cause.getMessage()
+                                            : (cause != null
+                                                    ? cause.getClass().getSimpleName()
+                                                    : err.getClass().getSimpleName());
+                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
+                        } else {
+                            updateStatus(
+                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
+                        }
+                    });
+        } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
             future =
                     CompletableFuture.supplyAsync(
                             () ->
                                     runLocalSupplier(
-                                            capturedRc, sessionId, taskId, local.execution()),
+                                            capturedRc,
+                                            sessionId,
+                                            taskId,
+                                            subAgentId,
+                                            local.execution()),
                             executor);
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             future =
@@ -251,7 +298,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private String runLocalSupplier(
-            RuntimeContext rc, String sessionId, String taskId, Supplier<String> taskExecution) {
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            Supplier<String> taskExecution) {
         Optional<TaskRecord> latest =
                 workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
         if (latest.isPresent() && latest.get().isCancelRequested()) {
@@ -269,10 +320,12 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 return null;
             }
             updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -432,6 +485,65 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
 
         return found;
+    }
+
+    // ---- Phase B-3 push delivery -----------------------------------------------------------
+
+    @Override
+    public List<TaskDelivery> findPendingDeliveries(RuntimeContext rc, String sessionId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Collection<TaskRecord> records =
+                workspaceManager.listTaskRecords(effRc, parentAgentId, sessionId);
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+        List<TaskRecord> ordered = new ArrayList<>(records);
+        ordered.sort(
+                Comparator.comparing(
+                        TaskRecord::getLastUpdatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())));
+        List<TaskDelivery> out = new ArrayList<>();
+        for (TaskRecord r : ordered) {
+            if (r.getStatus() == null || !r.getStatus().isTerminal()) continue;
+            if (r.isDelivered()) continue;
+            out.add(
+                    new TaskDelivery(
+                            r.getTaskId(),
+                            r.getSubAgentId(),
+                            r.getStatus(),
+                            r.getResult(),
+                            r.getErrorMessage(),
+                            r.getLastUpdatedAt()));
+        }
+        return out;
+    }
+
+    /**
+     * Stamps {@code deliveredAt} on the persisted record. Idempotent — the first non-null write
+     * wins; subsequent calls bail out without touching workspace storage. Uses an independent
+     * read-modify-write path rather than going through {@link #updateStatus} so the heartbeat /
+     * orphan-sweeper cannot accidentally clobber the field via their RUNNING/FAILED writes
+     * (those paths reconstruct the record around status-only fields).
+     */
+    @Override
+    public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty()) return;
+        TaskRecord r = existing.get();
+        if (r.getDeliveredAt() != null) return; // already delivered
+        r.setDeliveredAt(Instant.now());
+        persistRecord(effRc, sessionId, r);
+    }
+
+    @Override
+    public boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        return workspaceManager
+                .readTaskRecord(effRc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::isDelivered)
+                .orElse(false);
     }
 
     @Override
@@ -747,5 +859,34 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
         }
         return new BackgroundTask(record.getTaskId(), record.getSubAgentId(), future);
+    }
+
+    private void fireCompletionCallback(
+            RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
+        TaskCompletionCallback cb = this.completionCallback;
+        if (cb == null) {
+            return;
+        }
+        try {
+            cb.onCompleted(rc, taskId, subAgentId, sessionId, result);
+        } catch (Exception e) {
+            log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
+     * Implementations typically push the result to the session inbox and enqueue a wakeup signal.
+     * {@code result} is {@code null} when the task failed; callers should read the persisted
+     * {@link TaskRecord} for the error message.
+     */
+    @FunctionalInterface
+    public interface TaskCompletionCallback {
+        void onCompleted(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                String result);
     }
 }

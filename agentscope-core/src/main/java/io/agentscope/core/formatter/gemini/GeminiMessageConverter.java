@@ -22,6 +22,7 @@ import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -171,8 +172,10 @@ public class GeminiMessageConverter {
                 } else if (block instanceof VideoBlock vb) {
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
 
+                } else if (block instanceof HintBlock hb) {
+                    parts.add(Part.builder().text(hb.getHint()).build());
+
                 } else if (block instanceof ThinkingBlock) {
-                    // Skip ThinkingBlock - not sent to LLM
                     log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
                     continue;
 
@@ -207,8 +210,7 @@ public class GeminiMessageConverter {
 
     /**
      * Convert tool result output to string representation.
-     * Follows Python implementation: single item returns directly,
-     * multiple items use "- " prefix per line.
+     * Single item returns directly; multiple items use "- " prefix per line.
      *
      * @param output List of content blocks from tool result
      * @return String representation of the output

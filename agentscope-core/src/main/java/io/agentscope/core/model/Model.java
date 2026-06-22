@@ -38,4 +38,29 @@ public interface Model {
      * @return model name
      */
     String getModelName();
+
+    /**
+     * Whether this model supports native structured output ({@code response_format} with
+     * {@code json_schema}) alongside tool use. When {@code true}, the agent can pass the output
+     * schema directly to the model via {@link GenerateOptions#getResponseFormat()} instead of
+     * injecting a synthetic {@code generate_response} tool.
+     *
+     * @return {@code true} if the model supports structured output with tools natively
+     */
+    default boolean supportsNativeStructuredOutput() {
+        return false;
+    }
+
+    /**
+     * Returns the model's context window size in tokens, or {@code 0} if unknown.
+     *
+     * <p>Used by the compaction middleware to dynamically compute when to trigger
+     * conversation summarization. Implementations should return the total context
+     * window (input + output) for the configured model.
+     *
+     * @return context window size in tokens, or {@code 0} if not available
+     */
+    default int getContextWindowSize() {
+        return 0;
+    }
 }

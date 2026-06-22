@@ -124,6 +124,24 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        return callTool(toolName, arguments, null);
+    }
+
+    /**
+     * Invokes a tool on the MCP server asynchronously with additional metadata.
+     *
+     * <p>This method sends a tool call request to the MCP server and returns the result
+     * asynchronously. The client must be initialized before calling this method.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @param meta additional metadata to include in the request
+     * @return a Mono emitting the tool call result (may contain error information)
+     * @throws IllegalStateException if the client is not initialized
+     * */
+    @Override
+    public Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
@@ -131,7 +149,8 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
 
         logger.debug("Calling MCP tool '{}' on client '{}'", toolName, name);
 
-        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(toolName, arguments);
+        McpSchema.CallToolRequest request =
+                new McpSchema.CallToolRequest(toolName, arguments, meta);
 
         return client.callTool(request)
                 .doOnSuccess(

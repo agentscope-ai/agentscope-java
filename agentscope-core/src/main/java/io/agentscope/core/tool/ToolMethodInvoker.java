@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
@@ -62,7 +63,7 @@ class ToolMethodInvoker {
 
         Map<String, Object> input = param.getInput();
         Agent agent = param.getAgent();
-        ToolExecutionContext context = param.getContext();
+        RuntimeContext runtimeContext = param.getRuntimeContext();
         ToolEmitter emitter = param.getEmitter();
 
         Class<?> returnType = method.getReturnType();
@@ -73,7 +74,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
+                                        convertParameters(
+                                                method, input, agent, runtimeContext, emitter);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
@@ -95,7 +97,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
+                                        convertParameters(
+                                                method, input, agent, runtimeContext, emitter);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
@@ -112,7 +115,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
+                                        convertParameters(
+                                                method, input, agent, runtimeContext, emitter);
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
@@ -127,8 +131,9 @@ class ToolMethodInvoker {
      * <ul>
      *   <li>{@link ToolEmitter} - Streaming output emitter</li>
      *   <li>{@link Agent} - Current agent instance</li>
-     *   <li>{@link ToolExecutionContext} - Business context</li>
-     *   <li>Custom POJO types - Retrieved from ToolExecutionContext by type</li>
+     *   <li>{@link RuntimeContext} - Per-call runtime context</li>
+     *   <li>{@link ToolExecutionContext} - Business context (deprecated)</li>
+     *   <li>Custom POJO types - Retrieved from RuntimeContext by type</li>
      * </ul>
      *
      * <p>Parameters without {@link ToolParam} annotation are treated as auto-injected types.
@@ -137,7 +142,7 @@ class ToolMethodInvoker {
      * @param method the method
      * @param input the input map
      * @param agent the agent for Agent injection (may be null)
-     * @param context the tool execution context for ToolExecutionContext injection (may be null)
+     * @param runtimeContext the runtime context for injection (may be null)
      * @param emitter the tool emitter for ToolEmitter injection (may be null)
      * @return array of converted arguments
      */
@@ -145,7 +150,7 @@ class ToolMethodInvoker {
             Method method,
             Map<String, Object> input,
             Agent agent,
-            ToolExecutionContext context,
+            RuntimeContext runtimeContext,
             ToolEmitter emitter) {
         Parameter[] parameters = method.getParameters();
 
@@ -165,17 +170,25 @@ class ToolMethodInvoker {
             else if (param.getType() == Agent.class) {
                 args[i] = agent;
             }
-            // Special handling: inject ToolExecutionContext automatically
-            else if (param.getType() == ToolExecutionContext.class) {
-                args[i] = context;
+            // Special handling: inject AgentState (matches @Tool(stateInjected=true)). Prefer the
+            // call-scoped state carried on the RuntimeContext (concurrency-safe) and fall back to
+            // the agent's current state only when the context does not carry one.
+            else if (param.getType() == AgentState.class) {
+                AgentState rcState = runtimeContext != null ? runtimeContext.getAgentState() : null;
+                args[i] =
+                        rcState != null ? rcState : (agent != null ? agent.getAgentState() : null);
             }
-            // Per-call agent runtime (when merged into the execution context)
+            // Inject RuntimeContext directly
             else if (param.getType() == RuntimeContext.class) {
-                args[i] = context != null ? context.get(RuntimeContext.class) : null;
+                args[i] = runtimeContext;
             }
-            // User-defined POJO: try to resolve from context
+            // Deprecated: inject ToolExecutionContext (bridge from RuntimeContext)
+            else if (param.getType() == ToolExecutionContext.class) {
+                args[i] = runtimeContext != null ? runtimeContext.asToolExecutionContext() : null;
+            }
+            // User-defined POJO: try to resolve from RuntimeContext
             else if (isUserContextPojo(param)) {
-                args[i] = resolveContextParameter(param, context);
+                args[i] = resolveContextParameter(param, runtimeContext);
             } else {
                 args[i] = convertSingleParameter(param, input);
             }
@@ -188,8 +201,8 @@ class ToolMethodInvoker {
      * Check if a parameter is a user-defined context POJO that should be resolved from
      * ToolExecutionContext.
      *
-     * <p>Note: This method assumes ToolEmitter, Agent, and ToolExecutionContext have already been
-     * filtered at the call site.
+     * <p>Note: This method assumes ToolEmitter, Agent, RuntimeContext, and ToolExecutionContext have
+     * already been filtered at the call site.
      *
      * <p>A parameter is considered a user context POJO if:
      * <ul>
@@ -237,27 +250,26 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Resolve a context parameter from ToolExecutionContext.
-     *
-     * <p>Resolution order:
-     * <ol>
-     *   <li>If context exists: try {@link ToolExecutionContext#get(Class)} retrieval</li>
-     *   <li>The get() method internally checks local store first, then global provider</li>
-     * </ol>
+     * Resolve a context parameter from RuntimeContext.
      *
      * @param param The parameter to resolve
-     * @param context The tool execution context (may be null)
+     * @param runtimeContext The runtime context (may be null)
      * @return Resolved parameter value, or null if resolution fails
      */
-    private Object resolveContextParameter(Parameter param, ToolExecutionContext context) {
+    private Object resolveContextParameter(Parameter param, RuntimeContext runtimeContext) {
         Class<?> targetType = param.getType();
 
-        // Get from context (delegates to store and provider)
-        if (context != null) {
-            return context.get(targetType);
+        if (runtimeContext != null) {
+            Object value = runtimeContext.get(targetType);
+            if (value != null) {
+                return value;
+            }
+            ToolExecutionContext tec = runtimeContext.asToolExecutionContext();
+            if (tec != null) {
+                return tec.get(targetType);
+            }
         }
 
-        // No context provided - cannot resolve
         return null;
     }
 

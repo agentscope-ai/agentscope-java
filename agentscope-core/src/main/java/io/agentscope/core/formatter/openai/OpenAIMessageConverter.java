@@ -23,6 +23,7 @@ import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -227,6 +228,8 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Audio - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof HintBlock hb) {
+                contentParts.add(OpenAIContentPart.text(hb.getHint()));
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for OpenAI");
             } else if (block instanceof VideoBlock vb) {

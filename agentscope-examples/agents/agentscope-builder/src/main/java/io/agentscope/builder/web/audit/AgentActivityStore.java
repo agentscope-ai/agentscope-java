@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -50,7 +51,7 @@ import org.springframework.stereotype.Service;
  * <p>All paths live under the {@code activity/} prefix because the harness composite filesystem
  * (see {@link io.agentscope.builder.web.config.BuilderConfig}) registers {@code activity/} as an
  * additional shared prefix via {@code RemoteFilesystemSpec.addSharedPrefix("activity/")}. Writes
- * therefore land on the shared {@link io.agentscope.harness.agent.store.BaseStore} (visible across
+ * therefore land on the shared {@link BaseStore} (visible across
  * pods) rather than on per-pod local disk — critical for a multi-tenant deployment.
  *
  * <p>Writes go through the per-agent {@link HarnessAgent#workspaceFor(String, String)} view, which

@@ -32,7 +32,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +57,12 @@ public class MemoryFlushManager {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushManager.class);
 
-    private static final String FLUSH_SYSTEM_PROMPT =
+    /**
+     * Default prompt for the memory extraction step. Exposed publicly so callers can extend
+     * (e.g. append project-specific guidelines) when constructing
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}.
+     */
+    public static final String DEFAULT_FLUSH_PROMPT =
             """
             You are a memory extraction assistant. Analyze the conversation below and extract \
             important facts, decisions, preferences, and contextual information that should be \
@@ -86,10 +93,20 @@ public class MemoryFlushManager {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final String flushPrompt;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
+        this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
+    }
+
+    /**
+     * @param flushPrompt SYSTEM prompt for the extraction LLM call. {@code null} falls back to
+     *     {@link #DEFAULT_FLUSH_PROMPT}.
+     */
+    public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
     }
 
     /**
@@ -132,7 +149,7 @@ public class MemoryFlushManager {
         flushInput.add(
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(FLUSH_SYSTEM_PROMPT).build())
+                        .content(TextBlock.builder().text(flushPrompt).build())
                         .build());
         flushInput.add(
                 Msg.builder()
@@ -229,7 +246,18 @@ public class MemoryFlushManager {
             // (cross-machine handoff) are included in the merged file pushed to remote.
             tree.syncFromRemote();
 
-            String lastId = null;
+            List<SessionEntry> existingEntries = new ArrayList<>(tree.getAllEntries());
+            Set<String> existingIds =
+                    existingEntries.stream()
+                            .map(SessionEntry::getId)
+                            .collect(Collectors.toCollection(HashSet::new));
+            String lastId =
+                    existingEntries.isEmpty()
+                            ? null
+                            : existingEntries.get(existingEntries.size() - 1).getId();
+
+            // The caller passes the full conversation on every turn. Use the stable Msg IDs
+            // to keep the session JSONL append-only and idempotent across repeated offloads.
             for (Msg msg : messages) {
                 if (msg.getRole() == null || isSessionContextMessage(msg)) {
                     continue;
@@ -238,11 +266,21 @@ public class MemoryFlushManager {
                 if (rendered == null || rendered.isBlank()) {
                     continue;
                 }
+                String entryId = normalizeEntryId(msg.getId());
+                if (entryId == null) {
+                    log.warn(
+                            "Msg without stable ID encountered (role={}); dedup skipped",
+                            msg.getRole());
+                }
+                if (entryId != null && existingIds.contains(entryId)) {
+                    continue;
+                }
                 String toolCallId = extractToolCallId(msg);
                 SessionEntry.MessageEntry entry =
                         new SessionEntry.MessageEntry(
-                                null, lastId, null, msg.getRole().name(), rendered, toolCallId);
+                                entryId, lastId, null, msg.getRole().name(), rendered, toolCallId);
                 tree.append(entry);
+                existingIds.add(entry.getId());
                 lastId = entry.getId();
             }
 
@@ -267,6 +305,10 @@ public class MemoryFlushManager {
             }
         }
         return null;
+    }
+
+    private static String normalizeEntryId(String id) {
+        return id != null && !id.isBlank() ? id : null;
     }
 
     /**

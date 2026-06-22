@@ -17,7 +17,6 @@ package io.agentscope.core.tool.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -25,12 +24,11 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
-import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -42,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * AgentTool implementation that wraps a sub-agent for multi-turn conversation.
@@ -119,7 +118,7 @@ public class SubAgentTool implements AgentTool {
      * <p>This method handles:
      *
      * <ul>
-     *   <li>Session ID generation for new conversations
+     *   <li>AgentStateStore ID generation for new conversations
      *   <li>Agent state loading for continued sessions
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
@@ -152,8 +151,8 @@ public class SubAgentTool implements AgentTool {
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
-                        if (!isNewSession && agent instanceof StateModule) {
-                            loadAgentState(finalSessionId, (StateModule) agent);
+                        if (!isNewSession) {
+                            loadAgentState(finalSessionId, agent);
                         }
 
                         // Build user message
@@ -162,10 +161,10 @@ public class SubAgentTool implements AgentTool {
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
-                        RuntimeContext runtimeContext = resolveRuntimeContext(param);
+                        RuntimeContext runtimeContext = param.getRuntimeContext();
 
                         logger.debug(
-                                "Session {} with agent '{}': {}",
+                                "AgentStateStore {} with agent '{}': {}",
                                 isNewSession ? "started" : "continued",
                                 agent.getName(),
                                 message.substring(0, Math.min(50, message.length())));
@@ -189,57 +188,110 @@ public class SubAgentTool implements AgentTool {
                                             agent, userMsg, finalSessionId, runtimeContext);
                         }
 
+                        // Interrupt the sub-agent when the subscription is cancelled
+                        // (e.g. ToolExecutor timeout triggers a retry on a new subscription).
+                        // Without this, the orphan agent keeps consuming LLM tokens, SSH
+                        // connections, and thread pool resources until it finishes naturally.
+                        //
+                        // Uses doFinally(CANCEL) rather than doOnCancel because doOnCancel
+                        // also fires on normal error propagation cleanup, which would
+                        // attempt to interrupt an already-failed agent.
+                        //
+                        // Uses interrupt(RuntimeContext) instead of the deprecated
+                        // interrupt(InterruptSource) because the latter only looks up
+                        // `defaultSessionId` which may differ from the session the call
+                        // actually runs in.
+                        result =
+                                result.doFinally(
+                                        signal -> {
+                                            if (signal == SignalType.CANCEL) {
+                                                interruptAgent(agent, runtimeContext);
+                                            }
+                                        });
+
                         // Save state after execution
-                        return result.doOnSuccess(
-                                r -> {
-                                    if (agent instanceof StateModule) {
-                                        saveAgentState(finalSessionId, (StateModule) agent);
-                                    }
-                                });
+                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
-                                ToolResultBlock.error("Session setup failed: " + e.getMessage()));
+                                ToolResultBlock.error(
+                                        "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
     }
 
     /**
-     * Loads agent state from the session storage.
-     *
-     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
-     * but do not interrupt execution.
-     *
-     * @param sessionId The session ID to load state from
-     * @param agent The state module to restore state into
+     * Interrupts the sub-agent when the tool call is cancelled (e.g. by timeout-triggered
+     * retry), preventing it from becoming an orphan agent that silently consumes resources.
      */
-    private void loadAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
-        try {
-            agent.loadIfExists(session, sessionId);
-            logger.debug("Loaded state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
+    private void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            logger.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because its tool call subscription "
+                            + "was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
         }
     }
 
     /**
-     * Saves agent state to the session storage.
-     *
-     * <p>Persists the agent's current state. Any errors during saving are logged but do not
-     * interrupt execution.
-     *
-     * @param sessionId The session ID to save state under
-     * @param agent The state module to save state from
+     * Loads sub-agent state for the conversation identified by {@code sessionId} from
+     * {@link SubAgentConfig#getStateStore()} and merges it into the live agent's
+     * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
-    private void saveAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
-        try {
-            agent.saveTo(session, sessionId);
-            logger.debug("Saved state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());
+    private void loadAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
         }
+        AgentStateStore subSession = config.getStateStore();
+        if (subSession == null) {
+            return;
+        }
+        try {
+            subSession
+                    .get(null, sessionId, "agent_state", AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+            logger.debug("Loaded sub-agent state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn(
+                    "Failed to load sub-agent state for session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    /**
+     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
+     * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
+     */
+    private void saveAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
+        }
+        AgentStateStore subSession = config.getStateStore();
+        if (subSession == null) {
+            return;
+        }
+        try {
+            subSession.save(null, sessionId, "agent_state", ra.getAgentState());
+            logger.debug("Saved sub-agent state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn(
+                    "Failed to save sub-agent state for session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
+        AgentState live = agent.getAgentState();
+        if (live == null) {
+            return;
+        }
+        live.contextMutable().clear();
+        live.contextMutable().addAll(loaded.getContext());
+        live.setSummary(loaded.getSummary());
+        live.setReplyId(loaded.getReplyId());
+        live.setCurIter(loaded.getCurIter());
+        live.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
     }
 
     /**
@@ -333,20 +385,6 @@ public class SubAgentTool implements AgentTool {
         return agent.call(List.of(userMsg));
     }
 
-    private RuntimeContext resolveRuntimeContext(ToolCallParam param) {
-        ToolExecutionContext context = param.getContext();
-        if (context != null) {
-            RuntimeContext runtimeContext = context.get(RuntimeContext.class);
-            if (runtimeContext != null) {
-                return runtimeContext;
-            }
-        }
-        if (param.getAgent() instanceof AgentBase agentBase) {
-            return agentBase.getRuntimeContext();
-        }
-        return null;
-    }
-
     /**
      * Forwards an event to the emitter as serialized JSON.
      *
@@ -412,12 +450,12 @@ public class SubAgentTool implements AgentTool {
 
         Map<String, Object> properties = new HashMap<>();
 
-        // Session ID (optional)
+        // AgentStateStore ID (optional)
         Map<String, Object> sessionIdProp = new HashMap<>();
         sessionIdProp.put("type", "string");
         sessionIdProp.put(
                 "description",
-                "Session ID for multi-turn dialogue. Omit to start a NEW session."
+                "AgentStateStore ID for multi-turn dialogue. Omit to start a NEW session."
                         + " To CONTINUE an existing session and retain memory, you MUST extract"
                         + " the session_id from the previous response and pass it here.");
         properties.put(PARAM_SESSION_ID, sessionIdProp);

@@ -18,10 +18,10 @@ package io.agentscope.harness.coding.control;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.coding.gateway.Gateway;
-import io.agentscope.harness.coding.gateway.MsgContext;
-import io.agentscope.harness.coding.hook.MessageQueueHook;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.coding.middleware.MessageQueueMiddleware;
 import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import io.micrometer.core.instrument.Timer;
 import java.util.List;
@@ -38,7 +38,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  *   <li>If the thread is idle, dispatch immediately via {@link Gateway#run}
  *   <li>If the thread is busy, enqueue the message in {@code SqliteBaseStore} for injection at the
- *       next reasoning step by {@link MessageQueueHook}
+ *       next reasoning step by {@link MessageQueueMiddleware}
  * </ul>
  */
 public class RunDispatcher {
@@ -111,7 +111,7 @@ public class RunDispatcher {
 
         return Mono.fromCallable(
                         () -> {
-                            MessageQueueHook.CURRENT_THREAD_ID.set(threadId);
+                            MessageQueueMiddleware.CURRENT_THREAD_ID.set(threadId);
                             return threadId;
                         })
                 .flatMap(
@@ -119,7 +119,7 @@ public class RunDispatcher {
                             try {
                                 return gateway.run(finalCtx, List.of(userMsg)).then();
                             } finally {
-                                MessageQueueHook.CURRENT_THREAD_ID.remove();
+                                MessageQueueMiddleware.CURRENT_THREAD_ID.remove();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic())

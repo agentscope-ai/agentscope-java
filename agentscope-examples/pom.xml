@@ -32,34 +32,12 @@
     <name>AgentScope Java - Examples</name>
 
     <modules>
-        <module>documentation/quickstart</module>
-        <module>documentation/advanced</module>
-        <module>documentation/plan-notebook</module>
-        <module>documentation/werewolf</module>
-        <module>documentation/werewolf-hitl</module>
-        <module>documentation/model-request-compression</module>
-        <module>documentation/chat-completions-web</module>
+        <module>documentation</module>
         <module>documentation/responses-web</module>
-        <module>documentation/hitl-chat</module>
-        <module>documentation/a2a</module>
-        <module>documentation/chat-tts</module>
-        <module>documentation/graceful-shutdown</module>
-        <module>integration/micronaut</module>
-        <module>integration/quarkus</module>
-        <module>integration/agui</module>
-        <module>integration/a2a-rocketmq</module>
-        <module>agents/boba-tea-shop</module>
         <module>agents/agentscope-builder</module>
-        <module>agents/agentscope-claw</module>
+        <module>agents/agentscope-paw</module>
         <module>agents/agentscope-dataagent</module>
         <module>agents/agentscope-codingagent</module>
-        <module>multiagent-patterns/handoffs</module>
-        <module>multiagent-patterns/routing</module>
-        <module>multiagent-patterns/subagent</module>
-        <module>multiagent-patterns/supervisor</module>
-        <module>multiagent-patterns/workflow</module>
-        <module>multiagent-patterns/pipeline</module>
-        <module>multiagent-patterns/skills</module>
     </modules>
 
     <properties>

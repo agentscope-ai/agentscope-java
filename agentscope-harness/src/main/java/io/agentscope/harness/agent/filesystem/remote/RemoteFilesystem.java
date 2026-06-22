@@ -28,10 +28,10 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.NamespaceFactory;
-import io.agentscope.harness.agent.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
@@ -629,13 +629,23 @@ public class RemoteFilesystem implements AbstractFilesystem {
             if (page.isEmpty()) {
                 break;
             }
-            all.addAll(page);
+            for (StoreItem item : page) {
+                all.add(normalizeItemKey(item));
+            }
             if (page.size() < pageSize) {
                 break;
             }
             offset += pageSize;
         }
         return all;
+    }
+
+    private static StoreItem normalizeItemKey(StoreItem item) {
+        String key = item.key();
+        if (key != null && !key.startsWith("/")) {
+            return new StoreItem("/" + key, item.value(), item.version());
+        }
+        return item;
     }
 
     private static FileData convertItemToFileData(StoreItem item) {

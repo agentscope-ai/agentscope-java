@@ -246,7 +246,7 @@ accounts: `bob` / `bob` and `alice` / `alice`. The first user with
 |---|---|---|
 | `dataagent.jwt.secret` | dev placeholder | JWT signing secret (>= 32 chars). **Refuses to boot in non-`dev` profiles when left at the default.** |
 | `dataagent.workspace` | `$CWD` *(dev only)* | Working directory for agent runtime state (not config — config lives at `~/.agentscope/dataagent/agentscope.json`). **Required** in non-`dev` profiles — startup fails if blank. |
-| `dataagent.workspace-store.local.max-file-size-mb` | `10` | Per-file cap for the `RemoteFilesystem` local backend. |
+| `dataagent.workspace-store.local.max-file-size-mb` | `10` | Per-file cap for the `RemoteFilesystem` local store. |
 | `dataagent.dashscope.api-key` | _(empty)_ | DashScope API key (fallback when no `Model` bean is registered). |
 | `dataagent.dashscope.model-name` | `qwen-max` | DashScope model id. |
 | `dataagent.agent.name` | `data-agent` | Used when auto-generating `~/.agentscope/dataagent/agentscope.json`. |

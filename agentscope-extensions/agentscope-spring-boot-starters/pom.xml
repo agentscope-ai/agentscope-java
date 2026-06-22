@@ -43,6 +43,7 @@
         <module>agentscope-chat-completions-web-starter</module>
         <module>agentscope-responses-web-starter</module>
         <module>agentscope-nacos-spring-boot-starter</module>
+        <module>agentscope-admin-spring-boot-starter</module>
     </modules>
 
     <dependencyManagement>

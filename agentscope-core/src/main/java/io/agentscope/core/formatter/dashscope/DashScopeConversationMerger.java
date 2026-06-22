@@ -19,6 +19,7 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -93,6 +94,8 @@ public class DashScopeConversationMerger {
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
                     textAccumulator.append(name).append(": ").append(tb.getText()).append("\n");
+                } else if (block instanceof HintBlock hb) {
+                    textAccumulator.append(name).append(": ").append(hb.getHint()).append("\n");
 
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Preserve images for multimodal content
@@ -163,7 +166,6 @@ public class DashScopeConversationMerger {
 
     /**
      * Merge conversation messages into a single DashScopeMessage (multimodal mode).
-     * Follows Python's _format_agent_message logic exactly.
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Images and videos are preserved as separate
@@ -196,8 +198,9 @@ public class DashScopeConversationMerger {
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    // Accumulate text with agent name (Python format: "name: text")
                     accumulatedText.add(name + ": " + tb.getText());
+                } else if (block instanceof HintBlock hb) {
+                    accumulatedText.add(name + ": " + hb.getHint());
 
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Flush accumulated text before adding image

@@ -17,6 +17,7 @@ package io.agentscope.core.rag;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -48,7 +49,11 @@ import java.util.List;
  *     .toolkit(toolkit)
  *     .build();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class KnowledgeRetrievalTools {
 
     private final Knowledge knowledge;
@@ -129,17 +134,21 @@ public class KnowledgeRetrievalTools {
                             description = "Maximum number of documents to retrieve (default: 5)",
                             required = false)
                     Integer limit,
-            Agent agent) {
+            Agent agent,
+            RuntimeContext ctx) {
 
         // Set default value
         if (limit == null) {
             limit = 5;
         }
 
-        // Extract conversation history from agent if available
+        // Extract conversation history from the call-scoped state if available
         List<Msg> conversationHistory = null;
-        if (agent instanceof ReActAgent reActAgent) {
-            conversationHistory = reActAgent.getMemory().getMessages();
+        if (agent instanceof ReActAgent) {
+            var state = RuntimeContext.resolveAgentState(ctx, agent);
+            if (state != null) {
+                conversationHistory = state.getContext();
+            }
         }
 
         // Build retrieval config with conversation history

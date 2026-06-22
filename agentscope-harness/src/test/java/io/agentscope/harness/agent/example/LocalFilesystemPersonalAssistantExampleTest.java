@@ -77,36 +77,39 @@ class LocalFilesystemPersonalAssistantExampleTest {
     void localFilesystem_filesPersistAcrossCalls() throws Exception {
         Files.createDirectories(workspace);
 
-        // Build the agent with a LocalFilesystemWithShell backend.
+        // Build the agent with a LocalFilesystemWithShell store.
         // No distributed store, no sandbox — all operations go straight to disk.
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                        .build()) {
 
-        // Call 1: write a note to MEMORY.md through the workspace manager
-        agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        RuntimeContext.empty(), "MEMORY.md", "# Notes\n- item 1");
+            // Call 1: write a note to MEMORY.md through the workspace manager
+            agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.empty(), "MEMORY.md", "# Notes\n- item 1");
 
-        // The file exists on disk after call 1
-        Path memoryFile = workspace.resolve("MEMORY.md");
-        assertTrue(Files.isRegularFile(memoryFile), "MEMORY.md should exist on disk after call 1");
-        String content = Files.readString(memoryFile, StandardCharsets.UTF_8);
-        assertTrue(content.contains("item 1"), "MEMORY.md content should be persisted on disk");
+            // The file exists on disk after call 1
+            Path memoryFile = workspace.resolve("MEMORY.md");
+            assertTrue(
+                    Files.isRegularFile(memoryFile), "MEMORY.md should exist on disk after call 1");
+            String content = Files.readString(memoryFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("item 1"), "MEMORY.md content should be persisted on disk");
 
-        // Call 2: same workspace, different session — file is still there
-        agent.call(userMsg("second call"), ctx("session-2", "alice")).block();
-        assertTrue(
-                Files.isRegularFile(memoryFile), "MEMORY.md should still exist on disk in call 2");
-        assertEquals(
-                content,
-                Files.readString(memoryFile, StandardCharsets.UTF_8),
-                "MEMORY.md content should be unchanged after call 2");
+            // Call 2: same workspace, different session — file is still there
+            agent.call(userMsg("second call"), ctx("session-2", "alice")).block();
+            assertTrue(
+                    Files.isRegularFile(memoryFile),
+                    "MEMORY.md should still exist on disk in call 2");
+            assertEquals(
+                    content,
+                    Files.readString(memoryFile, StandardCharsets.UTF_8),
+                    "MEMORY.md content should be unchanged after call 2");
+        }
     }
 
     /**
@@ -120,26 +123,28 @@ class LocalFilesystemPersonalAssistantExampleTest {
     void localFilesystem_workspaceIsNotPartitionedByUserOrSession() throws Exception {
         Files.createDirectories(workspace);
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                        .build()) {
 
-        // Alice writes during her session
-        agent.call(userMsg("alice here"), ctx("session-alice", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(RuntimeContext.empty(), "shared.txt", "alice was here");
+            // Alice writes during her session
+            agent.call(userMsg("alice here"), ctx("session-alice", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.empty(), "shared.txt", "alice was here");
 
-        // Bob calls with a different userId — still reads the same workspace
-        agent.call(userMsg("bob here"), ctx("session-bob", "bob")).block();
-        Path sharedFile = workspace.resolve("shared.txt");
-        assertTrue(
-                Files.isRegularFile(sharedFile),
-                "shared.txt written by alice should be visible in the same workspace, "
-                        + "regardless of userId or sessionId");
+            // Bob calls with a different userId — still reads the same workspace
+            agent.call(userMsg("bob here"), ctx("session-bob", "bob")).block();
+            Path sharedFile = workspace.resolve("shared.txt");
+            assertTrue(
+                    Files.isRegularFile(sharedFile),
+                    "shared.txt written by alice should be visible in the same workspace, "
+                            + "regardless of userId or sessionId");
+        }
     }
 
     /**
@@ -150,26 +155,28 @@ class LocalFilesystemPersonalAssistantExampleTest {
     void localFilesystem_directDiskAccessFromHostProcess() throws Exception {
         Files.createDirectories(workspace);
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
-                        .build();
+                        .build()) {
 
-        // Write a file from the host process (simulating a user placing a document in the
-        // workspace)
-        Path doc = workspace.resolve("document.txt");
-        Files.writeString(doc, "Host-written document content");
+            // Write a file from the host process (simulating a user placing a document in the
+            // workspace)
+            Path doc = workspace.resolve("document.txt");
+            Files.writeString(doc, "Host-written document content");
 
-        // The agent can see the file through its workspace manager
-        agent.call(userMsg("check document"), ctx("s1", "user")).block();
-        String read =
-                agent.getWorkspaceManager()
-                        .readManagedWorkspaceFileUtf8(RuntimeContext.empty(), "document.txt");
-        assertNotNull(read, "agent should be able to read files written directly to the workspace");
-        assertTrue(read.contains("Host-written"), "agent should see the host-written content");
+            // The agent can see the file through its workspace manager
+            agent.call(userMsg("check document"), ctx("s1", "user")).block();
+            String read =
+                    agent.getWorkspaceManager()
+                            .readManagedWorkspaceFileUtf8(RuntimeContext.empty(), "document.txt");
+            assertNotNull(
+                    read, "agent should be able to read files written directly to the workspace");
+            assertTrue(read.contains("Host-written"), "agent should see the host-written content");
+        }
     }
 
     // -------------------------------------------------------------------------

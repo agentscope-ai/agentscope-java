@@ -69,7 +69,7 @@ public class SessionTree {
 
     /**
      * Captured at construction time (or via {@link #setRuntimeContext}); used as the
-     * {@code RuntimeContext} for all remote filesystem operations so that namespace-aware backends
+     * {@code RuntimeContext} for all remote filesystem operations so that namespace-aware stores
      * resolve to the writer's namespace even when invoked from the async mirror thread.
      */
     private volatile RuntimeContext fsRc = RuntimeContext.empty();
@@ -166,7 +166,7 @@ public class SessionTree {
     /**
      * Binds a {@link RuntimeContext} to this tree so that all subsequent remote filesystem reads
      * and writes (including async mirror operations) propagate the caller's identity into
-     * namespace-aware backends. Defaults to {@link RuntimeContext#empty()} when never set.
+     * namespace-aware stores. Defaults to {@link RuntimeContext#empty()} when never set.
      *
      * @param rc the runtime context to bind; {@code null} resets to empty
      * @return this tree, for fluent chaining

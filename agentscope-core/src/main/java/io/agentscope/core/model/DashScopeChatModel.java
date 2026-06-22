@@ -357,6 +357,11 @@ public class DashScopeChatModel extends ChatModelBase {
         return modelName;
     }
 
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return true;
+    }
+
     public static class Builder {
         private String apiKey;
         private String modelName;
@@ -370,6 +375,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private boolean enableEncrypt = false;
         private ProxyConfig proxyConfig;
+        private int contextWindowSize = -1;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -591,6 +597,15 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Overrides the inferred context window size (in tokens). When not set ({@code -1}),
+         * the size is inferred from the model name using a built-in lookup table.
+         */
+        public Builder contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -624,19 +639,25 @@ public class DashScopeChatModel extends ChatModelBase {
                 finalPublicKey = publicKeyResult.publicKey();
             }
 
-            return new DashScopeChatModel(
-                    apiKey,
-                    modelName,
-                    stream,
-                    enableThinking,
-                    enableSearch,
-                    endpointType,
-                    effectiveOptions,
-                    baseUrl,
-                    formatter,
-                    transport,
-                    finalPublicKeyId,
-                    finalPublicKey);
+            DashScopeChatModel model =
+                    new DashScopeChatModel(
+                            apiKey,
+                            modelName,
+                            stream,
+                            enableThinking,
+                            enableSearch,
+                            endpointType,
+                            effectiveOptions,
+                            baseUrl,
+                            formatter,
+                            transport,
+                            finalPublicKeyId,
+                            finalPublicKey);
+            model.setContextWindowSize(
+                    contextWindowSize >= 0
+                            ? contextWindowSize
+                            : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
+            return model;
         }
 
         /**

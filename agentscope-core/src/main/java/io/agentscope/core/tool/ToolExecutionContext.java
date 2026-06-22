@@ -44,7 +44,11 @@ import java.util.Objects;
  *
  * @see ContextStore
  * @see DefaultContextStore
+ * @deprecated Use {@link io.agentscope.core.agent.RuntimeContext} instead.
+ *     Register POJOs via {@code RuntimeContext.builder().put(Type.class, value).build()}
+ *     and pass to {@code agent.call(msg, runtimeContext)}.
  */
+@Deprecated
 public class ToolExecutionContext {
 
     private final List<ContextStore> stores;

@@ -42,6 +42,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -62,6 +64,27 @@ import reactor.core.publisher.Flux;
 class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
+
+    // Each @Test gets a fresh JsonFileAgentStateStore root, preventing the
+    // "parent" agent's persisted AgentState from leaking between cases.
+    @TempDir Path stateHome;
+
+    private String previousStateHome;
+
+    @BeforeEach
+    void overrideStateHome() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreStateHome() {
+        if (previousStateHome != null) {
+            System.setProperty("agentscope.state.home", previousStateHome);
+        } else {
+            System.clearProperty("agentscope.state.home");
+        }
+    }
 
     // -----------------------------------------------------------------
     // Helpers
@@ -435,18 +458,9 @@ class HarnessAgentSubagentStreamTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        // Access toolkit via reflection: HarnessAgent.delegate (ReActAgent) -> toolkit
-        java.lang.reflect.Field delegateField = HarnessAgent.class.getDeclaredField("delegate");
-        delegateField.setAccessible(true);
-        io.agentscope.core.ReActAgent delegate =
-                (io.agentscope.core.ReActAgent) delegateField.get(agent);
-
-        java.lang.reflect.Field toolkitField =
-                io.agentscope.core.agent.StructuredOutputCapableAgent.class.getDeclaredField(
-                        "toolkit");
-        toolkitField.setAccessible(true);
-        io.agentscope.core.tool.Toolkit toolkit =
-                (io.agentscope.core.tool.Toolkit) toolkitField.get(delegate);
+        // After the HarnessAgent → ReActAgent unification the inner agent is exposed via
+        // getDelegate(); toolkit is reachable through the public getToolkit() accessor.
+        io.agentscope.core.tool.Toolkit toolkit = agent.getDelegate().getToolkit();
 
         List<String> toolNames =
                 toolkit.getToolSchemas().stream()

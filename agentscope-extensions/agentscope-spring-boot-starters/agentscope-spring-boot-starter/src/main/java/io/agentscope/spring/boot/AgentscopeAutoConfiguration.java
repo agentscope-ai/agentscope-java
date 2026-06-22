@@ -184,18 +184,11 @@ public class AgentscopeAutoConfiguration {
      * Toolkit beans using
      * {@link AgentProperties}.
      *
-     * <p>
-     * ReActAgent keeps session-level state (memory, toolkit, etc.) and is not
-     * thread-safe,
-     * so it is exposed as a prototype-scoped bean. In Controllers / Services,
-     * prefer injecting
-     * {@code ObjectProvider<ReActAgent>} to obtain a new agent instance per session
-     * or request.
+     * ReActAgent in 2.0 is thread-safe, so we just use a singleton instance.
      */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
-    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
         AgentProperties config = properties.getAgent();
@@ -203,7 +196,6 @@ public class AgentscopeAutoConfiguration {
                 .name(config.getName())
                 .sysPrompt(config.getSysPrompt())
                 .model(model)
-                .memory(memory)
                 .toolkit(toolkit)
                 .maxIters(config.getMaxIters())
                 .build();
