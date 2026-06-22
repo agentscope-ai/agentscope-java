@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
