@@ -419,6 +419,15 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("null knownSkillNames is treated the same as empty list")
+    void testNullKnownSkillNamesTreatedAsEmpty() {
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", null, null);
+
+        assertTrue(repo.getAllSkillNames().isEmpty());
+        assertTrue(repo.getAllSkills().isEmpty());
+    }
+
+    @Test
     @DisplayName("getAllSkillNames returns knownSkillNames when configured")
     void testGetAllSkillNamesWithKnownNames() {
         NacosSkillRepository repo =
