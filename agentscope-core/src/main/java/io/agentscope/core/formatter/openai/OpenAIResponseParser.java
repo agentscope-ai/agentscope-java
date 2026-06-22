@@ -73,6 +73,23 @@ public class OpenAIResponseParser {
                 : 0;
     }
 
+    /**
+     * Safely get cached prompt token count from usage, returning 0 if not reported.
+     *
+     * <p>Cached tokens are a subset of the prompt tokens that were served from the prompt cache
+     * ({@code prompt_tokens_details.cached_tokens}).
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @return the cached prompt token count or 0
+     */
+    private long getSafeCachedTokens(OpenAIUsage usage) {
+        if (usage == null || usage.getPromptTokensDetails() == null) {
+            return 0;
+        }
+        Integer cachedTokens = usage.getPromptTokensDetails().getCachedTokens();
+        return cachedTokens != null ? cachedTokens : 0;
+    }
+
     public OpenAIResponseParser() {}
 
     /**
@@ -110,6 +127,7 @@ public class OpenAIResponseParser {
                         ChatUsage.builder()
                                 .inputTokens((int) getSafePromptTokens(openAIUsage))
                                 .outputTokens((int) getSafeCompletionTokens(openAIUsage))
+                                .cachedTokens((int) getSafeCachedTokens(openAIUsage))
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -343,6 +361,7 @@ public class OpenAIResponseParser {
                                         openAIUsage.getCompletionTokens() != null
                                                 ? openAIUsage.getCompletionTokens()
                                                 : 0)
+                                .cachedTokens((int) getSafeCachedTokens(openAIUsage))
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

@@ -921,4 +921,138 @@ class OpenAIResponseParserTest {
                     toolBlock.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
         }
     }
+
+    @Nested
+    @DisplayName("Cached Tokens Tests")
+    class CachedTokensTests {
+
+        @Test
+        @DisplayName("Should parse cached tokens from prompt_tokens_details")
+        void testParseResponseWithCachedTokens() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(20);
+            OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
+            details.setCachedTokens(80);
+            usage.setPromptTokensDetails(details);
+            response.setUsage(usage);
+
+            OpenAIMessage message = new OpenAIMessage();
+            message.setContent("Answer");
+            message.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setMessage(message);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(100, result.getUsage().getInputTokens());
+            assertEquals(20, result.getUsage().getOutputTokens());
+            assertEquals(80, result.getUsage().getCachedTokens());
+        }
+
+        @Test
+        @DisplayName("Should default cached tokens to 0 when prompt_tokens_details is absent")
+        void testParseResponseWithoutPromptTokensDetails() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(20);
+            response.setUsage(usage);
+
+            OpenAIMessage message = new OpenAIMessage();
+            message.setContent("Answer");
+            message.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setMessage(message);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(0, result.getUsage().getCachedTokens());
+        }
+
+        @Test
+        @DisplayName("Should default cached tokens to 0 when cached_tokens is null")
+        void testParseResponseWithNullCachedTokens() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(20);
+            OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
+            details.setCachedTokens(null);
+            usage.setPromptTokensDetails(details);
+            response.setUsage(usage);
+
+            OpenAIMessage message = new OpenAIMessage();
+            message.setContent("Answer");
+            message.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setMessage(message);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(0, result.getUsage().getCachedTokens());
+        }
+
+        @Test
+        @DisplayName("Should parse cached tokens from chunk response")
+        void testParseChunkResponseWithCachedTokens() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion.chunk");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(50);
+            OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
+            details.setCachedTokens(64);
+            usage.setPromptTokensDetails(details);
+            response.setUsage(usage);
+
+            OpenAIMessage delta = new OpenAIMessage();
+            delta.setContent("");
+            delta.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setDelta(delta);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(100, result.getUsage().getInputTokens());
+            assertEquals(50, result.getUsage().getOutputTokens());
+            assertEquals(64, result.getUsage().getCachedTokens());
+        }
+    }
 }
