@@ -496,6 +496,8 @@ public final class SkillFileSystemHelper {
             if (skillName.equals(rootName)) {
                 return Optional.of(baseDir);
             }
+            // baseDir is a single skill directory; no subdirectory skills to scan
+            return Optional.empty();
         }
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
