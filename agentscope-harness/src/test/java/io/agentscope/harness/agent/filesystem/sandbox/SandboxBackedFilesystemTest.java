@@ -39,7 +39,8 @@ class SandboxBackedFilesystemTest {
         FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "AQID\nBAUG", "", false));
         filesystem.setSandbox(sandbox);
 
-        List<FileDownloadResponse> responses = filesystem.downloadFiles(RT, List.of("/tmp/data.bin"));
+        List<FileDownloadResponse> responses =
+                filesystem.downloadFiles(RT, List.of("/tmp/data.bin"));
 
         assertEquals("base64 '/tmp/data.bin'", sandbox.lastCommand);
         assertEquals(1, responses.size());
@@ -80,7 +81,8 @@ class SandboxBackedFilesystemTest {
         }
 
         @Override
-        public ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+        public ExecResult exec(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             this.lastCommand = command;
             return execResult;
         }
