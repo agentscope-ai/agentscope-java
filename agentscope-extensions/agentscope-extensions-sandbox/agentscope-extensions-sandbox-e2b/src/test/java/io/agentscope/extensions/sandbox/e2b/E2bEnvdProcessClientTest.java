@@ -17,10 +17,15 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -63,15 +68,8 @@ class E2bEnvdProcessClientTest {
     @Test
     void jsonCodecParsesStartResponseFrame() throws Exception {
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        DynamicMessage response = startResponse(client, "hello\n", "warn\n", 3);
-        String json =
-                "{\"event\":{\"data\":{\"stdout\":\""
-                        + Base64.getEncoder()
-                                .encodeToString("hello\n".getBytes(StandardCharsets.UTF_8))
-                        + "\",\"stderr\":\""
-                        + Base64.getEncoder()
-                                .encodeToString("warn\n".getBytes(StandardCharsets.UTF_8))
-                        + "\"},\"end\":{\"exitCode\":3}}}";
+        DynamicMessage response = dataResponse(client, "hello\n", null);
+        String json = responseJson(base64("hello\n"), null, null);
 
         DynamicMessage parsed =
                 client.parseStartResponseFrame(json.getBytes(StandardCharsets.UTF_8));
@@ -79,33 +77,160 @@ class E2bEnvdProcessClientTest {
         assertEquals(response, parsed);
     }
 
-    private static DynamicMessage startResponse(
-            E2bEnvdProcessClient client, String stdout, String stderr, int exitCode) {
+    @Test
+    void jsonCodecReturnsEmptyMessageForNullOrMissingEvent() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+
+        assertTrue(
+                client.parseStartResponseFrame("null".getBytes(StandardCharsets.UTF_8))
+                        .getAllFields()
+                        .isEmpty());
+        assertTrue(
+                client.parseStartResponseFrame("{}".getBytes(StandardCharsets.UTF_8))
+                        .getAllFields()
+                        .isEmpty());
+        assertTrue(
+                client.parseStartResponseFrame("{\"event\":null}".getBytes(StandardCharsets.UTF_8))
+                        .getAllFields()
+                        .isEmpty());
+    }
+
+    @Test
+    void jsonCodecSkipsMalformedBase64AndKeepsStreaming() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit =
+                drainStartStream(
+                        client,
+                        connectFrames(
+                                responseJson("%%%bad-base64%%%", null, null),
+                                responseJson(null, base64("stderr\n"), null),
+                                responseJson(null, null, 7)),
+                        stdout,
+                        stderr);
+
+        assertEquals(7, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("stderr\n", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void jsonCodecReturnsSentinelWhenEndMissing() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit =
+                drainStartStream(
+                        client,
+                        connectFrames(
+                                responseJson(base64("hello\n"), null, null),
+                                responseJson(null, base64("warn\n"), null)),
+                        stdout,
+                        stderr);
+
+        assertEquals(Integer.MIN_VALUE, exit);
+        assertEquals("hello\n", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("warn\n", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void jsonCodecReturnsEmptyOutputsWhenOnlyEndPresent() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit =
+                drainStartStream(client, connectFrame(responseJson(null, null, 5)), stdout, stderr);
+
+        assertEquals(5, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    private static DynamicMessage dataResponse(
+            E2bEnvdProcessClient client, String stdout, String stderr) {
         Descriptors.FileDescriptor fd = client.fileDescriptor();
-        Descriptors.Descriptor startResponseDesc = fd.findMessageTypeByName("StartResponse");
         Descriptors.Descriptor processEventDesc = fd.findMessageTypeByName("ProcessEvent");
         Descriptors.Descriptor dataDesc = processEventDesc.findNestedTypeByName("DataEvent");
-        Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
 
         DynamicMessage data =
                 DynamicMessage.newBuilder(dataDesc)
                         .setField(
-                                dataDesc.findFieldByName("stdout"), ByteString.copyFromUtf8(stdout))
-                        .setField(
-                                dataDesc.findFieldByName("stderr"), ByteString.copyFromUtf8(stderr))
-                        .build();
-        DynamicMessage end =
-                DynamicMessage.newBuilder(endDesc)
-                        .setField(endDesc.findFieldByName("exit_code"), exitCode)
+                                stdout != null
+                                        ? dataDesc.findFieldByName("stdout")
+                                        : dataDesc.findFieldByName("stderr"),
+                                ByteString.copyFromUtf8(stdout != null ? stdout : stderr))
                         .build();
         DynamicMessage event =
                 DynamicMessage.newBuilder(processEventDesc)
                         .setField(processEventDesc.findFieldByName("data"), data)
-                        .setField(processEventDesc.findFieldByName("end"), end)
                         .build();
+        Descriptors.Descriptor startResponseDesc = fd.findMessageTypeByName("StartResponse");
         return DynamicMessage.newBuilder(startResponseDesc)
                 .setField(startResponseDesc.findFieldByName("event"), event)
                 .build();
+    }
+
+    private static int drainStartStream(
+            E2bEnvdProcessClient client,
+            byte[] connectFrame,
+            ByteArrayOutputStream stdout,
+            ByteArrayOutputStream stderr)
+            throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod(
+                        "drainStartStream",
+                        InputStream.class,
+                        ByteArrayOutputStream.class,
+                        ByteArrayOutputStream.class);
+        method.setAccessible(true);
+        return (int) method.invoke(client, new ByteArrayInputStream(connectFrame), stdout, stderr);
+    }
+
+    private static byte[] connectFrame(String json) {
+        return E2bEnvdProcessClient.encodeUnaryEnvelope(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] connectFrames(String... jsons) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (String json : jsons) {
+            byte[] frame = connectFrame(json);
+            out.writeBytes(frame);
+        }
+        return out.toByteArray();
+    }
+
+    private static String responseJson(String stdout, String stderr, Integer exitCode) {
+        StringBuilder json = new StringBuilder("{\"event\":{");
+        boolean needComma = false;
+        if (stdout != null || stderr != null) {
+            json.append("\"data\":{");
+            boolean needDataComma = false;
+            if (stdout != null) {
+                json.append("\"stdout\":\"").append(stdout).append("\"");
+                needDataComma = true;
+            }
+            if (stderr != null) {
+                if (needDataComma) {
+                    json.append(',');
+                }
+                json.append("\"stderr\":\"").append(stderr).append("\"");
+            }
+            json.append('}');
+            needComma = true;
+        }
+        if (exitCode != null) {
+            if (needComma) {
+                json.append(',');
+            }
+            json.append("\"end\":{\"exitCode\":").append(exitCode).append('}');
+        }
+        json.append("}}");
+        return json.toString();
+    }
+
+    private static String base64(String value) {
+        return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static E2bSandboxClientOptions options(E2bCodec codec) {

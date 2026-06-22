@@ -34,6 +34,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import okhttp3.MediaType;
@@ -141,7 +142,7 @@ final class E2bEnvdProcessClient {
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = -1;
+        int exit = Integer.MIN_VALUE;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
                 String err = res.body() != null ? res.body().string() : "";
@@ -164,7 +165,7 @@ final class E2bEnvdProcessClient {
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
             throws IOException {
-        int exit = -1;
+        int exit = Integer.MIN_VALUE;
         Descriptors.FieldDescriptor srEventF = startResponseDesc.findFieldByName("event");
         Descriptors.FieldDescriptor peDataF = processEventDesc.findFieldByName("data");
         Descriptors.FieldDescriptor peEndF = processEventDesc.findFieldByName("end");
@@ -217,13 +218,16 @@ final class E2bEnvdProcessClient {
 
     private static void appendDataStream(
             DynamicMessage dataEv, String field, ByteArrayOutputStream out) throws IOException {
-        Descriptors.FieldDescriptor f = dataEv.getDescriptorForType().findFieldByName(field);
-        if (f == null || !dataEv.hasField(f)) {
+        for (Map.Entry<Descriptors.FieldDescriptor, Object> entry :
+                dataEv.getAllFields().entrySet()) {
+            if (!field.equals(entry.getKey().getName())) {
+                continue;
+            }
+            Object v = entry.getValue();
+            if (v instanceof ByteString) {
+                ((ByteString) v).writeTo(out);
+            }
             return;
-        }
-        Object v = dataEv.getField(f);
-        if (v instanceof ByteString) {
-            ((ByteString) v).writeTo(out);
         }
     }
 
@@ -311,6 +315,9 @@ final class E2bEnvdProcessClient {
 
     private DynamicMessage parseJsonStartResponse(byte[] data) throws IOException {
         JsonNode root = JSON.readTree(data);
+        if (root == null || root.isNull()) {
+            return DynamicMessage.newBuilder(startResponseDesc).build();
+        }
         DynamicMessage.Builder response = DynamicMessage.newBuilder(startResponseDesc);
         JsonNode eventNode = root.path("event");
         if (eventNode.isMissingNode() || eventNode.isNull()) {
@@ -356,8 +363,13 @@ final class E2bEnvdProcessClient {
             Descriptors.FieldDescriptor field) {
         JsonNode valueNode = parent.path(jsonField);
         if (valueNode.isTextual()) {
-            builder.setField(
-                    field, ByteString.copyFrom(Base64.getDecoder().decode(valueNode.textValue())));
+            try {
+                builder.setField(
+                        field,
+                        ByteString.copyFrom(Base64.getDecoder().decode(valueNode.textValue())));
+            } catch (IllegalArgumentException ignored) {
+                // Malformed base64 from the server should not abort the stream.
+            }
         }
     }
 
