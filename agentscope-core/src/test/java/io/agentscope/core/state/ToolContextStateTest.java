@@ -16,13 +16,18 @@
 package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
@@ -176,5 +181,102 @@ class ToolContextStateTest {
 
         // All 30 entries should fit under the 50-file cap
         assertEquals(30, ctx.getReadFileCache().size());
+    }
+
+    // ==================== Spawn Registry Tests ====================
+
+    @Test
+    void spawnRegistryDefaultsToEmpty() {
+        ToolContextState ctx = ToolContextState.builder().build();
+        assertNotNull(ctx.getSpawnRegistry());
+        assertTrue(ctx.getSpawnRegistry().isEmpty());
+    }
+
+    @Test
+    void putAndGetSpawnEntry() {
+        ToolContextState ctx = ToolContextState.builder().build();
+        ToolContextState.SpawnEntry entry =
+                new ToolContextState.SpawnEntry(
+                        "agent:gp:abc", "general-purpose", "sub-abc", "researcher", 1);
+
+        ctx.putSpawnEntry("agent:gp:abc", entry);
+
+        Map<String, ToolContextState.SpawnEntry> registry = ctx.getSpawnRegistry();
+        assertEquals(1, registry.size());
+        ToolContextState.SpawnEntry got = registry.get("agent:gp:abc");
+        assertNotNull(got);
+        assertEquals("general-purpose", got.agentId());
+        assertEquals("sub-abc", got.sessionId());
+        assertEquals("researcher", got.label());
+        assertEquals(1, got.depth());
+    }
+
+    @Test
+    void removeSpawnEntry() {
+        ToolContextState ctx = ToolContextState.builder().build();
+        ctx.putSpawnEntry(
+                "agent:gp:abc",
+                new ToolContextState.SpawnEntry(
+                        "agent:gp:abc", "general-purpose", "sub-abc", null, 1));
+
+        ctx.removeSpawnEntry("agent:gp:abc");
+        assertTrue(ctx.getSpawnRegistry().isEmpty());
+    }
+
+    @Test
+    void spawnEntryNullKeyIgnored() {
+        ToolContextState ctx = ToolContextState.builder().build();
+        ctx.putSpawnEntry(
+                null,
+                new ToolContextState.SpawnEntry(
+                        "agent:gp:abc", "general-purpose", "sub-abc", null, 1));
+        assertTrue(ctx.getSpawnRegistry().isEmpty());
+    }
+
+    @Test
+    void spawnRegistrySerializationRoundTrip() {
+        ToolContextState ctx = ToolContextState.builder().build();
+        ctx.putSpawnEntry(
+                "agent:gp:abc",
+                new ToolContextState.SpawnEntry(
+                        "agent:gp:abc", "general-purpose", "sub-abc", "researcher", 1));
+        ctx.putSpawnEntry(
+                "agent:coder:def",
+                new ToolContextState.SpawnEntry("agent:coder:def", "coder", "sub-def", null, 2));
+
+        String json = JsonUtils.getJsonCodec().toJson(ctx);
+        assertNotNull(json);
+        assertTrue(json.contains("spawn_registry"));
+        assertTrue(json.contains("general-purpose"));
+        assertTrue(json.contains("researcher"));
+
+        ToolContextState restored = JsonUtils.getJsonCodec().fromJson(json, ToolContextState.class);
+        assertNotNull(restored);
+        Map<String, ToolContextState.SpawnEntry> registry = restored.getSpawnRegistry();
+        assertEquals(2, registry.size());
+
+        ToolContextState.SpawnEntry e1 = registry.get("agent:gp:abc");
+        assertNotNull(e1);
+        assertEquals("general-purpose", e1.agentId());
+        assertEquals("sub-abc", e1.sessionId());
+        assertEquals("researcher", e1.label());
+        assertEquals(1, e1.depth());
+
+        ToolContextState.SpawnEntry e2 = registry.get("agent:coder:def");
+        assertNotNull(e2);
+        assertEquals("coder", e2.agentId());
+        assertNull(e2.label());
+        assertEquals(2, e2.depth());
+    }
+
+    @Test
+    void spawnRegistryBackwardCompatibility() {
+        String jsonWithoutRegistry =
+                "{\"max_cache_files\":100,\"max_cache_bytes\":25000.0,\"activated_groups\":[]}";
+        ToolContextState restored =
+                JsonUtils.getJsonCodec().fromJson(jsonWithoutRegistry, ToolContextState.class);
+        assertNotNull(restored);
+        assertNotNull(restored.getSpawnRegistry());
+        assertTrue(restored.getSpawnRegistry().isEmpty());
     }
 }

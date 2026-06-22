@@ -18,7 +18,9 @@ package io.agentscope.harness.agent.sandbox.json;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +31,10 @@ import io.agentscope.harness.agent.sandbox.snapshot.NoopSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class HarnessSandboxJacksonModuleTest {
 
@@ -93,5 +98,34 @@ class HarnessSandboxJacksonModuleTest {
         assertEquals("snap-remote-1", parsed.getId());
         assertNull(((RemoteSandboxSnapshot) parsed).getClient());
         assertFalse(parsed.isRestorable());
+    }
+
+    @Test
+    void roundTripsDockerSandboxStateWithLocalSnapshot(@TempDir Path tmp) throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        String sessionId = "snap-session-1";
+        String basePath = tmp.toString();
+        Files.writeString(tmp.resolve(sessionId + ".tar"), "dummy");
+
+        DockerSandboxState original = new DockerSandboxState();
+        original.setSessionId(sessionId);
+        original.setSnapshot(new LocalSandboxSnapshot(basePath, sessionId));
+
+        String json = mapper.writeValueAsString(original);
+        SandboxState parsed = mapper.readValue(json, SandboxState.class);
+
+        assertInstanceOf(DockerSandboxState.class, parsed);
+        assertEquals(sessionId, parsed.getSessionId());
+
+        SandboxSnapshot snapshot = parsed.getSnapshot();
+        assertNotNull(snapshot);
+        assertInstanceOf(LocalSandboxSnapshot.class, snapshot);
+        assertEquals(sessionId, snapshot.getId());
+        assertEquals("local", snapshot.getType());
+        assertTrue(snapshot.isRestorable());
     }
 }

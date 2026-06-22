@@ -119,7 +119,7 @@ SandboxContext callCtx = SandboxContext.builder()
 
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("my-session")
-    .sandboxContext(callCtx)      // overrides the defaultSandboxContext from build time
+    .put(SandboxContext.class, callCtx)      // overrides the defaultSandboxContext from build time
     .build();
 
 agent.call(msgs, ctx).block();
@@ -151,7 +151,7 @@ SandboxContext callCtx = SandboxContext.builder()
     .build();
 
 RuntimeContext ctx = RuntimeContext.builder()
-    .sandboxContext(callCtx)
+    .put(SandboxContext.class, callCtx)
     .build();
 
 agent.call(msgs, ctx).block();
@@ -164,11 +164,11 @@ agent.call(msgs, ctx).block();
 Sandbox sharedSandbox = ...;  // already start()ed
 
 agent1.call(msgs1, RuntimeContext.builder()
-    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .put(SandboxContext.class, SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
     .build()).block();
 
 agent2.call(msgs2, RuntimeContext.builder()
-    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .put(SandboxContext.class, SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
     .build()).block();
 
 // Manually shutdown after all agents are done

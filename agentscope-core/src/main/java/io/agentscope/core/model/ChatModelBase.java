@@ -28,6 +28,17 @@ import reactor.core.publisher.Flux;
  */
 public abstract class ChatModelBase implements Model {
 
+    private int contextWindowSize;
+
+    @Override
+    public int getContextWindowSize() {
+        return contextWindowSize;
+    }
+
+    protected void setContextWindowSize(int contextWindowSize) {
+        this.contextWindowSize = contextWindowSize;
+    }
+
     /**
      * Stream chat completion responses.
      * The model internally handles message formatting using its configured formatter.

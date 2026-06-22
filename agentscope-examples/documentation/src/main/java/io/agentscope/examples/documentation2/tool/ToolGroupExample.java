@@ -24,6 +24,7 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
@@ -77,6 +78,7 @@ public class ToolGroupExample {
                                         .build())
                         .toolkit(toolkit)
                         .enableMetaTool(true)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         printExamplePrompts();

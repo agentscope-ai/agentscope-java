@@ -71,8 +71,9 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             You have a persistent MEMORY.md. Update it proactively when:
             - User shares preferences, project context, or decisions
             - Important outcomes or action items are established
-            Use edit_file/write_file to append concise bullet points. \
-            Do NOT duplicate existing entries. \
+            Use the **memory_save** tool to persist memories — it atomically updates \
+            both MEMORY.md and the daily ledger. Do NOT use write_file or edit_file on \
+            MEMORY.md or any path under memory/ — always use memory_save instead. \
             Memory is also automatically extracted at conversation end.
             """;
 
