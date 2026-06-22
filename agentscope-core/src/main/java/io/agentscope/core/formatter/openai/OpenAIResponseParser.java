@@ -113,6 +113,7 @@ public class OpenAIResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
+                                .cachedTokens(getCachedTokens(openAIUsage))
                                 .build();
             }
 
@@ -346,6 +347,7 @@ public class OpenAIResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
+                                .cachedTokens(getCachedTokens(openAIUsage))
                                 .build();
             }
 
