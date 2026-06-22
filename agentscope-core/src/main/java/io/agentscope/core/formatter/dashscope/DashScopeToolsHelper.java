@@ -97,6 +97,11 @@ public class DashScopeToolsHelper {
             params.setPresencePenalty(presencePenalty);
         }
 
+        var responseFormat = getOption(options, defaultOptions, GenerateOptions::getResponseFormat);
+        if (responseFormat != null) {
+            params.setResponseFormat(responseFormat);
+        }
+
         // Apply parallel tool calls
         Boolean parallelToolCalls =
                 getOption(options, defaultOptions, GenerateOptions::getParallelToolCalls);

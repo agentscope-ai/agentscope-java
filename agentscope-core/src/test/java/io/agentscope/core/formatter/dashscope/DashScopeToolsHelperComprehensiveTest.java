@@ -21,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -112,6 +114,12 @@ class DashScopeToolsHelperComprehensiveTest {
                         .topP(0.9)
                         .maxTokens(1024)
                         .thinkingBudget(500)
+                        .responseFormat(
+                                ResponseFormat.jsonSchema(
+                                        JsonSchema.builder()
+                                                .name("WeatherResponse")
+                                                .schema(Map.of("type", "object"))
+                                                .build()))
                         .build();
 
         helper.applyOptions(params, options, null);
@@ -121,18 +129,31 @@ class DashScopeToolsHelperComprehensiveTest {
         assertEquals(1024, params.getMaxTokens());
         assertEquals(500, params.getThinkingBudget());
         assertTrue(params.getEnableThinking());
+        assertNotNull(params.getResponseFormat());
+        assertEquals("json_schema", params.getResponseFormat().getType());
     }
 
     @Test
     void testApplyOptionsWithDefaultOptions() {
         DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions defaultOptions =
-                GenerateOptions.builder().temperature(0.7).maxTokens(512).build();
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .maxTokens(512)
+                        .responseFormat(
+                                ResponseFormat.jsonSchema(
+                                        JsonSchema.builder()
+                                                .name("DefaultResponse")
+                                                .schema(Map.of("type", "object"))
+                                                .build()))
+                        .build();
 
         helper.applyOptions(params, null, defaultOptions);
 
         assertEquals(0.7, params.getTemperature());
         assertEquals(512, params.getMaxTokens());
+        assertNotNull(params.getResponseFormat());
+        assertEquals("json_schema", params.getResponseFormat().getType());
     }
 
     @Test
