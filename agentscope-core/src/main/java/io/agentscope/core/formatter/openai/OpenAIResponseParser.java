@@ -580,4 +580,11 @@ public class OpenAIResponseParser {
                 .finishReason(finishReason)
                 .build();
     }
+
+    private static Integer getCachedTokens(OpenAIUsage usage) {
+        if (usage.getPromptTokensDetails() != null) {
+            return usage.getPromptTokensDetails().getCachedTokens();
+        }
+        return null;
+    }
 }
