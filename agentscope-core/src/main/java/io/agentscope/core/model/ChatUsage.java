@@ -51,6 +51,17 @@ public class ChatUsage {
     }
 
     /**
+     * Backward-compatible constructor without cached tokens.
+     *
+     * @param inputTokens the number of tokens used for the input/prompt
+     * @param outputTokens the number of tokens used for the output/generated response
+     * @param time the execution time in seconds
+     */
+    public ChatUsage(int inputTokens, int outputTokens, double time) {
+        this(inputTokens, outputTokens, time, null);
+    }
+
+    /**
      * Gets the number of input tokens used.
      *
      * @return the number of tokens used for the input/prompt
