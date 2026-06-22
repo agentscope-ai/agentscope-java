@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
 
@@ -28,16 +32,22 @@ import java.io.InputStream;
  * {@link RemoteSnapshotClient} cannot be serialized. When persisting session state,
  * only the {@code id} is needed — the client is re-injected from the builder at resume time.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RemoteSandboxSnapshot implements SandboxSnapshot {
-
-    private final RemoteSnapshotClient client;
+    @JsonIgnore private final RemoteSnapshotClient client;
     private final String id;
+
+    @JsonCreator
+    private RemoteSandboxSnapshot(@JsonProperty("id") String id) {
+        this.id = id;
+        this.client = null;
+    }
 
     /**
      * Creates a remote snapshot.
      *
      * @param client the remote storage client to delegate operations to
-     * @param id unique identifier for this snapshot
+     * @param id     unique identifier for this snapshot
      */
     public RemoteSandboxSnapshot(RemoteSnapshotClient client, String id) {
         this.client = client;
@@ -78,6 +88,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
      * <p>Checks existence via {@link RemoteSnapshotClient#exists}.
      */
     @Override
+    @JsonIgnore
     public boolean isRestorable() throws Exception {
         try {
             return client.exists(id);
@@ -92,6 +103,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     }
 
     @Override
+    @JsonIgnore
     public String getType() {
         return "remote";
     }

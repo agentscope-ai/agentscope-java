@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -103,6 +105,7 @@ public class SandboxManager {
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
                         SandboxState state = client.deserializeState(stateJson.get());
+                        reInjectRemoteSnapshot(state, sandboxContext);
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
@@ -223,6 +226,26 @@ public class SandboxManager {
             stateStore.delete(scopeKey.get());
         } catch (Exception e) {
             log.warn("[sandbox] Failed to clear sandbox state: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Re-wires a deserialized {@link RemoteSandboxSnapshot} with a live
+     * {@link io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient} from the
+     * {@link SandboxContext#getSnapshotSpec()}.
+     *
+     * <p>After JSON deserialization, {@code RemoteSandboxSnapshot} has only the {@code id}
+     * — the {@code RemoteSnapshotClient} must be re-injected before any I/O operations
+     * (snapshot restore during sandbox start).
+     */
+    private void reInjectRemoteSnapshot(SandboxState state, SandboxContext sandboxContext) {
+        SandboxSnapshot snapshot = state.getSnapshot();
+        if (snapshot instanceof RemoteSandboxSnapshot && sandboxContext.getSnapshotSpec() != null) {
+            SandboxSnapshot rewired = sandboxContext.getSnapshotSpec().build(snapshot.getId());
+            state.setSnapshot(rewired);
+            log.debug(
+                    "[sandbox] Re-wired RemoteSandboxSnapshot client for snapshot id={}",
+                    snapshot.getId());
         }
     }
 }
