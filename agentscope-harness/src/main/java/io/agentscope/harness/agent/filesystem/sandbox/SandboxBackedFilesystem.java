@@ -147,7 +147,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
                     // MIME decoder tolerates wrapped base64 output from GNU `base64`.
                     byte[] decoded =
                             Base64.getMimeDecoder()
-                                    .decode(result.stdout() != null ? result.stdout().strip() : "");
+                                    .decode(result.stdout() != null ? result.stdout() : "");
                     results.add(FileDownloadResponse.success(path, decoded));
                 } else {
                     results.add(FileDownloadResponse.fail(path, result.combinedOutput()));
