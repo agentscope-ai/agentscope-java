@@ -314,7 +314,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ### Who reads it
 
 - **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](./tool.md#receiving-context).
-- **Middleware** (every `MiddlewareBase` hook) — call `agent.getRuntimeContext()`. See [Middleware — Reading RuntimeContext](./middleware.md#reading-runtimecontext).
+- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](./middleware.md#reading-runtimecontext).
 - **All threads within the same call** — the internal maps are `ConcurrentMap`s, so hooks and tools can read/write the same instance to coordinate.
 
 ### Relation to persistence
