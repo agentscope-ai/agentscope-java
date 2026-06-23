@@ -320,6 +320,9 @@ public class CosAgentStateStore implements AgentStateStore {
     }
 
     private void deleteKeys(List<String> keys) {
+        if (keys.isEmpty()) {
+            return;
+        }
         for (int i = 0; i < keys.size(); i += 1000) {
             List<String> batch = keys.subList(i, Math.min(i + 1000, keys.size()));
             DeleteObjectsRequest req = new DeleteObjectsRequest(bucketName);
