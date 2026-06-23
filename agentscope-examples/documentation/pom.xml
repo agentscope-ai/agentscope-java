@@ -134,6 +134,12 @@
             <artifactId>agentscope-extensions-studio</artifactId>
         </dependency>
 
+        <!-- Git-based Skill Repository -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-skill-git-repository</artifactId>
+        </dependency>
+
         <!-- Redis State Store (for distributed shared-store examples) -->
         <dependency>
             <groupId>io.agentscope</groupId>

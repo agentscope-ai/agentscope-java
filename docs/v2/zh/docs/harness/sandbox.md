@@ -155,7 +155,7 @@ SandboxContext callCtx = SandboxContext.builder()
 
 agent.call(msgs, RuntimeContext.builder()
     .sessionId("my-session")
-    .sandboxContext(callCtx)
+    .put(SandboxContext.class, callCtx)
     .build()).block();
 
 mySandbox.shutdown();
