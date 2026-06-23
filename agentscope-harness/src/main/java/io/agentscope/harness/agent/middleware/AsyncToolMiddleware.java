@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static io.agentscope.core.util.ToolUtils.resolveToolTitle;
+
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -221,10 +223,19 @@ public class AsyncToolMiddleware implements MiddlewareBase {
                 state.contextMutable().add(resultMsg);
             }
 
-            sink.next(new ToolResultStartEvent(replyId, toolCall.getId(), toolCall.getName()));
+            sink.next(
+                    new ToolResultStartEvent(
+                            replyId,
+                            toolCall.getId(),
+                            toolCall.getName(),
+                            resolveToolTitle(agent.getToolkit(), toolCall.getName())));
             sink.next(
                     new ToolResultTextDeltaEvent(
-                            replyId, toolCall.getId(), toolCall.getName(), placeholderText));
+                            replyId,
+                            toolCall.getId(),
+                            toolCall.getName(),
+                            resolveToolTitle(agent.getToolkit(), toolCall.getName()),
+                            placeholderText));
             sink.next(
                     new ToolResultEndEvent(
                             replyId,

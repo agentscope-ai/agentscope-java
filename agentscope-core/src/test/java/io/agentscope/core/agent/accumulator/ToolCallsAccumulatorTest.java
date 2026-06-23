@@ -412,4 +412,58 @@ class ToolCallsAccumulatorTest {
         assertEquals("{\"city\": \"Tokyo\"}", toolCall.getContent());
         assertEquals("Tokyo", toolCall.getInput().get("city"));
     }
+
+    @Test
+    @DisplayName("Should propagate title from first chunk")
+    void testTitlePropagatedFromFirstChunk() {
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder().id("call_t1").name("my_tool").title("My Tool").build();
+
+        ToolUseBlock chunk2 =
+                ToolUseBlock.builder().id("call_t1").input(Map.of("key", "value")).build();
+
+        accumulator.add(chunk1);
+        accumulator.add(chunk2);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertEquals("My Tool", result.get(0).getTitle());
+    }
+
+    @Test
+    @DisplayName("Should keep title when later chunk also provides it")
+    void testTitleFromLaterChunkOverridesEarlier() {
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder().id("call_t2").name("my_tool").title("First Title").build();
+
+        ToolUseBlock chunk2 =
+                ToolUseBlock.builder()
+                        .id("call_t2")
+                        .title("Second Title")
+                        .input(Map.of("k", "v"))
+                        .build();
+
+        accumulator.add(chunk1);
+        accumulator.add(chunk2);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals("Second Title", result.get(0).getTitle());
+    }
+
+    @Test
+    @DisplayName("Should have null title when no chunk provides one")
+    void testNullTitleWhenNoChunkProvidesTitle() {
+        ToolUseBlock chunk =
+                ToolUseBlock.builder()
+                        .id("call_t3")
+                        .name("no_title_tool")
+                        .input(Map.of("k", "v"))
+                        .build();
+
+        accumulator.add(chunk);
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+
+        assertEquals(1, result.size());
+        assertNull(result.get(0).getTitle());
+    }
 }

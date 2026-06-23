@@ -25,6 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -83,7 +84,26 @@ public final class LegacyHookDispatcher {
                     ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
         } else if (content instanceof ToolUseBlock tub) {
             ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
-            accumulatedContent = accumulated != null ? accumulated : tub;
+            accumulatedContent =
+                    accumulated != null
+                            ? ToolUseBlock.builder()
+                                    .id(accumulated.getId())
+                                    .name(accumulated.getName())
+                                    .title(resolveToolTitle(accumulated.getName()))
+                                    .input(accumulated.getInput())
+                                    .content(accumulated.getContent())
+                                    .metadata(accumulated.getMetadata())
+                                    .state(accumulated.getState())
+                                    .build()
+                            : ToolUseBlock.builder()
+                                    .id(tub.getId())
+                                    .name(tub.getName())
+                                    .title(resolveToolTitle(tub.getName()))
+                                    .input(tub.getInput())
+                                    .content(tub.getContent())
+                                    .metadata(tub.getMetadata())
+                                    .state(tub.getState())
+                                    .build();
         }
 
         if (accumulatedContent != null) {
@@ -193,5 +213,13 @@ public final class LegacyHookDispatcher {
         }
 
         return Mono.empty();
+    }
+
+    private String resolveToolTitle(String toolName) {
+        if (toolName == null) {
+            return null;
+        }
+        AgentTool tool = agent.getToolkit().getTool(toolName);
+        return tool != null ? tool.getTitle() : null;
     }
 }

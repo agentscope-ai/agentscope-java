@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
@@ -110,5 +111,50 @@ class ToolResultMessageBuilderTest {
         ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
         assertEquals(toolId, toolResult.getId());
         assertEquals(toolName, toolResult.getName());
+    }
+
+    @Test
+    @DisplayName("Should propagate title from ToolUseBlock to ToolResultBlock")
+    void testPropagatesTitleFromOriginalCall() {
+        // Arrange
+        ToolUseBlock originalCall =
+                ToolUseBlock.builder()
+                        .id("tool_id")
+                        .name("titled_tool")
+                        .title("Titled Tool")
+                        .input(Map.of())
+                        .build();
+
+        ToolResultBlock response = ToolResultBlock.of(TextBlock.builder().text("done").build());
+
+        // Act
+        Msg result = ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "Agent");
+
+        // Assert
+        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
+        assertEquals("tool_id", toolResult.getId());
+        assertEquals("titled_tool", toolResult.getName());
+        assertEquals("Titled Tool", toolResult.getTitle());
+    }
+
+    @Test
+    @DisplayName("Should set null title in result when ToolUseBlock has no title")
+    void testNullTitleWhenOriginalCallHasNoTitle() {
+        // Arrange
+        ToolUseBlock originalCall =
+                ToolUseBlock.builder()
+                        .id("no_title_id")
+                        .name("no_title_tool")
+                        .input(Map.of())
+                        .build();
+
+        ToolResultBlock response = ToolResultBlock.of(TextBlock.builder().text("ok").build());
+
+        // Act
+        Msg result = ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "Agent");
+
+        // Assert
+        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
+        assertNull(toolResult.getTitle());
     }
 }

@@ -406,7 +406,11 @@ public class SubAgentTool implements AgentTool {
             metadata.put("subagent_session_id", sessionId == null ? "" : sessionId);
             emitter.emit(
                     new ToolResultBlock(
-                            null, null, List.of(TextBlock.builder().text(json).build()), metadata));
+                            null,
+                            null,
+                            null,
+                            List.of(TextBlock.builder().text(json).build()),
+                            metadata));
         } catch (Exception e) {
             logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
         }

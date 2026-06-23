@@ -25,7 +25,7 @@ import java.util.Map;
  * Represents a tool use request within a message.
  *
  * <p>This content block is used when an agent requests to execute a tool.
- * It contains the tool's unique identifier, name, input parameters, and optionally
+ * It contains the tool's unique identifier, name, title, input parameters, and optionally
  * the raw content for streaming tool calls.
  *
  * <p>The tool input is stored as a generic map of string keys to object values,
@@ -38,10 +38,29 @@ public final class ToolUseBlock extends ContentBlock {
 
     private final String id;
     private final String name;
+    private final String title;
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
     private final Map<String, Object> metadata; // Provider-specific metadata
     private final ToolCallState state;
+
+    /**
+     * Creates a new tool use block for JSON deserialization.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param title Title of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     * @param metadata Provider-specific metadata (will be defensively copied)
+     */
+    public ToolUseBlock(
+            String id,
+            String name,
+            String title,
+            Map<String, Object> input,
+            Map<String, Object> metadata) {
+        this(id, name, title, input, null, metadata, null);
+    }
 
     /**
      * Creates a new tool use block for JSON deserialization.
@@ -53,7 +72,7 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock(
             String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
-        this(id, name, input, null, metadata, null);
+        this(id, name, null, input, null, metadata, null);
     }
 
     /**
@@ -64,7 +83,39 @@ public final class ToolUseBlock extends ContentBlock {
      * @param input Input parameters for the tool (will be defensively copied)
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
-        this(id, name, input, null, null, null);
+        this(id, name, null, input, null, null, null);
+    }
+
+    /**
+     * Creates a new tool use block without metadata (convenience constructor).
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param title Title of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     */
+    public ToolUseBlock(String id, String name, String title, Map<String, Object> input) {
+        this(id, name, title, input, null, null, null);
+    }
+
+    /**
+     * Creates a new tool use block with raw content for streaming.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param title Title of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     * @param content Raw content for streaming tool calls
+     * @param metadata Provider-specific metadata (will be defensively copied)
+     */
+    public ToolUseBlock(
+            String id,
+            String name,
+            String title,
+            Map<String, Object> input,
+            String content,
+            Map<String, Object> metadata) {
+        this(id, name, title, input, content, metadata, null);
     }
 
     /**
@@ -82,7 +133,7 @@ public final class ToolUseBlock extends ContentBlock {
             Map<String, Object> input,
             String content,
             Map<String, Object> metadata) {
-        this(id, name, input, content, metadata, null);
+        this(id, name, null, input, content, metadata, null);
     }
 
     /**
@@ -90,6 +141,7 @@ public final class ToolUseBlock extends ContentBlock {
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
+     * @param title Title of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
      * @param content Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
@@ -99,12 +151,14 @@ public final class ToolUseBlock extends ContentBlock {
     public ToolUseBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
+            @JsonProperty("title") String title,
             @JsonProperty("input") Map<String, Object> input,
             @JsonProperty("content") String content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("state") ToolCallState state) {
         this.id = id;
         this.name = name;
+        this.title = title;
         // Defensive copy to prevent external modifications
         this.input =
                 input == null
@@ -134,6 +188,15 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public String getName() {
         return name;
+    }
+
+    /**
+     * Gets the title of the tool to execute.
+     *
+     * @return The tool title
+     */
+    public String getTitle() {
+        return title;
     }
 
     /**
@@ -182,7 +245,19 @@ public final class ToolUseBlock extends ContentBlock {
      * @return A new ToolUseBlock with the updated state
      */
     public ToolUseBlock withState(ToolCallState state) {
-        return new ToolUseBlock(this.id, this.name, this.input, this.content, this.metadata, state);
+        return new ToolUseBlock(
+                this.id, this.name, this.title, this.input, this.content, this.metadata, state);
+    }
+
+    /**
+     * Returns a copy of this block with the given title.
+     *
+     * @param title The new title
+     * @return A new ToolUseBlock with the updated title
+     */
+    public ToolUseBlock withTitle(String title) {
+        return new ToolUseBlock(
+                this.id, this.name, title, this.input, this.content, this.metadata, this.state);
     }
 
     /**
@@ -200,6 +275,7 @@ public final class ToolUseBlock extends ContentBlock {
     public static class Builder {
         private String id;
         private String name;
+        private String title;
         private Map<String, Object> input;
         private String content;
         private Map<String, Object> metadata;
@@ -224,6 +300,17 @@ public final class ToolUseBlock extends ContentBlock {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the title of the tool to execute.
+         *
+         * @param title The tool title
+         * @return This builder for chaining
+         */
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 
@@ -280,7 +367,7 @@ public final class ToolUseBlock extends ContentBlock {
          * @return A new ToolUseBlock instance
          */
         public ToolUseBlock build() {
-            return new ToolUseBlock(id, name, input, content, metadata, state);
+            return new ToolUseBlock(id, name, title, input, content, metadata, state);
         }
     }
 }

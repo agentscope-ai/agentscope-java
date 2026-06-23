@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -305,5 +306,72 @@ class ToolSchemaProviderTest {
         List<ToolSchema> schemas = schemaProvider.getToolSchemas();
         assertEquals(1, schemas.size());
         assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
+    }
+
+    @Test
+    void testGetToolSchemasIncludesTitleWhenToolProvidesIt() {
+        AgentTool tool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "titled_tool";
+                    }
+
+                    @Override
+                    public String getTitle() {
+                        return "Titled Tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "A tool with title";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                };
+
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null);
+        registry.registerTool("titled_tool", tool, registered);
+
+        List<ToolSchema> schemas = schemaProvider.getToolSchemas();
+        assertEquals(1, schemas.size());
+        ToolSchema schema = schemas.get(0);
+        assertEquals("titled_tool", schema.getName());
+        assertEquals("Titled Tool", schema.getTitle());
+    }
+
+    @Test
+    void testToolSchemaBuilderWithTitle() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("my_tool")
+                        .title("My Tool")
+                        .description("desc")
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+
+        assertEquals("my_tool", schema.getName());
+        assertEquals("My Tool", schema.getTitle());
+        assertEquals("desc", schema.getDescription());
+    }
+
+    @Test
+    void testToolSchemaBuilderWithoutTitleHasNullTitle() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("no_title_tool")
+                        .description("desc")
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+
+        assertNull(schema.getTitle());
     }
 }

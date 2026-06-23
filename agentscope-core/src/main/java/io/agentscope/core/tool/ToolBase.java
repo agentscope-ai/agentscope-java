@@ -60,6 +60,7 @@ import reactor.core.publisher.Mono;
 public abstract class ToolBase implements AgentTool {
 
     private final String name;
+    private final String title;
     private final String description;
     private final Map<String, Object> inputSchema;
     private final boolean concurrencySafe;
@@ -80,6 +81,7 @@ public abstract class ToolBase implements AgentTool {
     protected ToolBase(Builder builder) {
         this(
                 builder.name,
+                builder.title,
                 builder.description,
                 builder.inputSchema,
                 builder.readOnly,
@@ -102,6 +104,7 @@ public abstract class ToolBase implements AgentTool {
      */
     protected ToolBase(
             String name,
+            String title,
             String description,
             Map<String, Object> inputSchema,
             boolean readOnly,
@@ -111,6 +114,7 @@ public abstract class ToolBase implements AgentTool {
             boolean externalTool,
             boolean stateInjected) {
         this.name = Objects.requireNonNull(name, "name must not be null");
+        this.title = title;
         this.description = Objects.requireNonNull(description, "description must not be null");
         this.inputSchema = Objects.requireNonNull(inputSchema, "inputSchema must not be null");
         this.readOnly = readOnly;
@@ -124,9 +128,41 @@ public abstract class ToolBase implements AgentTool {
         }
     }
 
+    /**
+     * Positional constructor used by built-in tools and any subclass that prefers explicit
+     * arguments over {@link #builder()}. New code is encouraged to use the builder for clarity.
+     */
+    protected ToolBase(
+            String name,
+            String description,
+            Map<String, Object> inputSchema,
+            boolean readOnly,
+            boolean concurrencySafe,
+            boolean mcp,
+            String mcpName,
+            boolean externalTool,
+            boolean stateInjected) {
+        this(
+                name,
+                null,
+                description,
+                inputSchema,
+                readOnly,
+                concurrencySafe,
+                mcp,
+                mcpName,
+                externalTool,
+                stateInjected);
+    }
+
     @Override
     public final String getName() {
         return name;
+    }
+
+    @Override
+    public final String getTitle() {
+        return title;
     }
 
     @Override
@@ -273,6 +309,7 @@ public abstract class ToolBase implements AgentTool {
     /** Fluent builder for {@link ToolBase} subclasses. */
     public static final class Builder {
         private String name;
+        private String title;
         private String description;
         private Map<String, Object> inputSchema;
         private boolean readOnly = false;
@@ -288,6 +325,11 @@ public abstract class ToolBase implements AgentTool {
 
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 
