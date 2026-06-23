@@ -33,7 +33,7 @@ A **Chat Model** is the LLM driving conversation and tool calling, with input an
 | Gemini | `GeminiChatModel` | Google Gemini; multi-modal |
 | Ollama | `OllamaChatModel` | Locally hosted LLMs; credential optional |
 
-Credential classes (`io.agentscope.core.credential`): `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, `OllamaCredential`, `DeepSeekCredential`, `KimiCredential`, `XAICredential`.
+Credential classes: `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, `OllamaCredential`, `DeepSeekCredential`, `KimiCredential`, `XAICredential`.
 
 ### Creating a chat model
 
