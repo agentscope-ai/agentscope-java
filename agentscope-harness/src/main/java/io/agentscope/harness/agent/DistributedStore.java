@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent;
 
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.harness.agent.bus.AsyncToolRegistry;
+import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
@@ -105,6 +107,31 @@ public interface DistributedStore {
     }
 
     /**
+     * Creates a {@link MessageBus} for inbox-based message delivery and session event streaming.
+     *
+     * <p>Override this when the store supports real-time transport (e.g. Redis Pub/Sub). The
+     * default returns {@code null}, which signals HarnessAgent to fall back to a workspace-backed
+     * implementation created from the resolved {@code AbstractFilesystem}.
+     *
+     * @return a message bus, or {@code null} to use the workspace default
+     */
+    default MessageBus messageBus() {
+        return null;
+    }
+
+    /**
+     * Creates an {@link AsyncToolRegistry} for tracking async tool executions.
+     *
+     * <p>Override this when the store supports persistent key-value storage. The default returns
+     * {@code null}, which signals HarnessAgent to fall back to a workspace-backed implementation.
+     *
+     * @return an async tool registry, or {@code null} to use the workspace default
+     */
+    default AsyncToolRegistry asyncToolRegistry() {
+        return null;
+    }
+
+    /**
      * Creates a builder for composing a {@link DistributedStore} from individual components,
      * potentially sourced from different store implementations.
      *
@@ -136,6 +163,8 @@ public interface DistributedStore {
         private BaseStore baseStore;
         private SandboxSnapshotSpec sandboxSnapshotSpec;
         private SandboxExecutionGuard sandboxExecutionGuard;
+        private MessageBus messageBus;
+        private AsyncToolRegistry asyncToolRegistry;
 
         private Builder() {}
 
@@ -183,6 +212,16 @@ public interface DistributedStore {
             return this;
         }
 
+        public Builder messageBus(MessageBus messageBus) {
+            this.messageBus = messageBus;
+            return this;
+        }
+
+        public Builder asyncToolRegistry(AsyncToolRegistry asyncToolRegistry) {
+            this.asyncToolRegistry = asyncToolRegistry;
+            return this;
+        }
+
         /**
          * Builds the composite {@link DistributedStore}.
          *
@@ -198,7 +237,8 @@ public interface DistributedStore {
                     sandboxExecutionGuard != null
                             ? sandboxExecutionGuard
                             : SandboxExecutionGuard.noop();
-            return new CompositeDistributedStore(agentStateStore, baseStore, snap, guard);
+            return new CompositeDistributedStore(
+                    agentStateStore, baseStore, snap, guard, messageBus, asyncToolRegistry);
         }
     }
 
@@ -209,7 +249,9 @@ public interface DistributedStore {
             AgentStateStore stateStore,
             BaseStore store,
             SandboxSnapshotSpec snapshotSpec,
-            SandboxExecutionGuard executionGuard)
+            SandboxExecutionGuard executionGuard,
+            MessageBus bus,
+            AsyncToolRegistry toolRegistry)
             implements DistributedStore {
 
         @Override
@@ -230,6 +272,16 @@ public interface DistributedStore {
         @Override
         public SandboxExecutionGuard sandboxExecutionGuard() {
             return executionGuard;
+        }
+
+        @Override
+        public MessageBus messageBus() {
+            return bus;
+        }
+
+        @Override
+        public AsyncToolRegistry asyncToolRegistry() {
+            return toolRegistry;
         }
     }
 }

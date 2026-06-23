@@ -37,6 +37,8 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that triggers memory flush and message offload at the end of each agent call.
@@ -125,27 +127,36 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
+        return next.apply(input)
+                .concatWith(
+                        doFlush(agent, rc)
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn("Memory flush failed: {}", e.getMessage());
+                                            return Mono.empty();
+                                        })
+                                .then(Mono.<AgentEvent>empty()));
     }
 
-    private reactor.core.publisher.Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
+    private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
         if (!(agent instanceof ReActAgent reActAgent)) {
-            return reactor.core.publisher.Mono.empty();
+            return Mono.empty();
         }
         AgentState state = RuntimeContext.resolveAgentState(rc, reActAgent);
         if (state == null) {
-            return reactor.core.publisher.Mono.empty();
+            return Mono.empty();
         }
         List<Msg> messages = state.getContext();
         if (messages.isEmpty()) {
-            return reactor.core.publisher.Mono.empty();
+            return Mono.empty();
         }
 
         MemoryFlushManager flushManager =
                 new MemoryFlushManager(workspaceManager, model, flushPrompt);
 
         boolean shouldFlush = shouldFlushNow(rc);
-        reactor.core.publisher.Mono<Void> flushMono;
+        Mono<Void> flushMono;
         if (shouldFlush) {
             flushMono =
                     flushManager
@@ -154,18 +165,18 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
                             .onErrorResume(
                                     e -> {
                                         log.warn("Memory flush failed: {}", e.getMessage());
-                                        return reactor.core.publisher.Mono.empty();
+                                        return Mono.empty();
                                     });
         } else {
             log.debug("Memory flush skipped (trigger={})", flushTrigger);
-            flushMono = reactor.core.publisher.Mono.empty();
+            flushMono = Mono.empty();
         }
 
         String agentId = agent.getName();
         String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-        reactor.core.publisher.Mono<Void> offloadMono =
-                reactor.core.publisher.Mono.fromRunnable(
+        Mono<Void> offloadMono =
+                Mono.fromRunnable(
                                 () ->
                                         flushManager.offloadMessages(
                                                 rc, messages, agentId, sessionId))
@@ -174,7 +185,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
                         .onErrorResume(
                                 e -> {
                                     log.warn("Message offload failed: {}", e.getMessage());
-                                    return reactor.core.publisher.Mono.empty();
+                                    return Mono.empty();
                                 });
 
         return flushMono.then(offloadMono);
