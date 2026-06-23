@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.e2e.E2ETestCondition;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -54,6 +55,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -61,6 +63,7 @@ import reactor.core.publisher.Mono;
  * End-to-end ReAct loop: tool-use → tool-result → text-terminate, with two tools and a recording
  * middleware. Verifies the canonical event order and the final reply text.
  */
+@ExtendWith(E2ETestCondition.class)
 class ReActAgentNewLoopE2ETest {
 
     private static final class ScriptedModel extends ChatModelBase {

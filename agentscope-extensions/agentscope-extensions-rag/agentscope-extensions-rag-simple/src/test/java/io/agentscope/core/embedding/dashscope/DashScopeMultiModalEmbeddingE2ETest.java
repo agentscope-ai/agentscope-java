@@ -40,6 +40,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @DisplayName("DashScopeMultiModalEmbedding E2E Tests")
 @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
+@org.junit.jupiter.api.extension.ExtendWith(io.agentscope.core.e2e.E2ETestCondition.class)
 class DashScopeMultiModalEmbeddingE2ETest {
 
     // Note: Model name may vary - check DashScope documentation for available models

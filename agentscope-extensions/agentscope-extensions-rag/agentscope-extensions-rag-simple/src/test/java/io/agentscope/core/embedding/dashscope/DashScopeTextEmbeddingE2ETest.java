@@ -38,6 +38,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @DisplayName("DashScopeTextEmbedding E2E Tests")
 @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
+@org.junit.jupiter.api.extension.ExtendWith(io.agentscope.core.e2e.E2ETestCondition.class)
 class DashScopeTextEmbeddingE2ETest {
 
     private static final String MODEL_NAME = "text-embedding-v3";

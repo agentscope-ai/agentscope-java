@@ -15,56 +15,60 @@
  */
 package io.agentscope.extensions.oss;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.OSSObject;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.Objects;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
- * {@link RemoteSnapshotClient} backed by Alibaba Cloud OSS.
+ * {@link RemoteSnapshotClient} backed by S3-compatible object storage.
  */
 public class OssRemoteSnapshotClient implements RemoteSnapshotClient {
 
-    private final OSS ossClient;
+    private final S3Client s3Client;
     private final String bucketName;
     private final String keyPrefix;
 
-    /**
-     * Creates an OSS-backed snapshot client.
-     *
-     * @param ossClient initialized OSS client
-     * @param bucketName bucket for snapshot objects
-     * @param keyPrefix object key prefix (optional, may be null/blank)
-     */
-    public OssRemoteSnapshotClient(OSS ossClient, String bucketName, String keyPrefix) {
-        this.ossClient = Objects.requireNonNull(ossClient, "ossClient must not be null");
+    public OssRemoteSnapshotClient(S3Client s3Client, String bucketName, String keyPrefix) {
+        this.s3Client = Objects.requireNonNull(s3Client, "s3Client must not be null");
         if (bucketName == null || bucketName.isBlank()) {
             throw new IllegalArgumentException("bucketName must not be blank");
         }
         this.bucketName = bucketName;
-        this.keyPrefix = normalizePrefix(keyPrefix);
+        this.keyPrefix = S3ObjectStoreSupport.normalizePrefix(keyPrefix, "");
     }
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
-        ossClient.putObject(bucketName, objectKey(snapshotId), data);
+        byte[] bytes = data.readAllBytes();
+        s3Client.putObject(
+                PutObjectRequest.builder().bucket(bucketName).key(objectKey(snapshotId)).build(),
+                RequestBody.fromBytes(bytes));
     }
 
     @Override
     public InputStream download(String snapshotId) throws Exception {
         String key = objectKey(snapshotId);
-        if (!ossClient.doesObjectExist(bucketName, key)) {
-            throw new FileNotFoundException("Snapshot not found in OSS: " + key);
+        if (!exists(snapshotId)) {
+            throw new FileNotFoundException("Snapshot not found in object storage: " + key);
         }
-        OSSObject object = ossClient.getObject(bucketName, key);
-        return object.getObjectContent();
+        ResponseBytes<GetObjectResponse> bytes =
+                s3Client.getObjectAsBytes(
+                        GetObjectRequest.builder().bucket(bucketName).key(key).build());
+        return new ByteArrayInputStream(bytes.asByteArray());
     }
 
     @Override
     public boolean exists(String snapshotId) throws Exception {
-        return ossClient.doesObjectExist(bucketName, objectKey(snapshotId));
+        return S3ObjectStoreSupport.hasObjectsWithPrefix(
+                s3Client, bucketName, objectKey(snapshotId));
     }
 
     private String objectKey(String snapshotId) {
@@ -72,19 +76,5 @@ public class OssRemoteSnapshotClient implements RemoteSnapshotClient {
             throw new IllegalArgumentException("snapshotId must not be blank");
         }
         return keyPrefix + snapshotId + ".tar";
-    }
-
-    private static String normalizePrefix(String prefix) {
-        if (prefix == null || prefix.isBlank()) {
-            return "";
-        }
-        String p = prefix.replace('\\', '/');
-        while (p.startsWith("/")) {
-            p = p.substring(1);
-        }
-        if (!p.isEmpty() && !p.endsWith("/")) {
-            p = p + "/";
-        }
-        return p;
     }
 }

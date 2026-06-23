@@ -20,37 +20,39 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.ListObjectsV2Request;
-import com.aliyun.oss.model.ListObjectsV2Result;
-import com.aliyun.oss.model.OSSObject;
-import com.aliyun.oss.model.OSSObjectSummary;
 import io.agentscope.core.state.AgentState;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 class OssAgentStateStoreTest {
 
-    private OSS mockOss;
+    private S3Client mockS3;
     private OssAgentStateStore store;
 
     @BeforeEach
     void setUp() {
-        mockOss = mock(OSS.class);
+        mockS3 = mock(S3Client.class);
         store =
                 OssAgentStateStore.builder()
-                        .ossClient(mockOss)
+                        .s3Client(mockS3)
                         .bucketName("test-bucket")
                         .keyPrefix("test/state/")
                         .build();
@@ -67,36 +69,30 @@ class OssAgentStateStoreTest {
     void builderRejectsBlankBucket() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> OssAgentStateStore.builder().ossClient(mockOss).bucketName("").build());
+                () -> OssAgentStateStore.builder().s3Client(mockS3).bucketName("").build());
     }
 
     @Test
     void saveSingleState_putObjectCalled() {
         store.save("alice", "s1", "agent_state", new TestState("hello"));
-        verify(mockOss)
-                .putObject(
-                        eq("test-bucket"),
-                        eq("test/state/alice/s1/agent_state.json"),
-                        any(InputStream.class));
+        verify(mockS3).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
     @Test
     void getSingleState_returnsEmpty_whenNotExists() {
-        when(mockOss.doesObjectExist("test-bucket", "test/state/alice/s1/agent_state.json"))
-                .thenReturn(false);
+        when(mockS3.getObjectAsBytes(any(GetObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).message("missing").build());
         Optional<AgentState> result = store.get("alice", "s1", "agent_state", AgentState.class);
         assertTrue(result.isEmpty());
     }
 
     @Test
     void getSingleState_returnsValue_whenExists() {
-        String key = "test/state/alice/s1/agent_state.json";
-        when(mockOss.doesObjectExist("test-bucket", key)).thenReturn(true);
-        OSSObject obj = new OSSObject();
-        obj.setObjectContent(
-                new ByteArrayInputStream(
-                        "{\"sessionId\":\"s1\"}".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", key)).thenReturn(obj);
+        ResponseBytes<GetObjectResponse> bytes =
+                ResponseBytes.fromByteArray(
+                        GetObjectResponse.builder().build(),
+                        "{\"sessionId\":\"s1\"}".getBytes(StandardCharsets.UTF_8));
+        when(mockS3.getObjectAsBytes(any(GetObjectRequest.class))).thenReturn(bytes);
 
         Optional<AgentState> result = store.get("alice", "s1", "agent_state", AgentState.class);
         assertTrue(result.isPresent());
@@ -105,44 +101,30 @@ class OssAgentStateStoreTest {
     @Test
     void nullUserId_usesAnon() {
         store.save(null, "s1", "agent_state", new TestState("data"));
-        verify(mockOss)
-                .putObject(
-                        eq("test-bucket"),
-                        eq("test/state/__anon__/s1/agent_state.json"),
-                        any(InputStream.class));
+        verify(mockS3).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
     @Test
     void exists_returnsFalse_whenNoObjects() {
-        ListObjectsV2Result result = mock(ListObjectsV2Result.class);
-        when(result.getObjectSummaries()).thenReturn(List.of());
-        when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
-
+        when(mockS3.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().contents(List.of()).build());
         assertFalse(store.exists("alice", "s1"));
     }
 
     @Test
     void exists_returnsTrue_whenObjectsExist() {
-        OSSObjectSummary summary = new OSSObjectSummary();
-        summary.setKey("test/state/alice/s1/agent_state.json");
-        ListObjectsV2Result result = mock(ListObjectsV2Result.class);
-        when(result.getObjectSummaries()).thenReturn(List.of(summary));
-        when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
-
+        S3Object object = S3Object.builder().key("test/state/alice/s1/agent_state.json").build();
+        when(mockS3.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().contents(List.of(object)).build());
         assertTrue(store.exists("alice", "s1"));
     }
 
     @Test
     void listSessionIds_extractsIds() {
-        OSSObjectSummary s1 = new OSSObjectSummary();
-        s1.setKey("test/state/alice/sess-a/agent_state.json");
-        OSSObjectSummary s2 = new OSSObjectSummary();
-        s2.setKey("test/state/alice/sess-b/agent_state.json");
-
-        ListObjectsV2Result result = mock(ListObjectsV2Result.class);
-        when(result.getObjectSummaries()).thenReturn(List.of(s1, s2));
-        when(result.isTruncated()).thenReturn(false);
-        when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
+        S3Object s1 = S3Object.builder().key("test/state/alice/sess-a/agent_state.json").build();
+        S3Object s2 = S3Object.builder().key("test/state/alice/sess-b/agent_state.json").build();
+        when(mockS3.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().contents(List.of(s1, s2)).build());
 
         Set<String> ids = store.listSessionIds("alice");
         assertEquals(Set.of("sess-a", "sess-b"), ids);
@@ -151,7 +133,7 @@ class OssAgentStateStoreTest {
     @Test
     void close_shutsDownClient() {
         store.close();
-        verify(mockOss).shutdown();
+        verify(mockS3).close();
     }
 
     record TestState(String data) implements io.agentscope.core.state.State {}

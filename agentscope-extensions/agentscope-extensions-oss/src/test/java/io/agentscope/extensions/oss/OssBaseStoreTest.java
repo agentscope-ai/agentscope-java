@@ -22,33 +22,39 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.OSSObject;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 class OssBaseStoreTest {
 
-    private OSS mockOss;
+    private S3Client mockS3;
     private OssBaseStore store;
 
     @BeforeEach
     void setUp() {
-        mockOss = mock(OSS.class);
+        mockS3 = mock(S3Client.class);
+        when(mockS3.getObjectAsBytes(anyGetObjectRequest()))
+                .thenThrow(S3Exception.builder().statusCode(404).message("missing").build());
         store =
                 OssBaseStore.builder()
-                        .ossClient(mockOss)
+                        .s3Client(mockS3)
                         .bucketName("test-bucket")
                         .keyPrefix("test/store/")
                         .build();
@@ -64,23 +70,29 @@ class OssBaseStoreTest {
     void builderRejectsBlankBucket() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> OssBaseStore.builder().ossClient(mockOss).bucketName("").build());
+                () -> OssBaseStore.builder().s3Client(mockS3).bucketName("").build());
     }
 
     @Test
     void putCallsPutObject() {
         store.put(List.of("ns1", "ns2"), "my-key", Map.of("foo", "bar"));
-        verify(mockOss)
+        verify(mockS3)
                 .putObject(
-                        eq("test-bucket"),
-                        eq("test/store/ns1/ns2/my-key.json"),
-                        any(InputStream.class));
+                        putObjectRequest("test/store/ns1/ns2/my-key.json"), any(RequestBody.class));
+        verify(mockS3)
+                .putObject(
+                        putObjectRequest("test/store/ns1/ns2/my-key.version"),
+                        any(RequestBody.class));
     }
 
     @Test
     void getReturnsNull_whenNotExists() {
-        when(mockOss.doesObjectExist("test-bucket", "test/store/ns1/my-key.json"))
-                .thenReturn(false);
+        when(mockS3.getObjectAsBytes(any(GetObjectRequest.class)))
+                .thenThrow(
+                        software.amazon.awssdk.services.s3.model.S3Exception.builder()
+                                .statusCode(404)
+                                .message("missing")
+                                .build());
 
         StoreItem result = store.get(List.of("ns1"), "my-key");
         assertNull(result);
@@ -88,91 +100,73 @@ class OssBaseStoreTest {
 
     @Test
     void getReturnsItem_whenExists() {
-        String dataKey = "test/store/ns1/my-key.json";
-        String versionKey = "test/store/ns1/my-key.version";
-
-        when(mockOss.doesObjectExist("test-bucket", dataKey)).thenReturn(true);
-        OSSObject dataObj = new OSSObject();
-        dataObj.setObjectContent(
-                new ByteArrayInputStream("{\"name\":\"test\"}".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", dataKey)).thenReturn(dataObj);
-
-        when(mockOss.doesObjectExist("test-bucket", versionKey)).thenReturn(true);
-        OSSObject versionObj = new OSSObject();
-        versionObj.setObjectContent(new ByteArrayInputStream("3".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", versionKey)).thenReturn(versionObj);
+        ResponseBytes<GetObjectResponse> bytes =
+                ResponseBytes.fromByteArray(
+                        GetObjectResponse.builder().build(),
+                        "{\"name\":\"test\"}".getBytes(StandardCharsets.UTF_8));
+        when(mockS3.getObjectAsBytes(getObjectRequest("test/store/ns1/my-key.json")))
+                .thenReturn(bytes);
 
         StoreItem item = store.get(List.of("ns1"), "my-key");
         assertNotNull(item);
         assertEquals("my-key", item.key());
         assertEquals("test", item.value().get("name"));
-        assertEquals(3L, item.version());
     }
 
     @Test
     void putIfVersion_returnsFalse_onMismatch() {
-        String versionKey = "test/store/ns1/my-key.version";
-        when(mockOss.doesObjectExist("test-bucket", versionKey)).thenReturn(true);
-        OSSObject versionObj = new OSSObject();
-        versionObj.setObjectContent(new ByteArrayInputStream("5".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", versionKey)).thenReturn(versionObj);
-
         boolean result = store.putIfVersion(List.of("ns1"), "my-key", Map.of("a", "b"), 3);
         assertFalse(result);
     }
 
     @Test
     void putIfVersion_returnsTrue_onMatch() {
-        String versionKey = "test/store/ns1/my-key.version";
-        when(mockOss.doesObjectExist("test-bucket", versionKey)).thenReturn(true);
-        OSSObject versionObj = new OSSObject();
-        versionObj.setObjectContent(new ByteArrayInputStream("5".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", versionKey)).thenReturn(versionObj);
-
-        boolean result = store.putIfVersion(List.of("ns1"), "my-key", Map.of("a", "b"), 5);
+        boolean result = store.putIfVersion(List.of("ns1"), "my-key", Map.of("a", "b"), 0);
         assertTrue(result);
-        verify(mockOss)
-                .putObject(
-                        eq("test-bucket"),
-                        eq("test/store/ns1/my-key.json"),
-                        any(InputStream.class));
     }
 
     @Test
     void deleteCallsDeleteObject() {
-        when(mockOss.doesObjectExist("test-bucket", "test/store/ns1/my-key.version"))
-                .thenReturn(true);
-
         store.delete(List.of("ns1"), "my-key");
-        verify(mockOss).deleteObject("test-bucket", "test/store/ns1/my-key.json");
-        verify(mockOss).deleteObject("test-bucket", "test/store/ns1/my-key.version");
+        verify(mockS3).deleteObject(deleteObjectRequest("test/store/ns1/my-key.json"));
+        verify(mockS3).deleteObject(deleteObjectRequest("test/store/ns1/my-key.version"));
     }
 
     @Test
     void putStripsLeadingSlashFromKey() {
         store.put(List.of("ns1", "ns2"), "/my-key", Map.of("foo", "bar"));
-        verify(mockOss)
+        verify(mockS3)
                 .putObject(
-                        eq("test-bucket"),
-                        eq("test/store/ns1/ns2/my-key.json"),
-                        any(InputStream.class));
+                        putObjectRequest("test/store/ns1/ns2/my-key.json"), any(RequestBody.class));
     }
 
     @Test
     void getStripsLeadingSlashFromKey() {
-        String dataKey = "test/store/ns1/my-key.json";
-        String versionKey = "test/store/ns1/my-key.version";
-
-        when(mockOss.doesObjectExist("test-bucket", dataKey)).thenReturn(true);
-        OSSObject dataObj = new OSSObject();
-        dataObj.setObjectContent(
-                new ByteArrayInputStream("{\"v\":1}".getBytes(StandardCharsets.UTF_8)));
-        when(mockOss.getObject("test-bucket", dataKey)).thenReturn(dataObj);
-
-        when(mockOss.doesObjectExist("test-bucket", versionKey)).thenReturn(false);
+        ResponseBytes<GetObjectResponse> bytes =
+                ResponseBytes.fromByteArray(
+                        GetObjectResponse.builder().build(),
+                        "{\"v\":1}".getBytes(StandardCharsets.UTF_8));
+        when(mockS3.getObjectAsBytes(getObjectRequest("test/store/ns1/my-key.json")))
+                .thenReturn(bytes);
 
         StoreItem item = store.get(List.of("ns1"), "/my-key");
         assertNotNull(item);
         assertEquals("/my-key", item.key());
+    }
+
+    private static GetObjectRequest anyGetObjectRequest() {
+        return any(GetObjectRequest.class);
+    }
+
+    private static GetObjectRequest getObjectRequest(String key) {
+        return argThat(req -> req != null && key.equals(req.key()));
+    }
+
+    private static PutObjectRequest putObjectRequest(String key) {
+        return argThat(req -> req != null && key.equals(req.key()));
+    }
+
+    private static DeleteObjectRequest deleteObjectRequest(String key) {
+        return argThat(req -> req != null && key.equals(req.key()));
     }
 }

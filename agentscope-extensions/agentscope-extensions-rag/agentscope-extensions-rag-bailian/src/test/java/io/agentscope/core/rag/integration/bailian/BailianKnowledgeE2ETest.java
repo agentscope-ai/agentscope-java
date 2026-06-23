@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.core.e2e.E2ETestCondition;
 import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -27,6 +28,7 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>If these environment variables are not set, the test will be skipped.
  */
+@ExtendWith(E2ETestCondition.class)
 class BailianKnowledgeE2ETest {
 
     private static final Logger log = LoggerFactory.getLogger(BailianKnowledgeE2ETest.class);

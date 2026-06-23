@@ -38,6 +38,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @DisplayName("OpenAITextEmbedding E2E Tests")
 @EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
+@org.junit.jupiter.api.extension.ExtendWith(io.agentscope.core.e2e.E2ETestCondition.class)
 class OpenAITextEmbeddingE2ETest {
 
     private static final String MODEL_NAME = "text-embedding-3-small";

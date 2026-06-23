@@ -27,8 +27,12 @@
     </parent>
 
     <name>AgentScope Java - Extensions - OSS</name>
-    <description>AgentScope Extensions - Alibaba Cloud OSS backed AgentStateStore and BaseStore</description>
+    <description>AgentScope Extensions - S3-compatible object storage backed AgentStateStore and BaseStore</description>
     <artifactId>agentscope-extensions-oss</artifactId>
+
+    <properties>
+        <aws.sdk.version>2.46.13</aws.sdk.version>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -45,11 +49,26 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Alibaba Cloud OSS SDK -->
+        <!-- AWS SDK for Java v2, which also works with MinIO and other S3-compatible stores. -->
         <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.18.5</version>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${aws.sdk.version}</version>
         </dependency>
     </dependencies>
 </project>
