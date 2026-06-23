@@ -1054,5 +1054,36 @@ class OpenAIResponseParserTest {
             assertEquals(50, result.getUsage().getOutputTokens());
             assertEquals(64, result.getUsage().getCachedTokens());
         }
+
+        @Test
+        @DisplayName("Should default token counts to 0 when chunk usage fields are null")
+        void testParseChunkResponseWithNullTokenCounts() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion.chunk");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(null);
+            usage.setCompletionTokens(null);
+            response.setUsage(usage);
+
+            OpenAIMessage delta = new OpenAIMessage();
+            delta.setContent("");
+            delta.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setDelta(delta);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(0, result.getUsage().getInputTokens());
+            assertEquals(0, result.getUsage().getOutputTokens());
+            assertEquals(0, result.getUsage().getCachedTokens());
+        }
     }
 }
