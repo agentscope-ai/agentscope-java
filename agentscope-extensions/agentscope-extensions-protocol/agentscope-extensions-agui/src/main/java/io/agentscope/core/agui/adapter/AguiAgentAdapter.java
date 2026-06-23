@@ -126,7 +126,10 @@ public class AguiAgentAdapter {
                                                         : error.getClass().getSimpleName();
                                         return Flux.just(
                                                 new AguiEvent.RunError(
-                                                        threadId, runId, errorMessage, null),
+                                                        threadId,
+                                                        runId,
+                                                        errorMessage,
+                                                        mapErrorCode(error)),
                                                 new AguiEvent.RunFinished(threadId, runId));
                                     });
                 });
@@ -374,6 +377,20 @@ public class AguiAgentAdapter {
         } catch (JsonException e) {
             return "{}";
         }
+    }
+
+    // maps exception type to a stable AG-UI error code string
+    private static String mapErrorCode(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "TIMEOUT_ERROR";
+        }
+        if (error instanceof java.lang.InterruptedException) {
+            return "INTERRUPTED_ERROR";
+        }
+        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
+            return "INVALID_INPUT_ERROR";
+        }
+        return "INTERNAL_ERROR";
     }
 
     /**

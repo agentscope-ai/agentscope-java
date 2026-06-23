@@ -17,11 +17,13 @@ package io.agentscope.core.agui.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -134,6 +136,7 @@ public sealed interface AguiEvent
      * emitted when an agent
      * begins processing a request.
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record RunStarted(String threadId, String runId, String parentRunId, RunAgentInput input)
             implements AguiEvent {
 
@@ -174,6 +177,7 @@ public sealed interface AguiEvent
      * emitted when an agent
      * completes processing a request.
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record RunFinished(String threadId, String runId, Object result, RunFinishedOutcome outcome)
             implements AguiEvent {
 
@@ -1021,7 +1025,7 @@ public sealed interface AguiEvent
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messages =
                     messages != null
-                            ? Collections.unmodifiableList(messages)
+                            ? Collections.unmodifiableList(new ArrayList<>(messages))
                             : Collections.emptyList();
         }
 
