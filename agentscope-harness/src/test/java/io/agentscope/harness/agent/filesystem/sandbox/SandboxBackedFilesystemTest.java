@@ -17,8 +17,10 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -26,11 +28,13 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -59,7 +63,7 @@ class SandboxBackedFilesystemTest {
     @Test
     void uploadFiles_streamsThroughTarHydration() throws Exception {
         byte[] content = "session-line\n".repeat(6000).getBytes(StandardCharsets.UTF_8);
-        StubSandbox sandbox = new StubSandbox("", content, "/workspace");
+        StubSandbox sandbox = new StubSandbox("", stateWithRoot("/workspace"));
         SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
         fs.setSandbox(sandbox);
 
@@ -75,26 +79,207 @@ class SandboxBackedFilesystemTest {
         assertTarEntry(sandbox.archiveBytes.get(), "agents/demo/sessions/large.jsonl", content);
     }
 
+    @Test
+    void operationsRequireSandbox() {
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> fs.execute(RT, "echo hi", 1));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> fs.uploadFiles(RT, List.of(Map.entry("/workspace/note.txt", bytes("x")))));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> fs.downloadFiles(RT, List.of("/workspace/note.txt")));
+    }
+
+    @Test
+    void execute_coversSuccessTimeoutAndFallbackBranches() {
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) ->
+                                new ExecResult(0, "stdout", "stderr", true),
+                        stateWithRoot("/workspace")));
+        var success = fs.execute(RT, "echo hi", 5);
+        assertEquals("stdout\n[stderr] stderr", success.output());
+        assertEquals(0, success.exitCode());
+        assertTrue(success.truncated());
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) -> {
+                            throw new SandboxException.ExecTimeoutException(
+                                    command, timeoutSeconds != null ? timeoutSeconds : 0);
+                        },
+                        stateWithRoot("/workspace")));
+        var timeout = fs.execute(RT, "sleep 99", 3);
+        assertEquals("Command timed out after 3s: sleep 99", timeout.output());
+        assertEquals(124, timeout.exitCode());
+        assertFalse(timeout.truncated());
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) -> {
+                            throw new SandboxException.ExecException(7, "stdout", "stderr");
+                        },
+                        stateWithRoot("/workspace")));
+        var execFailure = fs.execute(RT, "cmd", null);
+        assertEquals("stdout\nstderr", execFailure.output());
+        assertEquals(7, execFailure.exitCode());
+        assertFalse(execFailure.truncated());
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) -> {
+                            throw new IllegalStateException("boom");
+                        },
+                        stateWithRoot("/workspace")));
+        var internalFailure = fs.execute(RT, "cmd", null);
+        assertEquals("Internal sandbox error: boom", internalFailure.output());
+        assertEquals(-1, internalFailure.exitCode());
+        assertFalse(internalFailure.truncated());
+    }
+
+    @Test
+    void uploadFiles_coversPathNormalizationEdgeCases() throws Exception {
+        byte[] content = "edge-case".getBytes(StandardCharsets.UTF_8);
+        StubSandbox sandbox =
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) ->
+                                new ExecResult(0, "", "", false),
+                        stateWithRoot("/workspace/"));
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+        fs.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                fs.uploadFiles(
+                        RT,
+                        List.of(
+                                Map.entry("./relative/file.txt", content),
+                                Map.entry("/workspace", content),
+                                Map.entry("/other/location.txt", content),
+                                Map.entry("../escape.txt", content),
+                                new AbstractMap.SimpleEntry<>("/workspace/null.txt", null)));
+
+        assertEquals(5, responses.size());
+        assertTrue(responses.get(0).isSuccess());
+        assertFalse(responses.get(1).isSuccess());
+        assertFalse(responses.get(2).isSuccess());
+        assertFalse(responses.get(3).isSuccess());
+        assertFalse(responses.get(4).isSuccess());
+        assertEquals(1, sandbox.hydrateCalls.get());
+        assertTarEntry(sandbox.archiveBytes.get(), "relative/file.txt", content);
+    }
+
+    @Test
+    void uploadFiles_usesRelativePathWhenWorkspaceLookupIsMissing() throws Exception {
+        byte[] content = "orphan".getBytes(StandardCharsets.UTF_8);
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+
+        StubSandbox missingState =
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) ->
+                                new ExecResult(0, "", "", false),
+                        () -> null);
+        fs.setSandbox(missingState);
+        List<FileUploadResponse> missingStateResponses =
+                fs.uploadFiles(RT, List.of(Map.entry("/orphan/null-state.txt", content)));
+        assertEquals(1, missingStateResponses.size());
+        assertTrue(missingStateResponses.get(0).isSuccess());
+        assertTarEntry(missingState.archiveBytes.get(), "orphan/null-state.txt", content);
+
+        StubSandbox throwingState =
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) ->
+                                new ExecResult(0, "", "", false),
+                        () -> {
+                            throw new IllegalStateException("state broken");
+                        });
+        fs.setSandbox(throwingState);
+        List<FileUploadResponse> throwingStateResponses =
+                fs.uploadFiles(RT, List.of(Map.entry("/orphan/throwing-state.txt", content)));
+        assertEquals(1, throwingStateResponses.size());
+        assertTrue(throwingStateResponses.get(0).isSuccess());
+        assertTarEntry(throwingState.archiveBytes.get(), "orphan/throwing-state.txt", content);
+    }
+
+    @Test
+    void downloadFiles_coversFailureBranches() {
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) ->
+                                new ExecResult(1, "stdout", "stderr", false),
+                        stateWithRoot("/workspace")));
+        List<FileDownloadResponse> responses =
+                fs.downloadFiles(RT, List.of("/workspace/missing.txt"));
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertEquals("stdout\n[stderr] stderr", responses.get(0).error());
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) -> {
+                            throw new SandboxException.ExecException(9, "out", "err");
+                        },
+                        stateWithRoot("/workspace")));
+        responses = fs.downloadFiles(RT, List.of("/workspace/missing.txt"));
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertEquals("out\nerr", responses.get(0).error());
+
+        fs.setSandbox(
+                new StubSandbox(
+                        (runtimeContext, command, timeoutSeconds) -> {
+                            throw new IllegalStateException("boom");
+                        },
+                        stateWithRoot("/workspace")));
+        responses = fs.downloadFiles(RT, List.of("/workspace/missing.txt"));
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertEquals("boom", responses.get(0).error());
+    }
+
+    @FunctionalInterface
+    private interface ExecBehavior {
+        ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
+                throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface StateBehavior {
+        SandboxState getState();
+    }
+
     private static final class StubSandbox implements Sandbox {
         private final AtomicReference<String> command = new AtomicReference<>();
-        private final String stdout;
-        private final byte[] expected;
+        private final ExecBehavior execBehavior;
+        private final StateBehavior stateBehavior;
         private final AtomicInteger execCalls = new AtomicInteger();
         private final AtomicInteger hydrateCalls = new AtomicInteger();
         private final AtomicReference<byte[]> archiveBytes = new AtomicReference<>();
-        private final SandboxState state;
 
         private StubSandbox(String stdout, byte[] expected) {
-            this(stdout, expected, "/workspace");
+            this(
+                    (runtimeContext, command, timeoutSeconds) ->
+                            new ExecResult(0, stdout, "", false),
+                    stateWithRoot("/workspace"));
         }
 
-        private StubSandbox(String stdout, byte[] expected, String workspaceRoot) {
-            this.stdout = stdout;
-            this.expected = expected;
-            this.state = new SandboxState() {};
-            WorkspaceSpec spec = new WorkspaceSpec();
-            spec.setRoot(workspaceRoot);
-            this.state.setWorkspaceSpec(spec);
+        private StubSandbox(String stdout, StateBehavior stateBehavior) {
+            this(
+                    (runtimeContext, command, timeoutSeconds) ->
+                            new ExecResult(0, stdout, "", false),
+                    stateBehavior);
+        }
+
+        private StubSandbox(ExecBehavior execBehavior, StateBehavior stateBehavior) {
+            this.execBehavior = execBehavior;
+            this.stateBehavior = stateBehavior;
         }
 
         @Override
@@ -113,7 +298,7 @@ class SandboxBackedFilesystemTest {
 
         @Override
         public SandboxState getState() {
-            return state;
+            return stateBehavior.getState();
         }
 
         @Override
@@ -121,7 +306,13 @@ class SandboxBackedFilesystemTest {
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             execCalls.incrementAndGet();
             this.command.set(command);
-            return new ExecResult(0, stdout, "", false);
+            try {
+                return execBehavior.exec(runtimeContext, command, timeoutSeconds);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
@@ -134,6 +325,20 @@ class SandboxBackedFilesystemTest {
             hydrateCalls.incrementAndGet();
             archiveBytes.set(archive.readAllBytes());
         }
+    }
+
+    private static StateBehavior stateWithRoot(String workspaceRoot) {
+        return () -> {
+            SandboxState state = new SandboxState() {};
+            WorkspaceSpec spec = new WorkspaceSpec();
+            spec.setRoot(workspaceRoot);
+            state.setWorkspaceSpec(spec);
+            return state;
+        };
+    }
+
+    private static byte[] bytes(String value) {
+        return value.getBytes(StandardCharsets.UTF_8);
     }
 
     private static void assertTarEntry(byte[] archive, String expectedName, byte[] expectedContent)
