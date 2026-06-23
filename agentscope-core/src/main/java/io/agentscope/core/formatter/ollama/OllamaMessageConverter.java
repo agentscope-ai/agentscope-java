@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.ollama;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ollama.dto.OllamaFunction;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaToolCall;
@@ -107,10 +108,14 @@ public class OllamaMessageConverter {
         List<OllamaToolCall> toolCalls = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock) {
-                textContent.append(((TextBlock) block).getText());
-            } else if (block instanceof ImageBlock) {
-                ImageBlock imageBlock = (ImageBlock) block;
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
+                textContent.append(tb.getText());
+            } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                 try {
                     String base64Image = mediaConverter.convertImageBlockToBase64(imageBlock);
                     images.add(base64Image);
@@ -162,11 +167,16 @@ public class OllamaMessageConverter {
         return msg.getContent().stream()
                 .flatMap(
                         block -> {
-                            if (block instanceof TextBlock tb) {
+                            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                            if (normalizedBlock == null) {
+                                return Stream.empty();
+                            }
+
+                            if (normalizedBlock instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
-                            } else if (block instanceof HintBlock hb) {
+                            } else if (normalizedBlock instanceof HintBlock hb) {
                                 return Stream.of(hb.getHint());
-                            } else if (block instanceof ToolResultBlock toolResult) {
+                            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
                                         .filter(output -> output instanceof TextBlock)
                                         .map(output -> ((TextBlock) output).getText());
@@ -186,11 +196,16 @@ public class OllamaMessageConverter {
         return blocks.stream()
                 .flatMap(
                         block -> {
-                            if (block instanceof TextBlock tb) {
+                            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                            if (normalizedBlock == null) {
+                                return Stream.empty();
+                            }
+
+                            if (normalizedBlock instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
-                            } else if (block instanceof HintBlock hb) {
+                            } else if (normalizedBlock instanceof HintBlock hb) {
                                 return Stream.of(hb.getHint());
-                            } else if (block instanceof ToolResultBlock toolResult) {
+                            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
                                         .filter(output -> output instanceof TextBlock)
                                         .map(output -> ((TextBlock) output).getText());
@@ -210,8 +225,8 @@ public class OllamaMessageConverter {
         List<String> imagePaths = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
-            if (block instanceof ImageBlock) {
-                ImageBlock imageBlock = (ImageBlock) block;
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock instanceof ImageBlock imageBlock) {
                 if (imageBlock.getSource() != null) {
                     // Extract the URL path from the source
                     String imagePath = imageBlock.getSource().toString();

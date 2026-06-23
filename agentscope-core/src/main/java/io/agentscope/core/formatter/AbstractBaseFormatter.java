@@ -132,9 +132,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     protected boolean hasMediaContent(Msg msg) {
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ImageBlock
-                    || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+            if (MediaUtils.inferMediaKind(block) != null) {
                 return true;
             }
         }
@@ -207,15 +205,20 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         List<String> textualOutput = new ArrayList<>();
 
         for (ContentBlock block : output) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 textualOutput.add(tb.getText());
-            } else if (block instanceof ImageBlock ib) {
+            } else if (normalizedBlock instanceof ImageBlock ib) {
                 String reference = convertMediaBlockToTextReference(ib, "image");
                 textualOutput.add(reference);
-            } else if (block instanceof AudioBlock ab) {
+            } else if (normalizedBlock instanceof AudioBlock ab) {
                 String reference = convertMediaBlockToTextReference(ab, "audio");
                 textualOutput.add(reference);
-            } else if (block instanceof VideoBlock vb) {
+            } else if (normalizedBlock instanceof VideoBlock vb) {
                 String reference = convertMediaBlockToTextReference(vb, "video");
                 textualOutput.add(reference);
             }

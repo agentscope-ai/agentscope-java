@@ -24,6 +24,7 @@ import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -131,6 +132,48 @@ class OpenAIConversationMergerTest {
         List<OpenAIContentPart> content = result.getContentAsList();
         assertNotNull(content);
         assertTrue(!content.isEmpty(), "Should contain content parts");
+    }
+
+    @Test
+    @DisplayName("Should handle DataBlock ImageBlock in conversation")
+    void testMergeWithDataBlockImageBlock() {
+        List<Msg> messages = new ArrayList<>();
+
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .data(
+                                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here's an image:").build(),
+                                        unknownBlock,
+                                        imageBlock))
+                        .build();
+
+        messages.add(msg);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg2 -> msg2.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        assertEquals("user", result.getRole());
+        assertTrue(result.isMultimodal(), "Should be multimodal");
+        List<OpenAIContentPart> content = result.getContentAsList();
+        assertNotNull(content);
+        assertTrue(content.size() >= 2);
+        assertTrue(content.stream().anyMatch(part -> part.getImageUrl() != null));
     }
 
     @Test

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.ollama;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -62,16 +63,20 @@ public class OllamaConversationMerger {
             String name = nameExtractor.apply(msg);
 
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock) {
                     textAccumulator
                             .append(name)
                             .append(": ")
-                            .append(((TextBlock) block).getText())
+                            .append(((TextBlock) normalizedBlock).getText())
                             .append("\n");
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     textAccumulator.append(name).append(": ").append(hb.getHint()).append("\n");
-                } else if (block instanceof ImageBlock) {
-                    ImageBlock imageBlock = (ImageBlock) block;
+                } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                     if (imageBlock.getSource() instanceof Base64Source) {
                         Base64Source source = (Base64Source) imageBlock.getSource();
                         images.add(source.getData());

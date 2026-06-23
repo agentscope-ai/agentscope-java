@@ -18,9 +18,11 @@ package io.agentscope.core.formatter.anthropic;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.URLSource;
 import java.util.List;
@@ -86,6 +88,36 @@ class AnthropicConversationMergerTest extends AnthropicFormatterTestBase {
         List<Object> result =
                 AnthropicConversationMerger.mergeConversation(
                         List.of(msg1, msg2, msg3), "# Prompt\n");
+
+        assertTrue(result.size() >= 2);
+        assertTrue(result.stream().anyMatch(obj -> obj instanceof String));
+        assertTrue(result.stream().anyMatch(obj -> obj instanceof ImageBlock));
+    }
+
+    @Test
+    void testMergeConversationWithDataBlockImage() {
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(List.of(TextBlock.builder().text("What is this?").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(List.of(unknownBlock, imageBlock))
+                        .build();
+
+        List<Object> result =
+                AnthropicConversationMerger.mergeConversation(List.of(msg1, msg2), "# Prompt\n");
 
         assertTrue(result.size() >= 2);
         assertTrue(result.stream().anyMatch(obj -> obj instanceof String));

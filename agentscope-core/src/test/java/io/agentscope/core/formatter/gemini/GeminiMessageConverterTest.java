@@ -25,6 +25,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -503,6 +504,31 @@ class GeminiMessageConverterTest {
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0).parts().get().get(0));
+    }
+
+    @Test
+    @DisplayName("Should convert DataBlock image to inline data part")
+    void testConvertDataBlockImage() {
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
+
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data(base64Data)
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder().name("user").content(List.of(imageBlock)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Content content = result.get(0);
+        assertEquals(1, content.parts().get().size());
+        assertNotNull(content.parts().get().get(0));
     }
 
     @Test

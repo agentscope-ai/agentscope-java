@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.gemini;
 
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
@@ -95,21 +96,26 @@ public class GeminiConversationMerger {
 
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
-                if (block instanceof TextBlock tb) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock tb) {
                     accumulatedText.add(name + ": " + tb.getText());
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     accumulatedText.add(name + ": " + hb.getHint());
 
-                } else if (block instanceof ThinkingBlock) {
+                } else if (normalizedBlock instanceof ThinkingBlock) {
                     // Skip ThinkingBlock - not sent to API
                     log.debug("Skipping ThinkingBlock in multi-agent merge");
 
-                } else if (block instanceof ToolResultBlock trb) {
+                } else if (normalizedBlock instanceof ToolResultBlock trb) {
                     // Convert tool result to text and accumulate
                     String toolResultText = toolResultConverter.apply(trb.getOutput());
                     accumulatedText.add("Tool: " + trb.getName() + "\n" + toolResultText);
 
-                } else if (block instanceof ImageBlock ib) {
+                } else if (normalizedBlock instanceof ImageBlock ib) {
                     // Flush accumulated text as a Part
                     if (!accumulatedText.isEmpty()) {
                         parts.add(Part.builder().text(String.join("\n", accumulatedText)).build());
@@ -118,7 +124,7 @@ public class GeminiConversationMerger {
                     // Add image as separate Part
                     parts.add(mediaConverter.convertToInlineDataPart(ib));
 
-                } else if (block instanceof AudioBlock ab) {
+                } else if (normalizedBlock instanceof AudioBlock ab) {
                     // Flush accumulated text as a Part
                     if (!accumulatedText.isEmpty()) {
                         parts.add(Part.builder().text(String.join("\n", accumulatedText)).build());
@@ -127,7 +133,7 @@ public class GeminiConversationMerger {
                     // Add audio as separate Part
                     parts.add(mediaConverter.convertToInlineDataPart(ab));
 
-                } else if (block instanceof VideoBlock vb) {
+                } else if (normalizedBlock instanceof VideoBlock vb) {
                     // Flush accumulated text as a Part
                     if (!accumulatedText.isEmpty()) {
                         parts.add(Part.builder().text(String.join("\n", accumulatedText)).build());

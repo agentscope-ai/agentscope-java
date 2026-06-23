@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.ollama;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
@@ -227,13 +228,14 @@ public class OllamaMultiAgentFormatter
      */
     private ImageBlock extractImageBlockFromMsg(Msg msg) {
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ImageBlock) {
-                return (ImageBlock) block;
-            } else if (block instanceof ToolResultBlock) {
-                ToolResultBlock toolResult = (ToolResultBlock) block;
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock instanceof ImageBlock imageBlock) {
+                return imageBlock;
+            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                 for (ContentBlock outputBlock : toolResult.getOutput()) {
-                    if (outputBlock instanceof ImageBlock) {
-                        return (ImageBlock) outputBlock;
+                    ContentBlock normalizedOutput = MediaUtils.normalizeMediaBlock(outputBlock);
+                    if (normalizedOutput instanceof ImageBlock imageBlock) {
+                        return imageBlock;
                     }
                 }
             }
@@ -408,13 +410,19 @@ public class OllamaMultiAgentFormatter
                         List<ContentBlock> multimodalOutputs = new ArrayList<>();
 
                         for (ContentBlock outputBlock : toolResultBlock.getOutput()) {
-                            if (outputBlock instanceof TextBlock) {
+                            ContentBlock normalizedOutput =
+                                    MediaUtils.normalizeMediaBlock(outputBlock);
+                            if (normalizedOutput == null) {
+                                continue;
+                            }
+
+                            if (normalizedOutput instanceof TextBlock) {
                                 if (textualOutput.length() > 0) {
                                     textualOutput.append("\n");
                                 }
-                                textualOutput.append(((TextBlock) outputBlock).getText());
-                            } else if (outputBlock instanceof ImageBlock) {
-                                multimodalOutputs.add(outputBlock);
+                                textualOutput.append(((TextBlock) normalizedOutput).getText());
+                            } else if (normalizedOutput instanceof ImageBlock) {
+                                multimodalOutputs.add(normalizedOutput);
                             }
                         }
 
@@ -428,8 +436,9 @@ public class OllamaMultiAgentFormatter
                             // Add special text to content that can be detected by
                             // isToolResultWithImages
                             for (ContentBlock multimodalBlock : multimodalOutputs) {
-                                if (multimodalBlock instanceof ImageBlock) {
-                                    ImageBlock imageBlock = (ImageBlock) multimodalBlock;
+                                ContentBlock normalizedMultimodal =
+                                        MediaUtils.normalizeMediaBlock(multimodalBlock);
+                                if (normalizedMultimodal instanceof ImageBlock imageBlock) {
                                     String imageUrl = imageBlock.getSource().toString();
                                     if (imageBlock.getSource() instanceof URLSource) {
                                         imageUrl = ((URLSource) imageBlock.getSource()).getUrl();
@@ -460,14 +469,20 @@ public class OllamaMultiAgentFormatter
     public String convertToolResultToString(List<ContentBlock> blocks) {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock) {
-                sb.append(((TextBlock) block).getText());
-            } else if (block instanceof ToolResultBlock) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock) {
+                sb.append(((TextBlock) normalizedBlock).getText());
+            } else if (normalizedBlock instanceof ToolResultBlock) {
                 // Extract text from the output blocks of ToolResultBlock
-                List<ContentBlock> outputBlocks = ((ToolResultBlock) block).getOutput();
+                List<ContentBlock> outputBlocks = ((ToolResultBlock) normalizedBlock).getOutput();
                 for (ContentBlock outputBlock : outputBlocks) {
-                    if (outputBlock instanceof TextBlock) {
-                        sb.append(((TextBlock) outputBlock).getText());
+                    ContentBlock normalizedOutput = MediaUtils.normalizeMediaBlock(outputBlock);
+                    if (normalizedOutput instanceof TextBlock) {
+                        sb.append(((TextBlock) normalizedOutput).getText());
                     }
                 }
             }

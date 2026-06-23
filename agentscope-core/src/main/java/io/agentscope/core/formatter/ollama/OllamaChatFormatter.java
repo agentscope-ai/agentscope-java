@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.ollama;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ollama.dto.OllamaFunction;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
@@ -127,18 +128,23 @@ public class OllamaChatFormatter
         MessageContent messageContent = new MessageContent();
 
         for (ContentBlock block : contentBlocks) {
-            if (block instanceof TextBlock) {
-                messageContent.textBlocks.add(block);
-            } else if (block instanceof ToolUseBlock) {
-                messageContent.toolUseBlocks.add(block);
-            } else if (block instanceof ToolResultBlock) {
-                messageContent.toolResultBlocks.add(block);
-            } else if (block instanceof ImageBlock) {
-                processImageBlock((ImageBlock) block, messageContent.images);
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock) {
+                messageContent.textBlocks.add(normalizedBlock);
+            } else if (normalizedBlock instanceof ToolUseBlock) {
+                messageContent.toolUseBlocks.add(normalizedBlock);
+            } else if (normalizedBlock instanceof ToolResultBlock) {
+                messageContent.toolResultBlocks.add(normalizedBlock);
+            } else if (normalizedBlock instanceof ImageBlock imageBlock) {
+                processImageBlock(imageBlock, messageContent.images);
             } else {
                 log.warn(
                         "Unsupported block type {} in the message, skipped.",
-                        block.getClass().getSimpleName());
+                        normalizedBlock.getClass().getSimpleName());
             }
         }
 
@@ -178,13 +184,18 @@ public class OllamaChatFormatter
         List<ContentBlock> multimodalData = new ArrayList<>();
 
         for (ContentBlock outputBlock : toolResultBlock.getOutput()) {
-            if (outputBlock instanceof TextBlock) {
+            ContentBlock normalizedOutput = MediaUtils.normalizeMediaBlock(outputBlock);
+            if (normalizedOutput == null) {
+                continue;
+            }
+
+            if (normalizedOutput instanceof TextBlock) {
                 if (textualOutput.length() > 0) {
                     textualOutput.append("\n");
                 }
-                textualOutput.append(((TextBlock) outputBlock).getText());
-            } else if (outputBlock instanceof ImageBlock) {
-                multimodalData.add(outputBlock);
+                textualOutput.append(((TextBlock) normalizedOutput).getText());
+            } else if (normalizedOutput instanceof ImageBlock) {
+                multimodalData.add(normalizedOutput);
             }
         }
 
@@ -210,8 +221,8 @@ public class OllamaChatFormatter
             List<OllamaMessage> result) {
         List<ContentBlock> promotedBlocks = new ArrayList<>();
         for (ContentBlock multimodalBlock : multimodalData) {
-            if (multimodalBlock instanceof ImageBlock) {
-                ImageBlock imageBlock = (ImageBlock) multimodalBlock;
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(multimodalBlock);
+            if (normalizedBlock instanceof ImageBlock imageBlock) {
                 // Add text block with image information
                 String imageUrl = imageBlock.getSource().toString();
                 if (imageBlock.getSource() instanceof URLSource) {
@@ -379,13 +390,14 @@ public class OllamaChatFormatter
      */
     private ImageBlock extractImageBlockFromMsg(Msg msg) {
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ImageBlock) {
-                return (ImageBlock) block;
-            } else if (block instanceof ToolResultBlock) {
-                ToolResultBlock toolResult = (ToolResultBlock) block;
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock instanceof ImageBlock imageBlock) {
+                return imageBlock;
+            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                 for (ContentBlock outputBlock : toolResult.getOutput()) {
-                    if (outputBlock instanceof ImageBlock) {
-                        return (ImageBlock) outputBlock;
+                    ContentBlock normalizedOutput = MediaUtils.normalizeMediaBlock(outputBlock);
+                    if (normalizedOutput instanceof ImageBlock imageBlock) {
+                        return imageBlock;
                     }
                 }
             }

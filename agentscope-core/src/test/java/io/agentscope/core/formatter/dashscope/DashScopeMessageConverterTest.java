@@ -23,10 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -352,6 +355,66 @@ class DashScopeMessageConverterTest {
         assertEquals("http://example.com/image.png", dsMsg.getContentAsList().get(0).getImage());
         assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
         assertEquals("oss://example.com/image.png", dsMsg.getContentAsList().get(2).getImage());
+    }
+
+    @Test
+    void testConvertMessageWithMixedTextAndDataBlockImage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("描述这张图：").build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertTrue(dsMsg.isMultimodal());
+        List<DashScopeContentPart> parts = dsMsg.getContentAsList();
+        assertEquals(2, parts.size());
+        assertEquals("描述这张图：", parts.get(0).getText());
+        assertNotNull(parts.get(1).getImage());
+        assertTrue(parts.get(1).getImage().startsWith("data:image/png;base64,"));
+    }
+
+    @Test
+    void testConvertMessageWithUnknownDataBlockSkipped() {
+        DataBlock unknownBlock = DataBlock.builder().source(new Source() {}).build();
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("look").build(),
+                                        unknownBlock,
+                                        imageBlock))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertTrue(dsMsg.isMultimodal());
+        List<DashScopeContentPart> parts = dsMsg.getContentAsList();
+        assertEquals(2, parts.size());
+        assertEquals("look", parts.get(0).getText());
+        assertNotNull(parts.get(1).getImage());
     }
 
     @Test
@@ -687,6 +750,38 @@ class DashScopeMessageConverterTest {
         assertEquals(
                 "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg",
                 dsMsg.getContentAsList().get(1).getImage());
+    }
+
+    @Test
+    void testToolResultWithDataBlockImage() {
+        DataBlock imageBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_456")
+                        .name("get_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Here is a cat image").build(),
+                                        imageBlock))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_456", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Here is a cat image", dsMsg.getContentAsList().get(0).getText());
+        assertNotNull(dsMsg.getContentAsList().get(1).getImage());
     }
 
     @Test

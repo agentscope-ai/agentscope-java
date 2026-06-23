@@ -18,13 +18,17 @@ package io.agentscope.core.formatter.ollama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +95,38 @@ class OllamaMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should convert user message with DataBlock image")
+    void testConvertUserMessageWithDataBlockImage() {
+        String base64Data = "iVBORw0KGgo=";
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data(base64Data)
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        dataBlock))
+                        .build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("user", ollamaMsg.getRole());
+        assertEquals("Look at this", ollamaMsg.getContent());
+        assertNotNull(ollamaMsg.getImages());
+        assertEquals(1, ollamaMsg.getImages().size());
+        assertTrue(ollamaMsg.getImages().contains(base64Data));
+    }
+
+    @Test
     @DisplayName("Should convert message with multiple text blocks")
     void testConvertMessageWithMultipleTextBlocks() {
         // Arrange
@@ -132,6 +168,33 @@ class OllamaMessageConverterTest {
         assertEquals("tool", ollamaMsg.getRole());
         assertEquals("Tool result output", ollamaMsg.getContent());
         assertEquals("call123", ollamaMsg.getToolCallId());
+        assertEquals("test_tool", ollamaMsg.getName());
+    }
+
+    @Test
+    @DisplayName("Should convert tool result message with DataBlock image")
+    void testConvertToolResultMessageWithDataBlockImage() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .build();
+
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call456",
+                        "test_tool",
+                        List.of(TextBlock.builder().text("Tool result output").build(), dataBlock),
+                        null);
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("tool", ollamaMsg.getRole());
+        assertTrue(ollamaMsg.getContent().contains("Tool result output"));
+        assertTrue(ollamaMsg.getContent().contains("The returned image can be found at:"));
+        assertTrue(ollamaMsg.getContent().contains("image.png"));
+        assertEquals("call456", ollamaMsg.getToolCallId());
         assertEquals("test_tool", ollamaMsg.getName());
     }
 

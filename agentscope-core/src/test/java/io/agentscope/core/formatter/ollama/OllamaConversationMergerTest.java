@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -282,5 +284,41 @@ class OllamaConversationMergerTest {
 
         // Assert
         assertEquals("user", merged.getRole());
+    }
+
+    @Test
+    @DisplayName("Should merge DataBlock image as legacy image content")
+    void testMergeDataBlockImage() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        dataBlock))
+                        .build();
+        List<Msg> msgs = Arrays.asList(msg);
+
+        Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
+        Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
+
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, "History:");
+
+        assertNotNull(merged);
+        assertTrue(merged.getContent().contains("Alice: Look at this"));
+        assertTrue(merged.getContent().contains("Alice: [Image]"));
+        assertNotNull(merged.getImages());
+        assertEquals(1, merged.getImages().size());
+        assertEquals("iVBORw0KGgo=", merged.getImages().get(0));
     }
 }

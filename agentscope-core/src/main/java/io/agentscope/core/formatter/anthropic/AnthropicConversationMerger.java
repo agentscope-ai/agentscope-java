@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -43,13 +44,18 @@ public class AnthropicConversationMerger {
 
         for (Msg msg : messages) {
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock tb) {
+                ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+                if (normalizedBlock == null) {
+                    continue;
+                }
+
+                if (normalizedBlock instanceof TextBlock tb) {
                     String msgName = msg.getName() != null ? msg.getName() : msg.getRole().name();
                     accumulatedText.add(msgName + ": " + tb.getText());
-                } else if (block instanceof HintBlock hb) {
+                } else if (normalizedBlock instanceof HintBlock hb) {
                     String msgName = msg.getName() != null ? msg.getName() : msg.getRole().name();
                     accumulatedText.add(msgName + ": " + hb.getHint());
-                } else if (block instanceof ImageBlock ib) {
+                } else if (normalizedBlock instanceof ImageBlock ib) {
                     // Add accumulated text before image
                     if (!accumulatedText.isEmpty()) {
                         conversationBlocks.add(String.join("\n", accumulatedText));

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
@@ -98,9 +99,14 @@ public class DashScopeMessageConverter {
         List<DashScopeContentPart> contents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 contents.add(DashScopeContentPart.text(tb.getText()));
-            } else if (block instanceof ImageBlock imageBlock) {
+            } else if (normalizedBlock instanceof ImageBlock imageBlock) {
                 try {
                     contents.add(mediaConverter.convertImageBlockToContentPart(imageBlock));
                 } catch (Exception e) {
@@ -109,7 +115,7 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Image - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof VideoBlock videoBlock) {
+            } else if (normalizedBlock instanceof VideoBlock videoBlock) {
                 try {
                     contents.add(mediaConverter.convertVideoBlockToContentPart(videoBlock));
                 } catch (Exception e) {
@@ -118,7 +124,7 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Video - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof AudioBlock audioBlock) {
+            } else if (normalizedBlock instanceof AudioBlock audioBlock) {
                 try {
                     contents.add(mediaConverter.convertAudioBlockToContentPart(audioBlock));
                 } catch (Exception e) {
@@ -127,11 +133,11 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof HintBlock hb) {
+            } else if (normalizedBlock instanceof HintBlock hb) {
                 contents.add(DashScopeContentPart.text(hb.getHint()));
-            } else if (block instanceof ThinkingBlock) {
+            } else if (normalizedBlock instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for DashScope");
-            } else if (block instanceof ToolResultBlock toolResult) {
+            } else if (normalizedBlock instanceof ToolResultBlock toolResult) {
                 String toolResultText = toolResultConverter.apply(toolResult.getOutput());
                 if (!toolResultText.isEmpty()) {
                     contents.add(DashScopeContentPart.text(toolResultText));
@@ -284,9 +290,7 @@ public class DashScopeMessageConverter {
             return false;
         }
         for (ContentBlock block : blocks) {
-            if (block instanceof ImageBlock
-                    || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+            if (MediaUtils.inferMediaKind(block) != null) {
                 return true;
             }
         }
@@ -302,9 +306,14 @@ public class DashScopeMessageConverter {
     private List<DashScopeContentPart> convertContentBlocks(List<ContentBlock> blocks) {
         List<DashScopeContentPart> content = new ArrayList<>();
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock tb) {
+            ContentBlock normalizedBlock = MediaUtils.normalizeMediaBlock(block);
+            if (normalizedBlock == null) {
+                continue;
+            }
+
+            if (normalizedBlock instanceof TextBlock tb) {
                 content.add(DashScopeContentPart.text(tb.getText()));
-            } else if (block instanceof ImageBlock ib) {
+            } else if (normalizedBlock instanceof ImageBlock ib) {
                 try {
                     content.add(mediaConverter.convertImageBlockToContentPart(ib));
                 } catch (Exception e) {
@@ -313,7 +322,7 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Image - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof AudioBlock ab) {
+            } else if (normalizedBlock instanceof AudioBlock ab) {
                 try {
                     content.add(mediaConverter.convertAudioBlockToContentPart(ab));
                 } catch (Exception e) {
@@ -322,7 +331,7 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof VideoBlock vb) {
+            } else if (normalizedBlock instanceof VideoBlock vb) {
                 try {
                     content.add(mediaConverter.convertVideoBlockToContentPart(vb));
                 } catch (Exception e) {
