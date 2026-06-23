@@ -114,12 +114,7 @@ class DashScopeToolsHelperComprehensiveTest {
                         .topP(0.9)
                         .maxTokens(1024)
                         .thinkingBudget(500)
-                        .responseFormat(
-                                ResponseFormat.jsonSchema(
-                                        JsonSchema.builder()
-                                                .name("WeatherResponse")
-                                                .schema(Map.of("type", "object"))
-                                                .build()))
+                        .responseFormat(ResponseFormat.jsonObject())
                         .build();
 
         helper.applyOptions(params, options, null);
@@ -130,7 +125,8 @@ class DashScopeToolsHelperComprehensiveTest {
         assertEquals(500, params.getThinkingBudget());
         assertTrue(params.getEnableThinking());
         assertNotNull(params.getResponseFormat());
-        assertEquals("json_schema", params.getResponseFormat().getType());
+        assertEquals("json_object", params.getResponseFormat().getType());
+        assertNull(params.getResponseFormat().getJsonSchema());
     }
 
     @Test
