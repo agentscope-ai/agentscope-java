@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness Architecture" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-06-23T01:24:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness Architecture" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/context.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1040,13 +1040,14 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Production multi-replica — use DistributedStore</span>
-<span class="n">RedisClient</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisClient</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;redis://redis.prod:6379&quot;</span><span class="p">);</span>
+<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://redis.prod:6379&quot;</span><span class="p">);</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">(</span><span class="n">jedis</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 <div class="admonition warning">
@@ -1322,7 +1323,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-23</div>
           </div>
           <div class="right-details">
             <div class="icons">
