@@ -302,7 +302,8 @@ public final class ModelRegistry {
                         providers.add(provider);
                     }
                 }
-                serviceProviders = List.copyOf(providers);
+                providers = List.copyOf(providers);
+                serviceProviders = providers;
             }
             return providers;
         }
