@@ -99,13 +99,14 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 
 // Production multi-replica — use DistributedStore
-RedisClient client = RedisClient.create("redis://redis.prod:6379");
+JedisPooled jedis = new JedisPooled("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
-    .name("MyAgent")
-    .model(model)
-    .workspace(workspace)
-    .distributedStore(RedisDistributedStore.fromJedis(jedis))
-    .build();
+        .name("MyAgent")
+        .model(model)
+        .workspace(workspace)
+        .stateStore(new RedisAgentStateStore(jedis))
+        .distributedStore(RedisDistributedStore.fromJedis(jedis))
+        .build();
 ```
 
 :::{warning}
