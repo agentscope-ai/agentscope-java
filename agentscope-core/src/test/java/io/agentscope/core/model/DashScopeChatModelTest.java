@@ -677,6 +677,35 @@ class DashScopeChatModelTest {
     }
 
     @Test
+    @DisplayName("DashScope chat model should degrade forced tool_choice in thinking mode")
+    void testApplyThinkingModeDegradesForcedToolChoice() throws Throwable {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(
+                                DashScopeParameters.builder()
+                                        .toolChoice(
+                                                Map.of(
+                                                        "type",
+                                                        "function",
+                                                        "function",
+                                                        Map.of("name", "generate_response")))
+                                        .build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+        assertEquals("auto", request.getParameters().getToolChoice());
+    }
+
+    @Test
     @DisplayName("DashScope chat model apply thinking mode with null")
     void testApplyThinkingModeWithNull() {
         DashScopeChatModel chatModel =
