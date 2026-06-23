@@ -3041,11 +3041,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messageList = prepareSummaryMessages();
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
+            Model summaryModel = modelForCall();
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
                     .firePreSummary(
-                            messageList, generateOptions, model.getModelName(), maxIters, systemMsg)
+                            messageList,
+                            generateOptions,
+                            summaryModel.getModelName(),
+                            maxIters,
+                            systemMsg)
                     .flatMap(
                             preSummaryEvent -> {
                                 List<Msg> effectiveMessages =
@@ -3055,7 +3060,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 GenerateOptions effectiveOptions =
                                         preSummaryEvent.getEffectiveGenerateOptions();
 
-                                return summaryStream(context, effectiveMessages, effectiveOptions)
+                                return summaryStream(
+                                                context,
+                                                effectiveMessages,
+                                                effectiveOptions,
+                                                summaryModel)
                                         .then(
                                                 Mono.defer(
                                                         () ->
@@ -3068,7 +3077,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 .firePostSummary(
                                                                         msg,
                                                                         effectiveOptions,
-                                                                        model.getModelName())
+                                                                        summaryModel.getModelName())
                                                                 .map(
                                                                         postEvent -> {
                                                                             Msg finalMsg =
@@ -3094,10 +3103,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param context   reasoning context for chunk accumulation
          * @param messages  the messages to send to the model
          * @param options   generation options
+         * @param model     the model used for this summary call
          * @return event stream from the summary model call
          */
         Flux<AgentEvent> summaryStream(
-                ReasoningContext context, List<Msg> messages, GenerateOptions options) {
+                ReasoningContext context,
+                List<Msg> messages,
+                GenerateOptions options,
+                Model model) {
 
             Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
                     mci -> summaryModelCallStream(context, mci, options);
@@ -3108,7 +3121,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             summaryModelCallCore)
-                    .apply(new ModelCallInput(messages, null, options, modelForCall()))
+                    .apply(new ModelCallInput(messages, null, options, model))
                     .doOnNext(this::publishEvent);
         }
 
@@ -3133,7 +3146,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             msg,
                                                                             context,
                                                                             hookOptions,
-                                                                            model.getModelName())
+                                                                            mci.model()
+                                                                                    .getModelName())
                                                                     .contextWrite(
                                                                             ctx ->
                                                                                     ctx.putAll(
@@ -3416,6 +3430,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             @Override
             public String getModelName() {
                 return activeModel.get().getModelName();
+            }
+
+            @Override
+            public boolean supportsNativeStructuredOutput() {
+                return activeModel.get().supportsNativeStructuredOutput();
+            }
+
+            @Override
+            public int getContextWindowSize() {
+                return activeModel.get().getContextWindowSize();
             }
         };
     }
