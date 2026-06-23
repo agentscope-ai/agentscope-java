@@ -18,6 +18,7 @@ package io.agentscope.core.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -285,12 +286,174 @@ class ToolUseBlockTest {
 
     @Test
     void testEmptyMapsForNullInputAndMetadata() {
-        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", null, null, null);
+        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", "", null, null);
 
         assertNotNull(toolUseBlock.getInput());
         assertTrue(toolUseBlock.getInput().isEmpty());
         assertNotNull(toolUseBlock.getMetadata());
         assertTrue(toolUseBlock.getMetadata().isEmpty());
         assertEquals(null, toolUseBlock.getContent());
+    }
+
+    // ── title field tests ────────────────────────────────────────────────────
+
+    @Test
+    void testBuilderWithTitleSetsTitleCorrectly() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("t1")
+                        .name("my_tool")
+                        .title("My Tool")
+                        .input(Map.of("k", "v"))
+                        .build();
+        assertEquals("My Tool", block.getTitle());
+    }
+
+    @Test
+    void testBuilderWithoutTitleHasNullTitle() {
+        ToolUseBlock block =
+                ToolUseBlock.builder().id("t2").name("my_tool").input(Map.of()).build();
+        assertNull(block.getTitle());
+    }
+
+    @Test
+    void testConstructorWithTitleSetsTitle() {
+        ToolUseBlock block = new ToolUseBlock("t3", "my_tool", "My Tool", Map.of("a", 1));
+        assertEquals("My Tool", block.getTitle());
+        assertEquals("my_tool", block.getName());
+    }
+
+    @Test
+    void testConstructorWithTitleAndMetadataSetsTitle() {
+        ToolUseBlock block =
+                new ToolUseBlock("t4", "my_tool", "My Tool", Map.of(), Map.of("m", "v"));
+        assertEquals("My Tool", block.getTitle());
+        assertEquals("v", block.getMetadata().get("m"));
+    }
+
+    @Test
+    void testConstructorWithTitleContentMetadataSetsTitle() {
+        ToolUseBlock block =
+                new ToolUseBlock("t5", "my_tool", "My Tool", Map.of(), "raw", Map.of());
+        assertEquals("My Tool", block.getTitle());
+        assertEquals("raw", block.getContent());
+    }
+
+    @Test
+    void testWithTitleReturnsCopyWithNewTitle() {
+        ToolUseBlock original =
+                ToolUseBlock.builder().id("t6").name("my_tool").input(Map.of("x", 1)).build();
+        ToolUseBlock updated = original.withTitle("Updated Title");
+
+        assertNull(original.getTitle());
+        assertEquals("Updated Title", updated.getTitle());
+        assertEquals(original.getId(), updated.getId());
+        assertEquals(original.getName(), updated.getName());
+        assertEquals(original.getInput(), updated.getInput());
+    }
+
+    @Test
+    void testWithTitlePreservesAllOtherFields() {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("t7")
+                        .name("tool")
+                        .title("Old Title")
+                        .input(Map.of("p", "v"))
+                        .content("raw")
+                        .metadata(Map.of("meta", "data"))
+                        .build();
+        ToolUseBlock updated = original.withTitle("New Title");
+
+        assertEquals("New Title", updated.getTitle());
+        assertEquals("t7", updated.getId());
+        assertEquals("tool", updated.getName());
+        assertEquals("v", updated.getInput().get("p"));
+        assertEquals("raw", updated.getContent());
+        assertEquals("data", updated.getMetadata().get("meta"));
+    }
+
+    @Test
+    void testWithTitleAcceptsNull() {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("t8")
+                        .name("tool")
+                        .title("Some Title")
+                        .input(Map.of())
+                        .build();
+        ToolUseBlock updated = original.withTitle(null);
+        assertNull(updated.getTitle());
+    }
+
+    @Test
+    void testWithStatePreservesTitle() {
+        ToolUseBlock original =
+                ToolUseBlock.builder().id("t9").name("tool").title("Title").input(Map.of()).build();
+        ToolUseBlock updated = original.withState(ToolCallState.FINISHED);
+        assertEquals("Title", updated.getTitle());
+        assertEquals(ToolCallState.FINISHED, updated.getState());
+    }
+
+    @Test
+    void testJsonSerializationIncludesTitle() throws JsonProcessingException {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("t10")
+                        .name("my_tool")
+                        .title("My Tool")
+                        .input(Map.of())
+                        .build();
+        String json = objectMapper.writeValueAsString(block);
+        assertTrue(json.contains("\"title\":\"My Tool\""), "JSON should contain title field");
+    }
+
+    @Test
+    void testJsonDeserializationReadsTitle() throws JsonProcessingException {
+        String json =
+                """
+                {
+                    "type": "tool_use",
+                    "id": "t11",
+                    "name": "my_tool",
+                    "title": "My Tool",
+                    "input": {}
+                }
+                """;
+        ToolUseBlock block = objectMapper.readValue(json, ToolUseBlock.class);
+        assertEquals("My Tool", block.getTitle());
+    }
+
+    @Test
+    void testJsonDeserializationMissingTitleIsNull() throws JsonProcessingException {
+        String json =
+                """
+                {
+                    "type": "tool_use",
+                    "id": "t12",
+                    "name": "my_tool",
+                    "input": {}
+                }
+                """;
+        ToolUseBlock block = objectMapper.readValue(json, ToolUseBlock.class);
+        assertNull(block.getTitle());
+    }
+
+    @Test
+    void testRoundTripSerializationWithTitle() throws JsonProcessingException {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("t13")
+                        .name("round_trip_tool")
+                        .title("Round Trip Tool")
+                        .input(Map.of("key", "value"))
+                        .build();
+        String json = objectMapper.writeValueAsString(original);
+        ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
+
+        assertEquals(original.getId(), deserialized.getId());
+        assertEquals(original.getName(), deserialized.getName());
+        assertEquals(original.getTitle(), deserialized.getTitle());
+        assertEquals(original.getInput(), deserialized.getInput());
     }
 }

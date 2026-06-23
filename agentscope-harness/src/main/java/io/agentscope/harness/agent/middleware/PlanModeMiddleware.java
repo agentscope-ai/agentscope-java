@@ -29,6 +29,7 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
+import io.agentscope.core.util.ToolUtils;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.util.ArrayList;
@@ -200,9 +201,14 @@ public class PlanModeMiddleware implements MiddlewareBase {
                         () -> {
                             List<AgentEvent> events = new ArrayList<>();
                             for (ToolUseBlock call : denied) {
+                                String toolTitle =
+                                        ToolUtils.resolveToolTitle(
+                                                agent.getToolkit(), call.getName());
+
                                 ToolResultBlock result =
                                         ToolResultBlock.text(DENY_MESSAGE)
-                                                .withIdAndName(call.getId(), call.getName())
+                                                .withIdAndNameAndTitle(
+                                                        call.getId(), call.getName(), toolTitle)
                                                 .withState(ToolResultState.DENIED);
                                 Msg msg =
                                         ToolResultMessageBuilder.buildToolResultMsg(
@@ -210,18 +216,20 @@ public class PlanModeMiddleware implements MiddlewareBase {
                                 state.contextMutable().add(msg);
                                 events.add(
                                         new ToolResultStartEvent(
-                                                replyId, call.getId(), call.getName()));
+                                                replyId, call.getId(), call.getName(), toolTitle));
                                 events.add(
                                         new ToolResultTextDeltaEvent(
                                                 replyId,
                                                 call.getId(),
                                                 call.getName(),
+                                                toolTitle,
                                                 DENY_MESSAGE));
                                 events.add(
                                         new ToolResultEndEvent(
                                                 replyId,
                                                 call.getId(),
                                                 call.getName(),
+                                                toolTitle,
                                                 ToolResultState.DENIED));
                             }
                             return Flux.fromIterable(events);

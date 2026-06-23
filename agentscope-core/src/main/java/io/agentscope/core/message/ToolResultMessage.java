@@ -45,6 +45,7 @@ public final class ToolResultMessage extends Msg {
                         new ToolResultBlock(
                                 toolCallId,
                                 toolName,
+                                null,
                                 List.of(TextBlock.builder().text(resultText).build()))),
                 null,
                 currentTimestamp(),
@@ -125,6 +126,7 @@ public final class ToolResultMessage extends Msg {
                     new ToolResultBlock(
                             toolCallId,
                             toolName,
+                            null,
                             List.of(TextBlock.builder().text(resultText).build())));
         }
 

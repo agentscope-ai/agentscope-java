@@ -192,4 +192,52 @@ class SchemaOnlyToolTest {
         // Verify that 3-arg constructor sets strict to null (unspecified)
         assertNull(tool.getStrict());
     }
+
+    @Test
+    @DisplayName("Should set title when constructed with name, title, desc, params, strict")
+    void testFiveArgConstructorWithTitle() {
+        Map<String, Object> params = Map.of("type", "object");
+        SchemaOnlyTool tool =
+                new SchemaOnlyTool(
+                        "query_db", "Query Database", "Query the database", params, null);
+        assertEquals("query_db", tool.getName());
+        assertEquals("Query Database", tool.getTitle());
+        assertEquals("Query the database", tool.getDescription());
+    }
+
+    @Test
+    @DisplayName("Should have null title when constructed without title")
+    void testConstructorWithoutTitleHasNullTitle() {
+        Map<String, Object> params = Map.of("type", "object");
+        SchemaOnlyTool tool = new SchemaOnlyTool("my_tool", "My tool", params);
+        assertNull(tool.getTitle());
+    }
+
+    @Test
+    @DisplayName("Should propagate title from ToolSchema")
+    void testTitlePropagatedFromToolSchema() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("schema_tool")
+                        .title("Schema Tool")
+                        .description("A tool from schema")
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+        SchemaOnlyTool tool = new SchemaOnlyTool(schema);
+        assertEquals("Schema Tool", tool.getTitle());
+        assertEquals("schema_tool", tool.getName());
+    }
+
+    @Test
+    @DisplayName("Should have null title when ToolSchema has no title")
+    void testNullTitleFromToolSchemaWithoutTitle() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("schema_tool_notitle")
+                        .description("A tool without title")
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+        SchemaOnlyTool tool = new SchemaOnlyTool(schema);
+        assertNull(tool.getTitle());
+    }
 }

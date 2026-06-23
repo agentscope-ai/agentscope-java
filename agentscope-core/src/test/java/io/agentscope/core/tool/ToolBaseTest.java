@@ -98,6 +98,51 @@ class ToolBaseTest {
     }
 
     @Test
+    void toolBuilderWithTitleSetsTitleOnTool() {
+        ToolBase tool =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("titled_tool")
+                                .title("Titled Tool")
+                                .description("A tool with a title")
+                                .inputSchema(emptySchema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow("ok"));
+                    }
+                };
+        assertEquals("Titled Tool", tool.getTitle());
+        assertEquals("titled_tool", tool.getName());
+    }
+
+    @Test
+    void toolBuilderWithoutTitleHasNullTitle() {
+        ToolBase tool = new PassthroughTool();
+        assertNull(tool.getTitle());
+    }
+
+    @Test
+    void toolGetTitleOverridesAgentToolDefault() {
+        // AgentTool.getTitle() default returns getName(); ToolBase.getTitle() returns the field
+        // (which is null when not set, overriding the default to expose null vs name)
+        ToolBase toolWithTitle =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("tool_x")
+                                .title("Tool X Display Name")
+                                .description("desc")
+                                .inputSchema(emptySchema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow("ok"));
+                    }
+                };
+        assertEquals("Tool X Display Name", toolWithTitle.getTitle());
+    }
+
+    @Test
     void mcpFlagRequiresMcpName() {
         assertThrows(
                 IllegalArgumentException.class,

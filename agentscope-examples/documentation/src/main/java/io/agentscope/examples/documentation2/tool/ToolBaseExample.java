@@ -177,7 +177,10 @@ public class ToolBaseExample {
             String result = "Temperature in " + location + ": 22°C (simulated)";
             ToolResultBlock block =
                     new ToolResultBlock(
-                            callId, getName(), List.of(TextBlock.builder().text(result).build()));
+                            callId,
+                            getName(),
+                            null,
+                            List.of(TextBlock.builder().text(result).build()));
             return Mono.just(block);
         }
 

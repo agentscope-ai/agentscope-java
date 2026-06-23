@@ -38,6 +38,7 @@ import reactor.core.publisher.Mono;
  * <pre>{@code
  * ToolSchema schema = ToolSchema.builder()
  *     .name("query_database")
+ *     .title("Query Database")
  *     .description("Query external database")
  *     .parameters(Map.of(
  *         "type", "object",
@@ -67,6 +68,7 @@ public class SchemaOnlyTool extends ToolBase {
     public SchemaOnlyTool(ToolSchema schema) {
         this(
                 Objects.requireNonNull(schema, "schema cannot be null").getName(),
+                schema.getTitle(),
                 schema.getDescription(),
                 schema.getParameters(),
                 schema.getStrict());
@@ -77,9 +79,9 @@ public class SchemaOnlyTool extends ToolBase {
      *
      * <p>Strict mode is set to null (unspecified).
      *
-     * @param name The tool name
+     * @param name        The tool name
      * @param description The tool description
-     * @param parameters The tool parameters schema
+     * @param parameters  The tool parameters schema
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(String name, String description, Map<String, Object> parameters) {
@@ -93,17 +95,41 @@ public class SchemaOnlyTool extends ToolBase {
      * <p>The parameters map is defensively copied to prevent external mutations from affecting
      * the tool's internal state.
      *
-     * @param name The tool name
+     * @param name        The tool name
      * @param description The tool description
-     * @param parameters The tool parameters schema
-     * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @param parameters  The tool parameters schema
+     * @param strict      Whether the tool should use strict schema validation (null if unspecified)
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(
             String name, String description, Map<String, Object> parameters, Boolean strict) {
+        this(name, null, description, parameters, strict);
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, title, description, parameters, and strict
+     * mode configuration.
+     *
+     * <p>The parameters map is defensively copied to prevent external mutations from affecting
+     * the tool's internal state.
+     *
+     * @param name        The tool name
+     * @param title        The tool title
+     * @param description The tool description
+     * @param parameters  The tool parameters schema
+     * @param strict      Whether the tool should use strict schema validation (null if unspecified)
+     * @throws NullPointerException if name or description is null
+     */
+    public SchemaOnlyTool(
+            String name,
+            String title,
+            String description,
+            Map<String, Object> parameters,
+            Boolean strict) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .title(title)
                         .description(
                                 Objects.requireNonNull(description, "description cannot be null"))
                         .inputSchema(
