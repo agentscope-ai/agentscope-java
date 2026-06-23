@@ -46,6 +46,17 @@ public class A2aCommonProperties {
      */
     private boolean requireInnerMessage;
 
+    /**
+     * The backpressure buffer size for A2A streaming responses.
+     *
+     * <p>This prevents BufferingTube overflow when LLM responses produce many streaming events.
+     * The default a2a-java-sdk BufferingTube capacity is 256, which may be insufficient
+     * for agents with parallel tool calls or long LLM responses.
+     *
+     * <p>Default: 1024
+     */
+    private int streamBufferSize = 1024;
+
     public A2aCommonProperties() {}
 
     public boolean isEnabled() {
@@ -87,5 +98,13 @@ public class A2aCommonProperties {
 
     public void setRequireInnerMessage(boolean requireInnerMessage) {
         this.requireInnerMessage = requireInnerMessage;
+    }
+
+    public int getStreamBufferSize() {
+        return streamBufferSize;
+    }
+
+    public void setStreamBufferSize(int streamBufferSize) {
+        this.streamBufferSize = streamBufferSize;
     }
 }

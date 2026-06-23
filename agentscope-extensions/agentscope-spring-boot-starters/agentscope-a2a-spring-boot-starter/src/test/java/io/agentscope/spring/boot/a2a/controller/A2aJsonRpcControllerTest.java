@@ -29,6 +29,7 @@ import io.a2a.spec.SendStreamingMessageResponse;
 import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.util.Collections;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +62,7 @@ class A2aJsonRpcControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        controller = new A2aJsonRpcController(agentScopeA2aServer);
+        controller = new A2aJsonRpcController(agentScopeA2aServer, new A2aCommonProperties());
         when(agentScopeA2aServer.getTransportWrapper(
                         eq(TransportProtocol.JSONRPC.asString()),
                         eq(JsonRpcTransportWrapper.class)))

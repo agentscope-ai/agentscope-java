@@ -120,12 +120,14 @@ public class AgentscopeA2aAutoConfiguration {
      * <p>TODO should judge whether user want to export JSON-RPC transport.
      *
      * @param agentScopeA2aServer agentscope A2a server bean
+     * @param commonProperties A2A common properties for stream buffer configuration
      * @return A2aJsonRpcController bean
      */
     @Bean
     @ConditionalOnBean(AgentScopeA2aServer.class)
-    public A2aJsonRpcController a2aJsonRpcController(AgentScopeA2aServer agentScopeA2aServer) {
-        return new A2aJsonRpcController(agentScopeA2aServer);
+    public A2aJsonRpcController a2aJsonRpcController(
+            AgentScopeA2aServer agentScopeA2aServer, A2aCommonProperties commonProperties) {
+        return new A2aJsonRpcController(agentScopeA2aServer, commonProperties);
     }
 
     @Bean

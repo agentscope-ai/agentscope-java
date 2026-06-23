@@ -21,6 +21,7 @@ import io.a2a.spec.TransportProtocol;
 import io.a2a.util.Utils;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.util.Map;
 import java.util.logging.Logger;
 import org.springframework.http.MediaType;
@@ -41,10 +42,14 @@ public class A2aJsonRpcController {
 
     private final AgentScopeA2aServer agentScopeA2aServer;
 
+    private final A2aCommonProperties commonProperties;
+
     private JsonRpcTransportWrapper jsonRpcHandler;
 
-    public A2aJsonRpcController(AgentScopeA2aServer agentScopeA2aServer) {
+    public A2aJsonRpcController(
+            AgentScopeA2aServer agentScopeA2aServer, A2aCommonProperties commonProperties) {
         this.agentScopeA2aServer = agentScopeA2aServer;
+        this.commonProperties = commonProperties;
     }
 
     @PostMapping(
@@ -57,6 +62,7 @@ public class A2aJsonRpcController {
         Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
             return fluxResult
+                    .onBackpressureBuffer(commonProperties.getStreamBufferSize())
                     .filter(each -> each instanceof JSONRPCResponse)
                     .map(each -> (JSONRPCResponse<?>) each)
                     .map(this::convertToSse);
