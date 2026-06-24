@@ -232,11 +232,11 @@ public class RedisStore implements BaseStore {
     }
 
     private String itemKey(List<String> namespace, String key) {
-        return keyPrefix + "item:" + namespacePath(namespace) + NS_SEPARATOR + key;
+        return keyPrefix + "{" + namespacePath(namespace) + "}:item:" + NS_SEPARATOR + key;
     }
 
     private String indexKey(List<String> namespace) {
-        return keyPrefix + "idx:" + namespacePath(namespace);
+        return keyPrefix + "{" + namespacePath(namespace) + "}:idx";
     }
 
     private static String namespacePath(List<String> namespace) {
