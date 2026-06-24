@@ -48,6 +48,7 @@ import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -294,6 +295,37 @@ class AguiAgentAdapterTest {
 
         assertSame(existingTool, toolkit.getTool("agent_lookup"));
         assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
+        assertNull(toolkit.getTool("frontend_lookup"));
+    }
+
+    @Test
+    void testRunWithFrontendOnlySkipsToolNameThatNoLongerResolves() {
+        Toolkit toolkit = new GhostToolNameToolkit();
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                            return Flux.empty();
+                        });
+
+        AguiAgentAdapter frontendOnlyAdapter =
+                new AguiAgentAdapter(
+                        mockAgent,
+                        AguiAdapterConfig.builder()
+                                .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                .build());
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-frontend-only-ghost")
+                        .runId("run-frontend-only-ghost")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        frontendOnlyAdapter.run(input).collectList().block();
+
         assertNull(toolkit.getTool("frontend_lookup"));
     }
 
@@ -1981,5 +2013,13 @@ class AguiAgentAdapterTest {
                                         "properties",
                                         Map.of("query", Map.of("type", "string"))))
                         .build());
+    }
+
+    private static final class GhostToolNameToolkit extends Toolkit {
+
+        @Override
+        public Set<String> getToolNames() {
+            return Set.of("ghost_lookup");
+        }
     }
 }
