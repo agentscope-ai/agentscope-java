@@ -258,7 +258,9 @@ public class DashScopeMessageConverter {
     }
 
     /**
-     * Apply cache_control from Msg metadata to the converted DashScopeMessage.
+     * Apply cache_control from Msg metadata to the converted DashScopeMessage at content block
+     * level. When the metadata flag is set, this converts the message content to array format
+     * (if needed) and sets cache_control on the last content block.
      *
      * @param msg the source message with metadata
      * @param result the converted DashScope message
@@ -269,7 +271,7 @@ public class DashScopeMessageConverter {
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+            DashScopeChatFormatter.applyCacheControlToContentBlock(result);
         }
     }
 
