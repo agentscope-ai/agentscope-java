@@ -18,6 +18,9 @@ package io.agentscope.core.agui.adapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -27,20 +30,27 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -57,6 +67,118 @@ class AguiAgentAdapterTest {
     void setUp() {
         mockAgent = mock(Agent.class);
         adapter = new AguiAgentAdapter(mockAgent, AguiAdapterConfig.defaultConfig());
+    }
+
+    @Test
+    void testRunInjectsRunInputIntoRuntimeContext() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-ctx")
+                        .runId("run-ctx")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .context(List.of())
+                        .state(Map.of("cursor", 12))
+                        .forwardedProps(Map.of("tenant", "demo"))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("thread-ctx", context.getSessionId());
+        assertSame(input, context.get(RunAgentInput.class));
+        assertEquals("thread-ctx", context.get("agui.threadId"));
+        assertEquals("run-ctx", context.get("agui.runId"));
+        assertSame(input.getMessages(), context.get("agui.messages"));
+        assertSame(input.getTools(), context.get("agui.tools"));
+        assertSame(input.getContext(), context.get("agui.context"));
+        assertSame(input.getState(), context.get("agui.state"));
+        assertSame(input.getForwardedProps(), context.get("agui.forwardedProps"));
+    }
+
+    @Test
+    void testRunRegistersFrontendToolsForRunAndCleansUp() {
+        Toolkit toolkit = new Toolkit();
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                            assertTrue(toolkit.isExternalTool("frontend_lookup"));
+                            return Flux.empty();
+                        });
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-tools")
+                        .runId("run-tools")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        assertNull(toolkit.getTool("frontend_lookup"));
+    }
+
+    @Test
+    void testRunRestoresAgentToolWhenFrontendToolHasSameName() {
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
+        toolkit.registerAgentTool(existingTool);
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
+                            assertNotSame(existingTool, toolkit.getTool("shared_lookup"));
+                            return Flux.empty();
+                        });
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-tools")
+                        .runId("run-tools")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("shared_lookup")))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        assertSame(existingTool, toolkit.getTool("shared_lookup"));
+    }
+
+    @Test
+    void testRunDoesNotRegisterFrontendToolsWhenAgentOnly() {
+        Toolkit toolkit = new Toolkit();
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        AguiAgentAdapter agentOnlyAdapter =
+                new AguiAgentAdapter(
+                        mockAgent,
+                        AguiAdapterConfig.builder()
+                                .toolMergeMode(ToolMergeMode.AGENT_ONLY)
+                                .build());
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-agent-only")
+                        .runId("run-agent-only")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        agentOnlyAdapter.run(input).collectList().block();
+
+        assertNull(toolkit.getTool("frontend_lookup"));
     }
 
     @Test
@@ -1695,5 +1817,26 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
+    }
+
+    private static AguiTool frontendTool(String name) {
+        return new AguiTool(
+                name,
+                "Frontend tool",
+                Map.of("type", "object", "properties", Map.of("query", Map.of("type", "string"))));
+    }
+
+    private static SchemaOnlyTool schemaOnlyTool(String name) {
+        return new SchemaOnlyTool(
+                ToolSchema.builder()
+                        .name(name)
+                        .description("Existing tool")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("query", Map.of("type", "string"))))
+                        .build());
     }
 }
