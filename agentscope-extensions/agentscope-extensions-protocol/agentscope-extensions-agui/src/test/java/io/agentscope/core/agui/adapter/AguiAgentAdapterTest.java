@@ -182,6 +182,149 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testRunEmitsErrorEventsWhenStreamThrowsBeforeReturningFlux() {
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenThrow(new RuntimeException());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-error")
+                        .runId("run-error")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(3, events.size());
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+        AguiEvent.Raw raw = assertInstanceOf(AguiEvent.Raw.class, events.get(1));
+        assertEquals(Map.of("error", "RuntimeException"), raw.rawEvent());
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
+    }
+
+    @Test
+    void testRunIgnoresFrontendToolsWhenAgentHasNoToolkit() {
+        when(mockAgent.getToolkit()).thenReturn(null);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-no-toolkit")
+                        .runId("run-no-toolkit")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(2, events.size());
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+    }
+
+    @Test
+    void testRunUsesFrontendPriorityWhenToolMergeModeIsNull() {
+        Toolkit toolkit = new Toolkit();
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                            return Flux.empty();
+                        });
+
+        AguiAgentAdapter nullMergeModeAdapter =
+                new AguiAgentAdapter(
+                        mockAgent, AguiAdapterConfig.builder().toolMergeMode(null).build());
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-null-merge-mode")
+                        .runId("run-null-merge-mode")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        nullMergeModeAdapter.run(input).collectList().block();
+
+        assertNull(toolkit.getTool("frontend_lookup"));
+    }
+
+    @Test
+    void testRunWithFrontendOnlyTemporarilyReplacesToolkitAndRestoresAgentTools() {
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool existingTool = schemaOnlyTool("agent_lookup");
+        SchemaOnlyTool existingSharedTool = schemaOnlyTool("shared_lookup");
+        toolkit.registerAgentTool(existingTool);
+        toolkit.registerAgentTool(existingSharedTool);
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            assertNull(toolkit.getTool("agent_lookup"));
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                            assertInstanceOf(
+                                    SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
+                            assertNotSame(existingSharedTool, toolkit.getTool("shared_lookup"));
+                            return Flux.empty();
+                        });
+
+        AguiAgentAdapter frontendOnlyAdapter =
+                new AguiAgentAdapter(
+                        mockAgent,
+                        AguiAdapterConfig.builder()
+                                .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                .build());
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-frontend-only")
+                        .runId("run-frontend-only")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(
+                                List.of(
+                                        frontendTool("frontend_lookup"),
+                                        frontendTool("shared_lookup")))
+                        .build();
+
+        frontendOnlyAdapter.run(input).collectList().block();
+
+        assertSame(existingTool, toolkit.getTool("agent_lookup"));
+        assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
+        assertNull(toolkit.getTool("frontend_lookup"));
+    }
+
+    @Test
+    void testRunKeepsToolThatReplacesInjectedFrontendToolBeforeCleanup() {
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
+        SchemaOnlyTool replacementTool = schemaOnlyTool("shared_lookup");
+        toolkit.registerAgentTool(existingTool);
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            toolkit.registerAgentTool(replacementTool);
+                            return Flux.empty();
+                        });
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-replaced-tool")
+                        .runId("run-replaced-tool")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("shared_lookup")))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        assertSame(replacementTool, toolkit.getTool("shared_lookup"));
+    }
+
+    @Test
     void testRunReturnsRunStartedAndFinishedEvents() {
         // Agent returns empty stream
         when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.empty());
