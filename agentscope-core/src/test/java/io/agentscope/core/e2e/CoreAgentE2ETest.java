@@ -41,11 +41,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Consolidated E2E tests for core agent functionality.
  *
  * <p>Tests basic ReAct workflow, conversation flow, streaming, memory management, and
- * fundamental tool calling across all available model providers (OpenAI Native, DashScope
- * Compatible, DashScope Native).
+ * fundamental tool calling across all available core-owned model providers.
  *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys.
+ * <p><b>Requirements:</b> Provider-specific API keys must be set. Tests are dynamically enabled
+ * based on available API keys.
  */
 @Tag("e2e")
 @ExtendWith(E2ETestCondition.class)
@@ -259,8 +258,7 @@ class CoreAgentE2ETest {
         // At least one provider should be enabled
         assertTrue(
                 enabledBasicProviders > 0,
-                "At least one basic provider should be enabled (check OPENAI_API_KEY or"
-                        + " DASHSCOPE_API_KEY)");
+                "At least one basic provider should be enabled (check core provider API keys)");
 
         System.out.println("✓ Provider configuration verified");
     }

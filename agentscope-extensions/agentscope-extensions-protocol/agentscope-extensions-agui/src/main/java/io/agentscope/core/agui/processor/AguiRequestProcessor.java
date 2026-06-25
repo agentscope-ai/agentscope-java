@@ -194,6 +194,7 @@ public class AguiRequestProcessor {
                 .messages(List.of(lastUserMessage))
                 .tools(input.getTools())
                 .context(input.getContext())
+                .state(input.getState())
                 .forwardedProps(input.getForwardedProps())
                 .build();
     }
