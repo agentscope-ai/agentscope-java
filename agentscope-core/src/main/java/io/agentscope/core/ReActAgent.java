@@ -2250,7 +2250,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 flushAllToolCalls(events);
                 boolean visibleTool = toolName != null && !toolName.startsWith("__");
                 if (visibleTool && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
-                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                    events.add(
+                            new ToolCallStartEvent(
+                                    replyId,
+                                    toolId,
+                                    toolName,
+                                    resolveToolTitle(toolkit, toolName)));
                 }
             }
 
@@ -2268,7 +2273,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void flushAllToolCalls(List<AgentEvent> events) {
                 for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
-                    events.add(new ToolCallEndEvent(replyId, tc.getKey(), tc.getValue()));
+                    events.add(
+                            new ToolCallEndEvent(
+                                    replyId,
+                                    tc.getKey(),
+                                    tc.getValue(),
+                                    resolveToolTitle(toolkit, tc.getValue())));
                 }
                 startedToolCalls.clear();
             }
