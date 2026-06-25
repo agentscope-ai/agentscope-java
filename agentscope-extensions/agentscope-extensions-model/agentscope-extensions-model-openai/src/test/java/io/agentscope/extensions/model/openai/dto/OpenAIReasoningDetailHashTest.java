@@ -48,8 +48,7 @@ class OpenAIReasoningDetailHashTest {
                                                         Map.of(
                                                                 ThinkingBlock
                                                                         .METADATA_REASONING_DETAILS,
-                                                                List.of(
-                                                                        createReasoningDetail())))
+                                                                List.of(createReasoningDetail())))
                                                 .build())
                                 .build());
 
@@ -66,8 +65,7 @@ class OpenAIReasoningDetailHashTest {
                                                         Map.of(
                                                                 ThinkingBlock
                                                                         .METADATA_REASONING_DETAILS,
-                                                                List.of(
-                                                                        createReasoningDetail())))
+                                                                List.of(createReasoningDetail())))
                                                 .build())
                                 .build());
 

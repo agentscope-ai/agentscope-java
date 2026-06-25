@@ -296,5 +296,4 @@ class ListHashUtilTest {
         }
         return list;
     }
-
 }
