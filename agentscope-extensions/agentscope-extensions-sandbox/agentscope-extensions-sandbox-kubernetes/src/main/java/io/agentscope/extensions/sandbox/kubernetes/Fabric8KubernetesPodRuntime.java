@@ -45,7 +45,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -174,7 +173,7 @@ public class Fabric8KubernetesPodRuntime {
         // Phase 1: Stream archive to a temp file via stdin.
         // "cat" exits immediately on EOF — no post-EOF work, no SIGKILL race.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
-        CompletableFuture<Integer> uploadExit;
+        Integer uploadCode;
         try (ExecWatch watch =
                 pod(state)
                         .redirectingInput()
@@ -183,22 +182,21 @@ public class Fabric8KubernetesPodRuntime {
             try (OutputStream stdin = watch.getInput()) {
                 archive.transferTo(stdin);
             }
-            uploadExit = watch.exitCode();
-        }
-        try {
-            Integer code = uploadExit.get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
-            if (code == null || code != 0) {
+            try {
+                uploadCode = watch.exitCode().get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                        "archive upload failed (exit="
-                                + code
-                                + "): "
-                                + errBuf.toString(StandardCharsets.UTF_8));
+                        "archive upload to pod timed out");
             }
-        } catch (java.util.concurrent.TimeoutException e) {
+        }
+        if (uploadCode == null || uploadCode != 0) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                    "archive upload to pod timed out");
+                    "archive upload failed (exit="
+                            + uploadCode
+                            + "): "
+                            + errBuf.toString(StandardCharsets.UTF_8));
         }
 
         // Phase 2: Extract from the temp file — no stdin involved, no race.
