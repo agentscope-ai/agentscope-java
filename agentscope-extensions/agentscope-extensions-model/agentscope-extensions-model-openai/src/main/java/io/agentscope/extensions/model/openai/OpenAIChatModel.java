@@ -229,6 +229,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutputWithTools;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -381,6 +382,23 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model correctly handles native structured output
+         * ({@code response_format}) alongside tool calling.
+         *
+         * <p>Defaults to {@code true}, which is correct for OpenAI's own models (GPT-4o, etc.).
+         * Set to {@code false} for OpenAI-compatible providers (Kimi, Deepseek, etc.) that
+         * prioritise {@code response_format} over tool invocations, causing the model to skip
+         * tool calling when both are present.
+         *
+         * @param nativeStructuredOutputWithTools false to use fallback when tools are present
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+            this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+            return this;
+        }
+
+        /**
          * Builds the OpenAIChatModel instance.
          *
          * @return configured OpenAIChatModel instance
@@ -422,6 +440,9 @@ public class OpenAIChatModel extends ChatModelBase {
                     contextWindowSize >= 0
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
+            if (nativeStructuredOutputWithTools != null) {
+                model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
             return model;
         }
 

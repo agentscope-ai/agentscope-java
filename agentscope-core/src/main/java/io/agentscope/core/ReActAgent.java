@@ -1028,7 +1028,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        if (model.supportsNativeStructuredOutput()) {
+        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
+        boolean useNative =
+                hasTools
+                        ? model.supportsNativeStructuredOutputWithTools()
+                        : model.supportsNativeStructuredOutput();
+        if (useNative) {
             return doNativeStructuredCall(msgs, jsonSchema);
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
