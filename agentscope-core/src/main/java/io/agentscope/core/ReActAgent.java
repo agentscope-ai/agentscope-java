@@ -1194,6 +1194,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private ChatUsage collectAggregatedUsage(AgentState agentState) {
         int totalInput = 0;
         int totalOutput = 0;
+        int totalCached = 0;
         double totalTime = 0;
         boolean hasUsage = false;
         for (Msg msg : agentState.getContext()) {
@@ -1203,6 +1204,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     hasUsage = true;
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
+                    totalCached += usage.getCachedTokens();
                     totalTime += usage.getTime();
                 }
             }
@@ -1211,6 +1213,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ? ChatUsage.builder()
                         .inputTokens(totalInput)
                         .outputTokens(totalOutput)
+                        .cachedTokens(totalCached)
                         .time(totalTime)
                         .build()
                 : null;
