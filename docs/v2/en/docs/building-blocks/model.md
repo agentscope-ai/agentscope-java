@@ -130,10 +130,9 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> System.out.println("Delta: " + chunk.getContent()))
-        .last()
-        .doOnNext(chunk -> System.out.println("Final: " + chunk.getContent()))
-        .block();
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
+        .blockLast();
 ```
 
 A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`) and a `ChatUsage` recording token counts and timing.

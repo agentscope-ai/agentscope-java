@@ -130,10 +130,9 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> System.out.println("Delta: " + chunk.getContent()))
-        .last()
-        .doOnNext(chunk -> System.out.println("Final: " + chunk.getContent()))
-        .block();
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
+        .blockLast();
 ```
 
 `ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
