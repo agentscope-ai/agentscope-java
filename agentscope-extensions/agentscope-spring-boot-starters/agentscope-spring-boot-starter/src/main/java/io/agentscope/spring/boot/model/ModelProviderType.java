@@ -19,13 +19,14 @@ import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import io.agentscope.spring.boot.properties.AnthropicProperties;
 import io.agentscope.spring.boot.properties.DashscopeProperties;
 import io.agentscope.spring.boot.properties.GeminiProperties;
 import io.agentscope.spring.boot.properties.ModelProperties;
 import io.agentscope.spring.boot.properties.OpenAIProperties;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Locale;
 
 /**
@@ -73,21 +74,7 @@ public enum ModelProviderType {
                                 + " selected");
             }
 
-            OpenAIChatModel.Builder builder =
-                    OpenAIChatModel.builder()
-                            .apiKey(openai.getApiKey())
-                            .modelName(openai.getModelName())
-                            .stream(openai.isStream());
-
-            if (openai.getBaseUrl() != null && !openai.getBaseUrl().isEmpty()) {
-                builder.baseUrl(openai.getBaseUrl());
-            }
-
-            if (openai.getEndpointPath() != null && !openai.getEndpointPath().isEmpty()) {
-                builder.endpointPath(openai.getEndpointPath());
-            }
-
-            return builder.build();
+            return createOpenAiModel(openai);
         }
     },
     GEMINI("gemini") {
@@ -180,5 +167,48 @@ public enum ModelProviderType {
             }
         }
         throw new IllegalStateException("Unsupported agentscope.model.provider: " + normalized);
+    }
+
+    private static Model createOpenAiModel(OpenAIProperties openai) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.openai.OpenAIChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            String.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            openai.getApiKey(),
+                            openai.getModelName(),
+                            openai.isStream(),
+                            openai.getBaseUrl(),
+                            openai.getEndpointPath());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "OpenAI provider requires agentscope-extensions-model-openai on the classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "OpenAI extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create OpenAI model", cause);
+        }
     }
 }
