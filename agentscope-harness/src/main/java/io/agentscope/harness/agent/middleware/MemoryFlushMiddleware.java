@@ -128,7 +128,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         return next.apply(input)
                 .concatWith(
-                        doFlush(agent, rc)
+                        Mono.defer(() -> doFlush(agent, rc))
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .onErrorResume(
                                         e -> {
