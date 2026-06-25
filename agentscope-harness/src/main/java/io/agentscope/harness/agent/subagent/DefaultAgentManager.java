@@ -177,7 +177,20 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        return invokeAgent(agent, sessionId, userId, prompt, null);
+    }
+
+    /**
+     * Variant of {@link #invokeAgent(Agent, String, String, String)} that inherits the parent
+     * agent's business context. The child always runs under its own {@code (sessionId, userId)};
+     * when {@code parentRc} is non-null, the parent's custom typed/string attributes (e.g.
+     * request-scoped context POJOs, tool routers) are copied onto the child's {@link
+     * RuntimeContext} so tools executing inside the subagent can resolve them. Without this the
+     * framework only propagates {@code userId}, leaving such POJOs null in the child.
+     */
+    public Mono<Msg> invokeAgent(
+            Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
+        RuntimeContext ctx = childRuntimeContext(sessionId, userId, parentRc);
         if (agent instanceof ReActAgent react) {
             return react.call(List.of(userMessage(prompt)), ctx);
         }
@@ -185,6 +198,21 @@ public final class DefaultAgentManager {
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));
+    }
+
+    /**
+     * Builds the child agent's per-call {@link RuntimeContext}: its own {@code (sessionId, userId)}
+     * overlaid on a copy of the parent's attributes when available. The child's {@link AgentState}
+     * is (re)bound per-call in {@code beforeAgentExecution}, so carrying the parent's agentState
+     * reference through {@link RuntimeContext.Builder#from} here is harmless.
+     */
+    private static RuntimeContext childRuntimeContext(
+            String sessionId, String userId, RuntimeContext parentRc) {
+        RuntimeContext.Builder b =
+                parentRc != null
+                        ? RuntimeContext.builder().from(parentRc)
+                        : RuntimeContext.builder();
+        return b.sessionId(sessionId).userId(userId).build();
     }
 
     /**
@@ -213,9 +241,26 @@ public final class DefaultAgentManager {
             String prompt,
             EventSource source,
             StreamOptions options) {
+        return invokeAgentStream(agent, sessionId, userId, prompt, source, options, null);
+    }
+
+    /**
+     * Variant of {@link #invokeAgentStream(Agent, String, String, String, EventSource,
+     * StreamOptions)} that inherits the parent agent's business context onto the child's
+     * {@link RuntimeContext}. See {@link #invokeAgent(Agent, String, String, String,
+     * RuntimeContext)} for the rationale.
+     */
+    public Flux<Event> invokeAgentStream(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            EventSource source,
+            StreamOptions options,
+            RuntimeContext parentRc) {
         Flux<Event> childFlux;
         StreamOptions effective = options != null ? options : StreamOptions.defaults();
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        RuntimeContext ctx = childRuntimeContext(sessionId, userId, parentRc);
         if (agent instanceof ReActAgent react) {
             childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
         } else if (agent instanceof HarnessAgent harness) {
