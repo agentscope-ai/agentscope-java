@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.rag.integration.dify.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
@@ -23,6 +24,25 @@ import java.util.List;
  * Response model for Dify knowledge base retrieval API.
  *
  * <p>This class maps the JSON response from Dify's retrieve endpoint:
+ * <pre>{@code
+ * {
+ *   "query": "..." ,
+ *   "records": [
+ *     {
+ *       "segment": {
+ *         "id": "...",
+ *         "document_id": "...",
+ *         "content": "...",
+ *         "position": 1,
+ *         "document": { "id": "...", "name": "..." }
+ *       },
+ *       "score": 0.95
+ *     }
+ *   ]
+ * }
+ *
+ * <p>Some Dify deployments return {@code query} as an object with a {@code content} field.
+ * The model keeps that form compatible as well.
  * <pre>{@code
  * {
  *   "query": { "content": "..." },
@@ -69,6 +89,13 @@ public class DifyResponse {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Query {
         private String content;
+
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public static Query fromString(String content) {
+            Query query = new Query();
+            query.setContent(content);
+            return query;
+        }
 
         public String getContent() {
             return content;
