@@ -17,7 +17,6 @@ package io.agentscope.core.credential;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,7 +26,6 @@ import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.OllamaChatModel;
-import io.agentscope.core.model.OpenAIChatModel;
 import org.junit.jupiter.api.Test;
 
 class CredentialsTest {
@@ -51,25 +49,6 @@ class CredentialsTest {
         assertEquals("ant-key-123", round.getApiKey());
         assertEquals("https://api.anthropic.com", round.getBaseUrl());
         assertEquals(AnthropicChatModel.class, round.getChatModelClass());
-    }
-
-    @Test
-    void openAiCredentialJsonRoundTripWithOrganization() throws Exception {
-        OpenAICredential c =
-                OpenAICredential.builder()
-                        .apiKey("sk-test")
-                        .organization("org-abc")
-                        .baseUrl("https://api.openai.com/v1")
-                        .build();
-        String json = mapper.writeValueAsString(c);
-        assertTrue(json.contains("\"type\":\"openai_credential\""));
-        assertTrue(json.contains("\"organization\":\"org-abc\""));
-
-        OpenAICredential round = mapper.readValue(json, OpenAICredential.class);
-        assertEquals("sk-test", round.getApiKey());
-        assertEquals("org-abc", round.getOrganization());
-        assertEquals("https://api.openai.com/v1", round.getBaseUrl());
-        assertEquals(OpenAIChatModel.class, round.getChatModelClass());
     }
 
     @Test
@@ -134,7 +113,6 @@ class CredentialsTest {
     @Test
     void allCredentialsRequireNonNullApiKey() {
         assertThrows(NullPointerException.class, () -> AnthropicCredential.builder().build());
-        assertThrows(NullPointerException.class, () -> OpenAICredential.builder().build());
         assertThrows(NullPointerException.class, () -> DashScopeCredential.builder().build());
         assertThrows(NullPointerException.class, () -> GeminiCredential.builder().build());
         assertThrows(NullPointerException.class, () -> DeepSeekCredential.builder().build());
@@ -157,15 +135,5 @@ class CredentialsTest {
         String json = mapper.writeValueAsString(c);
         AnthropicCredential round = mapper.readValue(json, AnthropicCredential.class);
         assertEquals("custom-id-1", round.getId());
-    }
-
-    @Test
-    void autoIdIsRoundTrippedNotRegenerated() throws Exception {
-        OpenAICredential c = OpenAICredential.builder().apiKey("k").build();
-        String originalId = c.getId();
-        assertNotNull(originalId);
-        String json = mapper.writeValueAsString(c);
-        OpenAICredential round = mapper.readValue(json, OpenAICredential.class);
-        assertEquals(originalId, round.getId());
     }
 }

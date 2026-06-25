@@ -33,6 +33,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -104,51 +105,87 @@ class SubagentRegistryRecoveryIntegrationTest {
         // Shared "distributed store" primitives.
         BaseStore sharedBase = new InMemoryStore();
         AgentStateStore sharedState = new InMemoryAgentStateStore();
-        Supplier<HarnessAgent> subFactory = () -> buildEchoSubagent(sharedState);
 
-        // ---- Node A: expose a live subagent and run the first turn. ----
-        HarnessGateway nodeA = HarnessGateway.create();
-        nodeA.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
-        nodeA.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+        // Track every agent created by the factory so they can all be closed after the test,
+        // preventing background WorkspaceTaskRepository threads from writing to @TempDir after
+        // JUnit begins cleanup.
+        List<HarnessAgent> createdAgents = new ArrayList<>();
+        Supplier<HarnessAgent> subFactory =
+                () -> {
+                    HarnessAgent a = buildEchoSubagent(sharedState);
+                    createdAgents.add(a);
+                    return a;
+                };
 
-        HarnessAgent liveSub = subFactory.get();
-        String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, liveSub, null);
-        assertNotNull(subagentId);
+        try {
+            // ---- Node A: expose a live subagent and run the first turn. ----
+            HarnessGateway nodeA = HarnessGateway.create();
+            nodeA.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
+            nodeA.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
 
-        Msg firstReply = nodeA.runSubagent(subagentId, List.of(ping())).block();
-        assertEquals("turns=1", text(firstReply), "node A sees exactly its own turn");
+            HarnessAgent liveSub = subFactory.get();
+            String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, liveSub, null);
+            assertNotNull(subagentId);
 
-        // ---- Node B: a fresh gateway with an EMPTY live cache, sharing only the store. ----
-        HarnessGateway nodeB = HarnessGateway.create();
-        nodeB.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
-        nodeB.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+            Msg firstReply = nodeA.runSubagent(subagentId, List.of(ping())).block();
+            assertEquals("turns=1", text(firstReply), "node A sees exactly its own turn");
 
-        Msg secondReply = nodeB.runSubagent(subagentId, List.of(ping())).block();
-        // turns=2 proves: (1) the subagentId was resolved from the shared registry on a node that
-        // never exposed it, (2) the agent was re-materialized, and (3) node A's prior turn was
-        // loaded from the shared state store by sessionId.
-        assertEquals("turns=2", text(secondReply), "node B recovered and continued the session");
+            // ---- Node B: a fresh gateway with an EMPTY live cache, sharing only the store. ----
+            HarnessGateway nodeB = HarnessGateway.create();
+            nodeB.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
+            nodeB.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+
+            Msg secondReply = nodeB.runSubagent(subagentId, List.of(ping())).block();
+            // turns=2 proves: (1) the subagentId was resolved from the shared registry on a node
+            // that never exposed it, (2) the agent was re-materialized, and (3) node A's prior
+            // turn was loaded from the shared state store by sessionId.
+            assertEquals(
+                    "turns=2", text(secondReply), "node B recovered and continued the session");
+        } finally {
+            for (HarnessAgent agent : createdAgents) {
+                try {
+                    agent.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     @Test
     void unknownSubagentWithoutSharedRegistryIsUnresolvable() {
         BaseStore sharedBase = new InMemoryStore();
         AgentStateStore sharedState = new InMemoryAgentStateStore();
-        Supplier<HarnessAgent> subFactory = () -> buildEchoSubagent(sharedState);
+        List<HarnessAgent> createdAgents = new ArrayList<>();
+        Supplier<HarnessAgent> subFactory =
+                () -> {
+                    HarnessAgent a = buildEchoSubagent(sharedState);
+                    createdAgents.add(a);
+                    return a;
+                };
 
-        HarnessGateway nodeA = HarnessGateway.create();
-        nodeA.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
-        String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, subFactory.get(), null);
+        try {
+            HarnessGateway nodeA = HarnessGateway.create();
+            nodeA.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
+            String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, subFactory.get(), null);
 
-        // A node whose registry is backed by a DIFFERENT (empty) store cannot see the handle, even
-        // with a materializer present — proving the registry is what carries cross-node identity.
-        HarnessGateway isolatedNode = HarnessGateway.create();
-        isolatedNode.setSubagentRegistry(new StoreBackedSubagentRegistry(new InMemoryStore()));
-        isolatedNode.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+            // A node whose registry is backed by a DIFFERENT (empty) store cannot see the handle,
+            // even with a materializer present — proving the registry is what carries cross-node
+            // identity.
+            HarnessGateway isolatedNode = HarnessGateway.create();
+            isolatedNode.setSubagentRegistry(new StoreBackedSubagentRegistry(new InMemoryStore()));
+            isolatedNode.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> isolatedNode.runSubagent(subagentId, List.of(ping())).block());
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> isolatedNode.runSubagent(subagentId, List.of(ping())).block());
+        } finally {
+            for (HarnessAgent agent : createdAgents) {
+                try {
+                    agent.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     @Test

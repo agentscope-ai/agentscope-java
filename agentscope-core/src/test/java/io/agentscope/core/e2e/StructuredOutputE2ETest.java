@@ -50,8 +50,8 @@ import org.slf4j.LoggerFactory;
  *   <li>Memory cleanup after structured output generation</li>
  * </ul>
  *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
+ * <p><b>Requirements:</b> Provider-specific API keys must be set. Tests are dynamically enabled
+ * based on available API keys and model capabilities.
  */
 @Tag("e2e")
 @Tag("structured-output")

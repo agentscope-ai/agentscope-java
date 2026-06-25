@@ -40,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * AgentTool implementation that wraps a sub-agent for multi-turn conversation.
@@ -187,6 +188,27 @@ public class SubAgentTool implements AgentTool {
                                             agent, userMsg, finalSessionId, runtimeContext);
                         }
 
+                        // Interrupt the sub-agent when the subscription is cancelled
+                        // (e.g. ToolExecutor timeout triggers a retry on a new subscription).
+                        // Without this, the orphan agent keeps consuming LLM tokens, SSH
+                        // connections, and thread pool resources until it finishes naturally.
+                        //
+                        // Uses doFinally(CANCEL) rather than doOnCancel because doOnCancel
+                        // also fires on normal error propagation cleanup, which would
+                        // attempt to interrupt an already-failed agent.
+                        //
+                        // Uses interrupt(RuntimeContext) instead of the deprecated
+                        // interrupt(InterruptSource) because the latter only looks up
+                        // `defaultSessionId` which may differ from the session the call
+                        // actually runs in.
+                        result =
+                                result.doFinally(
+                                        signal -> {
+                                            if (signal == SignalType.CANCEL) {
+                                                interruptAgent(agent, runtimeContext);
+                                            }
+                                        });
+
                         // Save state after execution
                         return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
                     } catch (Exception e) {
@@ -196,6 +218,21 @@ public class SubAgentTool implements AgentTool {
                                         "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Interrupts the sub-agent when the tool call is cancelled (e.g. by timeout-triggered
+     * retry), preventing it from becoming an orphan agent that silently consumes resources.
+     */
+    private void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            logger.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because its tool call subscription "
+                            + "was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
+        }
     }
 
     /**
