@@ -418,6 +418,59 @@ class NacosSkillRepositoryTest {
         assertFalse(repository.delete("any-skill"));
     }
 
+    @Test
+    @DisplayName("null knownSkillNames is treated the same as empty list")
+    void testNullKnownSkillNamesTreatedAsEmpty() {
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", null, null);
+
+        assertTrue(repo.getAllSkillNames().isEmpty());
+        assertTrue(repo.getAllSkills().isEmpty());
+    }
+
+    @Test
+    @DisplayName("getAllSkillNames returns knownSkillNames when configured")
+    void testGetAllSkillNamesWithKnownNames() {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("skill-a", "skill-b"));
+
+        List<String> names = repo.getAllSkillNames();
+
+        assertEquals(List.of("skill-a", "skill-b"), names);
+    }
+
+    @Test
+    @DisplayName("getAllSkills fetches each knownSkillName and returns loaded skills")
+    void testGetAllSkillsWithKnownNames() throws Exception {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("skill-a", "skill-b"));
+        when(aiService.downloadSkillZip("skill-a"))
+                .thenReturn(createSkillZip("skill-a", "Desc A", "Content A", null, (String) null));
+        when(aiService.downloadSkillZip("skill-b"))
+                .thenReturn(createSkillZip("skill-b", "Desc B", "Content B", null, (String) null));
+
+        List<AgentSkill> skills = repo.getAllSkills();
+
+        assertEquals(2, skills.size());
+        assertEquals("skill-a", skills.get(0).getName());
+        assertEquals("skill-b", skills.get(1).getName());
+    }
+
+    @Test
+    @DisplayName("getAllSkills skips skills that fail to load and returns the rest")
+    void testGetAllSkillsSkipsFailedSkill() throws Exception {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("good", "bad"));
+        when(aiService.downloadSkillZip("good"))
+                .thenReturn(createSkillZip("good", "Desc", "Content", null, (String) null));
+        when(aiService.downloadSkillZip("bad"))
+                .thenThrow(new NacosException(NacosException.NOT_FOUND, "not found"));
+
+        List<AgentSkill> skills = repo.getAllSkills();
+
+        assertEquals(1, skills.size());
+        assertEquals("good", skills.get(0).getName());
+    }
+
     private static byte[] createSkillZip(
             String name,
             String description,
