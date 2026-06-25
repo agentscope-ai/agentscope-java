@@ -55,6 +55,7 @@ public class ReasoningContext {
     // ChatUsage
     private int inputTokens = 0;
     private int outputTokens = 0;
+    private int cachedTokens = 0;
     private double time = 0;
 
     public ReasoningContext(String agentName) {
@@ -83,6 +84,7 @@ public class ReasoningContext {
         if (usage != null) {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
+            cachedTokens = usage.getCachedTokens();
             time = usage.getTime();
         }
 
@@ -172,6 +174,7 @@ public class ReasoningContext {
                     ChatUsage.builder()
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
+                            .cachedTokens(cachedTokens)
                             .time(time)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -278,6 +281,7 @@ public class ReasoningContext {
             return ChatUsage.builder()
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
+                    .cachedTokens(cachedTokens)
                     .time(time)
                     .build();
         }
