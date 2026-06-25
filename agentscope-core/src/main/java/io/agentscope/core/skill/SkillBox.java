@@ -781,7 +781,8 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            // Upload synthesized skills under the package directory, not the source-qualified id.
+            Path skillDir = targetDir.resolve(skill.getName());
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {

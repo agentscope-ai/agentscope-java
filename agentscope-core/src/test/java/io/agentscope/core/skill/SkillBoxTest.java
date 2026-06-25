@@ -34,6 +34,8 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -324,6 +326,28 @@ class SkillBoxTest {
             assertFalse(
                     skillBox.isSkillActive(purePromptSkill.getSkillId()),
                     "Logical state should be inactive");
+        }
+
+        @Test
+        @DisplayName("Should upload skill resources under the package directory name")
+        void testUploadSkillFilesUsesSkillNameDirectory() throws Exception {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "resource_skill",
+                            "Skill with resources",
+                            "# Resource Skill",
+                            Map.of("SOUL.md", "soul content"),
+                            "classpath:/skills/resource_skill");
+            skillBox.registerSkill(skill);
+
+            assertDoesNotThrow(() -> skillBox.uploadSkillFiles());
+
+            Path uploadDir = skillBox.getUploadDir();
+            assertNotNull(uploadDir, "Upload directory should be initialized");
+
+            Path expectedResource = uploadDir.resolve(skill.getName()).resolve("SOUL.md");
+            assertTrue(Files.exists(expectedResource), "Resource should be uploaded by skill name");
+            assertEquals("soul content", Files.readString(expectedResource));
         }
     }
 
