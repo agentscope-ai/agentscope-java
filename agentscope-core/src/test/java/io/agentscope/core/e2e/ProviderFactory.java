@@ -16,15 +16,10 @@
 package io.agentscope.core.e2e;
 
 import io.agentscope.core.e2e.providers.AnthropicProvider;
-import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
 import io.agentscope.core.e2e.providers.DashScopeProvider;
-import io.agentscope.core.e2e.providers.DeepSeekProvider;
-import io.agentscope.core.e2e.providers.DeepSeekReasonerProvider;
-import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
-import io.agentscope.core.e2e.providers.OpenRouterProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -37,13 +32,9 @@ import java.util.stream.Stream;
  * <p>Dynamically provides enabled providers based on environment variables:
  *
  * <ul>
- *   <li>OPENAI_API_KEY: Enables OpenAI Native providers
- *   <li>DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
- *   <li>DEEPSEEK_API_KEY: Enables DeepSeek Native providers
- *   <li>GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
+ *   <li>DASHSCOPE_API_KEY: Enables DashScope Native providers
  *   <li>GOOGLE_API_KEY: Enables Google Gemini Native providers
  *   <li>ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
- *   <li>OPENROUTER_API_KEY: Enables OpenRouter providers (access to various models)
  * </ul>
  *
  * <p>Usage:
@@ -62,23 +53,12 @@ import java.util.stream.Stream;
  */
 public class ProviderFactory {
 
-    private static final String OPENAI_API_KEY = "OPENAI_API_KEY";
     private static final String DASHSCOPE_API_KEY = "DASHSCOPE_API_KEY";
-    private static final String DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY";
-    private static final String GLM_API_KEY = "GLM_API_KEY";
     private static final String GOOGLE_API_KEY = "GOOGLE_API_KEY";
     private static final String ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
-    private static final String OPENROUTER_API_KEY = "OPENROUTER_API_KEY";
 
     private static final List<String> ALL_KEYS =
-            List.of(
-                    OPENAI_API_KEY,
-                    DASHSCOPE_API_KEY,
-                    DEEPSEEK_API_KEY,
-                    GLM_API_KEY,
-                    GOOGLE_API_KEY,
-                    ANTHROPIC_API_KEY,
-                    OPENROUTER_API_KEY);
+            List.of(DASHSCOPE_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY);
 
     /**
      * Gets all registered providers (including disabled ones).
@@ -87,22 +67,6 @@ public class ProviderFactory {
      */
     private static List<ModelProvider> getAllProviders() {
         List<ModelProvider> providers = new ArrayList<>();
-
-        // DashScope Compatible providers
-        providers.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
-        providers.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
-
-        // DashScope Compatible providers (Qwen3.5)
-        providers.add(new DashScopeCompatibleProvider.Qwen35PlusOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen35PlusMultiAgentOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen35FlashOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen35FlashMultiAgentOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen35_397bA17bOpenAI());
-        providers.add(new DashScopeCompatibleProvider.Qwen35_397bA17bMultiAgentOpenAI());
 
         // DashScope Native providers
         providers.add(new DashScopeProvider.QwenPlusDashScope());
@@ -126,38 +90,6 @@ public class ProviderFactory {
         providers.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
         providers.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
 
-        // DeepSeek providers
-        providers.add(new DeepSeekProvider.DeepSeekChat());
-        providers.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
-        providers.add(new DeepSeekReasonerProvider.DeepSeekR1());
-        providers.add(new DeepSeekReasonerProvider.DeepSeekR1MultiAgent());
-
-        // GLM providers
-        providers.add(new GLMProvider.GLM46());
-        providers.add(new GLMProvider.GLM46MultiAgent());
-        providers.add(new GLMProvider.GLM46VPlus());
-        providers.add(new GLMProvider.GLM46VMultiAgent());
-        providers.add(new GLMProvider.GLM45());
-        providers.add(new GLMProvider.GLM47());
-
-        // OpenRouter providers
-        providers.add(new OpenRouterProvider.GPT52());
-        providers.add(new OpenRouterProvider.GPT52MultiAgent());
-        providers.add(new OpenRouterProvider.Claude45Haiku());
-        providers.add(new OpenRouterProvider.Claude45HaikuMultiAgent());
-        providers.add(new OpenRouterProvider.Qwen3VL());
-        providers.add(new OpenRouterProvider.Qwen3VLMultiAgent());
-        providers.add(new OpenRouterProvider.Gemini3FlashPreview());
-        providers.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-        providers.add(new OpenRouterProvider.Gemini3ProPreview());
-        providers.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-        providers.add(new OpenRouterProvider.DeepSeekV32());
-        providers.add(new OpenRouterProvider.DeepSeekV32MultiAgent());
-        providers.add(new OpenRouterProvider.DeepSeekR1());
-        providers.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-        providers.add(new OpenRouterProvider.GLM46());
-        providers.add(new OpenRouterProvider.GLM46MultiAgent());
-
         return providers;
     }
 
@@ -173,18 +105,6 @@ public class ProviderFactory {
         return key != null && !key.isEmpty();
     }
 
-    protected static boolean hasOpenAIKey() {
-        return hasApiKey(OPENAI_API_KEY);
-    }
-
-    protected static boolean hasDeepSeekKey() {
-        return hasApiKey(DEEPSEEK_API_KEY);
-    }
-
-    protected static boolean hasGLMKey() {
-        return hasApiKey(GLM_API_KEY);
-    }
-
     protected static boolean hasDashScopeKey() {
         return hasApiKey(DASHSCOPE_API_KEY);
     }
@@ -195,10 +115,6 @@ public class ProviderFactory {
 
     protected static boolean hasAnthropicKey() {
         return hasApiKey(ANTHROPIC_API_KEY);
-    }
-
-    protected static boolean hasOpenRouterKey() {
-        return hasApiKey(OPENROUTER_API_KEY);
     }
 
     // ==========================================================================
@@ -287,17 +203,6 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeProvider.QwenPlusThinkingDashScope(1000));
             builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope(1000));
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM45());
-            builders.add(new GLMProvider.GLM47());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.DeepSeekR1());
-            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-            builders.add(new OpenRouterProvider.Claude45HaikuThinking(1024));
         }
 
         return builders.build();

@@ -32,7 +32,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -244,7 +246,18 @@ public class MemoryFlushManager {
             // (cross-machine handoff) are included in the merged file pushed to remote.
             tree.syncFromRemote();
 
-            String lastId = null;
+            List<SessionEntry> existingEntries = new ArrayList<>(tree.getAllEntries());
+            Set<String> existingIds =
+                    existingEntries.stream()
+                            .map(SessionEntry::getId)
+                            .collect(Collectors.toCollection(HashSet::new));
+            String lastId =
+                    existingEntries.isEmpty()
+                            ? null
+                            : existingEntries.get(existingEntries.size() - 1).getId();
+
+            // The caller passes the full conversation on every turn. Use the stable Msg IDs
+            // to keep the session JSONL append-only and idempotent across repeated offloads.
             for (Msg msg : messages) {
                 if (msg.getRole() == null || isSessionContextMessage(msg)) {
                     continue;
@@ -253,11 +266,21 @@ public class MemoryFlushManager {
                 if (rendered == null || rendered.isBlank()) {
                     continue;
                 }
+                String entryId = normalizeEntryId(msg.getId());
+                if (entryId == null) {
+                    log.warn(
+                            "Msg without stable ID encountered (role={}); dedup skipped",
+                            msg.getRole());
+                }
+                if (entryId != null && existingIds.contains(entryId)) {
+                    continue;
+                }
                 String toolCallId = extractToolCallId(msg);
                 SessionEntry.MessageEntry entry =
                         new SessionEntry.MessageEntry(
-                                null, lastId, null, msg.getRole().name(), rendered, toolCallId);
+                                entryId, lastId, null, msg.getRole().name(), rendered, toolCallId);
                 tree.append(entry);
+                existingIds.add(entry.getId());
                 lastId = entry.getId();
             }
 
@@ -282,6 +305,10 @@ public class MemoryFlushManager {
             }
         }
         return null;
+    }
+
+    private static String normalizeEntryId(String id) {
+        return id != null && !id.isBlank() ? id : null;
     }
 
     /**

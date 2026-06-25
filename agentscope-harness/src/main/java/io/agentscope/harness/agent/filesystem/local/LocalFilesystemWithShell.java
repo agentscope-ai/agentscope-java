@@ -318,8 +318,11 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
+            String osName = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb =
-                    new ProcessBuilder("sh", "-c", command)
+                    (osName.contains("win")
+                                    ? new ProcessBuilder("cmd.exe", "/c", command)
+                                    : new ProcessBuilder("sh", "-c", command))
                             .directory(workDir.toFile())
                             .redirectErrorStream(false);
 

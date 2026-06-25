@@ -357,6 +357,7 @@ public class GeminiChatModel extends ChatModelBase {
         private Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
                 formatter;
         private ProxyConfig proxyConfig;
+        private int contextWindowSize = -1;
 
         /**
          * Sets the API key (for Gemini API).
@@ -541,21 +542,32 @@ public class GeminiChatModel extends ChatModelBase {
          *
          * @return a new GeminiChatModel
          */
+        public Builder contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
         public GeminiChatModel build() {
             ClientOptions resolvedClientOptions = resolveClientOptions();
-            return new GeminiChatModel(
-                    apiKey,
-                    baseUrl,
-                    modelName,
-                    streamEnabled,
-                    project,
-                    location,
-                    vertexAI,
-                    httpOptions,
-                    credentials,
-                    resolvedClientOptions,
-                    defaultOptions,
-                    formatter);
+            GeminiChatModel model =
+                    new GeminiChatModel(
+                            apiKey,
+                            baseUrl,
+                            modelName,
+                            streamEnabled,
+                            project,
+                            location,
+                            vertexAI,
+                            httpOptions,
+                            credentials,
+                            resolvedClientOptions,
+                            defaultOptions,
+                            formatter);
+            model.setContextWindowSize(
+                    contextWindowSize >= 0
+                            ? contextWindowSize
+                            : ModelContextWindows.lookup(modelName, ModelContextWindows.GEMINI));
+            return model;
         }
 
         /**

@@ -17,10 +17,9 @@ package io.agentscope.core.formatter;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.agentscope.core.formatter.openai.dto.JsonSchema;
 
 /**
- * Response format configuration for OpenAI API.
+ * Response format configuration for model APIs.
  *
  * <p>This class supports three response format types:
  * <ul>

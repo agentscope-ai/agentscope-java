@@ -21,7 +21,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
@@ -49,8 +48,13 @@ import reactor.core.publisher.Flux;
  *   <li>The downstream {@link ReasoningInput} is rebuilt with
  *       {@code [systemMsg] + [summaryMsg] + preservedTail}.</li>
  * </ol>
+ *
+ * <p>When {@link CompactionConfig#getTriggerTokens()} is 0 (dynamic mode, the default), the
+ * effective trigger threshold is computed as {@code model.getContextWindowSize() - reserved}.
+ * If the model does not report its context window, falls back to
+ * {@link CompactionConfig#FALLBACK_TRIGGER_TOKENS}.
  */
-public class CompactionMiddleware implements MiddlewareBase {
+public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
@@ -79,8 +83,6 @@ public class CompactionMiddleware implements MiddlewareBase {
         return Flux.defer(
                 () -> {
                     List<Msg> messages = input.messages();
-                    // The framework prepends the SYSTEM msg at position 0; split it out so the
-                    // compactor only sees conversation messages.
                     Msg systemMsg = null;
                     List<Msg> conversation;
                     if (messages != null
@@ -96,6 +98,8 @@ public class CompactionMiddleware implements MiddlewareBase {
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
+                    CompactionConfig effectiveConfig = resolveEffectiveConfig();
+
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
@@ -103,7 +107,7 @@ public class CompactionMiddleware implements MiddlewareBase {
                     final Msg sys = systemMsg;
 
                     return compactor
-                            .compactIfNeeded(rc, conversation, config, agentId, sessionId)
+                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
                             .flatMapMany(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
@@ -136,6 +140,74 @@ public class CompactionMiddleware implements MiddlewareBase {
                                         return next.apply(input);
                                     });
                 });
+    }
+
+    /**
+     * Resolves dynamic defaults in the config using the model's context window.
+     */
+    private CompactionConfig resolveEffectiveConfig() {
+        int configTrigger = config.getTriggerTokens();
+        int configKeep = config.getKeepTokens();
+
+        boolean needsDynamic = (configTrigger == 0) || (configKeep == -1);
+        if (!needsDynamic) {
+            return config;
+        }
+
+        int contextWindow = model.getContextWindowSize();
+
+        int effectiveTrigger;
+        if (configTrigger == 0) {
+            if (contextWindow > 0) {
+                effectiveTrigger = contextWindow - config.getReserved();
+                if (effectiveTrigger <= 0) {
+                    // reserved exceeds the model's context window; a negative or zero trigger
+                    // would fire compaction on every call. Clamp to half the context window so
+                    // compaction still activates at a sensible point without thrashing.
+                    effectiveTrigger = Math.max(1, contextWindow / 2);
+                    log.warn(
+                            "Dynamic compaction trigger clamped: contextWindow={} <= reserved={}"
+                                    + "; using proportional trigger={}. Consider reducing"
+                                    + " reserved() for this model.",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                } else {
+                    log.debug(
+                            "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                }
+            } else {
+                effectiveTrigger = CompactionConfig.FALLBACK_TRIGGER_TOKENS;
+                log.debug(
+                        "Model does not report context window, using fallback trigger: {}",
+                        effectiveTrigger);
+            }
+        } else {
+            effectiveTrigger = configTrigger;
+        }
+
+        int effectiveKeep;
+        if (configKeep == -1) {
+            if (contextWindow > 0) {
+                int usable = contextWindow - config.getReserved();
+                effectiveKeep =
+                        Math.min(
+                                config.getKeepTokensMax(),
+                                Math.max(
+                                        config.getKeepTokensMin(),
+                                        (int) (usable * config.getKeepTokensRatio())));
+                log.debug("Dynamic keep tokens: {}", effectiveKeep);
+            } else {
+                effectiveKeep = 0;
+            }
+        } else {
+            effectiveKeep = configKeep;
+        }
+
+        return config.withEffective(effectiveTrigger, effectiveKeep);
     }
 
     private static void applyToContext(AgentState state, List<Msg> compacted) {

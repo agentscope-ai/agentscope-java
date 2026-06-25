@@ -16,17 +16,21 @@
 package io.agentscope.spring.boot;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.model.ModelProviderType;
+import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
  * Tests for {@link AgentscopeAutoConfiguration}.
@@ -34,6 +38,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  * <p>These tests verify that the auto-configuration creates the expected beans under different
  * property setups.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class AgentscopeAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner =
@@ -92,8 +97,8 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(OpenAIChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("gpt-4.1-mini");
                         });
     }
 
@@ -110,9 +115,30 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(OpenAIChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("gpt-4.1-mini");
                         });
+    }
+
+    @Test
+    void shouldFailClearlyWhenOpenAIExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getOpenai().setApiKey("test-openai-key");
+        properties.getOpenai().setModelName("gpt-4.1-mini");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.openai.OpenAIChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.OPENAI.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-openai");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
     }
 
     @Test
@@ -147,5 +173,22 @@ class AgentscopeAutoConfigurationTest {
                             assertThat(context.getBean(Model.class))
                                     .isInstanceOf(AnthropicChatModel.class);
                         });
+    }
+
+    private static final class HidingClassLoader extends ClassLoader {
+        private final String hiddenClassName;
+
+        private HidingClassLoader(ClassLoader parent, String hiddenClassName) {
+            super(parent);
+            this.hiddenClassName = hiddenClassName;
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (hiddenClassName.equals(name)) {
+                throw new ClassNotFoundException(name);
+            }
+            return super.loadClass(name, resolve);
+        }
     }
 }

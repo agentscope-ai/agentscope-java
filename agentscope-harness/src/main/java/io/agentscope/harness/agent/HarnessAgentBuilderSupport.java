@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -286,6 +287,7 @@ final class HarnessAgentBuilderSupport {
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
+        final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
@@ -296,8 +298,10 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
+        final boolean capturedDisableCompaction = b.disableCompaction;
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                 b.toolResultEvictionConfig;
+        final boolean capturedDisableToolResultEviction = b.disableToolResultEviction;
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
@@ -344,10 +348,18 @@ final class HarnessAgentBuilderSupport {
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
-            if (capturedCompactionConfig != null) sub.compaction(capturedCompactionConfig);
-            if (capturedToolResultEvictionConfig != null)
+            if (capturedDisableCompaction) {
+                sub.disableCompaction();
+            } else if (capturedCompactionConfig != null) {
+                sub.compaction(capturedCompactionConfig);
+            }
+            if (capturedDisableToolResultEviction) {
+                sub.disableToolResultEviction();
+            } else if (capturedToolResultEvictionConfig != null) {
                 sub.toolResultEviction(capturedToolResultEvictionConfig);
+            }
 
+            sub.middlewares(capturedMiddlewares);
             sub.hooks(capturedHooks);
 
             return sub.build();
@@ -365,6 +377,7 @@ final class HarnessAgentBuilderSupport {
         final Model capturedModel = b.model;
         final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
+        final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
@@ -454,6 +467,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
 
+            sub.middlewares(capturedMiddlewares);
             return sub.build();
         };
     }
