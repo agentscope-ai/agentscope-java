@@ -122,6 +122,7 @@ Each onion hook receives a `next` function — calling `next.apply(input)` enter
 
 ```java
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
@@ -137,7 +138,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
         System.out.println("[agent] start for " + agent.getName());
         return next.apply(input)
                 .doOnComplete(() -> System.out.println("[agent] end for " + agent.getName()));
@@ -145,20 +146,20 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
         System.out.println("[reasoning] start");
         return next.apply(input).doOnComplete(() -> System.out.println("[reasoning] end"));
     }
 
     @Override
     public Flux<AgentEvent> onModelCall(
-            Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
+            Agent agent, RuntimeContext ctx, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
         System.out.println("[model_call] " + input.model().getClass().getSimpleName());
         return next.apply(input).doOnComplete(() -> System.out.println("[model_call] done"));
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         System.out.println("[system_prompt] length=" + currentPrompt.length());
         return Mono.just(currentPrompt);
     }
@@ -181,7 +182,7 @@ Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedM
 
 ### Reading RuntimeContext
 
-Every `MiddlewareBase` hook receives the `Agent` as the first argument. Calling `agent.getRuntimeContext()` returns the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
+Every `MiddlewareBase` hook receives the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -197,16 +198,13 @@ public class RequestContextMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-        RuntimeContext rc = agent.getRuntimeContext();
-        if (rc != null) {
-            System.out.printf(
-                    "[req] user=%s session=%s reqId=%s%n",
-                    rc.getUserId(),
-                    rc.getSessionId(),
-                    rc.get("request_id"));
-            rc.put("trace_id", java.util.UUID.randomUUID().toString());  // visible to later hooks / tools
-        }
+            Agent agent, RuntimeContext ctx, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        System.out.printf(
+                "[req] user=%s session=%s reqId=%s%n",
+                ctx.getUserId(),
+                ctx.getSessionId(),
+                ctx.get("request_id"));
+        ctx.put("trace_id", java.util.UUID.randomUUID().toString());  // visible to later hooks / tools
         return next.apply(input);
     }
 }
@@ -214,7 +212,6 @@ public class RequestContextMiddleware implements MiddlewareBase {
 
 Things to keep in mind:
 
-- `agent.getRuntimeContext()` is only non-null during a `call`; outside a call it returns `null`.
 - The same `RuntimeContext` instance is shared by every hook and tool in the reply; its maps are thread-safe, so `put` from any hook is safe.
 - Don't cache per-request state on middleware instance fields — a middleware instance is typically reused across agents / calls. Use `RuntimeContext` or Reactor's `contextWrite` instead.
 - If the builder also has a global `toolExecutionContext`, the framework merges it after the per-call context when dispatching to tools (per-call wins on key collisions).

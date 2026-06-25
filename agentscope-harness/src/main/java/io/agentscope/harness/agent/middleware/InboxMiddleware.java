@@ -24,7 +24,6 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.bus.AsyncToolRecord;
@@ -51,7 +50,7 @@ import reactor.core.publisher.Mono;
  * them at the start of each reasoning step, appends them to the agent's context, and emits a
  * {@link HintBlockEvent} for each so the front-end event stream can render them in real time.
  */
-public class InboxMiddleware implements MiddlewareBase {
+public class InboxMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(InboxMiddleware.class);
     private static final Duration DEFAULT_STALE_TTL = Duration.ofMinutes(10);
