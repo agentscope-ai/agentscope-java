@@ -130,18 +130,12 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> {
-            // chunk.isLast() == true marks the final accumulated content
-            if (chunk.isLast()) {
-                System.out.println("Final: " + chunk.getContent());
-            } else {
-                System.out.println("Delta: " + chunk.getContent());
-            }
-        })
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
         .blockLast();
 ```
 
-A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`), an `isLast()` flag, and a `ChatUsage` recording token counts and timing.
+A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`) and a `ChatUsage` recording token counts and timing.
 
 In practice you usually call models indirectly via `ReActAgent`. For lightweight direct invocation, see `agentscope-examples/documentation/.../model/ModelRegistryExample.java`.
 
