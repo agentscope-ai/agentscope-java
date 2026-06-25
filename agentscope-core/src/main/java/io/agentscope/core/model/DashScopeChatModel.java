@@ -29,6 +29,7 @@ import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -340,11 +341,35 @@ public class DashScopeChatModel extends ChatModelBase {
             request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
+        if (Boolean.TRUE.equals(enableThinking)) {
+            degradeForcedToolChoiceForThinkingMode(request);
+        }
+
         // Model-specific settings for search mode
         if (enableSearch != null) {
             // Explicitly assign value for search mode
             request.getParameters().setEnableSearch(enableSearch);
         }
+    }
+
+    /**
+     * DashScope thinking mode does not support forced tool_choice values such as required/object.
+     * Degrade them to auto so structured-output retries can continue without a 400 response.
+     */
+    private void degradeForcedToolChoiceForThinkingMode(DashScopeRequest request) {
+        if (request == null || request.getParameters() == null) {
+            return;
+        }
+
+        Object toolChoice = request.getParameters().getToolChoice();
+        if (!(toolChoice instanceof Map<?, ?>)) {
+            return;
+        }
+
+        log.warn(
+                "DashScope thinking mode does not support forced tool_choice values; degrading to"
+                        + " 'auto'");
+        request.getParameters().setToolChoice("auto");
     }
 
     /**
