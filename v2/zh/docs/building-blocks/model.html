@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T04:12:58+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-06-25T06:55:22+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1120,6 +1120,19 @@ Reasoning</label><div class="sd-tab-content docutils">
 </pre></div>
 </div>
 <p>实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 <code class="docutils literal notranslate"><span class="pre">Msg.metadata</span></code> 的 <code class="docutils literal notranslate"><span class="pre">structured_output</span></code> 字段，供 <code class="docutils literal notranslate"><span class="pre">getStructuredData(Class)</span></code> 直接反序列化。完整示例：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java</span></code>。</p>
+<blockquote>
+<div><p><strong>结构化输出与工具调用共存</strong></p>
+<p>当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 约束而跳过工具调用。如果遇到此问题，在构建 Model 时设置 <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools(false)</span></code>，框架将改用合成工具方式输出结构化结果，与工具调用完全兼容：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.moonshot.cn/v1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;moonshot-v1-8k&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutputWithTools</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">DashScopeChatModel</span></code> 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置，默认行为即可正确处理。</p>
+</div></blockquote>
 </section>
 <section id="formatter">
 <h3>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h3>

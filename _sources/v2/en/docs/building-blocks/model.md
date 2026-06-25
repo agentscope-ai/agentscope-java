@@ -174,6 +174,21 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
+> **Structured output with tool calling**
+>
+> When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. If you encounter this, set `nativeStructuredOutputWithTools(false)` when building the model — the framework will use a synthetic tool approach for structured output, fully compatible with the ReAct tool-calling loop:
+>
+> ```java
+> OpenAIChatModel model = OpenAIChatModel.builder()
+>         .apiKey("...")
+>         .baseUrl("https://api.moonshot.cn/v1")
+>         .modelName("moonshot-v1-8k")
+>         .nativeStructuredOutputWithTools(false)
+>         .build();
+> ```
+>
+> `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
+
 ### Formatter
 
 A **Formatter** converts AgentScope `Msg` objects into the request payload each provider's API expects. It is configured via the chat model builder's `formatter(...)`. Each provider ships two formatters:

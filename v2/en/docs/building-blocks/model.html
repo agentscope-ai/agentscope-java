@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T04:12:58+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-06-25T06:55:22+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1120,6 +1120,19 @@ Reasoning</label><div class="sd-tab-content docutils">
 </pre></div>
 </div>
 <p>How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into <code class="docutils literal notranslate"><span class="pre">Msg.metadata</span></code> under the <code class="docutils literal notranslate"><span class="pre">structured_output</span></code> key, so <code class="docutils literal notranslate"><span class="pre">getStructuredData(Class)</span></code> can deserialize it directly. Complete example: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java</span></code>.</p>
+<blockquote>
+<div><p><strong>Structured output with tool calling</strong></p>
+<p>When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the <code class="docutils literal notranslate"><span class="pre">response_format</span></code> constraint and skip tool calling entirely. If you encounter this, set <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools(false)</span></code> when building the model — the framework will use a synthetic tool approach for structured output, fully compatible with the ReAct tool-calling loop:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.moonshot.cn/v1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;moonshot-v1-8k&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutputWithTools</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">DashScopeChatModel</span></code> supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.</p>
+</div></blockquote>
 </section>
 <section id="formatter">
 <h3>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h3>
