@@ -58,7 +58,7 @@ class BaseSandboxFilesystemTest {
 
             assertTrue(result.isSuccess());
             assertTrue(
-                    filesystem.lastCommand.contains("-exec stat -c"),
+                    filesystem.lastCommand.contains("stat -c"),
                     "glob should use stat for metadata");
             assertEquals(
                     List.of("/workspace/README.md", "/workspace/docs/guide.md"),
@@ -232,7 +232,7 @@ class BaseSandboxFilesystemTest {
                         0,
                         false);
             }
-            if (command.startsWith("find ") && command.contains("-exec stat")) {
+            if (command.startsWith("find ") && command.contains("while IFS=")) {
                 return new ExecuteResponse(
                         "/workspace/README.md\t1024\t1719300000\n"
                                 + "/workspace/docs/guide.md\t512\t1719300000\n",

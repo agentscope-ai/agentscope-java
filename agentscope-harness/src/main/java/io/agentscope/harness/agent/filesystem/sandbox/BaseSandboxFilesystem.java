@@ -77,13 +77,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + escapedPath
                         + "/*; do "
                         + "  if [ -d \"$f\" ]; then "
-                        + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null); "
-                        + "    mtime=${mtime:-0}; "
+                        + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
                         + "    printf 'DIR:%s\\t%s\\n' \"$f\" \"$mtime\"; "
                         + "  elif [ -f \"$f\" ]; then "
-                        + "    meta=$(stat -c '%s\\t%Y' \"$f\" 2>/dev/null); "
-                        + "    size=${meta%%\\t*}; size=${size:-0}; "
-                        + "    mtime=${meta##*\\t}; mtime=${mtime:-0}; "
+                        + "    size=$(stat -c '%s' \"$f\" 2>/dev/null || echo 0); "
+                        + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
                         + "    printf 'FILE:%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
                         + "  fi; "
                         + "done 2>/dev/null";
@@ -343,7 +341,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + escapedPath
                         + " -type f -name "
                         + escapedPattern
-                        + " -exec stat -c '%n\\t%s\\t%Y' {} + 2>/dev/null | sort";
+                        + " 2>/dev/null | sort | while IFS= read -r f; do "
+                        + "  size=$(stat -c '%s' \"$f\" 2>/dev/null || echo 0); "
+                        + "  mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
+                        + "  printf '%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
+                        + "done";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
