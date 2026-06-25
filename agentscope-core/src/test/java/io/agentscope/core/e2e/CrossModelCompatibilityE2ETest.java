@@ -41,8 +41,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>Tests equivalent functionality across different model APIs (OpenAI Native, DashScope
  * Compatible, Bailian) to ensure consistent behavior and API compatibility.
  *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys.
+ * <p><b>Requirements:</b> Provider-specific API keys must be set. Tests are dynamically enabled
+ * based on available API keys.
  */
 @Tag("e2e")
 @Tag("compatibility")
