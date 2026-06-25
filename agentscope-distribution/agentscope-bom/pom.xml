@@ -321,6 +321,18 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope OpenAI Model Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-openai</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+<!--            <dependency>-->
+<!--                <groupId>io.agentscope</groupId>-->
+<!--                <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
+<!--                <version>${project.version}</version>-->
+<!--            </dependency>-->
+
             <!-- AgentScope Micronaut Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
