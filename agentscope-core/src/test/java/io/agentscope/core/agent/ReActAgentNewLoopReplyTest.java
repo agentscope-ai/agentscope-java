@@ -26,6 +26,10 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
@@ -34,6 +38,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
@@ -241,6 +246,173 @@ class ReActAgentNewLoopReplyTest {
         assertEquals(2, overflow.getMaxIters());
     }
 
+    @Test
+    void textStartClosesThinkingBeforeTextBegins() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("think")
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("text")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int thinkingStart = indexOf(events, ThinkingBlockStartEvent.class);
+        int thinkingEnd = indexOf(events, ThinkingBlockEndEvent.class);
+        int textStart = indexOf(events, TextBlockStartEvent.class);
+        assertTrue(thinkingStart >= 0);
+        assertTrue(thinkingEnd > thinkingStart);
+        assertTrue(textStart > thinkingEnd);
+    }
+
+    @Test
+    void toolCallStartClosesTextThinkingAndPreviousTools() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("think")
+                                                                .build(),
+                                                        TextBlock.builder().text("text").build(),
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("calc")
+                                                                .input(Map.of("query", "1"))
+                                                                .build(),
+                                                        ToolUseBlock.builder()
+                                                                .id("tc2")
+                                                                .name("search")
+                                                                .input(Map.of("query", "2"))
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int thinkingEnd = indexOf(events, ThinkingBlockEndEvent.class);
+        int textStart = indexOf(events, TextBlockStartEvent.class);
+        int textEnd = indexOf(events, TextBlockEndEvent.class);
+        int tool1Start = indexOf(events, ToolCallStartEvent.class);
+        int tool1End = indexOf(events, ToolCallEndEvent.class);
+        int tool2Start = indexOfFrom(events, ToolCallStartEvent.class, tool1Start + 1);
+
+        assertTrue(thinkingEnd >= 0);
+        assertTrue(textStart > thinkingEnd);
+        assertTrue(textEnd > textStart);
+        assertTrue(tool1Start > thinkingEnd);
+        assertTrue(tool1Start > textEnd);
+        assertTrue(tool1End > tool1Start);
+        assertTrue(tool2Start > tool1End);
+    }
+
+    @Test
+    void modelEndFlushesRemainingTextAndThinking() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("think")
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("text")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int modelEnd = indexOf(events, ModelCallEndEvent.class);
+        int textEnd = indexOf(events, TextBlockEndEvent.class);
+        int thinkingEnd = indexOf(events, ThinkingBlockEndEvent.class);
+        assertTrue(textEnd > 0 && textEnd < modelEnd);
+        assertTrue(thinkingEnd > 0 && thinkingEnd < modelEnd);
+    }
+
+    @Test
+    void consecutiveTextChunksEmitSingleStartAndEnd() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        TextBlock.builder().text("hello").build()),
+                                                chatResponse(
+                                                        TextBlock.builder()
+                                                                .text(" world")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(1L, countOf(events, TextBlockStartEvent.class));
+        assertEquals(1L, countOf(events, TextBlockEndEvent.class));
+        assertTrue(
+                indexOf(events, TextBlockEndEvent.class)
+                        < indexOf(events, ModelCallEndEvent.class));
+    }
+
+    @Test
+    void summaryModelCallClosesThinkingBeforeTextAndFlushesTextBeforeModelEnd() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("summarizing")
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("summary")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int exceed = indexOf(events, ExceedMaxItersEvent.class);
+        int summaryModelStart = indexOfFrom(events, ModelCallStartEvent.class, exceed + 1);
+        int summaryThinkingEnd =
+                indexOfFrom(events, ThinkingBlockEndEvent.class, summaryModelStart);
+        int summaryTextStart = indexOfFrom(events, TextBlockStartEvent.class, summaryModelStart);
+        int summaryTextEnd = indexOfFrom(events, TextBlockEndEvent.class, summaryTextStart);
+        int summaryModelEnd = indexOfFrom(events, ModelCallEndEvent.class, summaryModelStart);
+
+        assertTrue(exceed >= 0);
+        assertTrue(summaryModelStart > exceed);
+        assertTrue(summaryThinkingEnd > summaryModelStart);
+        assertTrue(summaryTextStart > summaryThinkingEnd);
+        assertTrue(summaryTextEnd > summaryTextStart);
+        assertTrue(summaryModelEnd > summaryTextEnd);
+    }
+
     private static int indexOf(List<AgentEvent> events, Class<?> type) {
         return indexOfFrom(events, type, 0);
     }
@@ -252,5 +424,13 @@ class ReActAgentNewLoopReplyTest {
             }
         }
         return -1;
+    }
+
+    private static long countOf(List<AgentEvent> events, Class<?> type) {
+        return events.stream().filter(type::isInstance).count();
+    }
+
+    private static ChatResponse chatResponse(ContentBlock... blocks) {
+        return ChatResponse.builder().content(List.of(blocks)).build();
     }
 }

@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
@@ -42,7 +41,7 @@ import reactor.core.publisher.Mono;
  * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
  * fired on {@code PreCallEvent}).
  */
-public class WorkspaceContextMiddleware implements MiddlewareBase {
+public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
