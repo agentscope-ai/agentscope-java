@@ -224,32 +224,64 @@ final class AgentRunMcpChannel implements AutoCloseable {
     }
 
     /**
-     * Parses an AgentRun exec MCP response. AgentRun returns either a JSON object such as
-     * {@code {"exitCode":0,"stdout":"...","stderr":"..."}} or a plain stdout/stderr string. We
-     * accept both shapes.
+     * Parses an AgentRun exec MCP response.
+     *
+     * <p>Accepts flat JSON payloads, wrapped payloads with a {@code result} object, banner-prefixed
+     * responses, and plain text fallbacks.
      */
-    private static ExecResult parseExecPayload(String text) {
+    static ExecResult parseExecPayload(String text) {
         if (text == null) {
             return new ExecResult(0, "", "");
         }
         String trimmed = text.strip();
         if (trimmed.startsWith("{")) {
-            try {
-                JsonNode node = JSON.readTree(trimmed);
-                int exit =
-                        node.has("exitCode")
-                                ? node.path("exitCode").asInt(0)
-                                : node.path("exit_code").asInt(0);
-                String stdout =
-                        node.has("stdout")
-                                ? node.path("stdout").asText("")
-                                : node.path("output").asText("");
-                String stderr = node.path("stderr").asText("");
-                return new ExecResult(exit, stdout, stderr);
-            } catch (Exception ignore) {
-                // fall through to plain-text handling
+            ExecResult parsed = tryParseJsonExec(trimmed);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        int jsonStart = trimmed.indexOf('{');
+        int jsonEnd = trimmed.lastIndexOf('}');
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+            ExecResult parsed = tryParseJsonExec(trimmed.substring(jsonStart, jsonEnd + 1));
+            if (parsed != null) {
+                return parsed;
             }
         }
         return new ExecResult(0, text, "");
+    }
+
+    private static ExecResult tryParseJsonExec(String candidate) {
+        try {
+            JsonNode node = JSON.readTree(candidate);
+            ExecResult direct = buildExecResult(node);
+            if (direct != null) {
+                return direct;
+            }
+            JsonNode result = node.path("result");
+            if (result != null && result.isObject()) {
+                return buildExecResult(result);
+            }
+        } catch (Exception ignore) {
+            // fall through to plain-text handling
+        }
+        return null;
+    }
+
+    private static ExecResult buildExecResult(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        boolean hasExitCode = node.has("exitCode") || node.has("exit_code");
+        if (!hasExitCode) {
+            return null;
+        }
+        int exit =
+                node.has("exitCode")
+                        ? node.path("exitCode").asInt(0)
+                        : node.path("exit_code").asInt(0);
+        String stdout = node.has("stdout") ? node.path("stdout").asText("") : node.path("output").asText("");
+        String stderr = node.path("stderr").asText("");
+        return new ExecResult(exit, stdout, stderr);
     }
 }
