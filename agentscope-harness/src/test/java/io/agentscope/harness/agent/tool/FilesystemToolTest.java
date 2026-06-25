@@ -24,6 +24,10 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -61,5 +65,24 @@ class FilesystemToolTest {
 
         assertTrue(result.contains("2 replacement"));
         verify(filesystem).edit(RT, "f.txt", "old", "new", true);
+    }
+
+    @Test
+    void listFiles_normalizesWindowsAbsoluteWorkspacePath() {
+        WorkspacePathNormalizer normalizer =
+                WorkspacePathNormalizer.of(
+                        "D:\\workspace\\my-learn\\agentscope-v2\\.agentscope\\workspace");
+        tool = new FilesystemTool(filesystem, normalizer);
+
+        when(filesystem.ls(RT, "memory"))
+                .thenReturn(LsResult.success(List.of(FileInfo.ofDir("memory", ""))));
+
+        String result =
+                tool.listFiles(
+                        RT,
+                        "D:\\workspace\\my-learn\\agentscope-v2\\.agentscope\\workspace\\memory");
+
+        assertTrue(result.contains("[DIR]"));
+        verify(filesystem).ls(RT, "memory");
     }
 }
