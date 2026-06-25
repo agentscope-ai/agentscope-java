@@ -26,7 +26,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.bus.AsyncToolRecord;
@@ -63,7 +62,7 @@ import reactor.core.scheduler.Schedulers;
  * <p>The {@link InboxMiddleware} drains the inbox on the next reasoning step, making the
  * real result available to the LLM.
  */
-public class AsyncToolMiddleware implements MiddlewareBase {
+public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncToolMiddleware.class);
 
