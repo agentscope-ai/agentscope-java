@@ -49,8 +49,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>Tests multiple tool calls, parallel execution, hook lifecycle, multimodal tool results,
  * and tool error handling across all available model providers that support tools.
  *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
+ * <p><b>Requirements:</b> Provider-specific API keys must be set. Tests are dynamically enabled
+ * based on available API keys and model capabilities.
  */
 @Tag("e2e")
 @Tag("tools")

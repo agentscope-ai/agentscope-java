@@ -44,8 +44,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>Tests image analysis, audio processing, video analysis, and mixed multimodal conversations
  * across all available model providers that support multimodal functionality.
  *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
+ * <p><b>Requirements:</b> Provider-specific API keys must be set. Tests are dynamically enabled
+ * based on available API keys and model capabilities.
  */
 @Tag("e2e")
 @Tag("multimodal")
