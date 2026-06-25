@@ -200,11 +200,22 @@ public class OssBaseStore implements BaseStore {
     // ---- internal helpers ----
 
     private String dataObjectKey(List<String> namespace, String key) {
-        return namespacePrefix(namespace) + key + JSON_SUFFIX;
+        return namespacePrefix(namespace) + stripLeadingSlashes(key) + JSON_SUFFIX;
     }
 
     private String versionObjectKey(List<String> namespace, String key) {
-        return namespacePrefix(namespace) + key + VERSION_SUFFIX;
+        return namespacePrefix(namespace) + stripLeadingSlashes(key) + VERSION_SUFFIX;
+    }
+
+    private static String stripLeadingSlashes(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        int i = 0;
+        while (i < s.length() && s.charAt(i) == '/') {
+            i++;
+        }
+        return i == 0 ? s : s.substring(i);
     }
 
     private String namespacePrefix(List<String> namespace) {

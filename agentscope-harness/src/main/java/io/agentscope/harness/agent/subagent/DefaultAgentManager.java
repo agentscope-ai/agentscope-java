@@ -177,7 +177,18 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        return invokeAgent(agent, sessionId, userId, prompt, null);
+    }
+
+    public Mono<Msg> invokeAgent(
+            Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
+        RuntimeContext ctx =
+                parentRc != null
+                        ? RuntimeContext.builder(parentRc)
+                                .sessionId(sessionId)
+                                .userId(userId)
+                                .build()
+                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
         if (agent instanceof ReActAgent react) {
             return react.call(List.of(userMessage(prompt)), ctx);
         }
@@ -213,9 +224,26 @@ public final class DefaultAgentManager {
             String prompt,
             EventSource source,
             StreamOptions options) {
+        return invokeAgentStream(agent, sessionId, userId, prompt, source, options, null);
+    }
+
+    public Flux<Event> invokeAgentStream(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            EventSource source,
+            StreamOptions options,
+            RuntimeContext parentRc) {
         Flux<Event> childFlux;
         StreamOptions effective = options != null ? options : StreamOptions.defaults();
-        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        RuntimeContext ctx =
+                parentRc != null
+                        ? RuntimeContext.builder(parentRc)
+                                .sessionId(sessionId)
+                                .userId(userId)
+                                .build()
+                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
         if (agent instanceof ReActAgent react) {
             childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
         } else if (agent instanceof HarnessAgent harness) {

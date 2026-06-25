@@ -33,7 +33,7 @@ CredentialBase/
 | Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
 | Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
 
-凭证类（`io.agentscope.core.credential`）：`OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`、`DeepSeekCredential`、`KimiCredential`、`XAICredential`。
+凭证类：`OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`、`DeepSeekCredential`、`KimiCredential`、`XAICredential`。
 
 ### 创建 Chat Model
 
@@ -173,6 +173,21 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
 实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+
+> **结构化输出与工具调用共存**
+>
+> 当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 `response_format` 约束而跳过工具调用。如果遇到此问题，在构建 Model 时设置 `nativeStructuredOutputWithTools(false)`，框架将改用合成工具方式输出结构化结果，与工具调用完全兼容：
+>
+> ```java
+> OpenAIChatModel model = OpenAIChatModel.builder()
+>         .apiKey("...")
+>         .baseUrl("https://api.moonshot.cn/v1")
+>         .modelName("moonshot-v1-8k")
+>         .nativeStructuredOutputWithTools(false)
+>         .build();
+> ```
+>
+> `DashScopeChatModel` 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置，默认行为即可正确处理。
 
 ### Formatter
 

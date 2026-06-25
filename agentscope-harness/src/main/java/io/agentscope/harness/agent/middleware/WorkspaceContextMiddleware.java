@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
@@ -42,7 +41,7 @@ import reactor.core.publisher.Mono;
  * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
  * fired on {@code PreCallEvent}).
  */
-public class WorkspaceContextMiddleware implements MiddlewareBase {
+public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
@@ -71,8 +70,9 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             You have a persistent MEMORY.md. Update it proactively when:
             - User shares preferences, project context, or decisions
             - Important outcomes or action items are established
-            Use edit_file/write_file to append concise bullet points. \
-            Do NOT duplicate existing entries. \
+            Use the **memory_save** tool to persist memories — it atomically updates \
+            both MEMORY.md and the daily ledger. Do NOT use write_file or edit_file on \
+            MEMORY.md or any path under memory/ — always use memory_save instead. \
             Memory is also automatically extracted at conversation end.
             """;
 

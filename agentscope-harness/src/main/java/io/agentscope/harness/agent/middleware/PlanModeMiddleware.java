@@ -26,7 +26,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.tool.PlanModeTools;
@@ -56,7 +55,7 @@ import reactor.core.publisher.Mono;
  * <p>{@link #onSystemPrompt} injects a plan-mode banner so the model knows it is in the read-only
  * design phase.
  */
-public class PlanModeMiddleware implements MiddlewareBase {
+public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Set<String> ALWAYS_ALLOWED =
             Set.of(

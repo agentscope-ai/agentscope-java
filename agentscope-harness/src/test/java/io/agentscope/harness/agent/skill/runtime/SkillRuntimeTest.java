@@ -114,7 +114,7 @@ class SkillRuntimeTest {
             HarnessSkillEntry visible = HarnessSkillEntry.of(skill("visible", "src"), null);
             HarnessSkillEntry hidden = HarnessSkillEntry.of(skill("hidden", "src"), null);
             SkillCatalog cat = SkillCatalog.of(List.of(visible, hidden));
-            SkillFilter only = SkillFilter.only("visible_src");
+            SkillFilter only = SkillFilter.only("visible");
 
             String out = new SkillPromptBuilder().render(cat, only);
             assertTrue(out.contains("<skill-id>visible_src</skill-id>"));
@@ -128,6 +128,26 @@ class SkillRuntimeTest {
                     "",
                     new SkillPromptBuilder()
                             .render(SkillCatalog.of(List.of(e)), SkillFilter.none()));
+        }
+
+        @Test
+        void filterWithBareNameMatchesCompositeId() {
+            HarnessSkillEntry visible =
+                    HarnessSkillEntry.of(
+                            skill("host-forensics-client", "filesystem-agentscope_skills"), null);
+            HarnessSkillEntry hidden =
+                    HarnessSkillEntry.of(
+                            skill("other-skill", "filesystem-agentscope_skills"), null);
+            SkillCatalog cat = SkillCatalog.of(List.of(visible, hidden));
+            // User passes bare skill name (the natural API usage)
+            SkillFilter only = SkillFilter.only("host-forensics-client");
+
+            String out = new SkillPromptBuilder().render(cat, only);
+            assertTrue(
+                    out.contains(
+                            "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+            assertFalse(
+                    out.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
         }
     }
 

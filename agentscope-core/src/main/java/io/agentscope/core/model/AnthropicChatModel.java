@@ -248,6 +248,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
         private ProxyConfig proxyConfig;
+        private int contextWindowSize = -1;
 
         /**
          * Sets the base URL for the Anthropic API.
@@ -330,20 +331,31 @@ public class AnthropicChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder contextWindowSize(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
         /**
          * Builds the AnthropicChatModel instance.
          *
          * @return a new AnthropicChatModel
          */
         public AnthropicChatModel build() {
-            return new AnthropicChatModel(
-                    baseUrl,
-                    apiKey,
-                    modelName,
-                    streamEnabled,
-                    defaultOptions,
-                    formatter,
-                    proxyConfig);
+            AnthropicChatModel model =
+                    new AnthropicChatModel(
+                            baseUrl,
+                            apiKey,
+                            modelName,
+                            streamEnabled,
+                            defaultOptions,
+                            formatter,
+                            proxyConfig);
+            model.setContextWindowSize(
+                    contextWindowSize >= 0
+                            ? contextWindowSize
+                            : ModelContextWindows.lookup(modelName, ModelContextWindows.ANTHROPIC));
+            return model;
         }
     }
 }

@@ -24,6 +24,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 
 /**
  * RoutingByToolCallsExample - Demonstrates routing user requests to sub-agents via tool calls.
@@ -66,6 +67,7 @@ public class RoutingByToolCallsExample {
                                                         .build())
                                         .build())
                         .toolkit(toolkit)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         Msg userMsg = new UserMessage("Help me to generate a quick sort function in Python");

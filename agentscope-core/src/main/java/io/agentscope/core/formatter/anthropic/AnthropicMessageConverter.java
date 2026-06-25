@@ -24,6 +24,7 @@ import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -128,6 +129,10 @@ public class AnthropicMessageConverter {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(tb.getText()).build()));
+            } else if (block instanceof HintBlock hb) {
+                contentBlocks.add(
+                        ContentBlockParam.ofText(
+                                TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Anthropic supports thinking blocks natively
                 contentBlocks.add(
