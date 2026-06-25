@@ -172,7 +172,7 @@ public static void main(String[] args) {
 import io.agentscope.core.model.DashScopeChatModel;
 
 // OpenAI
-import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
 
 // Gemini (Google)
 import io.agentscope.core.model.GeminiChatModel;

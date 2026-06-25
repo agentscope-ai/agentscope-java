@@ -356,7 +356,8 @@ public class AgentSpawnTool {
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
-                                                                capturedTask)
+                                                                capturedTask,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
@@ -521,7 +522,8 @@ public class AgentSpawnTool {
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
-                                                                capturedMessage)
+                                                                capturedMessage,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
@@ -630,7 +632,7 @@ public class AgentSpawnTool {
                                         .withSource(sourcePath));
 
                         return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt)
+                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
@@ -655,7 +657,8 @@ public class AgentSpawnTool {
                                         userId,
                                         prompt,
                                         childSource,
-                                        StreamOptions.defaults())
+                                        StreamOptions.defaults(),
+                                        parentCtx)
                                 .doOnNext(
                                         e -> {
                                             log.debug(
@@ -673,11 +676,12 @@ public class AgentSpawnTool {
                                         Mono.defer(
                                                 () ->
                                                         agentManager.invokeAgent(
-                                                                agent, sessionId, userId, prompt)));
+                                                                agent, sessionId, userId, prompt,
+                                                                parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt);
+                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -1090,7 +1094,8 @@ public class AgentSpawnTool {
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
-                                                                capturedTask)
+                                                                capturedTask,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
