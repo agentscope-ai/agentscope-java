@@ -29,6 +29,7 @@ import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -340,11 +341,35 @@ public class DashScopeChatModel extends ChatModelBase {
             request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
+        if (Boolean.TRUE.equals(enableThinking)) {
+            degradeForcedToolChoiceForThinkingMode(request);
+        }
+
         // Model-specific settings for search mode
         if (enableSearch != null) {
             // Explicitly assign value for search mode
             request.getParameters().setEnableSearch(enableSearch);
         }
+    }
+
+    /**
+     * DashScope thinking mode does not support forced tool_choice values such as required/object.
+     * Degrade them to auto so structured-output retries can continue without a 400 response.
+     */
+    private void degradeForcedToolChoiceForThinkingMode(DashScopeRequest request) {
+        if (request == null || request.getParameters() == null) {
+            return;
+        }
+
+        Object toolChoice = request.getParameters().getToolChoice();
+        if (!(toolChoice instanceof Map<?, ?>)) {
+            return;
+        }
+
+        log.warn(
+                "DashScope thinking mode does not support forced tool_choice values; degrading to"
+                        + " 'auto'");
+        request.getParameters().setToolChoice("auto");
     }
 
     /**
@@ -376,6 +401,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean enableEncrypt = false;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutputWithTools;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -606,6 +632,22 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model correctly handles native structured output
+         * ({@code response_format}) alongside tool calling.
+         *
+         * <p>Defaults to {@code true}, which is correct for Qwen models on DashScope.
+         * Set to {@code false} for third-party models hosted on DashScope that
+         * prioritise {@code response_format} over tool invocations.
+         *
+         * @param nativeStructuredOutputWithTools false to use fallback when tools are present
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+            this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -657,6 +699,9 @@ public class DashScopeChatModel extends ChatModelBase {
                     contextWindowSize >= 0
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
+            if (nativeStructuredOutputWithTools != null) {
+                model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
             return model;
         }
 

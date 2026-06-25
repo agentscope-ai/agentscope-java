@@ -24,13 +24,6 @@ import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import io.agentscope.harness.agent.sandbox.SandboxState;
-import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -136,12 +129,10 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
                 ExecResult result = active.exec(runtimeContext, cmd, null);
                 if (result.ok()) {
+                    // MIME decoder tolerates wrapped base64 output from GNU `base64`.
                     byte[] decoded =
-                            Base64.getDecoder()
-                                    .decode(
-                                            result.stdout()
-                                                    .trim()
-                                                    .getBytes(StandardCharsets.UTF_8));
+                            Base64.getMimeDecoder()
+                                    .decode(result.stdout() != null ? result.stdout() : "");
                     results.add(FileDownloadResponse.success(path, decoded));
                 } else {
                     results.add(FileDownloadResponse.fail(path, result.combinedOutput()));

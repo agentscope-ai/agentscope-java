@@ -36,6 +36,7 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private int sandboxTimeoutSeconds = 300;
     private String runUser = "user";
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
+    private E2bCodec codec = E2bCodec.PROTO;
     private int connectTimeoutSeconds = 30;
     private int readTimeoutSeconds = 120;
     private int maxRetries = 3;
@@ -120,6 +121,14 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setPersistenceMode(E2bPersistenceMode persistenceMode) {
         this.persistenceMode = persistenceMode != null ? persistenceMode : E2bPersistenceMode.TAR;
+    }
+
+    public E2bCodec getCodec() {
+        return codec;
+    }
+
+    public void setCodec(E2bCodec codec) {
+        this.codec = codec != null ? codec : E2bCodec.PROTO;
     }
 
     public int getConnectTimeoutSeconds() {
