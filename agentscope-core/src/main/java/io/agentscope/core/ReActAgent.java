@@ -2958,20 +2958,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // agent.getAgentState(ctx).contextMutable() reflect the correct
             // final state instead of always showing RUNNING.
             ToolResultState finalState = determineToolResultState(result);
-            ToolResultBlock updatedResult = result.withState(finalState);
+            ToolResultBlock finalResult = result.withState(finalState);
 
             Msg toolMsg =
-                    ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
+                    ToolResultMessageBuilder.buildToolResultMsg(finalResult, newToolUse, getName());
 
             return hookDispatcher
-                    .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
+                    .firePostActing(newToolUse, finalResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
                                 if (soTool != null
                                         && STRUCTURED_OUTPUT_TOOL_NAME.equals(newToolUse.getName())
-                                        && result.getMetadata() != null
+                                        && finalResult.getMetadata() != null
                                         && Boolean.TRUE.equals(
-                                                result.getMetadata().get("success"))) {
+                                                finalResult.getMetadata().get("success"))) {
                                     soCompleted = true;
                                     soResultMsg = e.getToolResultMsg();
                                     e.stopAgent();
