@@ -102,6 +102,13 @@ final class AgentRunDataPlaneHttp {
         return AgentRunRetry.withRetries(opt.getMaxRetries(), () -> getJson(url));
     }
 
+    private JsonNode unwrapData(JsonNode node) {
+        if (node != null && node.hasNonNull("data")) {
+            return node.get("data");
+        }
+        return node;
+    }
+
     /**
      * Deletes the sandbox. Returns silently on HTTP 404 (already gone). All other non-2xx
      * responses raise.
@@ -195,7 +202,7 @@ final class AgentRunDataPlaneHttp {
             if (text.isBlank()) {
                 return json.createObjectNode();
             }
-            return json.readTree(text);
+            return unwrapData(json.readTree(text));
         }
     }
 
@@ -208,7 +215,7 @@ final class AgentRunDataPlaneHttp {
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "AgentRun HTTP " + res.code() + " " + res.message() + ": " + text);
             }
-            return json.readTree(text);
+            return unwrapData(json.readTree(text));
         }
     }
 }

@@ -63,7 +63,8 @@ class AgentRunDataPlaneHttpTest {
 
         AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(opt);
 
-        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-1\"}"));
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"data\":{\"id\":\"sb-1\"}}"));
         JsonNode created = http.createSandbox("sb-1");
         assertNotNull(created);
         assertEquals("sb-1", created.get("id").asText());
@@ -76,7 +77,9 @@ class AgentRunDataPlaneHttpTest {
         assertTrue(createReq.getBody().readUtf8().contains("\"sandboxId\":\"sb-1\""));
 
         mockServer.enqueue(
-                new MockResponse().setResponseCode(200).setBody("{\"status\":\"READY\"}"));
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"data\":{\"status\":\"READY\"}}"));
         JsonNode fetched = http.getSandbox("sb-1");
         assertNotNull(fetched);
         assertEquals("READY", fetched.get("status").asText());
