@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -71,7 +70,7 @@ import reactor.core.publisher.Mono;
  * constructor-injected intermediate toolkit is not the same instance as the agent's live toolkit.
  */
 @SuppressWarnings("deprecation")
-public class HarnessSkillMiddleware implements MiddlewareBase {
+public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 

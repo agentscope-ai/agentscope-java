@@ -401,6 +401,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean enableEncrypt = false;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutputWithTools;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -631,6 +632,22 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model correctly handles native structured output
+         * ({@code response_format}) alongside tool calling.
+         *
+         * <p>Defaults to {@code true}, which is correct for Qwen models on DashScope.
+         * Set to {@code false} for third-party models hosted on DashScope that
+         * prioritise {@code response_format} over tool invocations.
+         *
+         * @param nativeStructuredOutputWithTools false to use fallback when tools are present
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+            this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -682,6 +699,9 @@ public class DashScopeChatModel extends ChatModelBase {
                     contextWindowSize >= 0
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
+            if (nativeStructuredOutputWithTools != null) {
+                model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
             return model;
         }
 

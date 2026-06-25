@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -64,7 +63,7 @@ import reactor.core.scheduler.Schedulers;
  *       the whole agent instance (prevents concurrent maintenance races on shared memory files).</li>
  * </ul>
  */
-public class MemoryMaintenanceMiddleware implements MiddlewareBase {
+public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceMiddleware.class);
 
