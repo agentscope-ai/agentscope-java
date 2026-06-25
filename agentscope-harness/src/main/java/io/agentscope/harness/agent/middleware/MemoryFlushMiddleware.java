@@ -21,7 +21,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
@@ -69,7 +68,7 @@ import reactor.core.scheduler.Schedulers;
  *       the whole agent instance (prevents concurrent flush races on shared memory files).</li>
  * </ul>
  */
-public class MemoryFlushMiddleware implements MiddlewareBase {
+public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
 
@@ -129,7 +128,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         return next.apply(input)
                 .concatWith(
-                        doFlush(agent, rc)
+                        Mono.defer(() -> doFlush(agent, rc))
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .onErrorResume(
                                         e -> {
