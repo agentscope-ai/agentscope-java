@@ -95,4 +95,33 @@ class AgentRunDataPlaneHttpTest {
         assertEquals("DELETE", deleteReq.getMethod());
         assertEquals("/sandboxes/sb-1", deleteReq.getPath());
     }
+
+    @Test
+    void acceptsResponsesWithoutDataEnvelope() throws Exception {
+        String baseUrl = mockServer.url("/").toString();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setTemplateName("agentscope-default")
+                        .setMcpServerUrl("https://example.com/mcp")
+                        .setDataPlaneBaseUrl(baseUrl)
+                        .setHttpClient(new OkHttpClient());
+
+        AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(opt);
+
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-2\"}"));
+        JsonNode created = http.createSandbox("sb-2");
+        assertNotNull(created);
+        assertEquals("sb-2", created.get("id").asText());
+
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"status\":\"RUNNING\"}"));
+        JsonNode fetched = http.getSandbox("sb-2");
+        assertNotNull(fetched);
+        assertEquals("RUNNING", fetched.get("status").asText());
+    }
 }
