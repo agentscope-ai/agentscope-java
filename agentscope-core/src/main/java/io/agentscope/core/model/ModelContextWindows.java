@@ -26,13 +26,13 @@ import java.util.Map;
  * via prefix: a model name {@code "qwen-max-latest"} matches the {@code "qwen-max"} entry.
  * Longer prefixes are checked first so {@code "gpt-4.1-mini"} matches before {@code "gpt-4.1"}.
  */
-final class ModelContextWindows {
+public final class ModelContextWindows {
 
     private ModelContextWindows() {}
 
     // @formatter:off
 
-    static final Map<String, Integer> DASHSCOPE =
+    public static final Map<String, Integer> DASHSCOPE =
             Map.ofEntries(
                     // Qwen3 series
                     Map.entry("qwen3-235b", 131_072),
@@ -56,7 +56,7 @@ final class ModelContextWindows {
                     Map.entry("qvq", 131_072),
                     Map.entry("qwq", 131_072));
 
-    static final Map<String, Integer> OPENAI =
+    public static final Map<String, Integer> OPENAI =
             Map.ofEntries(
                     Map.entry("gpt-4.1-mini", 1_047_576),
                     Map.entry("gpt-4.1-nano", 1_047_576),
@@ -70,7 +70,7 @@ final class ModelContextWindows {
                     Map.entry("o1-mini", 128_000),
                     Map.entry("o1", 200_000));
 
-    static final Map<String, Integer> ANTHROPIC =
+    public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(
                     Map.entry("claude-opus-4", 200_000),
                     Map.entry("claude-sonnet-4", 200_000),
@@ -79,7 +79,7 @@ final class ModelContextWindows {
                     Map.entry("claude-3-5", 200_000),
                     Map.entry("claude-3", 200_000));
 
-    static final Map<String, Integer> GEMINI =
+    public static final Map<String, Integer> GEMINI =
             Map.ofEntries(
                     Map.entry("gemini-2.5", 1_048_576),
                     Map.entry("gemini-2.0", 1_048_576),
@@ -93,7 +93,7 @@ final class ModelContextWindows {
      *
      * @return context window size, or 0 if no match
      */
-    static int lookup(String modelName, Map<String, Integer> knownModels) {
+    public static int lookup(String modelName, Map<String, Integer> knownModels) {
         if (modelName == null || modelName.isBlank()) {
             return 0;
         }
