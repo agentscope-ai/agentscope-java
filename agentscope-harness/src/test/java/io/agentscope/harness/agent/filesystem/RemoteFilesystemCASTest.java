@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -27,6 +28,7 @@ import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -214,6 +216,28 @@ class RemoteFilesystemCASTest {
         var read = fs.read(CTX, "/log.md", 0, 0);
         assertTrue(read.isSuccess());
         assertEquals("iter-4", read.fileData().content());
+    }
+
+    @Test
+    void downloadFiles_decodesWrappedBase64Content() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+        byte[] expected = new byte[] {1, 2, 3, 4, 5, 6};
+        String wrapped = Base64.getMimeEncoder(4, new byte[] {'\n'}).encodeToString(expected);
+
+        store.put(
+                List.of("test"),
+                "/bin/data.bin",
+                Map.of(
+                        "content", wrapped,
+                        "encoding", "base64",
+                        "created_at", "2026-01-01T00:00:00Z",
+                        "modified_at", "2026-01-01T00:00:00Z"));
+
+        var responses = fs.downloadFiles(CTX, List.of("/bin/data.bin"));
+        assertEquals(1, responses.size());
+        assertTrue(responses.get(0).isSuccess(), () -> "got: " + responses.get(0).error());
+        assertArrayEquals(expected, responses.get(0).content());
     }
 
     @Test

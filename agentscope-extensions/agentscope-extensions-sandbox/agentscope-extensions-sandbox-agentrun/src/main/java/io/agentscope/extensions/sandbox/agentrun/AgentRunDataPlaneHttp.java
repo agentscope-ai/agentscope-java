@@ -93,12 +93,12 @@ final class AgentRunDataPlaneHttp {
             }
         }
 
-        String url = opt.getResolvedDataPlaneBaseUrl() + "/2025-09-10/sandboxes";
+        String url = opt.getResolvedDataPlaneBaseUrl() + "/sandboxes";
         return AgentRunRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body));
     }
 
     JsonNode getSandbox(String sandboxId) throws IOException {
-        String url = opt.getResolvedDataPlaneBaseUrl() + "/2025-09-10/sandboxes/" + sandboxId;
+        String url = opt.getResolvedDataPlaneBaseUrl() + "/sandboxes/" + sandboxId;
         return AgentRunRetry.withRetries(opt.getMaxRetries(), () -> getJson(url));
     }
 
@@ -107,7 +107,7 @@ final class AgentRunDataPlaneHttp {
      * responses raise.
      */
     void deleteSandbox(String sandboxId) throws IOException {
-        String url = opt.getResolvedDataPlaneBaseUrl() + "/2025-09-10/sandboxes/" + sandboxId;
+        String url = opt.getResolvedDataPlaneBaseUrl() + "/sandboxes/" + sandboxId;
         Request req = baseRequest().url(url).delete().build();
         try (Response res = http.newCall(req).execute()) {
             if (!res.isSuccessful() && res.code() != 404) {
