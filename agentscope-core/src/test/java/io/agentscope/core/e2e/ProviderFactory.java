@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.e2e;
 
-import io.agentscope.core.e2e.providers.AnthropicProvider;
 import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
@@ -32,7 +31,6 @@ import java.util.stream.Stream;
  *
  * <ul>
  *   <li>DASHSCOPE_API_KEY: Enables DashScope Native providers
- *   <li>ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
  * </ul>
  *
  * <p>Usage:
@@ -52,9 +50,8 @@ import java.util.stream.Stream;
 public class ProviderFactory {
 
     private static final String DASHSCOPE_API_KEY = "DASHSCOPE_API_KEY";
-    private static final String ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
 
-    private static final List<String> ALL_KEYS = List.of(DASHSCOPE_API_KEY, ANTHROPIC_API_KEY);
+    private static final List<String> ALL_KEYS = List.of(DASHSCOPE_API_KEY);
 
     /**
      * Gets all registered providers (including disabled ones).
@@ -78,10 +75,6 @@ public class ProviderFactory {
         providers.add(new DashScopeProvider.Qwen35_397bA17bDashScope());
         providers.add(new DashScopeProvider.Qwen35_397bA17bMultiAgentDashScope());
 
-        // Anthropic providers
-        providers.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
-        providers.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
-
         return providers;
     }
 
@@ -99,10 +92,6 @@ public class ProviderFactory {
 
     protected static boolean hasDashScopeKey() {
         return hasApiKey(DASHSCOPE_API_KEY);
-    }
-
-    protected static boolean hasAnthropicKey() {
-        return hasApiKey(ANTHROPIC_API_KEY);
     }
 
     // ==========================================================================

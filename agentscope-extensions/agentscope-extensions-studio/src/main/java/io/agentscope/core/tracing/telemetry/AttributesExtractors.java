@@ -56,8 +56,6 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.Gen
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
-import io.agentscope.core.formatter.anthropic.AnthropicMultiAgentFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.message.AudioBlock;
@@ -70,7 +68,6 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
-import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -109,6 +106,8 @@ final class AttributesExtractors {
             "io.agentscope.extensions.model.openai.OpenAIChatModel";
     private static final String EXTENSION_GEMINI_CHAT_MODEL =
             "io.agentscope.extensions.model.gemini.GeminiChatModel";
+    private static final String EXTENSION_ANTHROPIC_CHAT_MODEL =
+            "io.agentscope.extensions.model.anthropic.AnthropicChatModel";
 
     /**
      * Get agent request attributes for OpenTelemetry tracing.
@@ -576,8 +575,8 @@ final class AttributesExtractors {
             FORMATTER_MAPPERS.put("GeminiMultiAgentFormatter", DASHSCOPE);
             FORMATTER_MAPPERS.put("OpenAIChatFormatter", DASHSCOPE);
             FORMATTER_MAPPERS.put("OpenAIMultiAgentFormatter", DASHSCOPE);
-            FORMATTER_MAPPERS.put(AnthropicChatFormatter.class.getSimpleName(), ANTHROPIC);
-            FORMATTER_MAPPERS.put(AnthropicMultiAgentFormatter.class.getSimpleName(), ANTHROPIC);
+            FORMATTER_MAPPERS.put("AnthropicChatFormatter", ANTHROPIC);
+            FORMATTER_MAPPERS.put("AnthropicMultiAgentFormatter", ANTHROPIC);
         }
 
         static String getFormatterTarget(String simpleClassName) {
@@ -592,7 +591,7 @@ final class AttributesExtractors {
                 return DASHSCOPE;
             } else if (isGeminiChatModel(instance)) {
                 return GCP_GEMINI;
-            } else if (instance instanceof AnthropicChatModel) {
+            } else if (isAnthropicChatModel(instance)) {
                 return ANTHROPIC;
             } else if (isOpenAIChatModel(instance)) {
                 return OPENAI;
@@ -606,6 +605,10 @@ final class AttributesExtractors {
 
         private static boolean isGeminiChatModel(ChatModelBase instance) {
             return isExtensionModel(instance, EXTENSION_GEMINI_CHAT_MODEL);
+        }
+
+        private static boolean isAnthropicChatModel(ChatModelBase instance) {
+            return isExtensionModel(instance, EXTENSION_ANTHROPIC_CHAT_MODEL);
         }
 
         private static boolean isExtensionModel(ChatModelBase instance, String expectedClassName) {

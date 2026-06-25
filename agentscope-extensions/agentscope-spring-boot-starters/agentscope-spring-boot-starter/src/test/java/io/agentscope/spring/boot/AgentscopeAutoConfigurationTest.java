@@ -20,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
@@ -192,9 +191,32 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(AnthropicChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("claude-sonnet-4.5");
                         });
+    }
+
+    @Test
+    void shouldFailClearlyWhenAnthropicExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("anthropic");
+        properties.getAnthropic().setApiKey("test-anthropic-key");
+        properties.getAnthropic().setModelName("claude-sonnet-4.5");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.anthropic"
+                                        + ".AnthropicChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.ANTHROPIC.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-anthropic");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
     }
 
     private static final class HidingClassLoader extends ClassLoader {

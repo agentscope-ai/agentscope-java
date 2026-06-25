@@ -85,6 +85,11 @@
             <artifactId>agentscope-extensions-model-gemini</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-anthropic</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>
