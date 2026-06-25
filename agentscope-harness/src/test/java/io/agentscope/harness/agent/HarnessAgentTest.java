@@ -254,7 +254,7 @@ class HarnessAgentTest {
         LocalFilesystem customFilesystem = new LocalFilesystem(workspace);
         AtomicReference<RuntimeContext> seen = new AtomicReference<>();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
@@ -269,14 +269,14 @@ class HarnessAgentTest {
                                         return Mono.just(currentPrompt);
                                     }
                                 })
-                        .build();
-
-        agent.call(
-                        userText("hi"),
-                        RuntimeContext.builder()
-                                .put(LocalFilesystem.class, customFilesystem)
-                                .build())
-                .block();
+                        .build()) {
+            agent.call(
+                            userText("hi"),
+                            RuntimeContext.builder()
+                                    .put(LocalFilesystem.class, customFilesystem)
+                                    .build())
+                    .block();
+        }
 
         RuntimeContext effective = seen.get();
         assertNotNull(effective);
