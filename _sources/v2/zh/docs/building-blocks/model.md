@@ -130,18 +130,12 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> {
-            // chunk.isLast() == true 时表示最终累积内容
-            if (chunk.isLast()) {
-                System.out.println("Final: " + chunk.getContent());
-            } else {
-                System.out.println("Delta: " + chunk.getContent());
-            }
-        })
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
         .blockLast();
 ```
 
-`ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）、一个 `isLast()` 标志，以及记录 token 数与耗时的 `ChatUsage`。
+`ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
 
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 
