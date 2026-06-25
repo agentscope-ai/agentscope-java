@@ -21,7 +21,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.AnthropicChatModel;
-import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
@@ -123,6 +122,7 @@ class AgentscopeAutoConfigurationTest {
     @Test
     void shouldFailClearlyWhenOpenAIExtensionIsMissing() {
         AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("open-ai");
         properties.getOpenai().setApiKey("test-openai-key");
         properties.getOpenai().setModelName("gpt-4.1-mini");
 
@@ -153,9 +153,31 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(GeminiChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("gemini-2.0-flash");
                         });
+    }
+
+    @Test
+    void shouldFailClearlyWhenGeminiExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("gemini");
+        properties.getGemini().setApiKey("test-gemini-key");
+        properties.getGemini().setModelName("gemini-2.0-flash");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.gemini.GeminiChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.GEMINI.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-gemini");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
     }
 
     @Test

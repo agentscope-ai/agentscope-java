@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.OllamaChatModel;
 import org.junit.jupiter.api.Test;
 
@@ -69,14 +68,6 @@ class CredentialsTest {
     }
 
     @Test
-    void geminiCredentialOnlyApiKey() {
-        GeminiCredential c = GeminiCredential.builder().apiKey("g-key").build();
-        assertEquals("g-key", c.getApiKey());
-        assertEquals(GeminiChatModel.class, c.getChatModelClass());
-        assertEquals("gemini_credential", c.getType());
-    }
-
-    @Test
     void ollamaCredentialHostMayBeNull() {
         OllamaCredential c = OllamaCredential.builder().build();
         assertNull(c.getHost());
@@ -114,7 +105,6 @@ class CredentialsTest {
     void allCredentialsRequireNonNullApiKey() {
         assertThrows(NullPointerException.class, () -> AnthropicCredential.builder().build());
         assertThrows(NullPointerException.class, () -> DashScopeCredential.builder().build());
-        assertThrows(NullPointerException.class, () -> GeminiCredential.builder().build());
         assertThrows(NullPointerException.class, () -> DeepSeekCredential.builder().build());
         assertThrows(NullPointerException.class, () -> KimiCredential.builder().build());
         assertThrows(NullPointerException.class, () -> XAICredential.builder().build());

@@ -107,6 +107,11 @@ class ModelRegistryTest {
     }
 
     @Test
+    void canResolve_geminiWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("gemini:gemini-2.0-flash"));
+    }
+
+    @Test
     void resolve_spiProvider_returnsModel() {
         Model model = ModelRegistry.resolve("fake-spi:alpha");
         assertInstanceOf(StubModel.class, model);

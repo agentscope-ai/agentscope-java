@@ -17,7 +17,6 @@ package io.agentscope.spring.boot.model;
 
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import io.agentscope.spring.boot.properties.AnthropicProperties;
@@ -92,19 +91,7 @@ public enum ModelProviderType {
                                 + " configured when Gemini provider is selected");
             }
 
-            GeminiChatModel.Builder builder =
-                    GeminiChatModel.builder()
-                            .apiKey(gemini.getApiKey())
-                            .modelName(gemini.getModelName())
-                            .streamEnabled(gemini.isStream())
-                            .project(gemini.getProject())
-                            .location(gemini.getLocation());
-
-            if (gemini.getVertexAI() != null) {
-                builder.vertexAI(gemini.getVertexAI());
-            }
-
-            return builder.build();
+            return createGeminiModel(gemini);
         }
     },
     ANTHROPIC("anthropic") {
@@ -209,6 +196,53 @@ public enum ModelProviderType {
                 throw runtimeException;
             }
             throw new IllegalStateException("Failed to create OpenAI model", cause);
+        }
+    }
+
+    private static Model createGeminiModel(GeminiProperties gemini) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.gemini.GeminiChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            String.class,
+                            String.class,
+                            Boolean.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            gemini.getApiKey(),
+                            gemini.getModelName(),
+                            gemini.isStream(),
+                            gemini.getBaseUrl(),
+                            gemini.getProject(),
+                            gemini.getLocation(),
+                            gemini.getVertexAI());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "Gemini provider requires agentscope-extensions-model-gemini on the classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Gemini extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create Gemini model", cause);
         }
     }
 }
