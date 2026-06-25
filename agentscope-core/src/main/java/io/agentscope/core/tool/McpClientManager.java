@@ -175,6 +175,7 @@ class McpClientManager {
                             McpTool agentTool =
                                     new McpTool(
                                             mcpTool.name(),
+                                            mcpTool.title(),
                                             mcpTool.description() != null
                                                     ? mcpTool.description()
                                                     : "",

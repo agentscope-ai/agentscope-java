@@ -28,7 +28,7 @@ import java.util.Map;
  *
  * This class serves two purposes:
  * 1. As a return value from tool methods (id and name are null)
- * 2. As a ContentBlock in messages (id and name are required)
+ * 2. As a ContentBlock in messages (id and name and title are required)
  *
  * Supports metadata for passing additional execution information.
  */
@@ -39,6 +39,7 @@ public final class ToolResultBlock extends ContentBlock {
 
     private final String id;
     private final String name;
+    private final String title;
     private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
     private final ToolResultState state;
@@ -47,11 +48,13 @@ public final class ToolResultBlock extends ContentBlock {
     public ToolResultBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
+            @JsonProperty("title") String title,
             @JsonProperty("output") List<ContentBlock> output,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("state") ToolResultState state) {
         this.id = id;
         this.name = name;
+        this.title = title;
         this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
         this.state = state != null ? state : ToolResultState.RUNNING;
@@ -59,29 +62,62 @@ public final class ToolResultBlock extends ContentBlock {
 
     public ToolResultBlock(
             String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
-        this(id, name, output, metadata, null);
+        this(id, name, null, output, metadata, null);
+    }
+
+    public ToolResultBlock(
+            String id,
+            String name,
+            String title,
+            List<ContentBlock> output,
+            Map<String, Object> metadata) {
+        this(id, name, title, output, metadata, null);
     }
 
     /**
      * Creates a tool result block with a single content block output.
      *
-     * @param id Tool call ID
-     * @param name Tool name
+     * @param id     Tool call ID
+     * @param name   Tool name
+     * @param title  Tool title
+     * @param output Single content block as output
+     */
+    public ToolResultBlock(String id, String name, String title, ContentBlock output) {
+        this(id, name, title, List.of(output), null, null);
+    }
+
+    /**
+     * Creates a tool result block with a single content block output.
+     *
+     * @param id     Tool call ID
+     * @param name   Tool name
      * @param output Single content block as output
      */
     public ToolResultBlock(String id, String name, ContentBlock output) {
-        this(id, name, List.of(output), null, null);
+        this(id, name, null, List.of(output), null, null);
     }
 
     /**
      * Creates a tool result block with a list of content blocks as output.
      *
-     * @param id Tool call ID
-     * @param name Tool name
+     * @param id     Tool call ID
+     * @param name   Tool name
+     * @param title  Tool title
+     * @param output List of content blocks as output
+     */
+    public ToolResultBlock(String id, String name, String title, List<ContentBlock> output) {
+        this(id, name, title, output, null, null);
+    }
+
+    /**
+     * Creates a tool result block with a list of content blocks as output.
+     *
+     * @param id     Tool call ID
+     * @param name   Tool name
      * @param output List of content blocks as output
      */
     public ToolResultBlock(String id, String name, List<ContentBlock> output) {
-        this(id, name, output, null, null);
+        this(id, name, null, output, null, null);
     }
 
     /**
@@ -100,6 +136,15 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public String getName() {
         return name;
+    }
+
+    /**
+     * Gets the tool title.
+     *
+     * @return The tool title, or null if not set
+     */
+    public String getTitle() {
+        return title;
     }
 
     /**
@@ -136,7 +181,8 @@ public final class ToolResultBlock extends ContentBlock {
      * @return A new ToolResultBlock with the updated state
      */
     public ToolResultBlock withState(ToolResultState state) {
-        return new ToolResultBlock(this.id, this.name, this.output, this.metadata, state);
+        return new ToolResultBlock(
+                this.id, this.name, this.title, this.output, this.metadata, state);
     }
 
     /**
@@ -171,6 +217,7 @@ public final class ToolResultBlock extends ContentBlock {
         return new ToolResultBlock(
                 toolUse.getId(),
                 toolUse.getName(),
+                toolUse.getTitle(),
                 List.of(TextBlock.builder().text(content).build()),
                 Map.of(METADATA_SUSPENDED, true));
     }
@@ -193,7 +240,7 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock text(String text) {
         return new ToolResultBlock(
-                null, null, List.of(TextBlock.builder().text(text).build()), null);
+                null, null, null, List.of(TextBlock.builder().text(text).build()), null);
     }
 
     /**
@@ -204,6 +251,7 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock error(String errorMessage) {
         return new ToolResultBlock(
+                null,
                 null,
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
@@ -217,7 +265,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with the given output
      */
     public static ToolResultBlock of(ContentBlock output) {
-        return new ToolResultBlock(null, null, List.of(output), null);
+        return new ToolResultBlock(null, null, null, List.of(output), null);
     }
 
     /**
@@ -227,7 +275,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with the given output
      */
     public static ToolResultBlock of(List<ContentBlock> output) {
-        return new ToolResultBlock(null, null, output, null);
+        return new ToolResultBlock(null, null, null, output, null);
     }
 
     /**
@@ -238,7 +286,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with output and metadata
      */
     public static ToolResultBlock of(ContentBlock output, Map<String, Object> metadata) {
-        return new ToolResultBlock(null, null, List.of(output), metadata);
+        return new ToolResultBlock(null, null, null, List.of(output), metadata);
     }
 
     /**
@@ -249,7 +297,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with output and metadata
      */
     public static ToolResultBlock of(List<ContentBlock> output, Map<String, Object> metadata) {
-        return new ToolResultBlock(null, null, output, metadata);
+        return new ToolResultBlock(null, null, null, output, metadata);
     }
 
     /**
@@ -261,7 +309,34 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock for use in messages
      */
     public static ToolResultBlock of(String id, String name, ContentBlock output) {
-        return new ToolResultBlock(id, name, List.of(output), null);
+        return new ToolResultBlock(id, name, null, List.of(output), null);
+    }
+
+    /**
+     * Create a result with id, name, and output (for message ContentBlock).
+     *
+     * @param id     Tool call ID
+     * @param name   Tool name
+     * @param title    Tool title
+     * @param output Content block output
+     * @return ToolResultBlock for use in messages
+     */
+    public static ToolResultBlock of(String id, String name, String title, ContentBlock output) {
+        return new ToolResultBlock(id, name, title, List.of(output), null);
+    }
+
+    /**
+     * Create a result with id, name, and output list (for message ContentBlock).
+     *
+     * @param id     Tool call ID
+     * @param name   Tool name
+     * @param title    Tool title
+     * @param output List of content blocks
+     * @return ToolResultBlock for use in messages
+     */
+    public static ToolResultBlock of(
+            String id, String name, String title, List<ContentBlock> output) {
+        return new ToolResultBlock(id, name, title, output, null);
     }
 
     /**
@@ -273,36 +348,46 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock for use in messages
      */
     public static ToolResultBlock of(String id, String name, List<ContentBlock> output) {
-        return new ToolResultBlock(id, name, output, null);
+        return new ToolResultBlock(id, name, null, output, null);
     }
 
     /**
      * Create a result with all fields (for message ContentBlock with metadata).
      *
-     * @param id Tool call ID
-     * @param name Tool name
-     * @param output Content block output
+     * @param id       Tool call ID
+     * @param name     Tool name
+     * @param title    Tool title
+     * @param output   Content block output
      * @param metadata Metadata map
      * @return ToolResultBlock with all fields
      */
     public static ToolResultBlock of(
-            String id, String name, ContentBlock output, Map<String, Object> metadata) {
-        return new ToolResultBlock(id, name, List.of(output), metadata);
+            String id,
+            String name,
+            String title,
+            ContentBlock output,
+            Map<String, Object> metadata) {
+        return new ToolResultBlock(id, name, title, List.of(output), metadata);
     }
 
     /**
      * Create a result with all fields including output list (for message ContentBlock with
      * metadata).
      *
-     * @param id Tool call ID
-     * @param name Tool name
-     * @param output List of content blocks
+     * @param id       Tool call ID
+     * @param name     Tool name
+     * @param title    Tool title
+     * @param output   List of content blocks
      * @param metadata Metadata map
      * @return ToolResultBlock with all fields
      */
     public static ToolResultBlock of(
-            String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
-        return new ToolResultBlock(id, name, output, metadata);
+            String id,
+            String name,
+            String title,
+            List<ContentBlock> output,
+            Map<String, Object> metadata) {
+        return new ToolResultBlock(id, name, title, output, metadata);
     }
 
     /**
@@ -313,7 +398,19 @@ public final class ToolResultBlock extends ContentBlock {
      * @return New ToolResultBlock with id and name set
      */
     public ToolResultBlock withIdAndName(String id, String name) {
-        return new ToolResultBlock(id, name, this.output, this.metadata, this.state);
+        return new ToolResultBlock(id, name, this.title, this.output, this.metadata, this.state);
+    }
+
+    /**
+     * Create a ToolResultBlock for use in messages by setting id and name and title.
+     *
+     * @param id    Tool call ID
+     * @param name  Tool name
+     * @param title Tool title
+     * @return New ToolResultBlock with id and name set
+     */
+    public ToolResultBlock withIdAndNameAndTitle(String id, String name, String title) {
+        return new ToolResultBlock(id, name, title, this.output, this.metadata, this.state);
     }
 
     /**
@@ -331,6 +428,7 @@ public final class ToolResultBlock extends ContentBlock {
     public static class Builder {
         private String id;
         private String name;
+        private String title;
         private List<ContentBlock> output;
         private Map<String, Object> metadata;
         private ToolResultState state;
@@ -354,6 +452,17 @@ public final class ToolResultBlock extends ContentBlock {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the tool title.
+         *
+         * @param title The tool title
+         * @return This builder for chaining
+         */
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 
@@ -407,7 +516,7 @@ public final class ToolResultBlock extends ContentBlock {
          * @return A new ToolResultBlock instance
          */
         public ToolResultBlock build() {
-            return new ToolResultBlock(id, name, output, metadata, state);
+            return new ToolResultBlock(id, name, title, output, metadata, state);
         }
     }
 }

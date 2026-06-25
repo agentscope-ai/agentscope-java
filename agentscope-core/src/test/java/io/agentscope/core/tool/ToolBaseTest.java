@@ -31,6 +31,7 @@ import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionRule;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -261,5 +262,67 @@ class ToolBaseTest {
         assertFalse(probe.check(null));
         assertFalse(probe.check(""));
         assertFalse(probe.check("   "));
+    }
+
+    // --- Title-related tests ---
+
+    @Test
+    @DisplayName("Builder should accept and return custom title")
+    void testBuilderWithTitle() {
+        ToolBase tool =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("titled_tool")
+                                .title("My Custom Title")
+                                .description("desc")
+                                .inputSchema(emptySchema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow(""));
+                    }
+                };
+
+        assertEquals("titled_tool", tool.getName());
+        assertEquals("My Custom Title", tool.getTitle());
+    }
+
+    @Test
+    @DisplayName("Builder should handle null title")
+    void testBuilderWithNullTitle() {
+        ToolBase tool =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("no_title_tool")
+                                .description("desc")
+                                .inputSchema(emptySchema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow(""));
+                    }
+                };
+
+        assertNull(tool.getTitle());
+    }
+
+    @Test
+    @DisplayName("getTitle returns builder-set title (final getter)")
+    void testGetTitleReturnsBuilderTitle() {
+        ToolBase tool =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("fallback_tool")
+                                .title("Custom Fallback")
+                                .description("desc")
+                                .inputSchema(emptySchema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow(""));
+                    }
+                };
+
+        assertEquals("Custom Fallback", tool.getTitle());
     }
 }

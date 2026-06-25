@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.hook;
 
+import static io.agentscope.core.util.ToolUtils.resolveToolTitle;
+
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.ContentBlock;
@@ -83,7 +85,11 @@ public final class LegacyHookDispatcher {
                     ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
         } else if (content instanceof ToolUseBlock tub) {
             ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
-            accumulatedContent = accumulated != null ? accumulated : tub;
+            accumulatedContent =
+                    accumulated != null
+                            ? accumulated.withTitle(
+                                    resolveToolTitle(agent.getToolkit(), accumulated.getName()))
+                            : tub.withTitle(resolveToolTitle(agent.getToolkit(), tub.getName()));
         }
 
         if (accumulatedContent != null) {

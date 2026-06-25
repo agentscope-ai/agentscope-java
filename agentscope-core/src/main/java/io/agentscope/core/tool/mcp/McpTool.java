@@ -59,6 +59,7 @@ public class McpTool extends ToolBase {
     /** Preferred constructor used by {@link io.agentscope.core.tool.McpClientManager}. */
     public McpTool(
             String name,
+            String title,
             String description,
             Map<String, Object> parameters,
             Map<String, Object> outputSchema,
@@ -69,6 +70,7 @@ public class McpTool extends ToolBase {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .title(title)
                         .description(description != null ? description : "")
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
@@ -77,6 +79,27 @@ public class McpTool extends ToolBase {
         this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
         this.clientWrapper = Objects.requireNonNull(clientWrapper, "clientWrapper cannot be null");
         this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
+    }
+
+    public McpTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly) {
+        this(
+                name,
+                null,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly);
     }
 
     /**
