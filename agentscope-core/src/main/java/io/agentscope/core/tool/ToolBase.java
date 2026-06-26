@@ -163,7 +163,7 @@ public abstract class ToolBase implements AgentTool {
 
     @Override
     public final String getTitle() {
-        return title;
+        return title != null ? title : getName();
     }
 
     @Override
