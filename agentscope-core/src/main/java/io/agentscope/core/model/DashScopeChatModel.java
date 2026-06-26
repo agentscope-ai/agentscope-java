@@ -322,22 +322,37 @@ public class DashScopeChatModel extends ChatModelBase {
      * Apply thinking mode configuration to request if enabled.
      */
     private void applyThinkingMode(DashScopeRequest request, GenerateOptions options) {
-        // Validate thinking configuration
-        if (options.getThinkingBudget() != null && !Boolean.TRUE.equals(enableThinking)) {
+        Boolean effectiveEnableThinking =
+                options.getEnableThinking() != null
+                        ? options.getEnableThinking()
+                        : this.enableThinking;
+
+        // Validate: thinking mode requires streaming
+        if (Boolean.TRUE.equals(effectiveEnableThinking) && !this.stream) {
             throw new IllegalStateException(
-                    "thinkingBudget is set but enableThinking is not enabled. To use thinking mode"
-                        + " with budget control, you must explicitly enable thinking by calling"
-                        + " .enableThinking(true) on the model builder. Example:"
+                    "enableThinking is set to true but the model was built with stream=false."
+                            + " Thinking mode requires streaming. Either build the model with"
+                            + " stream=true (or enableThinking=true which forces streaming),"
+                            + " or do not enable thinking per-request on a non-streaming model.");
+        }
+
+        // Validate thinking budget: only throw when enableThinking is null (not configured),
+        // silently ignore thinkingBudget when enableThinking is explicitly false (user intent)
+        if (options.getThinkingBudget() != null && effectiveEnableThinking == null) {
+            throw new IllegalStateException(
+                    "thinkingBudget is set but enableThinking is not configured. To use thinking"
+                        + " mode with budget control, you must explicitly enable thinking by"
+                        + " calling .enableThinking(true) on the model builder or setting"
+                        + " enableThinking(true) in GenerateOptions. Example:"
                         + " DashScopeChatModel.builder().enableThinking(true)"
                         + ".defaultOptions(GenerateOptions.builder().thinkingBudget(1000).build())");
         }
 
-        if (enableThinking != null) {
-            // Explicitly assign value for thinking mode
-            request.getParameters().setEnableThinking(enableThinking);
+        if (effectiveEnableThinking != null) {
+            request.getParameters().setEnableThinking(effectiveEnableThinking);
         }
 
-        if (Boolean.TRUE.equals(enableThinking) && options.getThinkingBudget() != null) {
+        if (Boolean.TRUE.equals(effectiveEnableThinking) && options.getThinkingBudget() != null) {
             request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 

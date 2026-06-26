@@ -44,6 +44,7 @@ public class GenerateOptions {
     private final Integer maxCompletionTokens;
     private final Double frequencyPenalty;
     private final Double presencePenalty;
+    private final Boolean enableThinking;
     private final Integer thinkingBudget;
     private final String reasoningEffort;
     private final ExecutionConfig executionConfig;
@@ -74,6 +75,7 @@ public class GenerateOptions {
         this.maxCompletionTokens = builder.maxCompletionTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
+        this.enableThinking = builder.enableThinking;
         this.thinkingBudget = builder.thinkingBudget;
         this.reasoningEffort = builder.reasoningEffort;
         this.executionConfig = builder.executionConfig;
@@ -230,6 +232,19 @@ public class GenerateOptions {
      */
     public Double getPresencePenalty() {
         return presencePenalty;
+    }
+
+    /**
+     * Gets whether thinking mode is enabled for this request.
+     *
+     * <p>This parameter allows per-request control over thinking mode. When set, it overrides
+     * the model-level {@code enableThinking} configuration. When null, the model-level
+     * setting is used.
+     *
+     * @return true to enable thinking, false to disable, or null to use model default
+     */
+    public Boolean getEnableThinking() {
+        return enableThinking;
     }
 
     /**
@@ -467,6 +482,8 @@ public class GenerateOptions {
                 primary.presencePenalty != null
                         ? primary.presencePenalty
                         : fallback.presencePenalty);
+        builder.enableThinking(
+                primary.enableThinking != null ? primary.enableThinking : fallback.enableThinking);
         builder.thinkingBudget(
                 primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
         builder.reasoningEffort(
@@ -530,6 +547,7 @@ public class GenerateOptions {
         private Integer maxCompletionTokens;
         private Double frequencyPenalty;
         private Double presencePenalty;
+        private Boolean enableThinking;
         private Integer thinkingBudget;
         private String reasoningEffort;
         private ExecutionConfig executionConfig;
@@ -682,6 +700,20 @@ public class GenerateOptions {
          */
         public Builder presencePenalty(Double presencePenalty) {
             this.presencePenalty = presencePenalty;
+            return this;
+        }
+
+        /**
+         * Sets whether thinking mode is enabled for this request.
+         *
+         * <p>When set, this overrides the model-level {@code enableThinking} configuration,
+         * allowing per-request control over thinking mode.
+         *
+         * @param enableThinking true to enable thinking, false to disable, null to use model default
+         * @return this builder
+         */
+        public Builder enableThinking(Boolean enableThinking) {
+            this.enableThinking = enableThinking;
             return this;
         }
 

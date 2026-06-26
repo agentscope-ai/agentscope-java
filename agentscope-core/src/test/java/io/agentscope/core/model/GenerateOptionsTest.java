@@ -474,4 +474,33 @@ class GenerateOptionsTest {
         assertNotNull(options);
         assertNull(options.getEndpointPath());
     }
+
+    @Test
+    @DisplayName("Should merge enableThinking with primary taking precedence")
+    void testMergeOptionsEnableThinkingPrimaryOverridesFallback() {
+        GenerateOptions primary = GenerateOptions.builder().enableThinking(false).build();
+
+        GenerateOptions fallback =
+                GenerateOptions.builder().enableThinking(true).thinkingBudget(500).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertNotNull(merged);
+        assertEquals(false, merged.getEnableThinking());
+        assertEquals(500, merged.getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should use fallback enableThinking when primary is null")
+    void testMergeOptionsEnableThinkingFallback() {
+        GenerateOptions primary = GenerateOptions.builder().temperature(0.8).build();
+
+        GenerateOptions fallback = GenerateOptions.builder().enableThinking(true).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertNotNull(merged);
+        assertEquals(true, merged.getEnableThinking());
+        assertEquals(0.8, merged.getTemperature());
+    }
 }
