@@ -28,8 +28,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -37,6 +39,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -47,6 +50,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
@@ -58,6 +62,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -250,7 +255,7 @@ class HarnessAgentTest {
         LocalFilesystem customFilesystem = new LocalFilesystem(workspace);
         AtomicReference<RuntimeContext> seen = new AtomicReference<>();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
@@ -265,14 +270,14 @@ class HarnessAgentTest {
                                         return Mono.just(currentPrompt);
                                     }
                                 })
-                        .build();
-
-        agent.call(
-                        userText("hi"),
-                        RuntimeContext.builder()
-                                .put(LocalFilesystem.class, customFilesystem)
-                                .build())
-                .block();
+                        .build()) {
+            agent.call(
+                            userText("hi"),
+                            RuntimeContext.builder()
+                                    .put(LocalFilesystem.class, customFilesystem)
+                                    .build())
+                    .block();
+        }
 
         RuntimeContext effective = seen.get();
         assertNotNull(effective);
@@ -480,6 +485,174 @@ class HarnessAgentTest {
         assertTrue(
                 names.contains(expectedName),
                 "subagents/*.md declaration should use filename as name");
+    }
+
+    @Test
+    void parentMiddleware_propagatesToBuiltinAndMarkdownSubagents() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for middleware propagation regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger systemPromptHits = new AtomicInteger();
+        Model model = stubModel("done");
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Flux<AgentEvent> onAgent(
+                                            Agent agent,
+                                            RuntimeContext ctx,
+                                            io.agentscope.core.middleware.AgentInput input,
+                                            java.util.function.Function<
+                                                            io.agentscope.core.middleware
+                                                                    .AgentInput,
+                                                            Flux<AgentEvent>>
+                                                    next) {
+                                        systemPromptHits.incrementAndGet();
+                                        return next.apply(input);
+                                    }
+                                });
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        RuntimeContext parentContext =
+                RuntimeContext.builder().userId("u").sessionId("parent").build();
+
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+        assertEquals(
+                1, systemPromptHits.get(), "general-purpose subagent should inherit middleware");
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+        assertEquals(
+                2,
+                systemPromptHits.get(),
+                "markdown-declared subagent should inherit parent middleware too");
+    }
+
+    @Test
+    void fromAgent_filtersRuntimeMiddlewareAndStillPropagatesUserMiddleware() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for fromAgent regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger userMiddlewareHits = new AtomicInteger();
+        MiddlewareBase userMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            io.agentscope.core.middleware.AgentInput input,
+                            java.util.function.Function<
+                                            io.agentscope.core.middleware.AgentInput,
+                                            Flux<AgentEvent>>
+                                    next) {
+                        userMiddlewareHits.incrementAndGet();
+                        return next.apply(input);
+                    }
+                };
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .model(stubModel("done"))
+                        .toolkit(new Toolkit())
+                        .middlewares(List.of(userMiddleware, new AgentTraceMiddleware()))
+                        .build();
+
+        HarnessAgent.Builder builder =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        HarnessAgent child = builder.build();
+
+        long copiedUserMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m == userMiddleware)
+                        .count();
+        long agentTraceMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m instanceof AgentTraceMiddleware)
+                        .count();
+        assertEquals(1, copiedUserMiddlewareCount, "user middleware should copy once");
+        assertEquals(
+                1,
+                agentTraceMiddlewareCount,
+                "runtime AgentTraceMiddleware should not be duplicated when cloning");
+
+        RuntimeContext parentContext = RuntimeContext.builder().sessionId("parent").build();
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+
+        assertEquals(
+                2,
+                userMiddlewareHits.get(),
+                "fromAgent should still propagate user middleware into subagents");
     }
 
     @Test
@@ -847,6 +1020,54 @@ class HarnessAgentTest {
     }
 
     // =========================================================================
+    // Skills allowlist
+    // =========================================================================
+
+    @Test
+    void skillsAllowlist_declarationWithSkills_setsSkillFilterOnChild() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("narrow-skills")
+                        .description("only allowed skills")
+                        .inlineAgentsBody("Focus on allowed skills.")
+                        .skills(List.of("allowed_skill"))
+                        .build();
+
+        assertEquals(List.of("allowed_skill"), decl.getSkills());
+
+        SkillFilter filter = SkillFilter.only(decl.getSkills().toArray(new String[0]));
+        assertTrue(filter.isAllowed("allowed_skill"), "allowlisted skill should pass");
+        assertFalse(filter.isAllowed("denied_skill"), "non-allowlisted skill should be blocked");
+    }
+
+    @Test
+    void skillsAllowlist_emptyList_defaultsToAll() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("all-skills")
+                        .description("inherits all skills")
+                        .inlineAgentsBody("Use any skill.")
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
+    }
+
+    @Test
+    void skillsAllowlist_nullSkills_defaultsToEmptyList() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("null-skills")
+                        .description("null skills")
+                        .inlineAgentsBody("body")
+                        .skills(null)
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
     // AgentSpecLoader — markdown declaration parsing
     // =========================================================================
 
@@ -875,6 +1096,36 @@ class HarnessAgentTest {
         assertEquals("test-model", decl.getModel());
         assertEquals(7, decl.getMaxIters());
         assertEquals(List.of("read_file", "grep_files"), decl.getTools());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_parsesSkillsAllowlist() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent with skills filter
+                tools: [read_file]
+                skills: [weather_lookup, code_review]
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "filtered-agent", workspace);
+        assertNotNull(decl);
+        assertEquals(List.of("weather_lookup", "code_review"), decl.getSkills());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_noSkills_returnsEmptyList() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent without skills
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "no-skills", workspace);
+        assertNotNull(decl);
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
     }
 
     @Test

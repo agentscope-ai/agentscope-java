@@ -75,6 +75,11 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    public E2bFilesystemSpec codec(E2bCodec codec) {
+        options.setCodec(codec);
+        return this;
+    }
+
     public E2bFilesystemSpec connectTimeoutSeconds(int connectTimeoutSeconds) {
         options.setConnectTimeoutSeconds(connectTimeoutSeconds);
         return this;

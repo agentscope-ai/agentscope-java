@@ -33,7 +33,6 @@
 
     <modules>
         <module>documentation</module>
-        <module>documentation/responses-web</module>
         <module>agents/agentscope-builder</module>
         <module>agents/agentscope-paw</module>
         <module>agents/agentscope-dataagent</module>

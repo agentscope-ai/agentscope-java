@@ -28,6 +28,7 @@ public class E2bSandboxState extends SandboxState {
     private String workspaceRoot = "/home/user";
     private boolean sandboxOwned = true;
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
+    private E2bCodec codec = E2bCodec.PROTO;
 
     public String getSandboxId() {
         return sandboxId;
@@ -91,5 +92,13 @@ public class E2bSandboxState extends SandboxState {
 
     public void setPersistenceMode(E2bPersistenceMode persistenceMode) {
         this.persistenceMode = persistenceMode != null ? persistenceMode : E2bPersistenceMode.TAR;
+    }
+
+    public E2bCodec getCodec() {
+        return codec;
+    }
+
+    public void setCodec(E2bCodec codec) {
+        this.codec = codec != null ? codec : E2bCodec.PROTO;
     }
 }

@@ -55,7 +55,12 @@ public class ShellExecuteTool {
                     int timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
-            effectiveCommand = "cd " + workingDirectory + " && " + command;
+            String wd = workingDirectory.strip();
+            if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
+                return "Error: working_directory must be a relative path within the workspace"
+                        + " (absolute paths, '~', and '..' are not allowed).";
+            }
+            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
         }
 
         ExecuteResponse result =

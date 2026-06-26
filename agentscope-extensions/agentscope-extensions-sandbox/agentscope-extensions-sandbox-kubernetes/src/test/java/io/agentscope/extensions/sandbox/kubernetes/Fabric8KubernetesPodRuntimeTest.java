@@ -16,22 +16,30 @@
 package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodList;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.ContainerResource;
+import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation;
 import io.fabric8.kubernetes.client.dsl.PodResource;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -129,5 +137,105 @@ class Fabric8KubernetesPodRuntimeTest {
         String name = Fabric8KubernetesPodRuntime.buildPodName(longId);
         assertTrue(name.length() <= 63);
         assertTrue(name.startsWith("as-sbx-"));
+    }
+
+    // -------------------------------------------------------------------------
+    //  hydrateWithArchive / tarWorkspaceIn
+    // -------------------------------------------------------------------------
+
+    private KubernetesSandboxState createK8sState() {
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("test-session");
+        state.setNamespace("default");
+        state.setPodName("test-pod");
+        state.setContainerName("workspace");
+        state.setImage("ubuntu:22.04");
+        state.setWorkspaceRoot("/opt");
+        return state;
+    }
+
+    @Test
+    void tarWorkspaceIn_success_exitCodeZero() throws Exception {
+        ContainerResource container = mock(ContainerResource.class);
+        doReturn(container).when(podResource).inContainer(anyString());
+
+        // Hydrate chain: container.redirectingInput().writingError().exec()
+        ContainerResource redirecting = mock(ContainerResource.class);
+        ContainerResource writingErr = mock(ContainerResource.class);
+        ExecWatch uploadWatch = mock(ExecWatch.class);
+        doReturn(redirecting).when(container).redirectingInput();
+        doReturn(writingErr).when(redirecting).writingError(any(ByteArrayOutputStream.class));
+        doReturn(uploadWatch).when(writingErr).exec(anyString(), anyString(), anyString());
+        doReturn(mock(OutputStream.class)).when(uploadWatch).getInput();
+        doReturn(CompletableFuture.completedFuture(0)).when(uploadWatch).exitCode();
+
+        // Exec chain for mkdir / tar / rm
+        ExecWatch execWatch = mock(ExecWatch.class);
+        ContainerResource writingOut = mock(ContainerResource.class);
+        ContainerResource writingErrExec = mock(ContainerResource.class);
+        doReturn(writingOut).when(container).writingOutput(any(ByteArrayOutputStream.class));
+        doReturn(writingErrExec).when(writingOut).writingError(any(ByteArrayOutputStream.class));
+        doReturn(execWatch).when(writingErrExec).exec(anyString(), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
+
+        runtime.tarWorkspaceIn(createK8sState(), new ByteArrayInputStream("data".getBytes()));
+    }
+
+    @Test
+    void tarWorkspaceIn_uploadExitNull_throwsException() {
+        ContainerResource container = mock(ContainerResource.class);
+        doReturn(container).when(podResource).inContainer(anyString());
+
+        ContainerResource redirecting = mock(ContainerResource.class);
+        ContainerResource writingErr = mock(ContainerResource.class);
+        ExecWatch uploadWatch = mock(ExecWatch.class);
+        doReturn(redirecting).when(container).redirectingInput();
+        doReturn(writingErr).when(redirecting).writingError(any(ByteArrayOutputStream.class));
+        doReturn(uploadWatch).when(writingErr).exec(anyString(), anyString(), anyString());
+        doReturn(mock(OutputStream.class)).when(uploadWatch).getInput();
+        doReturn(CompletableFuture.completedFuture(null)).when(uploadWatch).exitCode();
+
+        ExecWatch execWatch = mock(ExecWatch.class);
+        ContainerResource writingOut = mock(ContainerResource.class);
+        ContainerResource writingErrExec = mock(ContainerResource.class);
+        doReturn(writingOut).when(container).writingOutput(any(ByteArrayOutputStream.class));
+        doReturn(writingErrExec).when(writingOut).writingError(any(ByteArrayOutputStream.class));
+        doReturn(execWatch).when(writingErrExec).exec(anyString(), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
+
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () ->
+                        runtime.tarWorkspaceIn(
+                                createK8sState(), new ByteArrayInputStream("data".getBytes())));
+    }
+
+    @Test
+    void tarWorkspaceIn_uploadExitNonZero_throwsException() {
+        ContainerResource container = mock(ContainerResource.class);
+        doReturn(container).when(podResource).inContainer(anyString());
+
+        ContainerResource redirecting = mock(ContainerResource.class);
+        ContainerResource writingErr = mock(ContainerResource.class);
+        ExecWatch uploadWatch = mock(ExecWatch.class);
+        doReturn(redirecting).when(container).redirectingInput();
+        doReturn(writingErr).when(redirecting).writingError(any(ByteArrayOutputStream.class));
+        doReturn(uploadWatch).when(writingErr).exec(anyString(), anyString(), anyString());
+        doReturn(mock(OutputStream.class)).when(uploadWatch).getInput();
+        doReturn(CompletableFuture.completedFuture(1)).when(uploadWatch).exitCode();
+
+        ExecWatch execWatch = mock(ExecWatch.class);
+        ContainerResource writingOut = mock(ContainerResource.class);
+        ContainerResource writingErrExec = mock(ContainerResource.class);
+        doReturn(writingOut).when(container).writingOutput(any(ByteArrayOutputStream.class));
+        doReturn(writingErrExec).when(writingOut).writingError(any(ByteArrayOutputStream.class));
+        doReturn(execWatch).when(writingErrExec).exec(anyString(), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
+
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () ->
+                        runtime.tarWorkspaceIn(
+                                createK8sState(), new ByteArrayInputStream("data".getBytes())));
     }
 }
