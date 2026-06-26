@@ -34,5 +34,7 @@
     <modules>
         <module>agentscope-extensions-model-openai</module>
 <!--        <module>agentscope-extensions-model-openai-official</module>-->
+        <module>agentscope-extensions-model-gemini</module>
+        <module>agentscope-extensions-model-anthropic</module>
     </modules>
 </project>

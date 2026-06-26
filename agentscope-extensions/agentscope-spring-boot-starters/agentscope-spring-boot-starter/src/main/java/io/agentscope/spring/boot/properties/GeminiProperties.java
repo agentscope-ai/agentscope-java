@@ -28,6 +28,7 @@ package io.agentscope.spring.boot.properties;
  *     enabled: true
  *     api-key: ${GEMINI_API_KEY}
  *     model-name: gemini-2.0-flash
+ *     # base-url: # optional
  *     stream: true
  * }</pre>
  *
@@ -62,6 +63,11 @@ public class GeminiProperties {
      * Gemini model name, for example {@code gemini-2.0-flash}.
      */
     private String modelName = "gemini-2.0-flash";
+
+    /**
+     * Optional base URL for Gemini API compatible endpoints.
+     */
+    private String baseUrl;
 
     /**
      * Whether streaming responses are enabled.
@@ -105,6 +111,14 @@ public class GeminiProperties {
 
     public void setModelName(String modelName) {
         this.modelName = modelName;
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
     }
 
     public boolean isStream() {
