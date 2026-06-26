@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import com.google.genai.types.Blob;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
@@ -132,16 +133,15 @@ public class GeminiMediaConverter {
         return Part.builder().inlineData(blob).build();
     }
 
-    // infer mimeType from URL extension; throws if extension is absent/unknown
+    // infer mimeType from URL extension via MediaUtils (handles query strings correctly)
     private String resolveMimeTypeFromUrl(String url) {
-        int lastDot = url.lastIndexOf('.');
-        if (lastDot == -1 || lastDot == url.length() - 1) {
+        String ext = MediaUtils.getExtension(url);
+        if (ext.isEmpty()) {
             throw new IllegalArgumentException(
                     "Cannot determine MIME type for URL '"
                             + url
                             + "'; set URLSource.mimeType explicitly");
         }
-        String ext = url.substring(lastDot + 1).toLowerCase();
         for (Map.Entry<String, List<String>> entry : SUPPORTED_EXTENSIONS.entrySet()) {
             if (entry.getValue().contains(ext)) {
                 String category = entry.getKey();

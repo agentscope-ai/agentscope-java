@@ -120,7 +120,8 @@ public class AnthropicMediaConverter {
                                         .build())
                         .build();
             } else {
-                MediaUtils.validateImageExtension(url);
+                // mimeType already verified to be image/* above; skip extension check
+                // so that extension-less CDN URLs with an explicit mimeType hint work
                 return ImageBlockParam.builder()
                         .source(UrlImageSource.builder().url(url).build())
                         .build();

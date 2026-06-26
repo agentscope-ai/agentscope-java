@@ -215,13 +215,13 @@ public class DashScopeMediaConverter {
         String mimeType = resolveMimeType(source);
 
         if (mimeType.startsWith("image/")) {
-            String url = sourceToUrl(source, false);
+            String url = sourceToUrl(source);
             return DashScopeContentPart.builder().image(url).build();
         } else if (mimeType.startsWith("audio/")) {
-            String url = sourceToUrl(source, false);
+            String url = sourceToUrl(source);
             return DashScopeContentPart.audio(url);
         } else if (mimeType.startsWith("video/")) {
-            String url = sourceToUrl(source, false);
+            String url = sourceToUrl(source);
             return DashScopeContentPart.builder().video(url).build();
         } else {
             throw new IllegalArgumentException(
@@ -252,7 +252,7 @@ public class DashScopeMediaConverter {
     }
 
     // convert any Source to a URL/data-URL string
-    private String sourceToUrl(Source source, boolean validateExtension) throws Exception {
+    private String sourceToUrl(Source source) throws Exception {
         if (source instanceof URLSource urlSource) {
             return MediaUtils.urlToProtocolUrl(urlSource.getUrl());
         }
