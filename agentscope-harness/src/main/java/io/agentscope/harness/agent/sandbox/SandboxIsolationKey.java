@@ -45,6 +45,21 @@ public final class SandboxIsolationKey {
     }
 
     /**
+     * Creates an isolation key directly from a scope and its discriminating value.
+     *
+     * <p>Unlike {@link #resolve}, this factory does not require a {@link RuntimeContext} and
+     * produces the key unconditionally. Use it in out-of-band operations (archive, restore,
+     * scavenger) where no agent call context is available.
+     *
+     * @param scope the isolation scope (must not be null)
+     * @param value the discriminating value within the scope (e.g. user id, session id)
+     * @return a new isolation key
+     */
+    public static SandboxIsolationKey of(IsolationScope scope, String value) {
+        return new SandboxIsolationKey(scope, value);
+    }
+
+    /**
      * Resolves an isolation key from the given scope, runtime context, and agent ID.
      *
      * <p>Resolution rules:
