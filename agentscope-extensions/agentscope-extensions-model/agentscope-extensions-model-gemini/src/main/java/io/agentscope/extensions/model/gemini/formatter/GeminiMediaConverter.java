@@ -19,6 +19,7 @@ import com.google.genai.types.Blob;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
@@ -86,6 +87,71 @@ public class GeminiMediaConverter {
      */
     public Part convertToInlineDataPart(VideoBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "video");
+    }
+
+    /**
+     * Convert DataBlock to Gemini Part with inline data.
+     *
+     * <p>MIME type resolution order:
+     * <ol>
+     *   <li>{@code Base64Source.mediaType} — always explicit</li>
+     *   <li>{@code URLSource.mimeType} — caller-supplied hint for extension-less URLs</li>
+     *   <li>Extension-based inference via {@link #getMimeType}</li>
+     * </ol>
+     *
+     * @param block DataBlock to convert
+     * @return Part object containing inline data
+     */
+    public Part convertToInlineDataPart(DataBlock block) {
+        Source source = block.getSource();
+        byte[] data;
+        String mimeType;
+
+        if (source instanceof Base64Source base64Source) {
+            data = Base64.getDecoder().decode(base64Source.getData());
+            mimeType = base64Source.getMediaType();
+        } else if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            try {
+                data = readFileAsBytes(url);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to read DataBlock file: " + url, e);
+            }
+            String hint = urlSource.getMimeType();
+            if (hint != null && !hint.isBlank()) {
+                mimeType = hint;
+            } else {
+                mimeType = resolveMimeTypeFromUrl(url);
+            }
+        } else {
+            throw new IllegalArgumentException(
+                    "Unsupported source type: " + source.getClass().getName());
+        }
+
+        Blob blob = Blob.builder().data(data).mimeType(mimeType).build();
+        return Part.builder().inlineData(blob).build();
+    }
+
+    // infer mimeType from URL extension; throws if extension is absent/unknown
+    private String resolveMimeTypeFromUrl(String url) {
+        int lastDot = url.lastIndexOf('.');
+        if (lastDot == -1 || lastDot == url.length() - 1) {
+            throw new IllegalArgumentException(
+                    "Cannot determine MIME type for URL '"
+                            + url
+                            + "'; set URLSource.mimeType explicitly");
+        }
+        String ext = url.substring(lastDot + 1).toLowerCase();
+        for (Map.Entry<String, List<String>> entry : SUPPORTED_EXTENSIONS.entrySet()) {
+            if (entry.getValue().contains(ext)) {
+                String category = entry.getKey();
+                return category + "/" + ("jpg".equals(ext) ? "jpeg" : ext);
+            }
+        }
+        throw new IllegalArgumentException(
+                "Cannot determine MIME type for URL '"
+                        + url
+                        + "'; set URLSource.mimeType explicitly");
     }
 
     /**

@@ -19,6 +19,7 @@ import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
@@ -191,5 +192,73 @@ public class DashScopeMediaConverter {
             throws Exception {
         String audioUrl = convertAudioBlockToUrl(audioBlock);
         return DashScopeContentPart.audio(audioUrl);
+    }
+
+    /**
+     * Convert DataBlock to DashScopeContentPart by resolving the MIME type and routing
+     * to the appropriate image / audio / video slot.
+     *
+     * <p>MIME type resolution order:
+     * <ol>
+     *   <li>{@code Base64Source.mediaType} — always explicit</li>
+     *   <li>{@code URLSource.mimeType} — caller-supplied hint for extension-less URLs</li>
+     *   <li>{@code MediaUtils.determineMediaType(url)} — extension-based inference</li>
+     * </ol>
+     *
+     * @param dataBlock The data block to convert
+     * @return DashScopeContentPart for the resolved media type
+     * @throws Exception If conversion fails or MIME type cannot be resolved
+     */
+    public DashScopeContentPart convertDataBlockToContentPart(DataBlock dataBlock)
+            throws Exception {
+        Source source = dataBlock.getSource();
+        String mimeType = resolveMimeType(source);
+
+        if (mimeType.startsWith("image/")) {
+            String url = sourceToUrl(source, false);
+            return DashScopeContentPart.builder().image(url).build();
+        } else if (mimeType.startsWith("audio/")) {
+            String url = sourceToUrl(source, false);
+            return DashScopeContentPart.audio(url);
+        } else if (mimeType.startsWith("video/")) {
+            String url = sourceToUrl(source, false);
+            return DashScopeContentPart.builder().video(url).build();
+        } else {
+            throw new IllegalArgumentException(
+                    "Cannot route DataBlock: unrecognised MIME type '" + mimeType + "'");
+        }
+    }
+
+    // resolve MIME type from any Source subtype
+    private String resolveMimeType(Source source) {
+        if (source instanceof Base64Source b64) {
+            return b64.getMediaType();
+        }
+        if (source instanceof URLSource urlSource) {
+            String hint = urlSource.getMimeType();
+            if (hint != null && !hint.isBlank()) {
+                return hint;
+            }
+            String inferred = MediaUtils.determineMediaType(urlSource.getUrl());
+            if (!"application/octet-stream".equals(inferred)) {
+                return inferred;
+            }
+            throw new IllegalArgumentException(
+                    "Cannot determine MIME type for URL '"
+                            + urlSource.getUrl()
+                            + "'; set URLSource.mimeType explicitly");
+        }
+        throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+    }
+
+    // convert any Source to a URL/data-URL string
+    private String sourceToUrl(Source source, boolean validateExtension) throws Exception {
+        if (source instanceof URLSource urlSource) {
+            return MediaUtils.urlToProtocolUrl(urlSource.getUrl());
+        }
+        if (source instanceof Base64Source b64) {
+            return String.format("data:%s;base64,%s", b64.getMediaType(), b64.getData());
+        }
+        throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
     }
 }

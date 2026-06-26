@@ -24,6 +24,7 @@ import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -151,6 +152,21 @@ public class AnthropicMessageConverter {
                                     TextBlockParam.builder()
                                             .text(
                                                     "[Image - processing failed: "
+                                                            + e.getMessage()
+                                                            + "]")
+                                            .build()));
+                }
+            } else if (block instanceof DataBlock db) {
+                try {
+                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
+                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                } catch (Exception e) {
+                    log.warn("Failed to process DataBlock: {}", e.getMessage());
+                    contentBlocks.add(
+                            ContentBlockParam.ofText(
+                                    TextBlockParam.builder()
+                                            .text(
+                                                    "[Media - processing failed: "
                                                             + e.getMessage()
                                                             + "]")
                                             .build()));
