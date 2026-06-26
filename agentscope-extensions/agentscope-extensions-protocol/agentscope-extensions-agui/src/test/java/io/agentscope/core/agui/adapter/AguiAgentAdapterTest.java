@@ -43,10 +43,10 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.subagent.SubAgentTool;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -2054,8 +2054,8 @@ class AguiAgentAdapterTest {
                                         (e instanceof AguiEvent.TextMessageContent c
                                                 && c.delta() != null
                                                 && c.delta()
-                                                .contains(
-                                                        "Sub-agent thinking step" + " 1")));
+                                                        .contains(
+                                                                "Sub-agent thinking step" + " 1")));
 
         assertTrue(
                 carriesSubAgentText,
