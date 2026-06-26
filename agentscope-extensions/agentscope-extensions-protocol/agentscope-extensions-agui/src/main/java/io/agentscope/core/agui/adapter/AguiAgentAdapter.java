@@ -31,6 +31,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -345,6 +346,18 @@ public class AguiAgentAdapter {
                             events.add(
                                     new AguiEvent.ToolCallArgs(
                                             state.threadId, state.runId, toolCallId, args));
+                        }
+                    }
+                }
+            }
+        } else if (type == EventType.TOOL_RESULT && !event.isLast()) {
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock toolResult) {
+                    Map<String, Object> metadata = toolResult.getMetadata();
+                    if (metadata != null) {
+                        Object inner = metadata.get(SubAgentTool.METADATA_KEY_SUBAGENT_EVENT);
+                        if (inner instanceof Event innerEvent) {
+                            events.addAll(convertEvent(innerEvent, state));
                         }
                     }
                 }

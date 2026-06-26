@@ -43,6 +43,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
@@ -1992,6 +1993,75 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
+    }
+
+    @Test
+    void testSubAgentForwardEvent() {
+        // 1. Inner event: the sub-agent emits a REASONING text delta.
+        Msg subAgentTextMsg =
+                Msg.builder()
+                        .id("sub-msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Sub-agent thinking step 1").build())
+                        .build();
+        Event subAgentInnerEvent = new Event(EventType.REASONING, subAgentTextMsg, false);
+
+        // 2. SubAgentTool.forwardEvent() wraps the inner event into a ToolResultBlock
+        //    with metadata, and emitter.emit(...) surfaces it as a TOOL_RESULT chunk
+        //    (isLast=false) on the supervisor stream.
+        Map<String, Object> metadata =
+                Map.of(
+                        SubAgentTool.METADATA_KEY_SUBAGENT_EVENT, subAgentInnerEvent,
+                        SubAgentTool.METADATA_KEY_SUBAGENT_NAME, "researcher",
+                        SubAgentTool.METADATA_KEY_SUBAGENT_ID, "sub-agent-1",
+                        SubAgentTool.METADATA_KEY_SUBAGENT_SESSION_ID, "session-1");
+        ToolResultBlock forwardedChunk =
+                new ToolResultBlock(
+                        null,
+                        null,
+                        List.of(TextBlock.builder().text("{\"forwarded\":true}").build()),
+                        metadata);
+
+        Msg parentChunkMsg =
+                Msg.builder()
+                        .id("parent-tr-chunk-1")
+                        .role(MsgRole.TOOL)
+                        .content(forwardedChunk)
+                        .build();
+        Event parentChunkEvent = new Event(EventType.TOOL_RESULT, parentChunkMsg, false);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(parentChunkEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(AguiMessage.userMessage("msg-1", "Delegate to researcher")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // The sub-agent's reasoning text MUST surface as some AG-UI text-like content
+        // on the parent stream. Today the adapter drops it entirely.
+        boolean carriesSubAgentText =
+                events.stream()
+                        .anyMatch(
+                                e ->
+                                        (e instanceof AguiEvent.TextMessageContent c
+                                                && c.delta() != null
+                                                && c.delta()
+                                                .contains(
+                                                        "Sub-agent thinking step" + " 1")));
+
+        assertTrue(
+                carriesSubAgentText,
+                "Forwarded sub-agent reasoning text must reach the AG-UI stream, "
+                        + "but no AG-UI content event carried it. Adapter is dropping "
+                        + "non-last TOOL_RESULT chunks and ignoring subagent_event metadata.");
     }
 
     private static AguiTool frontendTool(String name) {
