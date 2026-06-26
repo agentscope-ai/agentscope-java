@@ -37,6 +37,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -847,6 +848,54 @@ class HarnessAgentTest {
     }
 
     // =========================================================================
+    // Skills allowlist
+    // =========================================================================
+
+    @Test
+    void skillsAllowlist_declarationWithSkills_setsSkillFilterOnChild() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("narrow-skills")
+                        .description("only allowed skills")
+                        .inlineAgentsBody("Focus on allowed skills.")
+                        .skills(List.of("allowed_skill"))
+                        .build();
+
+        assertEquals(List.of("allowed_skill"), decl.getSkills());
+
+        SkillFilter filter = SkillFilter.only(decl.getSkills().toArray(new String[0]));
+        assertTrue(filter.isAllowed("allowed_skill"), "allowlisted skill should pass");
+        assertFalse(filter.isAllowed("denied_skill"), "non-allowlisted skill should be blocked");
+    }
+
+    @Test
+    void skillsAllowlist_emptyList_defaultsToAll() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("all-skills")
+                        .description("inherits all skills")
+                        .inlineAgentsBody("Use any skill.")
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
+    }
+
+    @Test
+    void skillsAllowlist_nullSkills_defaultsToEmptyList() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("null-skills")
+                        .description("null skills")
+                        .inlineAgentsBody("body")
+                        .skills(null)
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
     // AgentSpecLoader — markdown declaration parsing
     // =========================================================================
 
@@ -875,6 +924,36 @@ class HarnessAgentTest {
         assertEquals("test-model", decl.getModel());
         assertEquals(7, decl.getMaxIters());
         assertEquals(List.of("read_file", "grep_files"), decl.getTools());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_parsesSkillsAllowlist() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent with skills filter
+                tools: [read_file]
+                skills: [weather_lookup, code_review]
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "filtered-agent", workspace);
+        assertNotNull(decl);
+        assertEquals(List.of("weather_lookup", "code_review"), decl.getSkills());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_noSkills_returnsEmptyList() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent without skills
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "no-skills", workspace);
+        assertNotNull(decl);
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
     }
 
     @Test

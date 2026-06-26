@@ -25,6 +25,7 @@ import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
@@ -389,6 +390,8 @@ final class HarnessAgentBuilderSupport {
         // lose any --add-dir style allow-list configured at the main level.
         final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
+        final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
+        final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
@@ -462,6 +465,16 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+
+            if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
+            if (capturedProjectGlobalSkillsDir != null) {
+                sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
+            }
+
+            List<String> skillAllowlist = decl.getSkills();
+            if (!skillAllowlist.isEmpty()) {
+                sub.skillFilter(SkillFilter.only(skillAllowlist.toArray(new String[0])));
+            }
 
             return sub.build();
         };
