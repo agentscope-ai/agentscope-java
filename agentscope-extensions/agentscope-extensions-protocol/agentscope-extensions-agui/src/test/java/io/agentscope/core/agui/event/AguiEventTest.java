@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
@@ -829,29 +830,417 @@ class AguiEventTest {
     }
 
     @Nested
+    class RunErrorTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.RunError event =
+                    new AguiEvent.RunError("thread-1", "run-1", "Something broke", "ERR_001");
+
+            assertEquals(AguiEventType.RUN_ERROR, event.getType());
+            assertEquals("thread-1", event.getThreadId());
+            assertEquals("run-1", event.getRunId());
+            assertEquals("Something broke", event.message());
+            assertEquals("ERR_001", event.code());
+        }
+
+        @Test
+        void testNullCode() {
+            AguiEvent.RunError event = new AguiEvent.RunError("thread-1", "run-1", "error", null);
+            assertNull(event.code());
+        }
+
+        @Test
+        void testNullMessageThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.RunError("thread-1", "run-1", null, null));
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.RunError event = new AguiEvent.RunError("t1", "r1", "fail", null);
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"RUN_ERROR\"");
+            assertTrue(json.contains("\"message\":\"fail\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.RunError);
+        }
+    }
+
+    @Nested
+    class StepStartedTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.StepStarted event = new AguiEvent.StepStarted("thread-1", "run-1", "step1");
+            assertEquals(AguiEventType.STEP_STARTED, event.getType());
+            assertEquals("step1", event.stepName());
+        }
+
+        @Test
+        void testNullStepNameThrows() {
+            assertThrows(
+                    NullPointerException.class, () -> new AguiEvent.StepStarted("t", "r", null));
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.StepStarted event = new AguiEvent.StepStarted("t1", "r1", "analyze");
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"STEP_STARTED\"");
+            assertTrue(json.contains("\"stepName\":\"analyze\""));
+        }
+    }
+
+    @Nested
+    class StepFinishedTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.StepFinished event = new AguiEvent.StepFinished("thread-1", "run-1", "step1");
+            assertEquals(AguiEventType.STEP_FINISHED, event.getType());
+            assertEquals("step1", event.stepName());
+        }
+
+        @Test
+        void testNullStepNameThrows() {
+            assertThrows(
+                    NullPointerException.class, () -> new AguiEvent.StepFinished("t", "r", null));
+        }
+    }
+
+    @Nested
+    class TextMessageChunkTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.TextMessageChunk event =
+                    new AguiEvent.TextMessageChunk("t1", "r1", "msg-1", "assistant", "Hello", null);
+            assertEquals(AguiEventType.TEXT_MESSAGE_CHUNK, event.getType());
+            assertEquals("msg-1", event.messageId());
+            assertEquals("assistant", event.role());
+            assertEquals("Hello", event.delta());
+            assertNull(event.name());
+        }
+
+        @Test
+        void testOptionalFieldsAreNullable() {
+            AguiEvent.TextMessageChunk event =
+                    new AguiEvent.TextMessageChunk("t1", "r1", null, null, null, null);
+            assertNull(event.messageId());
+            assertNull(event.role());
+            assertNull(event.delta());
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.TextMessageChunk event =
+                    new AguiEvent.TextMessageChunk("t1", "r1", "msg-1", "user", "chunk", "name");
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"TEXT_MESSAGE_CHUNK\"");
+        }
+    }
+
+    @Nested
+    class ToolCallChunkTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.ToolCallChunk event =
+                    new AguiEvent.ToolCallChunk(
+                            "t1", "r1", "tc-1", "tool", "parent-1", "{\"key\":\"val\"}");
+            assertEquals(AguiEventType.TOOL_CALL_CHUNK, event.getType());
+            assertEquals("tc-1", event.toolCallId());
+            assertEquals("tool", event.toolCallName());
+            assertEquals("parent-1", event.parentMessageId());
+            assertEquals("{\"key\":\"val\"}", event.delta());
+        }
+
+        @Test
+        void testOptionalFieldsAreNullable() {
+            AguiEvent.ToolCallChunk event =
+                    new AguiEvent.ToolCallChunk("t1", "r1", null, null, null, null);
+            assertNull(event.toolCallId());
+            assertNull(event.toolCallName());
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.ToolCallChunk event =
+                    new AguiEvent.ToolCallChunk("t1", "r1", "tc-1", "tool", null, "data");
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"TOOL_CALL_CHUNK\"");
+        }
+    }
+
+    @Nested
+    class MessagesSnapshotTest {
+
+        @Test
+        void testCreation() {
+            List<AguiMessage> msgs = List.of(AguiMessage.userMessage("m1", "hello"));
+            AguiEvent.MessagesSnapshot event = new AguiEvent.MessagesSnapshot("t1", "r1", msgs);
+            assertEquals(AguiEventType.MESSAGES_SNAPSHOT, event.getType());
+            assertEquals(1, event.messages().size());
+            assertEquals("hello", event.messages().get(0).getContent());
+        }
+
+        @Test
+        void testNullMessagesCreatesEmptyList() {
+            AguiEvent.MessagesSnapshot event = new AguiEvent.MessagesSnapshot("t1", "r1", null);
+            assertTrue(event.messages().isEmpty());
+        }
+
+        @Test
+        void testMessagesIsImmutable() {
+            AguiEvent.MessagesSnapshot event =
+                    new AguiEvent.MessagesSnapshot("t1", "r1", List.of());
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> event.messages().add(AguiMessage.userMessage("x", "y")));
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            List<AguiMessage> msgs = List.of(AguiMessage.userMessage("m1", "hello"));
+            AguiEvent.MessagesSnapshot event = new AguiEvent.MessagesSnapshot("t1", "r1", msgs);
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"MESSAGES_SNAPSHOT\"");
+            assertTrue(json.contains("\"role\":\"user\""));
+        }
+    }
+
+    @Nested
+    class ActivitySnapshotTest {
+
+        @Test
+        void testCreation() {
+            Map<String, Object> content = Map.of("status", "running");
+            AguiEvent.ActivitySnapshot event =
+                    new AguiEvent.ActivitySnapshot("t1", "r1", "msg-1", "progress", content);
+            assertEquals(AguiEventType.ACTIVITY_SNAPSHOT, event.getType());
+            assertEquals("msg-1", event.messageId());
+            assertEquals("progress", event.activityType());
+            assertTrue(event.replace());
+        }
+
+        @Test
+        void testReplaceDefaultTrue() {
+            AguiEvent.ActivitySnapshot event =
+                    new AguiEvent.ActivitySnapshot("t1", "r1", "msg-1", "progress", null);
+            assertTrue(event.replace());
+        }
+
+        @Test
+        void testNullContentCreatesEmptyMap() {
+            AguiEvent.ActivitySnapshot event =
+                    new AguiEvent.ActivitySnapshot("t1", "r1", "msg-1", "test", null);
+            assertTrue(event.content().isEmpty());
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.ActivitySnapshot event =
+                    new AguiEvent.ActivitySnapshot(
+                            "t1", "r1", "msg-1", "progress", Map.of("pct", 50), false);
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"ACTIVITY_SNAPSHOT\"");
+            assertTrue(json.contains("\"replace\":false"));
+        }
+    }
+
+    @Nested
+    class ActivityDeltaTest {
+
+        @Test
+        void testCreation() {
+            List<AguiEvent.JsonPatchOperation> patch =
+                    List.of(AguiEvent.JsonPatchOperation.add("/path", "value"));
+            AguiEvent.ActivityDelta event =
+                    new AguiEvent.ActivityDelta("t1", "r1", "msg-1", "progress", patch);
+            assertEquals(AguiEventType.ACTIVITY_DELTA, event.getType());
+            assertEquals("msg-1", event.messageId());
+            assertEquals(1, event.patch().size());
+        }
+
+        @Test
+        void testNullPatchCreatesEmptyList() {
+            AguiEvent.ActivityDelta event =
+                    new AguiEvent.ActivityDelta("t1", "r1", "msg-1", "test", null);
+            assertTrue(event.patch().isEmpty());
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.ActivityDelta event =
+                    new AguiEvent.ActivityDelta(
+                            "t1",
+                            "r1",
+                            "msg-1",
+                            "typing",
+                            List.of(AguiEvent.JsonPatchOperation.add("/status", "active")));
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"ACTIVITY_DELTA\"");
+        }
+    }
+
+    @Nested
+    class ReasoningEncryptedValueTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.ReasoningEncryptedValue event =
+                    new AguiEvent.ReasoningEncryptedValue(
+                            "t1", "r1", "tool-call", "tc-1", "encrypted_data");
+            assertEquals(AguiEventType.REASONING_ENCRYPTED_VALUE, event.getType());
+            assertEquals("tool-call", event.subtype());
+            assertEquals("tc-1", event.entityId());
+            assertEquals("encrypted_data", event.encryptedValue());
+        }
+
+        @Test
+        void testRejectsNullSubtype() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.ReasoningEncryptedValue("t1", "r1", null, "e", "v"));
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.ReasoningEncryptedValue event =
+                    new AguiEvent.ReasoningEncryptedValue("t1", "r1", "message", "msg-1", "enc");
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"REASONING_ENCRYPTED_VALUE\"");
+            assertTrue(json.contains("\"subtype\":\"message\""));
+            assertTrue(json.contains("\"encryptedValue\":\"enc\""));
+        }
+    }
+
+    @Nested
+    class RunFinishedOutcomeTest {
+
+        @Test
+        void testSuccessOutcome() {
+            AguiEvent.RunFinishedSuccessOutcome outcome = new AguiEvent.RunFinishedSuccessOutcome();
+            assertNotNull(outcome);
+        }
+
+        @Test
+        void testInterruptOutcome() {
+            AguiEvent.Interrupt interrupt =
+                    new AguiEvent.Interrupt(
+                            "int-1", "user_confirmation", "Please confirm", null, null, null, null);
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt));
+            assertEquals(1, outcome.interrupts().size());
+            assertEquals("int-1", outcome.interrupts().get(0).id());
+        }
+
+        @Test
+        void testRunFinishedWithSuccessOutcome() {
+            AguiEvent.RunFinished event =
+                    new AguiEvent.RunFinished(
+                            "t1", "r1", "result_data", new AguiEvent.RunFinishedSuccessOutcome());
+            assertEquals("result_data", event.result());
+            assertTrue(event.outcome() instanceof AguiEvent.RunFinishedSuccessOutcome);
+        }
+
+        @Test
+        void testRunFinishedWithInterruptOutcome() {
+            AguiEvent.Interrupt interrupt =
+                    new AguiEvent.Interrupt("int-1", "approval", null, "tc-1", null, null, null);
+            AguiEvent.RunFinished event =
+                    new AguiEvent.RunFinished(
+                            "t1",
+                            "r1",
+                            null,
+                            new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt)));
+            assertTrue(event.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome);
+        }
+
+        @Test
+        void testJsonSerialization() throws Exception {
+            AguiEvent.Interrupt interrupt =
+                    new AguiEvent.Interrupt(
+                            "int-1",
+                            "approval_required",
+                            "Please approve",
+                            "tc-1",
+                            Map.of("type", "object"),
+                            null,
+                            null);
+            AguiEvent.RunFinished event =
+                    new AguiEvent.RunFinished(
+                            "t1",
+                            "r1",
+                            null,
+                            new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt)));
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"type\":\"RUN_FINISHED\""));
+            assertTrue(json.contains("\"outcome\""));
+            assertTrue(json.contains("\"interrupts\""));
+        }
+    }
+
+    @Nested
+    class RunStartedMissingFieldsTest {
+
+        @Test
+        void testConvenienceConstructor() {
+            // Verify the 2-arg convenience constructor still works
+            AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
+            assertNull(event.parentRunId());
+            assertNull(event.input());
+        }
+
+        @Test
+        void testWithParentRunId() {
+            AguiEvent.RunStarted event = new AguiEvent.RunStarted("t1", "r1", "parent-1", null);
+            assertEquals("parent-1", event.parentRunId());
+        }
+    }
+
+    @Nested
     class AguiEventTypeTest {
+
+        @Test
+        void testEventTypeCount() {
+            assertEquals(28, AguiEventType.values().length);
+        }
 
         @Test
         void testAllEventTypesExist() {
             // Verify all expected event types exist
             assertNotNull(AguiEventType.RUN_STARTED);
             assertNotNull(AguiEventType.RUN_FINISHED);
+            assertNotNull(AguiEventType.RUN_ERROR);
+            assertNotNull(AguiEventType.STEP_STARTED);
+            assertNotNull(AguiEventType.STEP_FINISHED);
             assertNotNull(AguiEventType.TEXT_MESSAGE_START);
             assertNotNull(AguiEventType.TEXT_MESSAGE_CONTENT);
             assertNotNull(AguiEventType.TEXT_MESSAGE_END);
+            assertNotNull(AguiEventType.TEXT_MESSAGE_CHUNK);
             assertNotNull(AguiEventType.TOOL_CALL_START);
             assertNotNull(AguiEventType.TOOL_CALL_ARGS);
             assertNotNull(AguiEventType.TOOL_CALL_END);
+            assertNotNull(AguiEventType.TOOL_CALL_CHUNK);
             assertNotNull(AguiEventType.TOOL_CALL_RESULT);
             assertNotNull(AguiEventType.STATE_SNAPSHOT);
             assertNotNull(AguiEventType.STATE_DELTA);
+            assertNotNull(AguiEventType.MESSAGES_SNAPSHOT);
+            assertNotNull(AguiEventType.ACTIVITY_SNAPSHOT);
+            assertNotNull(AguiEventType.ACTIVITY_DELTA);
             assertNotNull(AguiEventType.RAW);
             assertNotNull(AguiEventType.CUSTOM);
-        }
-
-        @Test
-        void testEventTypeCount() {
-            assertEquals(19, AguiEventType.values().length);
+            assertNotNull(AguiEventType.REASONING_START);
+            assertNotNull(AguiEventType.REASONING_MESSAGE_START);
+            assertNotNull(AguiEventType.REASONING_MESSAGE_CONTENT);
+            assertNotNull(AguiEventType.REASONING_MESSAGE_END);
+            assertNotNull(AguiEventType.REASONING_MESSAGE_CHUNK);
+            assertNotNull(AguiEventType.REASONING_END);
+            assertNotNull(AguiEventType.REASONING_ENCRYPTED_VALUE);
         }
 
         @Test

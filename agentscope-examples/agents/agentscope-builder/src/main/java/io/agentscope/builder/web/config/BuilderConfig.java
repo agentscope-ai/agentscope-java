@@ -23,9 +23,11 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.extensions.mysql.store.JdbcStore;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
@@ -196,31 +198,42 @@ public class BuilderConfig {
                             + " available.");
         }
 
-        // RemoteFilesystemSpec requires a distributed AgentStateStore store; the harness rejects
-        // the default because conversation state would otherwise be pinned to one pod while the
-        // filesystem is shared. For production, provide a DistributedStore or AgentStateStore
-        // bean; for unit/integration tests, fall back to InMemoryAgentStateStore with a warning.
         AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
         if (sessionOpt.isEmpty()) {
             log.warn(
                     "No distributed AgentStateStore bean configured ({}); using"
                             + " InMemoryAgentStateStore. For multi-replica deployments, provide"
-                            + " a DistributedStore or a distributed AgentStateStore bean"
+                            + " a distributed AgentStateStore bean"
                             + " (e.g. from agentscope-extensions-redis).",
                     AgentStateStore.class.getName());
+        }
+
+        // RemoteFilesystemSpec requires a distributed AgentStateStore; when the effective store is
+        // local (InMemory/JsonFile), use LocalFilesystemSpec instead so the harness won't reject
+        // the topology at build time.
+        boolean localStore = isLocalStateStore(stateStore);
+        if (localStore) {
+            log.info(
+                    "Effective AgentStateStore is local ({}); using LocalFilesystemSpec.",
+                    stateStore.getClass().getSimpleName());
+        } else {
+            log.info(
+                    "Effective AgentStateStore is distributed ({}); using RemoteFilesystemSpec.",
+                    stateStore.getClass().getSimpleName());
         }
 
         builder.configureAllAgents(
                 b -> {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.stateStore(stateStore);
-                    // `activity/` is routed to the shared BaseStore so the per-agent audit log
-                    // (written by AgentActivityStore) is visible across pods, not pinned to the
-                    // local disk of whichever pod served the write.
-                    b.filesystem(
-                            new RemoteFilesystemSpec(baseStore)
-                                    .isolationScope(IsolationScope.USER)
-                                    .addSharedPrefix("activity/"));
+                    if (localStore) {
+                        b.filesystem(new LocalFilesystemSpec().isolationScope(IsolationScope.USER));
+                    } else {
+                        b.filesystem(
+                                new RemoteFilesystemSpec(baseStore)
+                                        .isolationScope(IsolationScope.USER)
+                                        .addSharedPrefix("activity/"));
+                    }
                 });
 
         BuilderBootstrap bootstrap = builder.build();
@@ -271,6 +284,16 @@ public class BuilderConfig {
     // -----------------------------------------------------------------
     //  Internal helpers
     // -----------------------------------------------------------------
+
+    /**
+     * Returns {@code true} when the given store is a local, in-process implementation that cannot
+     * be shared across pods, i.e. {@link InMemoryAgentStateStore} or {@link JsonFileAgentStateStore}.
+     * When this returns {@code true}, the harness must use {@link LocalFilesystemSpec} instead of
+     * {@link RemoteFilesystemSpec}.
+     */
+    private static boolean isLocalStateStore(AgentStateStore store) {
+        return store instanceof InMemoryAgentStateStore || store instanceof JsonFileAgentStateStore;
+    }
 
     private Path resolveCwd() {
         if (workspaceDir != null && !workspaceDir.isBlank()) {
