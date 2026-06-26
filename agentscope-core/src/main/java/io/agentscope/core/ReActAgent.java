@@ -2111,28 +2111,37 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireReasoningChunk(
-                                                            msg,
-                                                            context,
-                                                            mci.model().getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireReasoningChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            mci.model()
+                                                                                    .getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            emitBlockEvents(
-                                                    block,
-                                                    context,
-                                                    blockLifecycle,
-                                                    withToolEvents,
-                                                    events);
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            emitBlockEvents(
+                                                                    block,
+                                                                    context,
+                                                                    blockLifecycle,
+                                                                    withToolEvents,
+                                                                    events);
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
@@ -2562,6 +2571,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             hookDispatcher
                                                                     .fireActingChunk(
                                                                             toolUse, chunk, toolkit)
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
                                                                     .subscribe();
                                                         });
 
@@ -3086,44 +3099,59 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireSummaryChunk(
-                                                            msg,
-                                                            context,
-                                                            hookOptions,
-                                                            model.getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireSummaryChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            hookOptions,
+                                                                            model.getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            if (block instanceof TextBlock tb) {
-                                                blockLifecycle.startText(events);
-                                                if (tb.getText() != null
-                                                        && !tb.getText().isEmpty()) {
-                                                    events.add(
-                                                            new TextBlockDeltaEvent(
-                                                                    blockLifecycle.replyId,
-                                                                    "text",
-                                                                    tb.getText()));
-                                                }
-                                            } else if (block instanceof ThinkingBlock tb) {
-                                                blockLifecycle.startThinking(events);
-                                                if (tb.getThinking() != null
-                                                        && !tb.getThinking().isEmpty()) {
-                                                    events.add(
-                                                            new ThinkingBlockDeltaEvent(
-                                                                    blockLifecycle.replyId,
-                                                                    "thinking",
-                                                                    tb.getThinking()));
-                                                }
-                                            }
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            if (block instanceof TextBlock tb) {
+                                                                blockLifecycle.startText(events);
+                                                                if (tb.getText() != null
+                                                                        && !tb.getText()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new TextBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "text",
+                                                                                    tb.getText()));
+                                                                }
+                                                            } else if (block
+                                                                    instanceof ThinkingBlock tb) {
+                                                                blockLifecycle.startThinking(
+                                                                        events);
+                                                                if (tb.getThinking() != null
+                                                                        && !tb.getThinking()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new ThinkingBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "thinking",
+                                                                                    tb
+                                                                                            .getThinking()));
+                                                                }
+                                                            }
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
