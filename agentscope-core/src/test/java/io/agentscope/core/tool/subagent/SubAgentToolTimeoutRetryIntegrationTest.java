@@ -201,6 +201,24 @@ class SubAgentToolTimeoutRetryIntegrationTest {
                 invocationsAfter,
                 "Invocations should be frozen at %d. Agent loop did not restart."
                         .formatted(invocations));
+        // ---- proof #2: cancellation propagates to the inner tool execution ----
+        // Since sink.onCancel(lifecycleDisposable) properly disposes the inner
+        // subscription, slow_tool's Thread.sleep is interrupted before it can
+        // write to the file. Wait briefly to confirm nothing was written.
+        Thread.sleep(2_000);
+
+        // ---- proof #3: slow_tool wrote 0 lines (properly cancelled) ----
+        long fileLines = Files.readAllLines(tmpFile).size();
+        assertEquals(
+                0,
+                fileLines,
+                "Expected 0 tool invocations (cancelled before write), got %d"
+                        .formatted(fileLines));
+
+        // ---- proof #4: wait more → still no lines (loop is dead) ----
+        Thread.sleep(2_000);
+        long fileLinesAfter = Files.readAllLines(tmpFile).size();
+        assertEquals(0, fileLinesAfter, "File should remain empty. Agent loop did not restart.");
 
         // ---- proof #5: MockModel was called exactly once ----
         assertEquals(

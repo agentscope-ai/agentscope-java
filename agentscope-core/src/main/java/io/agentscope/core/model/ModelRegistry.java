@@ -36,8 +36,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Provider extension modules read API keys from their own standard environment variables when
  * auto-creating models. Remaining built-in providers read {@code DASHSCOPE_API_KEY}, {@code
- * GEMINI_API_KEY}, {@code ANTHROPIC_API_KEY} (optional for Anthropic SDK), {@code OLLAMA_BASE_URL}
- * (optional, defaults to {@code http://localhost:11434}).
+ * OLLAMA_BASE_URL} (optional, defaults to {@code http://localhost:11434}).
  */
 public final class ModelRegistry {
 
@@ -66,26 +65,6 @@ public final class ModelRegistry {
                     String apiKey = requireApiKey("DASHSCOPE_API_KEY", modelId);
                     return DashScopeChatModel.builder().apiKey(apiKey).modelName(modelId).stream(
                                     true)
-                            .build();
-                });
-        registerBuiltin(
-                "anthropic:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("anthropic:".length());
-                    String apiKey = env("ANTHROPIC_API_KEY");
-                    return AnthropicChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
-                                    true)
-                            .build();
-                });
-        registerBuiltin(
-                "gemini:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("gemini:".length());
-                    String apiKey = requireApiKey("GEMINI_API_KEY", modelId);
-                    return GeminiChatModel.builder()
-                            .apiKey(apiKey)
-                            .modelName(modelName)
-                            .streamEnabled(true)
                             .build();
                 });
         registerBuiltin(
@@ -370,11 +349,16 @@ public final class ModelRegistry {
                 + modelId
                 + "\", instance).\n"
                 + "  - No matching provider factory or extension SPI provider. Remaining built-in"
-                + " providers: dashscope, gemini, anthropic, ollama.\n"
+                + " providers: dashscope, ollama.\n"
                 + "    Format: \"<provider>:<model-name>\", e.g. \"openai:gpt-5.5\","
-                + " \"dashscope:qwen-max\", \"dashscope:qwen3.7-plus\".\n"
+                + " \"gemini:gemini-2.0-flash\", \"dashscope:qwen-max\","
+                + " \"dashscope:qwen3.7-plus\".\n"
                 + "  - OpenAI models require the agentscope-extensions-model-openai module on the"
                 + " classpath and OPENAI_API_KEY.\n"
+                + "  - Gemini models require the agentscope-extensions-model-gemini module on the"
+                + " classpath and GEMINI_API_KEY.\n"
+                + "  - Anthropic models require the agentscope-extensions-model-anthropic module"
+                + " on the classpath.\n"
                 + "  - DashScope short form: \"qwen*\" model ids (e.g. \"qwen-max\","
                 + " \"qwen3.7-plus\") require DASHSCOPE_API_KEY.\n"
                 + "  - Missing API key environment variable (e.g., DASHSCOPE_API_KEY).";
