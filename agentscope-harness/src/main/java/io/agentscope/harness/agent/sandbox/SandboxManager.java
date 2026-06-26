@@ -104,6 +104,10 @@ public class SandboxManager {
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
                         SandboxState state = client.deserializeState(stateJson.get());
+                        // 用应用层最新配置覆盖 state 中固化的旧配置
+                        if (sandboxContext.getWorkspaceSpec() != null) {
+                            state.setWorkspaceSpec(sandboxContext.getWorkspaceSpec().copy());
+                        }
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
