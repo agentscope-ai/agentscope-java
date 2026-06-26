@@ -33,7 +33,7 @@ A **Chat Model** is the LLM driving conversation and tool calling, with input an
 | Gemini | `GeminiChatModel` | Google Gemini; multi-modal |
 | Ollama | `OllamaChatModel` | Locally hosted LLMs; credential optional |
 
-Credential classes (`io.agentscope.core.credential`): `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, `OllamaCredential`, `DeepSeekCredential`, `KimiCredential`, `XAICredential`.
+Credential classes: `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, `OllamaCredential`, `DeepSeekCredential`, `KimiCredential`, `XAICredential`.
 
 ### Creating a chat model
 
@@ -130,18 +130,12 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> {
-            // chunk.isLast() == true marks the final accumulated content
-            if (chunk.isLast()) {
-                System.out.println("Final: " + chunk.getContent());
-            } else {
-                System.out.println("Delta: " + chunk.getContent());
-            }
-        })
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
         .blockLast();
 ```
 
-A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`), an `isLast()` flag, and a `ChatUsage` recording token counts and timing.
+A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`) and a `ChatUsage` recording token counts and timing.
 
 In practice you usually call models indirectly via `ReActAgent`. For lightweight direct invocation, see `agentscope-examples/documentation/.../model/ModelRegistryExample.java`.
 
@@ -173,6 +167,21 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
 How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+
+> **Structured output with tool calling**
+>
+> When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. If you encounter this, set `nativeStructuredOutputWithTools(false)` when building the model — the framework will use a synthetic tool approach for structured output, fully compatible with the ReAct tool-calling loop:
+>
+> ```java
+> OpenAIChatModel model = OpenAIChatModel.builder()
+>         .apiKey("...")
+>         .baseUrl("https://api.moonshot.cn/v1")
+>         .modelName("moonshot-v1-8k")
+>         .nativeStructuredOutputWithTools(false)
+>         .build();
+> ```
+>
+> `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
 
 ### Formatter
 

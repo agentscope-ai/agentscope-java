@@ -22,7 +22,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
@@ -65,7 +64,7 @@ import reactor.core.publisher.Flux;
  * with no path-like character (slash, dot, tilde) is ignored to avoid swallowing handles such as
  * {@code @alice}.
  */
-public class AtPathExpansionMiddleware implements MiddlewareBase {
+public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(AtPathExpansionMiddleware.class);
 

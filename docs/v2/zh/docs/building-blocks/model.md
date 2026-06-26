@@ -33,7 +33,7 @@ CredentialBase/
 | Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
 | Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
 
-凭证类（`io.agentscope.core.credential`）：`OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`、`DeepSeekCredential`、`KimiCredential`、`XAICredential`。
+凭证类：`OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`、`DeepSeekCredential`、`KimiCredential`、`XAICredential`。
 
 ### 创建 Chat Model
 
@@ -130,18 +130,12 @@ model.stream(
                 List.of(new UserMessage("Count from 1 to 5.")),
                 /* tools = */ List.of(),
                 GenerateOptions.builder().build())
-        .doOnNext(chunk -> {
-            // chunk.isLast() == true 时表示最终累积内容
-            if (chunk.isLast()) {
-                System.out.println("Final: " + chunk.getContent());
-            } else {
-                System.out.println("Delta: " + chunk.getContent());
-            }
-        })
+        .doOnNext(chunk -> System.out.println("Chunk: " + chunk.getContent()))
+        .doOnComplete(() -> System.out.println("Stream completed"))
         .blockLast();
 ```
 
-`ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）、一个 `isLast()` 标志，以及记录 token 数与耗时的 `ChatUsage`。
+`ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
 
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 
@@ -173,6 +167,21 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
 实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+
+> **结构化输出与工具调用共存**
+>
+> 当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 `response_format` 约束而跳过工具调用。如果遇到此问题，在构建 Model 时设置 `nativeStructuredOutputWithTools(false)`，框架将改用合成工具方式输出结构化结果，与工具调用完全兼容：
+>
+> ```java
+> OpenAIChatModel model = OpenAIChatModel.builder()
+>         .apiKey("...")
+>         .baseUrl("https://api.moonshot.cn/v1")
+>         .modelName("moonshot-v1-8k")
+>         .nativeStructuredOutputWithTools(false)
+>         .build();
+> ```
+>
+> `DashScopeChatModel` 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置，默认行为即可正确处理。
 
 ### Formatter
 
