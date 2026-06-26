@@ -205,10 +205,7 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         // ---- proof #4: wait more → still no lines (loop is dead) ----
         Thread.sleep(2_000);
         long fileLinesAfter = Files.readAllLines(tmpFile).size();
-        assertEquals(
-                0,
-                fileLinesAfter,
-                "File should remain empty. Agent loop did not restart.");
+        assertEquals(0, fileLinesAfter, "File should remain empty. Agent loop did not restart.");
 
         // ---- proof #5: MockModel was called exactly once ----
         // If interrupt didn't work, the agent loop would call reasoning() again
