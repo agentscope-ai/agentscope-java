@@ -15,10 +15,9 @@
  */
 
 /**
- * Agent execution environment abstraction for AgentScope Java.
+ * Agent execution environment abstractions for AgentScope Java.
  *
- * <p>The package will host the {@code WorkspaceBase} contract (initialize, close,
- * getInstructions, listTools, listSkills, offloadContext, offloadToolResult)
- * and a {@code LocalWorkspace} default implementation.
+ * <p>This package hosts the {@code Workspace} contract, covering sandbox lifecycle,
+ * instructions, MCP clients, skill catalogs, and context offloading.
  */
 package io.agentscope.core.workspace;
