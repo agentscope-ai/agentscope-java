@@ -134,6 +134,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -2166,7 +2167,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 blockLifecycle.startText(events);
                 if (tb.getText() != null && !tb.getText().isEmpty()) {
                     events.add(
-                            new TextBlockDeltaEvent(blockLifecycle.replyId, "text", tb.getText()));
+                            new TextBlockDeltaEvent(
+                                    blockLifecycle.replyId,
+                                    blockLifecycle.textBlockId(),
+                                    tb.getText()));
                 }
             } else if (block instanceof ThinkingBlock tb) {
                 blockLifecycle.startThinking(events);
@@ -2203,6 +2207,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final AtomicBoolean textStarted = new AtomicBoolean(false);
             private final AtomicBoolean thinkingStarted = new AtomicBoolean(false);
             private final Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
+            private final AtomicInteger textBlockCounter = new AtomicInteger(0);
+            private volatile String currentTextBlockId;
 
             private ModelCallBlockLifecycle(String replyId) {
                 this.replyId = replyId;
@@ -2211,8 +2217,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private void startText(List<AgentEvent> events) {
                 flushThinking(events);
                 if (textStarted.compareAndSet(false, true)) {
-                    events.add(new TextBlockStartEvent(replyId, "text"));
+                    currentTextBlockId = replyId + "_text_" + textBlockCounter.incrementAndGet();
+                    events.add(new TextBlockStartEvent(replyId, currentTextBlockId));
                 }
+            }
+
+            String textBlockId() {
+                return currentTextBlockId;
             }
 
             private void startThinking(List<AgentEvent> events) {
@@ -2236,7 +2247,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void flushText(List<AgentEvent> events) {
                 if (textStarted.compareAndSet(true, false)) {
-                    events.add(new TextBlockEndEvent(replyId, "text"));
+                    events.add(new TextBlockEndEvent(replyId, currentTextBlockId));
                 }
             }
 
@@ -3130,7 +3141,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             new TextBlockDeltaEvent(
                                                                                     blockLifecycle
                                                                                             .replyId,
-                                                                                    "text",
+                                                                                    blockLifecycle
+                                                                                            .textBlockId(),
                                                                                     tb.getText()));
                                                                 }
                                                             } else if (block
