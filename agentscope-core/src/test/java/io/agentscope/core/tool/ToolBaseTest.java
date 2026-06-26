@@ -288,8 +288,8 @@ class ToolBaseTest {
     }
 
     @Test
-    @DisplayName("Builder should handle null title")
-    void testBuilderWithNullTitle() {
+    @DisplayName("When no title is set, getTitle() falls back to getName()")
+    void testBuilderWithoutTitleFallsBackToName() {
         ToolBase tool =
                 new ToolBase(
                         ToolBase.builder()
@@ -303,7 +303,7 @@ class ToolBaseTest {
                     }
                 };
 
-        assertNull(tool.getTitle());
+        assertEquals("no_title_tool", tool.getTitle());
     }
 
     @Test

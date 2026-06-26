@@ -219,8 +219,8 @@ class SchemaOnlyToolTest {
     }
 
     @Test
-    @DisplayName("Should handle null title from ToolSchema")
-    void testNullTitleFromToolSchema() {
+    @DisplayName("When schema has no title, getTitle() falls back to getName()")
+    void testNoTitleFromToolSchemaFallsBackToName() {
         ToolSchema schema =
                 ToolSchema.builder()
                         .name("no_title_tool")
@@ -230,7 +230,7 @@ class SchemaOnlyToolTest {
 
         SchemaOnlyTool tool = new SchemaOnlyTool(schema);
         assertEquals("no_title_tool", tool.getName());
-        assertNull(tool.getTitle());
+        assertEquals("no_title_tool", tool.getTitle());
     }
 
     @Test
@@ -247,23 +247,23 @@ class SchemaOnlyToolTest {
     }
 
     @Test
-    @DisplayName("Should keep title null via 4-arg constructor (name, desc, params, strict)")
+    @DisplayName("4-arg constructor without title: getTitle() falls back to getName()")
     void testTitleFromFourArgConstructor() {
         Map<String, Object> params = Map.of("type", "object");
         SchemaOnlyTool tool = new SchemaOnlyTool("simple_tool", "Simple tool", params, null);
 
         assertEquals("simple_tool", tool.getName());
-        assertNull(tool.getTitle());
+        assertEquals("simple_tool", tool.getTitle());
         assertEquals("Simple tool", tool.getDescription());
     }
 
     @Test
-    @DisplayName("Should keep title null via 3-arg constructor (name, desc, params)")
-    void testNullTitleFromThreeArgConstructor() {
+    @DisplayName("3-arg constructor without title: getTitle() falls back to getName()")
+    void testNoTitleFromThreeArgConstructorFallsBackToName() {
         Map<String, Object> params = Map.of("type", "object");
         SchemaOnlyTool tool = new SchemaOnlyTool("simple_tool", "Simple tool", params);
 
         assertEquals("simple_tool", tool.getName());
-        assertNull(tool.getTitle());
+        assertEquals("simple_tool", tool.getTitle());
     }
 }
