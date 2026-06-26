@@ -17,9 +17,13 @@ package io.agentscope.core.agui.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -62,20 +66,39 @@ import java.util.Objects;
     @JsonSubTypes.Type(
             value = AguiEvent.ReasoningMessageChunk.class,
             name = "REASONING_MESSAGE_CHUNK"),
-    @JsonSubTypes.Type(value = AguiEvent.ReasoningEnd.class, name = "REASONING_END")
+    @JsonSubTypes.Type(value = AguiEvent.ReasoningEnd.class, name = "REASONING_END"),
+    @JsonSubTypes.Type(value = AguiEvent.RunError.class, name = "RUN_ERROR"),
+    @JsonSubTypes.Type(value = AguiEvent.StepStarted.class, name = "STEP_STARTED"),
+    @JsonSubTypes.Type(value = AguiEvent.StepFinished.class, name = "STEP_FINISHED"),
+    @JsonSubTypes.Type(value = AguiEvent.TextMessageChunk.class, name = "TEXT_MESSAGE_CHUNK"),
+    @JsonSubTypes.Type(value = AguiEvent.ToolCallChunk.class, name = "TOOL_CALL_CHUNK"),
+    @JsonSubTypes.Type(value = AguiEvent.MessagesSnapshot.class, name = "MESSAGES_SNAPSHOT"),
+    @JsonSubTypes.Type(value = AguiEvent.ActivitySnapshot.class, name = "ACTIVITY_SNAPSHOT"),
+    @JsonSubTypes.Type(value = AguiEvent.ActivityDelta.class, name = "ACTIVITY_DELTA"),
+    @JsonSubTypes.Type(
+            value = AguiEvent.ReasoningEncryptedValue.class,
+            name = "REASONING_ENCRYPTED_VALUE")
 })
 public sealed interface AguiEvent
         permits AguiEvent.RunStarted,
                 AguiEvent.RunFinished,
+                AguiEvent.RunError,
+                AguiEvent.StepStarted,
+                AguiEvent.StepFinished,
                 AguiEvent.TextMessageStart,
                 AguiEvent.TextMessageContent,
                 AguiEvent.TextMessageEnd,
+                AguiEvent.TextMessageChunk,
                 AguiEvent.ToolCallStart,
                 AguiEvent.ToolCallArgs,
                 AguiEvent.ToolCallEnd,
+                AguiEvent.ToolCallChunk,
                 AguiEvent.ToolCallResult,
                 AguiEvent.StateSnapshot,
                 AguiEvent.StateDelta,
+                AguiEvent.MessagesSnapshot,
+                AguiEvent.ActivitySnapshot,
+                AguiEvent.ActivityDelta,
                 AguiEvent.Raw,
                 AguiEvent.Custom,
                 AguiEvent.ReasoningStart,
@@ -83,7 +106,8 @@ public sealed interface AguiEvent
                 AguiEvent.ReasoningMessageContent,
                 AguiEvent.ReasoningMessageEnd,
                 AguiEvent.ReasoningMessageChunk,
-                AguiEvent.ReasoningEnd {
+                AguiEvent.ReasoningEnd,
+                AguiEvent.ReasoningEncryptedValue {
 
     /**
      * Get the event type.
@@ -112,13 +136,24 @@ public sealed interface AguiEvent
      * emitted when an agent
      * begins processing a request.
      */
-    record RunStarted(String threadId, String runId) implements AguiEvent {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record RunStarted(String threadId, String runId, String parentRunId, RunAgentInput input)
+            implements AguiEvent {
 
         @JsonCreator
         public RunStarted(
-                @JsonProperty("threadId") String threadId, @JsonProperty("runId") String runId) {
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("parentRunId") String parentRunId,
+                @JsonProperty("input") RunAgentInput input) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.parentRunId = parentRunId;
+            this.input = input;
+        }
+
+        public RunStarted(String threadId, String runId) {
+            this(threadId, runId, null, null);
         }
 
         @Override
@@ -142,13 +177,24 @@ public sealed interface AguiEvent
      * emitted when an agent
      * completes processing a request.
      */
-    record RunFinished(String threadId, String runId) implements AguiEvent {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record RunFinished(String threadId, String runId, Object result, RunFinishedOutcome outcome)
+            implements AguiEvent {
 
         @JsonCreator
         public RunFinished(
-                @JsonProperty("threadId") String threadId, @JsonProperty("runId") String runId) {
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("result") Object result,
+                @JsonProperty("outcome") RunFinishedOutcome outcome) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.result = result;
+            this.outcome = outcome;
+        }
+
+        public RunFinished(String threadId, String runId) {
+            this(threadId, runId, null, null);
         }
 
         @Override
@@ -778,6 +824,435 @@ public sealed interface AguiEvent
         @Override
         public String getRunId() {
             return runId;
+        }
+    }
+
+    /**
+     * Event indicating that an agent run has errored. This event is emitted when
+     * the agent encounters
+     * an error during execution, replacing the legacy Raw+RunFinished pattern.
+     */
+    record RunError(String threadId, String runId, String message, String code)
+            implements AguiEvent {
+
+        @JsonCreator
+        public RunError(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("message") String message,
+                @JsonProperty("code") String code) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.message = Objects.requireNonNull(message, "message cannot be null");
+            this.code = code;
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.RUN_ERROR;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event emitted when an agent step begins execution.
+     */
+    record StepStarted(String threadId, String runId, String stepName) implements AguiEvent {
+
+        @JsonCreator
+        public StepStarted(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("stepName") String stepName) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.stepName = Objects.requireNonNull(stepName, "stepName cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.STEP_STARTED;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event emitted when an agent step completes execution.
+     */
+    record StepFinished(String threadId, String runId, String stepName) implements AguiEvent {
+
+        @JsonCreator
+        public StepFinished(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("stepName") String stepName) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.stepName = Objects.requireNonNull(stepName, "stepName cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.STEP_FINISHED;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * A convenience event to auto start/close text messages (compatibility chunk mode).
+     */
+    record TextMessageChunk(
+            String threadId, String runId, String messageId, String role, String delta, String name)
+            implements AguiEvent {
+
+        @JsonCreator
+        public TextMessageChunk(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("role") String role,
+                @JsonProperty("delta") String delta,
+                @JsonProperty("name") String name) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = messageId;
+            this.role = role;
+            this.delta = delta;
+            this.name = name;
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.TEXT_MESSAGE_CHUNK;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * A convenience event to auto start/close tool calls (compatibility chunk mode).
+     */
+    record ToolCallChunk(
+            String threadId,
+            String runId,
+            String toolCallId,
+            String toolCallName,
+            String parentMessageId,
+            String delta)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ToolCallChunk(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("toolCallName") String toolCallName,
+                @JsonProperty("parentMessageId") String parentMessageId,
+                @JsonProperty("delta") String delta) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.toolCallId = toolCallId;
+            this.toolCallName = toolCallName;
+            this.parentMessageId = parentMessageId;
+            this.delta = delta;
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.TOOL_CALL_CHUNK;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing a full snapshot of the conversation messages. This event
+     * is typically emitted after RUN_FINISHED to synchronize the complete
+     * message state.
+     */
+    record MessagesSnapshot(String threadId, String runId, List<AguiMessage> messages)
+            implements AguiEvent {
+
+        @JsonCreator
+        public MessagesSnapshot(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messages") List<AguiMessage> messages) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messages =
+                    messages != null
+                            ? Collections.unmodifiableList(new ArrayList<>(messages))
+                            : Collections.emptyList();
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.MESSAGES_SNAPSHOT;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing a snapshot of activity state. This event provides
+     * structured activity data that replaces the entire client-side activity
+     * state for the given message.
+     */
+    record ActivitySnapshot(
+            String threadId,
+            String runId,
+            String messageId,
+            String activityType,
+            Map<String, Object> content,
+            Boolean replace)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ActivitySnapshot(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("activityType") String activityType,
+                @JsonProperty("content") Map<String, Object> content,
+                @JsonProperty("replace") Boolean replace) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+            this.activityType = Objects.requireNonNull(activityType, "activityType cannot be null");
+            this.content =
+                    content != null
+                            ? Collections.unmodifiableMap(new HashMap<>(content))
+                            : Collections.emptyMap();
+            this.replace = replace != null ? replace : true;
+        }
+
+        public ActivitySnapshot(
+                String threadId,
+                String runId,
+                String messageId,
+                String activityType,
+                Map<String, Object> content) {
+            this(threadId, runId, messageId, activityType, content, true);
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.ACTIVITY_SNAPSHOT;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing an incremental delta update to activity state. The patch
+     * contains a list of JSON Patch operations (RFC 6902) that should be applied
+     * to the client-side activity state for the given message.
+     */
+    record ActivityDelta(
+            String threadId,
+            String runId,
+            String messageId,
+            String activityType,
+            List<JsonPatchOperation> patch)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ActivityDelta(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("activityType") String activityType,
+                @JsonProperty("patch") List<JsonPatchOperation> patch) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+            this.activityType = Objects.requireNonNull(activityType, "activityType cannot be null");
+            this.patch =
+                    patch != null ? Collections.unmodifiableList(patch) : Collections.emptyList();
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.ACTIVITY_DELTA;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing an encrypted reasoning value. Used for encrypted
+     * reasoning content (ZDR mode), where sensitive reasoning tokens are
+     * encrypted before transmission.
+     */
+    record ReasoningEncryptedValue(
+            String threadId, String runId, String subtype, String entityId, String encryptedValue)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningEncryptedValue(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("subtype") String subtype,
+                @JsonProperty("entityId") String entityId,
+                @JsonProperty("encryptedValue") String encryptedValue) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.subtype = Objects.requireNonNull(subtype, "subtype cannot be null");
+            this.entityId = Objects.requireNonNull(entityId, "entityId cannot be null");
+            this.encryptedValue =
+                    Objects.requireNonNull(encryptedValue, "encryptedValue cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_ENCRYPTED_VALUE;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    // ---- value types ----
+
+    /**
+     * Outcome of a finished run. Can be a success or an interrupt.
+     */
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+    @JsonSubTypes({
+        @JsonSubTypes.Type(value = RunFinishedSuccessOutcome.class, name = "success"),
+        @JsonSubTypes.Type(value = RunFinishedInterruptOutcome.class, name = "interrupt")
+    })
+    sealed interface RunFinishedOutcome
+            permits RunFinishedSuccessOutcome, RunFinishedInterruptOutcome {}
+
+    /**
+     * Successful run outcome.
+     */
+    record RunFinishedSuccessOutcome() implements RunFinishedOutcome {
+
+        @JsonCreator
+        public RunFinishedSuccessOutcome {}
+    }
+
+    /**
+     * Run outcome indicating the run was interrupted, with one or more
+     * interrupts awaiting user resolution.
+     */
+    record RunFinishedInterruptOutcome(List<Interrupt> interrupts) implements RunFinishedOutcome {
+
+        @JsonCreator
+        public RunFinishedInterruptOutcome(@JsonProperty("interrupts") List<Interrupt> interrupts) {
+            this.interrupts =
+                    interrupts != null
+                            ? Collections.unmodifiableList(interrupts)
+                            : Collections.emptyList();
+        }
+    }
+
+    /**
+     * Represents an interrupt that occurred during agent execution, requiring
+     * user input to resolve before the agent can continue.
+     */
+    record Interrupt(
+            String id,
+            String reason,
+            String message,
+            String toolCallId,
+            Map<String, Object> responseSchema,
+            String expiresAt,
+            Map<String, Object> metadata) {
+
+        @JsonCreator
+        public Interrupt(
+                @JsonProperty("id") String id,
+                @JsonProperty("reason") String reason,
+                @JsonProperty("message") String message,
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("responseSchema") Map<String, Object> responseSchema,
+                @JsonProperty("expiresAt") String expiresAt,
+                @JsonProperty("metadata") Map<String, Object> metadata) {
+            this.id = Objects.requireNonNull(id, "id cannot be null");
+            this.reason = Objects.requireNonNull(reason, "reason cannot be null");
+            this.message = message;
+            this.toolCallId = toolCallId;
+            this.responseSchema = responseSchema;
+            this.expiresAt = expiresAt;
+            this.metadata = metadata;
         }
     }
 
