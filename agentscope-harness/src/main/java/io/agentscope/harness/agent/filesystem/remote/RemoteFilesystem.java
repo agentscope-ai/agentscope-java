@@ -530,7 +530,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
             byte[] contentBytes;
             if ("base64".equals(fd.encoding())) {
-                contentBytes = Base64.getDecoder().decode(fd.content());
+                contentBytes = Base64.getMimeDecoder().decode(fd.content());
             } else {
                 contentBytes = fd.content().getBytes(StandardCharsets.UTF_8);
             }

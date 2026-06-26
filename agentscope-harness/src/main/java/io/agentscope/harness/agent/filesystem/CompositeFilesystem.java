@@ -188,9 +188,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return LsResult.success(remapped);
         }
 
-        if ("/".equals(path)) {
+        if ("/".equals(path) || ".".equals(path)) {
             List<FileInfo> results = new ArrayList<>();
-            LsResult defaultResult = defaultBackend.ls(runtimeContext, path);
+            LsResult defaultResult = defaultBackend.ls(runtimeContext, "/");
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {
                 results.addAll(defaultResult.entries());
             }
@@ -269,7 +269,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
             }
         }
 
-        if (path == null || "/".equals(path)) {
+        if (path == null || "/".equals(path) || ".".equals(path)) {
             List<GrepMatch> allMatches = new ArrayList<>();
             GrepResult defaultResult = defaultBackend.grep(runtimeContext, pattern, path, glob);
             if (!defaultResult.isSuccess()) {
@@ -332,7 +332,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         // Non-root path that didn't match any route: delegate to default backend only.
         // Route scanning only makes sense for root-level recursive globs.
-        if (path != null && !"/".equals(path)) {
+        if (path != null && !"/".equals(path) && !".".equals(path)) {
             return defaultBackend.glob(runtimeContext, pattern, path);
         }
 

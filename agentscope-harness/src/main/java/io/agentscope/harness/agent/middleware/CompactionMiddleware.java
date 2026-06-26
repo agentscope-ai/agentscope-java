@@ -21,7 +21,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
@@ -55,7 +54,7 @@ import reactor.core.publisher.Flux;
  * If the model does not report its context window, falls back to
  * {@link CompactionConfig#FALLBACK_TRIGGER_TOKENS}.
  */
-public class CompactionMiddleware implements MiddlewareBase {
+public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
