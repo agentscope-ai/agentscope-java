@@ -36,5 +36,6 @@
 <!--        <module>agentscope-extensions-model-openai-official</module>-->
         <module>agentscope-extensions-model-gemini</module>
         <module>agentscope-extensions-model-anthropic</module>
+        <module>agentscope-extensions-model-dashscope</module>
     </modules>
 </project>

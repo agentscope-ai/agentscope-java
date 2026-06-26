@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
@@ -71,13 +70,6 @@ class ModelRegistryTest {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
-    void resolve_dashscopeShortFormat_createsDashScopeChatModel() {
-        Model m = ModelRegistry.resolve("qwen-max");
-        assertInstanceOf(DashScopeChatModel.class, m);
-    }
-
-    @Test
     void resolve_unknownModel_throwsWithHelpMessage() {
         IllegalArgumentException ex =
                 assertThrows(
@@ -85,6 +77,7 @@ class ModelRegistryTest {
                         () -> ModelRegistry.resolve("totally-unknown-id"));
         assertTrue(ex.getMessage().contains("Cannot resolve model"));
         assertTrue(ex.getMessage().contains("OPENAI_API_KEY"));
+        assertTrue(ex.getMessage().contains("agentscope-extensions-model-dashscope"));
     }
 
     @Test
@@ -114,6 +107,12 @@ class ModelRegistryTest {
     @Test
     void canResolve_anthropicWithoutExtension_returnsFalse() {
         assertFalse(ModelRegistry.canResolve("anthropic:claude-sonnet-4.5"));
+    }
+
+    @Test
+    void canResolve_dashscopeWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("dashscope:qwen-max"));
+        assertFalse(ModelRegistry.canResolve("qwen-max"));
     }
 
     @Test

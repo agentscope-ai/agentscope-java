@@ -56,8 +56,6 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.Gen
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -70,7 +68,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.studio.StudioManager;
@@ -102,6 +99,8 @@ import org.slf4j.LoggerFactory;
 final class AttributesExtractors {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AttributesExtractors.class);
+    private static final String EXTENSION_DASHSCOPE_CHAT_MODEL =
+            "io.agentscope.extensions.model.dashscope.DashScopeChatModel";
     private static final String EXTENSION_OPENAI_CHAT_MODEL =
             "io.agentscope.extensions.model.openai.OpenAIChatModel";
     private static final String EXTENSION_GEMINI_CHAT_MODEL =
@@ -569,8 +568,8 @@ final class AttributesExtractors {
 
         static {
             FORMATTER_MAPPERS = new HashMap<>();
-            FORMATTER_MAPPERS.put(DashScopeChatFormatter.class.getSimpleName(), DASHSCOPE);
-            FORMATTER_MAPPERS.put(DashScopeMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put("DashScopeChatFormatter", DASHSCOPE);
+            FORMATTER_MAPPERS.put("DashScopeMultiAgentFormatter", DASHSCOPE);
             FORMATTER_MAPPERS.put("GeminiChatFormatter", DASHSCOPE);
             FORMATTER_MAPPERS.put("GeminiMultiAgentFormatter", DASHSCOPE);
             FORMATTER_MAPPERS.put("OpenAIChatFormatter", DASHSCOPE);
@@ -587,7 +586,7 @@ final class AttributesExtractors {
     private static final class ProviderNameConverter {
 
         static String getProviderName(ChatModelBase instance) {
-            if (instance instanceof DashScopeChatModel) {
+            if (isDashScopeChatModel(instance)) {
                 return DASHSCOPE;
             } else if (isGeminiChatModel(instance)) {
                 return GCP_GEMINI;
@@ -601,6 +600,10 @@ final class AttributesExtractors {
 
         private static boolean isOpenAIChatModel(ChatModelBase instance) {
             return isExtensionModel(instance, EXTENSION_OPENAI_CHAT_MODEL);
+        }
+
+        private static boolean isDashScopeChatModel(ChatModelBase instance) {
+            return isExtensionModel(instance, EXTENSION_DASHSCOPE_CHAT_MODEL);
         }
 
         private static boolean isGeminiChatModel(ChatModelBase instance) {

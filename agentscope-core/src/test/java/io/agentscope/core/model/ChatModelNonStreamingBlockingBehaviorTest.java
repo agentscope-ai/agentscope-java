@@ -57,45 +57,6 @@ class ChatModelNonStreamingBlockingBehaviorTest {
     }
 
     @Test
-    @DisplayName("DashScopeChatModel - Should be NON-BLOCKING in non-streaming mode")
-    void testDashScopeChatModelNonBlocking() throws Exception {
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
-                        .setHeader("Content-Type", "application/json"));
-
-        DashScopeChatModel model =
-                DashScopeChatModel.builder().apiKey("test-key").modelName("qwen-max").stream(false)
-                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
-                        .build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .role(MsgRole.USER)
-                                .content(List.of(TextBlock.builder().text("Hello").build()))
-                                .build());
-
-        CountDownLatch latch = new CountDownLatch(1);
-        String currentThreadName = Thread.currentThread().getName();
-        AtomicReference<String> streamThreadName = new AtomicReference<>();
-        model.stream(messages, null, null)
-                .subscribe(
-                        response -> {
-                            streamThreadName.set(Thread.currentThread().getName());
-                            latch.countDown();
-                        },
-                        error -> latch.countDown());
-        latch.await(3, TimeUnit.SECONDS);
-        assertNotNull(streamThreadName.get());
-        assertNotEquals(
-                currentThreadName,
-                streamThreadName.get(),
-                "DashScopeChatModel should be NON-BLOCKING");
-    }
-
-    @Test
     @DisplayName("OllamaChatModel - Should be NON-BLOCKING in non-streaming mode")
     void testOllamaChatModelNonBlocking() throws Exception {
         // Setup mock response with delay
