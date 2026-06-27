@@ -88,10 +88,12 @@ public final class WorkspacePathNormalizer {
     }
 
     private static String tryStrip(String path, String prefix) {
-        if (path.startsWith(prefix + "/")) {
-            return path.substring(prefix.length() + 1);
+        String normalizedPath = path.replace('\\', '/');
+        String normalizedPrefix = prefix.replace('\\', '/');
+        if (normalizedPath.startsWith(normalizedPrefix + "/")) {
+            return normalizedPath.substring(normalizedPrefix.length() + 1);
         }
-        if (path.equals(prefix)) {
+        if (normalizedPath.equals(normalizedPrefix)) {
             return ".";
         }
         return null;

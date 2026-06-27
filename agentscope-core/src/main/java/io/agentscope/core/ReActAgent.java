@@ -49,8 +49,8 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
-import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
@@ -140,6 +140,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
@@ -846,28 +847,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // filtered out by callInternal before reaching the caller.
                                     boolean isSubagentBusPath =
                                             subscriberCtx.hasKey(SubagentEventBus.CONTEXT_KEY);
-                                    lifecycle
-                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
-                                            .contextWrite(
-                                                    c ->
-                                                            isSubagentBusPath
-                                                                    ? c
-                                                                    : c.put(
-                                                                            AgentEventEmitter
-                                                                                    .CONTEXT_KEY,
-                                                                            (AgentEventEmitter)
-                                                                                    sink::next))
-                                            .doFinally(
-                                                    signal -> {
-                                                        sink.next(new AgentEndEvent(replyId));
-                                                        sink.complete();
-                                                    })
-                                            .contextWrite(subscriberCtx)
-                                            .subscribe(
-                                                    finalMsg ->
-                                                            sink.next(
-                                                                    new AgentResultEvent(finalMsg)),
-                                                    sink::error);
+                                    Disposable lifecycleDisposable =
+                                            lifecycle
+                                                    .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                                    .contextWrite(
+                                                            c ->
+                                                                    isSubagentBusPath
+                                                                            ? c
+                                                                            : c.put(
+                                                                                    AgentEventEmitter
+                                                                                            .CONTEXT_KEY,
+                                                                                    (AgentEventEmitter)
+                                                                                            sink
+                                                                                                    ::next))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new AgentEndEvent(replyId));
+                                                                sink.complete();
+                                                            })
+                                                    .contextWrite(subscriberCtx)
+                                                    .subscribe(
+                                                            finalMsg ->
+                                                                    sink.next(
+                                                                            new AgentResultEvent(
+                                                                                    finalMsg)),
+                                                            sink::error);
+                                    sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
         return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
@@ -1026,7 +1032,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        if (model.supportsNativeStructuredOutput()) {
+        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
+        boolean useNative =
+                hasTools
+                        ? model.supportsNativeStructuredOutputWithTools()
+                        : model.supportsNativeStructuredOutput();
+        if (useNative) {
             return doNativeStructuredCall(msgs, jsonSchema);
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
@@ -1187,6 +1198,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private ChatUsage collectAggregatedUsage(AgentState agentState) {
         int totalInput = 0;
         int totalOutput = 0;
+        int totalCached = 0;
         double totalTime = 0;
         boolean hasUsage = false;
         for (Msg msg : agentState.getContext()) {
@@ -1196,6 +1208,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     hasUsage = true;
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
+                    totalCached += usage.getCachedTokens();
                     totalTime += usage.getTime();
                 }
             }
@@ -1204,6 +1217,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ? ChatUsage.builder()
                         .inputTokens(totalInput)
                         .outputTokens(totalOutput)
+                        .cachedTokens(totalCached)
                         .time(totalTime)
                         .build()
                 : null;
@@ -2091,56 +2105,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
-            AtomicBoolean textStarted = new AtomicBoolean(false);
-            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-            Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
+            ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireReasoningChunk(
-                                                            msg,
-                                                            context,
-                                                            mci.model().getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireReasoningChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            mci.model()
+                                                                                    .getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            emitBlockEvents(
-                                                    block,
-                                                    replyId,
-                                                    context,
-                                                    textStarted,
-                                                    thinkingStarted,
-                                                    withToolEvents
-                                                            ? startedToolCalls
-                                                            : new ConcurrentHashMap<>(),
-                                                    events);
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            emitBlockEvents(
+                                                                    block,
+                                                                    context,
+                                                                    blockLifecycle,
+                                                                    withToolEvents,
+                                                                    events);
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
-                                if (textStarted.get()) {
-                                    events.add(new TextBlockEndEvent(replyId, "text"));
-                                }
-                                if (thinkingStarted.get()) {
-                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                                }
-                                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
-                                    events.add(
-                                            new ToolCallEndEvent(
-                                                    replyId, tc.getKey(), tc.getValue()));
-                                }
+                                blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
                             });
@@ -2150,43 +2157,106 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private void emitBlockEvents(
                 ContentBlock block,
-                String replyId,
                 ReasoningContext context,
-                AtomicBoolean textStarted,
-                AtomicBoolean thinkingStarted,
-                Map<String, String> startedToolCalls,
+                ModelCallBlockLifecycle blockLifecycle,
+                boolean withToolEvents,
                 List<AgentEvent> events) {
 
             if (block instanceof TextBlock tb) {
-                if (textStarted.compareAndSet(false, true)) {
-                    events.add(new TextBlockStartEvent(replyId, "text"));
-                }
+                blockLifecycle.startText(events);
                 if (tb.getText() != null && !tb.getText().isEmpty()) {
-                    events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
+                    events.add(
+                            new TextBlockDeltaEvent(blockLifecycle.replyId, "text", tb.getText()));
                 }
             } else if (block instanceof ThinkingBlock tb) {
-                if (thinkingStarted.compareAndSet(false, true)) {
-                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
-                }
+                blockLifecycle.startThinking(events);
                 if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
-                    events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
+                    events.add(
+                            new ThinkingBlockDeltaEvent(
+                                    blockLifecycle.replyId, "thinking", tb.getThinking()));
                 }
-            } else if (block instanceof ToolUseBlock tub) {
+            } else if (withToolEvents && block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
                 String toolName = tub.getName();
-                if (toolId != null && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
-                    if (toolName != null && !toolName.startsWith("__")) {
-                        events.add(new ToolCallStartEvent(replyId, toolId, toolName));
-                    }
-                }
+                blockLifecycle.startToolCall(toolId, toolName, events);
                 if (tub.getContent() != null && !tub.getContent().isEmpty()) {
                     events.add(
                             new ToolCallDeltaEvent(
-                                    replyId,
+                                    blockLifecycle.replyId,
                                     toolId != null ? toolId : "",
                                     toolName,
                                     tub.getContent()));
                 }
+            }
+        }
+
+        /**
+         * Tracks block lifecycle within one model-call subscription.
+         *
+         * <p>The model stream is consumed through {@code concatMap}, but the state holders keep the
+         * previous thread-safe shape because model providers may deliver chunk content
+         * unpredictably. This helper only changes when pending end events are flushed; it does not
+         * change the block identity or event payloads.
+         */
+        private final class ModelCallBlockLifecycle {
+            private final String replyId;
+            private final AtomicBoolean textStarted = new AtomicBoolean(false);
+            private final AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            private final Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
+
+            private ModelCallBlockLifecycle(String replyId) {
+                this.replyId = replyId;
+            }
+
+            private void startText(List<AgentEvent> events) {
+                flushThinking(events);
+                if (textStarted.compareAndSet(false, true)) {
+                    events.add(new TextBlockStartEvent(replyId, "text"));
+                }
+            }
+
+            private void startThinking(List<AgentEvent> events) {
+                if (thinkingStarted.compareAndSet(false, true)) {
+                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+                }
+            }
+
+            private void startToolCall(String toolId, String toolName, List<AgentEvent> events) {
+                if (toolId == null || startedToolCalls.containsKey(toolId)) {
+                    return;
+                }
+                flushText(events);
+                flushThinking(events);
+                flushAllToolCalls(events);
+                boolean visibleTool = toolName != null && !toolName.startsWith("__");
+                if (visibleTool && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
+                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                }
+            }
+
+            private void flushText(List<AgentEvent> events) {
+                if (textStarted.compareAndSet(true, false)) {
+                    events.add(new TextBlockEndEvent(replyId, "text"));
+                }
+            }
+
+            private void flushThinking(List<AgentEvent> events) {
+                if (thinkingStarted.compareAndSet(true, false)) {
+                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                }
+            }
+
+            private void flushAllToolCalls(List<AgentEvent> events) {
+                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
+                    events.add(new ToolCallEndEvent(replyId, tc.getKey(), tc.getValue()));
+                }
+                startedToolCalls.clear();
+            }
+
+            private void flushAll(List<AgentEvent> events) {
+                flushText(events);
+                flushThinking(events);
+                flushAllToolCalls(events);
             }
         }
 
@@ -2501,47 +2571,60 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             hookDispatcher
                                                                     .fireActingChunk(
                                                                             toolUse, chunk, toolkit)
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
                                                                     .subscribe();
                                                         });
 
-                                                executeToolCalls(approved)
-                                                        .contextWrite(ctx -> ctx.putAll(parentCtx))
-                                                        .subscribe(
-                                                                results -> {
-                                                                    List<
-                                                                                    Map.Entry<
+                                                Disposable toolCallsDisposable =
+                                                        executeToolCalls(approved)
+                                                                .contextWrite(
+                                                                        ctx ->
+                                                                                ctx.putAll(
+                                                                                        parentCtx))
+                                                                .subscribe(
+                                                                        results -> {
+                                                                            List<
+                                                                                            Map
+                                                                                                            .Entry<
+                                                                                                    ToolUseBlock,
+                                                                                                    ToolResultBlock>>
+                                                                                    merged =
+                                                                                            new ArrayList<>(
+                                                                                                    deniedEntries);
+                                                                            merged.addAll(results);
+                                                                            resultHolder.set(
+                                                                                    merged);
+                                                                            for (Map.Entry<
                                                                                             ToolUseBlock,
-                                                                                            ToolResultBlock>>
-                                                                            merged =
-                                                                                    new ArrayList<>(
-                                                                                            deniedEntries);
-                                                                    merged.addAll(results);
-                                                                    resultHolder.set(merged);
-                                                                    for (Map.Entry<
-                                                                                    ToolUseBlock,
-                                                                                    ToolResultBlock>
-                                                                            entry : results) {
-                                                                        emitToolResultDelta(
-                                                                                sink,
-                                                                                replyId,
-                                                                                entry,
-                                                                                chunkedToolIds);
-                                                                        ToolResultState state =
-                                                                                determineToolResultState(
-                                                                                        entry
-                                                                                                .getValue());
-                                                                        sink.next(
-                                                                                new ToolResultEndEvent(
+                                                                                            ToolResultBlock>
+                                                                                    entry :
+                                                                                            results) {
+                                                                                emitToolResultDelta(
+                                                                                        sink,
                                                                                         replyId,
-                                                                                        entry.getKey()
-                                                                                                .getId(),
-                                                                                        entry.getKey()
-                                                                                                .getName(),
-                                                                                        state));
-                                                                    }
-                                                                    sink.complete();
-                                                                },
-                                                                sink::error);
+                                                                                        entry,
+                                                                                        chunkedToolIds);
+                                                                                ToolResultState
+                                                                                        state =
+                                                                                                determineToolResultState(
+                                                                                                        entry
+                                                                                                                .getValue());
+                                                                                sink.next(
+                                                                                        new ToolResultEndEvent(
+                                                                                                replyId,
+                                                                                                entry.getKey()
+                                                                                                        .getId(),
+                                                                                                entry.getKey()
+                                                                                                        .getName(),
+                                                                                                state));
+                                                                            }
+                                                                            sink.complete();
+                                                                        },
+                                                                        sink::error);
+                                                sink.onCancel(toolCallsDisposable);
                                             }));
 
             return deniedEvents.concatWith(approvedEvents);
@@ -2876,10 +2959,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             ToolUseBlock toolUse = entry.getKey();
             ToolResultBlock result = entry.getValue();
 
-            Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
+            // FIX: determine the final state and update ToolResultBlock before
+            // adding to contextMutable(), so that history queries via
+            // agent.getAgentState(ctx).contextMutable() reflect the correct
+            // final state instead of always showing RUNNING.
+            ToolResultState finalState = determineToolResultState(result);
+            ToolResultBlock updatedResult = result.withState(finalState);
+
+            Msg toolMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
 
             return hookDispatcher
-                    .firePostActing(toolUse, result, toolkit, toolMsg)
+                    .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
                                 if (soTool != null
@@ -3002,68 +3093,71 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
-            AtomicBoolean textStarted = new AtomicBoolean(false);
-            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireSummaryChunk(
-                                                            msg,
-                                                            context,
-                                                            hookOptions,
-                                                            model.getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireSummaryChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            hookOptions,
+                                                                            model.getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            if (block instanceof TextBlock tb) {
-                                                if (textStarted.compareAndSet(false, true)) {
-                                                    events.add(
-                                                            new TextBlockStartEvent(
-                                                                    replyId, "text"));
-                                                }
-                                                if (tb.getText() != null
-                                                        && !tb.getText().isEmpty()) {
-                                                    events.add(
-                                                            new TextBlockDeltaEvent(
-                                                                    replyId, "text", tb.getText()));
-                                                }
-                                            } else if (block instanceof ThinkingBlock tb) {
-                                                if (thinkingStarted.compareAndSet(false, true)) {
-                                                    events.add(
-                                                            new ThinkingBlockStartEvent(
-                                                                    replyId, "thinking"));
-                                                }
-                                                if (tb.getThinking() != null
-                                                        && !tb.getThinking().isEmpty()) {
-                                                    events.add(
-                                                            new ThinkingBlockDeltaEvent(
-                                                                    replyId,
-                                                                    "thinking",
-                                                                    tb.getThinking()));
-                                                }
-                                            }
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            if (block instanceof TextBlock tb) {
+                                                                blockLifecycle.startText(events);
+                                                                if (tb.getText() != null
+                                                                        && !tb.getText()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new TextBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "text",
+                                                                                    tb.getText()));
+                                                                }
+                                                            } else if (block
+                                                                    instanceof ThinkingBlock tb) {
+                                                                blockLifecycle.startThinking(
+                                                                        events);
+                                                                if (tb.getThinking() != null
+                                                                        && !tb.getThinking()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new ThinkingBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "thinking",
+                                                                                    tb
+                                                                                            .getThinking()));
+                                                                }
+                                                            }
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
-                                if (textStarted.get()) {
-                                    events.add(new TextBlockEndEvent(replyId, "text"));
-                                }
-                                if (thinkingStarted.get()) {
-                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                                }
+                                blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
                             });
