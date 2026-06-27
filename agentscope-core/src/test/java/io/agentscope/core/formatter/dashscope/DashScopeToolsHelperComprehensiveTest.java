@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
@@ -148,6 +150,31 @@ class DashScopeToolsHelperComprehensiveTest {
         assertEquals(0.9, params.getTemperature());
         // maxTokens from defaultOptions should be used
         assertEquals(256, params.getMaxTokens());
+    }
+
+    @Test
+    void testApplyOptionsWithResponseFormat() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        ResponseFormat responseFormat = ResponseFormat.jsonObject();
+        GenerateOptions options = GenerateOptions.builder().responseFormat(responseFormat).build();
+
+        helper.applyOptions(params, options, null);
+
+        assertSame(responseFormat, params.getResponseFormat());
+    }
+
+    @Test
+    void testApplyOptionsResponseFormatOptionsOverrideDefault() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        ResponseFormat responseFormat = ResponseFormat.jsonObject();
+        ResponseFormat defaultResponseFormat = ResponseFormat.text();
+        GenerateOptions options = GenerateOptions.builder().responseFormat(responseFormat).build();
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder().responseFormat(defaultResponseFormat).build();
+
+        helper.applyOptions(params, options, defaultOptions);
+
+        assertSame(responseFormat, params.getResponseFormat());
     }
 
     @Test

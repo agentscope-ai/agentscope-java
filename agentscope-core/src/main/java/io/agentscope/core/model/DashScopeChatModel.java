@@ -384,7 +384,7 @@ public class DashScopeChatModel extends ChatModelBase {
 
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return true;
+        return false;
     }
 
     public static class Builder {

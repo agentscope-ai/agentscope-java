@@ -107,6 +107,12 @@ class DashScopeChatModelTest {
         assertNotNull(customModel, "Custom model should be created");
     }
 
+    @Test
+    @DisplayName("Should use fallback structured output path")
+    void testDoesNotSupportNativeStructuredOutput() {
+        assertFalse(model.supportsNativeStructuredOutput());
+    }
+
     // ========== Streaming Configuration Tests ==========
 
     @Test

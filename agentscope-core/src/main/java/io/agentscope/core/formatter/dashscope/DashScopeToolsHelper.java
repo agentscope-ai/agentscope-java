@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
@@ -102,6 +103,12 @@ public class DashScopeToolsHelper {
                 getOption(options, defaultOptions, GenerateOptions::getParallelToolCalls);
         if (parallelToolCalls != null) {
             params.setParallelToolCalls(parallelToolCalls);
+        }
+
+        ResponseFormat responseFormat =
+                getOption(options, defaultOptions, GenerateOptions::getResponseFormat);
+        if (responseFormat != null) {
+            params.setResponseFormat(responseFormat);
         }
     }
 
