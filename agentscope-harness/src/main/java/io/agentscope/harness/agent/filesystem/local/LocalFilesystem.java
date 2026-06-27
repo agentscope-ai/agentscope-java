@@ -359,7 +359,8 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content = Files.readString(resolved, StandardCharsets.UTF_8);
+            String content = Files.readString(resolved, StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n").replace("\r", "\n");
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
