@@ -16,10 +16,12 @@
 package io.agentscope.core.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +40,60 @@ import org.junit.jupiter.api.Test;
  * implementation can drop in assertions without re-deriving it.
  */
 class AgentEventStreamTest {
+
+    @Nested
+    @DisplayName("AgentEvent Jackson contract")
+    class AgentEventJacksonContract {
+
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        @Test
+        @DisplayName("AgentStartEvent serializes with a single type property")
+        void agentStartEventSerializesWithSingleTypeProperty() throws Exception {
+            AgentStartEvent event = new AgentStartEvent("session-1", "reply-1", "assistant");
+
+            String serialized = mapper.writeValueAsString(event);
+            JsonNode json = mapper.readTree(serialized);
+
+            assertEquals("AGENT_START", json.path("type").asText());
+            assertEquals(7, json.size());
+            assertEquals(1, serialized.split("\"type\"", -1).length - 1);
+            assertEquals("session-1", json.path("sessionId").asText());
+            assertEquals("reply-1", json.path("replyId").asText());
+            assertEquals("assistant", json.path("name").asText());
+            assertEquals("assistant", json.path("role").asText());
+            assertTrue(json.hasNonNull("id"));
+            assertTrue(json.hasNonNull("createdAt"));
+        }
+
+        @Test
+        @DisplayName("AgentEvent deserializes polymorphically from type")
+        void agentEventDeserializesPolymorphically() throws Exception {
+            String json =
+                    """
+                    {
+                      "type": "AGENT_START",
+                      "id": "evt_1",
+                      "createdAt": "2026-06-27T14:14:24Z",
+                      "sessionId": "session-1",
+                      "replyId": "reply-1",
+                      "name": "assistant",
+                      "role": "assistant"
+                    }
+                    """;
+
+            AgentEvent event = mapper.readValue(json, AgentEvent.class);
+
+            AgentStartEvent startEvent = assertInstanceOf(AgentStartEvent.class, event);
+            assertEquals(AgentEventType.AGENT_START, startEvent.getType());
+            assertEquals("evt_1", startEvent.getId());
+            assertEquals("2026-06-27T14:14:24Z", startEvent.getCreatedAt());
+            assertEquals("session-1", startEvent.getSessionId());
+            assertEquals("reply-1", startEvent.getReplyId());
+            assertEquals("assistant", startEvent.getName());
+            assertEquals("assistant", startEvent.getRole());
+        }
+    }
 
     @Nested
     @DisplayName("Legacy event-name aliases round-trip via Jackson")
