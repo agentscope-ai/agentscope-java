@@ -16,26 +16,11 @@
 package io.agentscope.core.credential;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.agentscope.core.model.OllamaChatModel;
 import org.junit.jupiter.api.Test;
 
 class CredentialsTest {
-
-    @Test
-    void ollamaCredentialHostMayBeNull() {
-        OllamaCredential c = OllamaCredential.builder().build();
-        assertNull(c.getHost());
-        assertEquals(OllamaChatModel.class, c.getChatModelClass());
-    }
-
-    @Test
-    void ollamaCredentialKeepsHost() {
-        OllamaCredential c = OllamaCredential.builder().host("http://ollama.local:11434").build();
-        assertEquals("http://ollama.local:11434", c.getHost());
-    }
 
     @Test
     void deepSeekCredentialThrowsOnGetChatModelClass() {

@@ -82,13 +82,15 @@ class ModelRegistryTest {
 
     @Test
     void resolve_caching_returnsSameInstance() {
-        Model a = ModelRegistry.resolve("ollama:llama3");
-        Model b = ModelRegistry.resolve("ollama:llama3");
+        ModelRegistry.registerFactory("local:(.+)", id -> new StubModel(id));
+
+        Model a = ModelRegistry.resolve("local:alpha");
+        Model b = ModelRegistry.resolve("local:alpha");
         assertSame(a, b);
     }
 
     @Test
-    void registerFactory_userFactory_takesPriorityOverBuiltin() {
+    void registerFactory_userFactory_resolvesMatchingPattern() {
         Model custom = new StubModel("custom-openai");
         ModelRegistry.registerFactory("openai:(.+)", id -> custom);
         assertSame(custom, ModelRegistry.resolve("openai:anything"));
@@ -113,6 +115,11 @@ class ModelRegistryTest {
     void canResolve_dashscopeWithoutExtension_returnsFalse() {
         assertFalse(ModelRegistry.canResolve("dashscope:qwen-max"));
         assertFalse(ModelRegistry.canResolve("qwen-max"));
+    }
+
+    @Test
+    void canResolve_ollamaWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("ollama:llama3"));
     }
 
     @Test

@@ -347,6 +347,11 @@
                 <artifactId>agentscope-extensions-model-dashscope</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-ollama</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Micronaut Extension -->
             <dependency>
