@@ -220,18 +220,6 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- Exclude pre-existing broken tests (references symbols that were removed
-                 elsewhere in the v2 migration; tracked separately). -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <testExcludes>
-                        <exclude>io/agentscope/core/e2e/MultiAgentE2ETest.java</exclude>
-                    </testExcludes>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 </project>
