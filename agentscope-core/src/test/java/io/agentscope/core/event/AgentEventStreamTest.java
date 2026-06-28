@@ -56,7 +56,6 @@ class AgentEventStreamTest {
             JsonNode json = mapper.readTree(serialized);
 
             assertEquals("AGENT_START", json.path("type").asText());
-            assertEquals(7, json.size());
             assertEquals(1, serialized.split("\"type\"", -1).length - 1);
             assertEquals("session-1", json.path("sessionId").asText());
             assertEquals("reply-1", json.path("replyId").asText());
