@@ -111,6 +111,22 @@ class DashScopeChatModelTest {
         assertNotNull(customModel, "Custom model should be created");
     }
 
+    @Test
+    @DisplayName("Should report native structured output as unsupported (issue #1852)")
+    void testNativeStructuredOutputUnsupported() {
+        // DashScope's native text-generation protocol only accepts
+        // response_format {"type":"json_object"} and not {"type":"json_schema"},
+        // so native schema-constrained structured output must be disabled. This
+        // routes structured calls to the tool-based fallback path. Do not flip
+        // this expectation without wiring json_object support — see issue #1852.
+        assertFalse(
+                model.supportsNativeStructuredOutput(),
+                "DashScope must not advertise native structured output");
+        assertFalse(
+                model.supportsNativeStructuredOutputWithTools(),
+                "DashScope must not advertise native structured output with tools");
+    }
+
     // ========== Streaming Configuration Tests ==========
 
     @Test

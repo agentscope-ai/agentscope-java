@@ -390,9 +390,33 @@ public class DashScopeChatModel extends ChatModelBase {
         return modelName;
     }
 
+    /**
+     * DashScope does not support native schema-constrained structured output.
+     *
+     * <p>The DashScope native text-generation protocol
+     * ({@code /api/v1/services/aigc/text-generation/generation}) only accepts
+     * {@code response_format: {"type": "json_object"}} and does <b>not</b> support
+     * {@code {"type": "json_schema", ...}}. Sending a json_schema payload is either
+     * ignored or rejected with HTTP 400. Because the native structured-output path
+     * ({@link io.agentscope.core.ReActAgent}) relies on {@code response_format} carrying
+     * the JSON Schema (and does not inject the schema into the prompt), it cannot produce
+     * schema-conforming output on this channel.
+     *
+     * <p>Returning {@code false} routes structured-output calls to the tool-based fallback
+     * path ({@code doFallbackStructuredCall}), which uses Qwen function-calling to return
+     * reliable, schema-conforming results. This also keeps
+     * {@link #supportsNativeStructuredOutputWithTools()} consistent, since it falls back to
+     * this method.
+     *
+     * <p>Do not flip this back to {@code true} without first wiring json_object support into
+     * the request and handling DashScope's "messages must contain the word json" requirement
+     * — see issue #1852.
+     *
+     * @return always {@code false} for the DashScope native channel
+     */
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return true;
+        return false;
     }
 
     public static class Builder {
