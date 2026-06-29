@@ -21,12 +21,16 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
  * Marks a filesystem that can have its backing {@link Sandbox} injected at runtime.
  *
  * <p>Implemented by {@link SandboxBackedFilesystem} so {@link
- * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} can set the active sandbox for each
- * call and clear it afterward.
+ * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} can bind and unbind a sandbox
+ * per session key, allowing a single filesystem proxy to serve concurrent sessions safely.
  */
 public interface SandboxAware {
 
-    void setSandbox(Sandbox sandbox);
+    // Binds a live sandbox to the given session key for the duration of one call.
+    void bindSandbox(String sessionKey, Sandbox sandbox);
 
-    Sandbox getSandbox();
+    // Removes the sandbox binding for the given session key after a call completes.
+    void unbindSandbox(String sessionKey);
+
+    Sandbox getSandbox(String sessionKey);
 }

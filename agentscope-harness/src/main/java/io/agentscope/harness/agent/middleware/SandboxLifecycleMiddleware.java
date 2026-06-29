@@ -21,7 +21,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,8 +53,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
-            new AtomicReference<>();
+    // per-session acquire results; keyed by sessionId so concurrent sessions don't interfere
+    private final ConcurrentHashMap<String, SandboxAcquireResult> acquireResults =
+            new ConcurrentHashMap<>();
 
     public SandboxLifecycleMiddleware(
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
@@ -77,18 +78,20 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (sandboxContext == null) {
             return;
         }
+        String sessionKey = ctx.getSessionId();
         try {
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {
                 sandbox.start();
-                filesystemProxy.setSandbox(sandbox);
-                currentAcquireResult.set(result);
+                filesystemProxy.bindSandbox(sessionKey, sandbox);
+                acquireResults.put(sessionKey, result);
                 log.debug(
-                        "[sandbox-mw] Acquired sandbox {}",
-                        sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
+                        "[sandbox-mw] Acquired sandbox {} for session {}",
+                        sandbox.getState() != null ? sandbox.getState().getSessionId() : "?",
+                        sessionKey);
             } catch (Exception e) {
-                filesystemProxy.setSandbox(null);
+                filesystemProxy.unbindSandbox(sessionKey);
                 try {
                     sandboxManager.release(result);
                 } catch (Exception releaseErr) {
@@ -113,11 +116,12 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
      * @param ctx the per-call RuntimeContext (captured at acquire time)
      */
     public void releaseForCall(RuntimeContext ctx) {
-        SandboxAcquireResult result = currentAcquireResult.getAndSet(null);
+        String sessionKey = ctx != null ? ctx.getSessionId() : null;
+        SandboxAcquireResult result = sessionKey != null ? acquireResults.remove(sessionKey) : null;
         if (result == null) {
             return;
         }
-        SandboxContext sandboxContext = ctx != null ? ctx.get(SandboxContext.class) : null;
+        SandboxContext sandboxContext = ctx.get(SandboxContext.class);
         try {
             sandboxManager.persistState(result, sandboxContext, ctx);
         } catch (Exception e) {
@@ -129,6 +133,6 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
         }
         result.getLease().close();
-        filesystemProxy.setSandbox(null);
+        filesystemProxy.unbindSandbox(sessionKey);
     }
 }
