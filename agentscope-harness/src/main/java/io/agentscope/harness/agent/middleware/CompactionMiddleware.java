@@ -19,6 +19,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CompactionEndEvent;
+import io.agentscope.core.event.CompactionStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -27,6 +29,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +109,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             new ConversationCompactor(model, flushManager);
                     final Msg sys = systemMsg;
 
+                    final int estimatedTokens = TokenCounterUtil.calculateToken(conversation);
+                    final int threshold = effectiveConfig.getTriggerTokens();
+
                     return compactor
                             .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
                             .flatMapMany(
@@ -113,6 +119,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                         if (optResult.isEmpty()) {
                                             return next.apply(input);
                                         }
+
                                         List<Msg> compacted = optResult.get();
                                         applyToContext(
                                                 RuntimeContext.resolveAgentState(rc, reActAgent),
@@ -120,16 +127,32 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                         log.debug(
                                                 "Compacted to {} messages before reasoning",
                                                 compacted.size());
+
+                                        CompactionStartEvent startEvent =
+                                                new CompactionStartEvent(
+                                                        estimatedTokens, threshold);
+                                        CompactionEndEvent endEvent =
+                                                new CompactionEndEvent(
+                                                        conversation.size(),
+                                                        compacted.size(),
+                                                        estimatedTokens
+                                                                - TokenCounterUtil.calculateToken(
+                                                                        compacted));
+
                                         List<Msg> newMessages = new ArrayList<>();
                                         if (sys != null) {
                                             newMessages.add(sys);
                                         }
                                         newMessages.addAll(compacted);
-                                        return next.apply(
-                                                new ReasoningInput(
-                                                        newMessages,
-                                                        input.tools(),
-                                                        input.options()));
+
+                                        return Flux.concat(
+                                                Flux.just(startEvent),
+                                                next.apply(
+                                                        new ReasoningInput(
+                                                                newMessages,
+                                                                input.tools(),
+                                                                input.options())),
+                                                Flux.just(endEvent));
                                     })
                             .onErrorResume(
                                     e -> {

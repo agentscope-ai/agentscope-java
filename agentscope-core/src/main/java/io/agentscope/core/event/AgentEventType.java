@@ -86,6 +86,10 @@ public enum AgentEventType {
     SUBAGENT_EXPOSED("SUBAGENT_EXPOSED"),
 
     HINT_BLOCK("HINT_BLOCK"),
+
+    COMPACTION_START("COMPACTION_START"),
+    COMPACTION_END("COMPACTION_END"),
+
     CUSTOM("CUSTOM");
 
     private final String value;
