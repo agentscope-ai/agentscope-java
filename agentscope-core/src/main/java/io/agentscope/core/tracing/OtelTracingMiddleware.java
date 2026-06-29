@@ -33,12 +33,13 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
-import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
+import reactor.util.context.ContextView;
 
 /**
  * Middleware that adds OpenTelemetry tracing to the agent lifecycle.
@@ -99,11 +100,13 @@ public class OtelTracingMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        return Flux.defer(
-                () -> {
+        return Flux.deferContextual(
+                ctxView -> {
+                    Context parentContext = resolveOtelContext(ctxView);
                     Span span =
                             getTracer()
                                     .spanBuilder("invoke_agent " + agent.getName())
+                                    .setParent(parentContext)
                                     .setAttribute("gen_ai.operation.name", "invoke_agent")
                                     .setAttribute("gen_ai.agent.name", agent.getName())
                                     .setAttribute(
@@ -114,7 +117,7 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                             (long) input.msgs().size())
                                     .startSpan();
 
-                    Context otelCtx = Context.current().with(span);
+                    Context otelCtx = span.storeInContext(parentContext);
                     AtomicReference<Boolean> ended = new AtomicReference<>(false);
 
                     return ContextPropagationOperator.runWithContext(
@@ -165,13 +168,15 @@ public class OtelTracingMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ModelCallInput input,
             Function<ModelCallInput, Flux<AgentEvent>> next) {
-        return Flux.defer(
-                () -> {
+        return Flux.deferContextual(
+                ctxView -> {
+                    Context parentContext = resolveOtelContext(ctxView);
                     Model model = input.model();
                     String modelName = model != null ? model.getModelName() : "unknown";
                     Span span =
                             getTracer()
                                     .spanBuilder("chat " + modelName)
+                                    .setParent(parentContext)
                                     .setAttribute("gen_ai.operation.name", "chat")
                                     .setAttribute("gen_ai.request.model", modelName)
                                     .setAttribute(
@@ -184,7 +189,7 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                                     : 0L)
                                     .startSpan();
 
-                    Context otelCtx = Context.current().with(span);
+                    Context otelCtx = span.storeInContext(parentContext);
                     AtomicReference<Boolean> ended = new AtomicReference<>(false);
 
                     return ContextPropagationOperator.runWithContext(
@@ -232,18 +237,21 @@ public class OtelTracingMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        return Flux.defer(
-                () -> {
+        return Flux.deferContextual(
+                ctxView -> {
+                    Context parentContext = resolveOtelContext(ctxView);
                     String toolNames =
                             input.toolCalls() != null
                                     ? input.toolCalls().stream()
                                             .map(ToolUseBlock::getName)
                                             .collect(Collectors.joining(", "))
                                     : "unknown";
+                    String spanName = buildToolSpanName(input);
 
                     Span span =
                             getTracer()
-                                    .spanBuilder("execute_tool " + toolNames)
+                                    .spanBuilder("execute_tool " + spanName)
+                                    .setParent(parentContext)
                                     .setAttribute("gen_ai.operation.name", "execute_tool")
                                     .setAttribute("gen_ai.tool.name", toolNames)
                                     .setAttribute(
@@ -253,9 +261,9 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                                     : 0L)
                                     .startSpan();
 
-                    Context otelCtx = Context.current().with(span);
+                    Context otelCtx = span.storeInContext(parentContext);
                     AtomicReference<Boolean> ended = new AtomicReference<>(false);
-                    Set<String> callIds = new LinkedHashSet<>();
+                    Set<String> callIds = ConcurrentHashMap.newKeySet();
 
                     return ContextPropagationOperator.runWithContext(
                             next.apply(input)
@@ -299,6 +307,26 @@ public class OtelTracingMiddleware implements MiddlewareBase {
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    // Reads OTel Context from Reactor ContextView first; falls back to ThreadLocal
+    // Context.current()
+    // so spans created inside a reactive pipeline can find their parent even after a thread hop.
+    private Context resolveOtelContext(ContextView ctxView) {
+        return ContextPropagationOperator.getOpenTelemetryContextFromContextView(
+                ctxView, Context.current());
+    }
+
+    // Uses the first tool name as the span name; appends "(+N more)" for batches to cap
+    // cardinality.
+    // Full tool name list is still available in the gen_ai.tool.name attribute.
+    private static String buildToolSpanName(ActingInput input) {
+        if (input.toolCalls() == null || input.toolCalls().isEmpty()) {
+            return "unknown";
+        }
+        String first = input.toolCalls().get(0).getName();
+        int rest = input.toolCalls().size() - 1;
+        return rest > 0 ? first + " (+" + rest + " more)" : first;
+    }
 
     private void setToolCallIds(Span span, Set<String> callIds) {
         if (!callIds.isEmpty()) {
