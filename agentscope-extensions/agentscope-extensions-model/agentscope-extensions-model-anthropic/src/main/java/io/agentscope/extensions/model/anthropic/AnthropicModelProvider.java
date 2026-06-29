@@ -17,11 +17,13 @@ package io.agentscope.extensions.model.anthropic;
 
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.spi.ModelProvider;
+import java.util.regex.Pattern;
 
 /** Anthropic provider registered through {@link java.util.ServiceLoader}. */
 public final class AnthropicModelProvider implements ModelProvider {
 
     private static final String PREFIX = "anthropic:";
+    private static final Pattern MODEL_ID = Pattern.compile("anthropic:.+");
 
     @Override
     public String providerId() {
@@ -30,11 +32,14 @@ public final class AnthropicModelProvider implements ModelProvider {
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null && modelId.startsWith(PREFIX) && modelId.length() > PREFIX.length();
+        return modelId != null && MODEL_ID.matcher(modelId).matches();
     }
 
     @Override
     public Model create(String modelId) {
+        if (!supports(modelId)) {
+            throw new IllegalArgumentException("Unsupported Anthropic model id: " + modelId);
+        }
         String modelName = modelId.substring(PREFIX.length());
         String apiKey = System.getenv("ANTHROPIC_API_KEY");
         return AnthropicChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)

@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ModelRegistry;
@@ -35,6 +36,15 @@ class GeminiModelProviderTest {
         assertTrue(provider.supports("gemini:gemini-2.0-flash"));
         assertFalse(provider.supports("gemini:"));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
+    }
+
+    @Test
+    void createRejectsUnsupportedModelIdsBeforeReadingEnvironment() {
+        GeminiModelProvider provider = new GeminiModelProvider();
+
+        assertThrows(IllegalArgumentException.class, () -> provider.create("gemini:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("gemini-2.0-flash"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
 
     @Test
