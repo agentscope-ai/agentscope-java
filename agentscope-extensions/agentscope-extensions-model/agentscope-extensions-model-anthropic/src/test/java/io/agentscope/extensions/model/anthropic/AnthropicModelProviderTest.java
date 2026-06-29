@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ModelRegistry;
@@ -35,6 +36,15 @@ class AnthropicModelProviderTest {
         assertTrue(provider.supports("anthropic:claude-sonnet-4.5"));
         assertFalse(provider.supports("anthropic:"));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
+    }
+
+    @Test
+    void createRejectsUnsupportedModelIdsBeforeReadingEnvironment() {
+        AnthropicModelProvider provider = new AnthropicModelProvider();
+
+        assertThrows(IllegalArgumentException.class, () -> provider.create("anthropic:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("claude-sonnet-4.5"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
 
     @Test

@@ -17,11 +17,13 @@ package io.agentscope.extensions.model.gemini;
 
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.spi.ModelProvider;
+import java.util.regex.Pattern;
 
 /** Gemini provider registered through {@link java.util.ServiceLoader}. */
 public final class GeminiModelProvider implements ModelProvider {
 
     private static final String PREFIX = "gemini:";
+    private static final Pattern MODEL_ID = Pattern.compile("gemini:.+");
 
     @Override
     public String providerId() {
@@ -30,11 +32,14 @@ public final class GeminiModelProvider implements ModelProvider {
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null && modelId.startsWith(PREFIX) && modelId.length() > PREFIX.length();
+        return modelId != null && MODEL_ID.matcher(modelId).matches();
     }
 
     @Override
     public Model create(String modelId) {
+        if (!supports(modelId)) {
+            throw new IllegalArgumentException("Unsupported Gemini model id: " + modelId);
+        }
         String modelName = modelId.substring(PREFIX.length());
         String apiKey = System.getenv("GEMINI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
