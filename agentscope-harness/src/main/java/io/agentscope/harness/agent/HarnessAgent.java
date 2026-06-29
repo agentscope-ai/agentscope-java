@@ -31,7 +31,9 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
@@ -1091,6 +1093,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // JsonFileAgentStateStore rooted at ~/.agentscope/state/<agentId>/, outside any workspace).
         AgentStateStore stateStoreOverride;
 
+        // Permission context — mirrored to enable plan-mode allow-rule injection in build().
+        PermissionContextState permissionContext = PermissionContextState.builder().build();
+
         DistributedStore distributedStore;
 
         io.agentscope.harness.agent.bus.MessageBus messageBus;
@@ -1459,7 +1464,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder permissionContext(PermissionContextState permissionContext) {
-            inner.permissionContext(permissionContext);
+            this.permissionContext =
+                    permissionContext != null
+                            ? permissionContext
+                            : PermissionContextState.builder().build();
             return this;
         }
 
@@ -2279,6 +2287,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     return t instanceof ToolBase tb && tb.isReadOnly();
                                 },
                                 planExtraAllowed));
+
+                // Auto-inject ALLOW rules for plan-control tools so PermissionEngine does not
+                // prompt ASK in DEFAULT mode. plan_exit deliberately excluded (preserves HITL).
+                PermissionContextState base = this.permissionContext;
+                PermissionContextState.Builder pb =
+                        PermissionContextState.builder().mode(base.getMode());
+                base.getWorkingDirectories().forEach(pb::addWorkingDirectory);
+                base.getAllowRules()
+                        .forEach((t, rules) -> rules.forEach(r -> pb.addAllowRule(t, r)));
+                base.getDenyRules().forEach((t, rules) -> rules.forEach(r -> pb.addDenyRule(t, r)));
+                base.getAskRules().forEach((t, rules) -> rules.forEach(r -> pb.addAskRule(t, r)));
+                for (String toolName :
+                        List.of(PlanModeTools.PLAN_ENTER, PlanModeTools.PLAN_WRITE, "todo_write")) {
+                    pb.addAllowRule(
+                            toolName,
+                            new PermissionRule(
+                                    toolName, null, PermissionBehavior.ALLOW, "plan_mode"));
+                }
+                inner.permissionContext(pb.build());
+            } else {
+                inner.permissionContext(this.permissionContext);
             }
 
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
