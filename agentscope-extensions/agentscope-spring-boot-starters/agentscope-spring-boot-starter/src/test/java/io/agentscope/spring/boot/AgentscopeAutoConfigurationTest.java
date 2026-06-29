@@ -20,8 +20,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.model.AnthropicChatModel;
-import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
@@ -86,6 +84,46 @@ class AgentscopeAutoConfigurationTest {
     }
 
     @Test
+    void shouldCreateDashScopeModelWhenProviderIsDashscope() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-dashscope-key",
+                        "agentscope.dashscope.model-name=qwen-max")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("qwen-max");
+                        });
+    }
+
+    @Test
+    void shouldFailClearlyWhenDashScopeExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("dashscope");
+        properties.getDashscope().setApiKey("test-dashscope-key");
+        properties.getDashscope().setModelName("qwen-max");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.dashscope"
+                                        + ".DashScopeChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.DASHSCOPE.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-dashscope");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
+    }
+
+    @Test
     void shouldCreateOpenAIModelWhenProviderIsOpenAI() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
@@ -123,6 +161,7 @@ class AgentscopeAutoConfigurationTest {
     @Test
     void shouldFailClearlyWhenOpenAIExtensionIsMissing() {
         AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("open-ai");
         properties.getOpenai().setApiKey("test-openai-key");
         properties.getOpenai().setModelName("gpt-4.1-mini");
 
@@ -153,9 +192,31 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(GeminiChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("gemini-2.0-flash");
                         });
+    }
+
+    @Test
+    void shouldFailClearlyWhenGeminiExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("gemini");
+        properties.getGemini().setApiKey("test-gemini-key");
+        properties.getGemini().setModelName("gemini-2.0-flash");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.gemini.GeminiChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.GEMINI.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-gemini");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
     }
 
     @Test
@@ -170,9 +231,32 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(AnthropicChatModel.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("claude-sonnet-4.5");
                         });
+    }
+
+    @Test
+    void shouldFailClearlyWhenAnthropicExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("anthropic");
+        properties.getAnthropic().setApiKey("test-anthropic-key");
+        properties.getAnthropic().setModelName("claude-sonnet-4.5");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.anthropic"
+                                        + ".AnthropicChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.ANTHROPIC.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-anthropic");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
     }
 
     private static final class HidingClassLoader extends ClassLoader {
