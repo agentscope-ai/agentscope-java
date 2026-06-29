@@ -164,6 +164,61 @@ class AgentEventStreamTest {
     }
 
     @Nested
+    @DisplayName("Compaction events serialize and deserialize correctly")
+    class CompactionEventRoundTrip {
+
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        @Test
+        @DisplayName("CompactionStartEvent round-trips through AgentEvent polymorphism")
+        void compactionStartRoundTrip() throws Exception {
+            CompactionStartEvent original = new CompactionStartEvent(42000, 80000);
+            String json = mapper.writeValueAsString(original);
+
+            assertTrue(json.contains("\"type\":\"COMPACTION_START\""));
+            assertTrue(json.contains("\"estimatedTokens\":42000"));
+            assertTrue(json.contains("\"triggerThreshold\":80000"));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertNotNull(deserialized);
+            assertEquals(AgentEventType.COMPACTION_START, deserialized.getType());
+            CompactionStartEvent start = (CompactionStartEvent) deserialized;
+            assertEquals(42000, start.getEstimatedTokens());
+            assertEquals(80000, start.getTriggerThreshold());
+            assertEquals(original.getId(), start.getId());
+        }
+
+        @Test
+        @DisplayName("CompactionEndEvent round-trips through AgentEvent polymorphism")
+        void compactionEndRoundTrip() throws Exception {
+            CompactionEndEvent original = new CompactionEndEvent(20, 5, 15000);
+            String json = mapper.writeValueAsString(original);
+
+            assertTrue(json.contains("\"type\":\"COMPACTION_END\""));
+            assertTrue(json.contains("\"originalMessageCount\":20"));
+            assertTrue(json.contains("\"compactedMessageCount\":5"));
+            assertTrue(json.contains("\"estimatedTokensSaved\":15000"));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertNotNull(deserialized);
+            assertEquals(AgentEventType.COMPACTION_END, deserialized.getType());
+            CompactionEndEvent end = (CompactionEndEvent) deserialized;
+            assertEquals(20, end.getOriginalMessageCount());
+            assertEquals(5, end.getCompactedMessageCount());
+            assertEquals(15000, end.getEstimatedTokensSaved());
+            assertEquals(original.getId(), end.getId());
+        }
+
+        @Test
+        @DisplayName("COMPACTION_START and COMPACTION_END are in AgentEventType enum")
+        void compactionTypesRegistered() {
+            assertEquals(
+                    AgentEventType.COMPACTION_START, AgentEventType.fromValue("COMPACTION_START"));
+            assertEquals(AgentEventType.COMPACTION_END, AgentEventType.fromValue("COMPACTION_END"));
+        }
+    }
+
+    @Nested
     @DisplayName("replyStream emits the canonical event order")
     @Disabled("Stage 7 lands the new Agent main class; this suite locks the stream contract.")
     class StreamOrdering {
