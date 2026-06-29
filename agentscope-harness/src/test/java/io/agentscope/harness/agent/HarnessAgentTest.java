@@ -39,6 +39,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
@@ -618,11 +619,19 @@ class HarnessAgentTest {
                 child.getDelegate().getMiddlewares().stream()
                         .filter(m -> m instanceof AgentTraceMiddleware)
                         .count();
+        long gracefulShutdownMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m instanceof GracefulShutdownMiddleware)
+                        .count();
         assertEquals(1, copiedUserMiddlewareCount, "user middleware should copy once");
         assertEquals(
                 1,
                 agentTraceMiddlewareCount,
                 "runtime AgentTraceMiddleware should not be duplicated when cloning");
+        assertEquals(
+                1,
+                gracefulShutdownMiddlewareCount,
+                "system GracefulShutdownMiddleware should not be duplicated when cloning");
 
         RuntimeContext parentContext = RuntimeContext.builder().sessionId("parent").build();
         HarnessAgent generalPurpose =
