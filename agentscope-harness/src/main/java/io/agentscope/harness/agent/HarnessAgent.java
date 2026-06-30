@@ -32,6 +32,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
@@ -1375,7 +1376,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Keep only observable registrations from the source agent.
             List<MiddlewareBase> copyable = new ArrayList<>(middlewares.size());
             for (MiddlewareBase middleware : middlewares) {
-                if (middleware != null && !(middleware instanceof HarnessRuntimeMiddleware)) {
+                if (middleware != null
+                        && !(middleware instanceof HarnessRuntimeMiddleware)
+                        && !(middleware instanceof GracefulShutdownMiddleware)) {
                     copyable.add(middleware);
                 }
             }
