@@ -70,16 +70,10 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
-        <!-- DashScope SDK for MultiModalTool -->
+        <!-- DashScope model implementation and MultiModalTool -->
         <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>dashscope-sdk-java</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-simple</artifactId>
-                </exclusion>
-            </exclusions>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
         <!-- RAG Extensions -->
@@ -132,6 +126,12 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-studio</artifactId>
+        </dependency>
+
+        <!-- Git-based Skill Repository -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-skill-git-repository</artifactId>
         </dependency>
 
         <!-- Redis State Store (for distributed shared-store examples) -->

@@ -23,7 +23,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -55,7 +54,7 @@ import reactor.core.publisher.Flux;
  * <p>Tools listed in {@link ToolResultEvictionConfig#getExcludedToolNames()} are never evicted
  * (e.g. {@code readFile} — evicting would cause re-read loops).
  */
-public class ToolResultEvictionMiddleware implements MiddlewareBase {
+public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(ToolResultEvictionMiddleware.class);
 

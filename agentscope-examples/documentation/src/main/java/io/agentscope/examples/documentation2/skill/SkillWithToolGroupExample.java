@@ -17,14 +17,15 @@ package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -70,13 +71,13 @@ public class SkillWithToolGroupExample {
      * Adjust to match your workspace layout.
      */
     private static final String SKILLS_DIR =
-            "agentscope-examples/documentation/quickstart/src/main/resources/skills";
+            "agentscope-examples/documentation/src/main/resources/skills";
 
     /**
      * Name of the skill that activates the tool group.
      * Must match the {@code name:} field in the corresponding SKILL.md.
      */
-    private static final String ACTIVATING_SKILL = "skill-creator";
+    private static final String ACTIVATING_SKILL = "data-analysis";
 
     /**
      * Name of the tool group bound to the skill.
@@ -161,15 +162,19 @@ public class SkillWithToolGroupExample {
                         .toolkit(toolkit)
                         .skillRepository(skillRepo)
                         .enableMetaTool(true)
+                        .middleware(new AgentTraceMiddleware())
                         .build();
 
         System.out.println("Loaded skill repository: " + skillsDir);
         System.out.println(
                 "SkillToolGroup '" + TOOL_GROUP + "' activates on skill: " + ACTIVATING_SKILL);
-        System.out.println(
-                "Try: 'Analyze the numbers 5, 12, 3, 8' or 'What skills do you have?'\n");
+        System.out.println("\nTry these prompts:");
+        System.out.println("  1. \"Analyze the numbers 5, 12, 3, 8, 15, 27\"");
+        System.out.println("  2. \"What tools do you have?\"");
+        System.out.println("  3. \"What time is it?\"");
+        System.out.println("  4. \"Summarize the analysis and save it to a file\"");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        System.out.println("Chat started. Type 'exit' to quit.\n");
+        System.out.println("\nChat started. Type 'exit' to quit.\n");
 
         while (true) {
             System.out.print("You: ");

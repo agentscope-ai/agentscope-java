@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -36,11 +35,13 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
+ * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
  * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
  * does not run on every single call.
  *
@@ -62,7 +63,7 @@ import reactor.core.publisher.Flux;
  *       the whole agent instance (prevents concurrent maintenance races on shared memory files).</li>
  * </ul>
  */
-public class MemoryMaintenanceMiddleware implements MiddlewareBase {
+public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceMiddleware.class);
 
@@ -126,7 +127,17 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> maybeRunMaintenance(rc));
+        return next.apply(input)
+                .concatWith(
+                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Memory maintenance failed: {}",
+                                                    e.getMessage());
+                                            return Mono.empty();
+                                        }));
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

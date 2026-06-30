@@ -85,3 +85,6 @@ logs/
 
 ## harness db
 **/*.db
+
+## oh-my-claudecode
+.omc/

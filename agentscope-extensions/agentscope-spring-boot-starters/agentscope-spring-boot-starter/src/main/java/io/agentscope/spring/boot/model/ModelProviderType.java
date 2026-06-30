@@ -15,17 +15,15 @@
  */
 package io.agentscope.spring.boot.model;
 
-import io.agentscope.core.model.AnthropicChatModel;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import io.agentscope.spring.boot.properties.AnthropicProperties;
 import io.agentscope.spring.boot.properties.DashscopeProperties;
 import io.agentscope.spring.boot.properties.GeminiProperties;
 import io.agentscope.spring.boot.properties.ModelProperties;
 import io.agentscope.spring.boot.properties.OpenAIProperties;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Locale;
 
 /**
@@ -46,17 +44,7 @@ public enum ModelProviderType {
                                 + " auto-configuration is enabled");
             }
 
-            DashScopeChatModel.Builder builder =
-                    DashScopeChatModel.builder()
-                            .apiKey(dashscope.getApiKey())
-                            .modelName(dashscope.getModelName())
-                            .stream(dashscope.isStream());
-
-            if (dashscope.getEnableThinking() != null) {
-                builder.enableThinking(dashscope.getEnableThinking());
-            }
-
-            return builder.build();
+            return createDashScopeModel(dashscope);
         }
     },
     OPENAI("openai") {
@@ -73,21 +61,7 @@ public enum ModelProviderType {
                                 + " selected");
             }
 
-            OpenAIChatModel.Builder builder =
-                    OpenAIChatModel.builder()
-                            .apiKey(openai.getApiKey())
-                            .modelName(openai.getModelName())
-                            .stream(openai.isStream());
-
-            if (openai.getBaseUrl() != null && !openai.getBaseUrl().isEmpty()) {
-                builder.baseUrl(openai.getBaseUrl());
-            }
-
-            if (openai.getEndpointPath() != null && !openai.getEndpointPath().isEmpty()) {
-                builder.endpointPath(openai.getEndpointPath());
-            }
-
-            return builder.build();
+            return createOpenAiModel(openai);
         }
     },
     GEMINI("gemini") {
@@ -105,19 +79,7 @@ public enum ModelProviderType {
                                 + " configured when Gemini provider is selected");
             }
 
-            GeminiChatModel.Builder builder =
-                    GeminiChatModel.builder()
-                            .apiKey(gemini.getApiKey())
-                            .modelName(gemini.getModelName())
-                            .streamEnabled(gemini.isStream())
-                            .project(gemini.getProject())
-                            .location(gemini.getLocation());
-
-            if (gemini.getVertexAI() != null) {
-                builder.vertexAI(gemini.getVertexAI());
-            }
-
-            return builder.build();
+            return createGeminiModel(gemini);
         }
     },
     ANTHROPIC("anthropic") {
@@ -134,17 +96,7 @@ public enum ModelProviderType {
                                 + " selected");
             }
 
-            AnthropicChatModel.Builder builder =
-                    AnthropicChatModel.builder()
-                            .apiKey(anthropic.getApiKey())
-                            .modelName(anthropic.getModelName())
-                            .stream(anthropic.isStream());
-
-            if (anthropic.getBaseUrl() != null && !anthropic.getBaseUrl().isEmpty()) {
-                builder.baseUrl(anthropic.getBaseUrl());
-            }
-
-            return builder.build();
+            return createAnthropicModel(anthropic);
         }
     };
 
@@ -180,5 +132,177 @@ public enum ModelProviderType {
             }
         }
         throw new IllegalStateException("Unsupported agentscope.model.provider: " + normalized);
+    }
+
+    private static Model createDashScopeModel(DashscopeProperties dashscope) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.dashscope.DashScopeChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            Boolean.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            dashscope.getApiKey(),
+                            dashscope.getModelName(),
+                            dashscope.isStream(),
+                            dashscope.getBaseUrl(),
+                            dashscope.getEnableThinking());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "DashScope provider requires agentscope-extensions-model-dashscope on the"
+                            + " classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "DashScope extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create DashScope model", cause);
+        }
+    }
+
+    private static Model createOpenAiModel(OpenAIProperties openai) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.openai.OpenAIChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            String.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            openai.getApiKey(),
+                            openai.getModelName(),
+                            openai.isStream(),
+                            openai.getBaseUrl(),
+                            openai.getEndpointPath());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "OpenAI provider requires agentscope-extensions-model-openai on the classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "OpenAI extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create OpenAI model", cause);
+        }
+    }
+
+    private static Model createGeminiModel(GeminiProperties gemini) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.gemini.GeminiChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            String.class,
+                            String.class,
+                            Boolean.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            gemini.getApiKey(),
+                            gemini.getModelName(),
+                            gemini.isStream(),
+                            gemini.getBaseUrl(),
+                            gemini.getProject(),
+                            gemini.getLocation(),
+                            gemini.getVertexAI());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "Gemini provider requires agentscope-extensions-model-gemini on the classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Gemini extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create Gemini model", cause);
+        }
+    }
+
+    private static Model createAnthropicModel(AnthropicProperties anthropic) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.anthropic.AnthropicChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create", String.class, String.class, boolean.class, String.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            anthropic.getApiKey(),
+                            anthropic.getModelName(),
+                            anthropic.isStream(),
+                            anthropic.getBaseUrl());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "Anthropic provider requires agentscope-extensions-model-anthropic on the"
+                            + " classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Anthropic extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create Anthropic model", cause);
+        }
     }
 }

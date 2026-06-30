@@ -530,7 +530,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
             byte[] contentBytes;
             if ("base64".equals(fd.encoding())) {
-                contentBytes = Base64.getDecoder().decode(fd.content());
+                contentBytes = Base64.getMimeDecoder().decode(fd.content());
             } else {
                 contentBytes = fd.content().getBytes(StandardCharsets.UTF_8);
             }
@@ -629,13 +629,23 @@ public class RemoteFilesystem implements AbstractFilesystem {
             if (page.isEmpty()) {
                 break;
             }
-            all.addAll(page);
+            for (StoreItem item : page) {
+                all.add(normalizeItemKey(item));
+            }
             if (page.size() < pageSize) {
                 break;
             }
             offset += pageSize;
         }
         return all;
+    }
+
+    private static StoreItem normalizeItemKey(StoreItem item) {
+        String key = item.key();
+        if (key != null && !key.startsWith("/")) {
+            return new StoreItem("/" + key, item.value(), item.version());
+        }
+        return item;
     }
 
     private static FileData convertItemToFileData(StoreItem item) {

@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -25,6 +26,7 @@ import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
@@ -286,6 +288,7 @@ final class HarnessAgentBuilderSupport {
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
+        final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
@@ -296,8 +299,10 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
+        final boolean capturedDisableCompaction = b.disableCompaction;
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                 b.toolResultEvictionConfig;
+        final boolean capturedDisableToolResultEviction = b.disableToolResultEviction;
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
@@ -344,10 +349,18 @@ final class HarnessAgentBuilderSupport {
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
-            if (capturedCompactionConfig != null) sub.compaction(capturedCompactionConfig);
-            if (capturedToolResultEvictionConfig != null)
+            if (capturedDisableCompaction) {
+                sub.disableCompaction();
+            } else if (capturedCompactionConfig != null) {
+                sub.compaction(capturedCompactionConfig);
+            }
+            if (capturedDisableToolResultEviction) {
+                sub.disableToolResultEviction();
+            } else if (capturedToolResultEvictionConfig != null) {
                 sub.toolResultEviction(capturedToolResultEvictionConfig);
+            }
 
+            sub.middlewares(capturedMiddlewares);
             sub.hooks(capturedHooks);
 
             return sub.build();
@@ -365,6 +378,7 @@ final class HarnessAgentBuilderSupport {
         final Model capturedModel = b.model;
         final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
+        final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
@@ -380,6 +394,8 @@ final class HarnessAgentBuilderSupport {
         // lose any --add-dir style allow-list configured at the main level.
         final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
+        final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
+        final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
@@ -454,6 +470,17 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
 
+            if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
+            if (capturedProjectGlobalSkillsDir != null) {
+                sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
+            }
+
+            List<String> skillAllowlist = decl.getSkills();
+            if (!skillAllowlist.isEmpty()) {
+                sub.skillFilter(SkillFilter.only(skillAllowlist.toArray(new String[0])));
+            }
+
+            sub.middlewares(capturedMiddlewares);
             return sub.build();
         };
     }

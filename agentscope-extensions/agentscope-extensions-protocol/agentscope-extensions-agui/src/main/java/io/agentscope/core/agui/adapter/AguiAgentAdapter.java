@@ -18,19 +18,28 @@ package io.agentscope.core.agui.adapter;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
+import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -63,9 +72,18 @@ import reactor.core.publisher.Flux;
  */
 public class AguiAgentAdapter {
 
+    public static final String RUNTIME_CONTEXT_THREAD_ID_KEY = "agui.threadId";
+    public static final String RUNTIME_CONTEXT_RUN_ID_KEY = "agui.runId";
+    public static final String RUNTIME_CONTEXT_MESSAGES_KEY = "agui.messages";
+    public static final String RUNTIME_CONTEXT_TOOLS_KEY = "agui.tools";
+    public static final String RUNTIME_CONTEXT_CONTEXT_KEY = "agui.context";
+    public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
+    public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
+
     private final Agent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
+    private final AguiToolConverter toolConverter;
 
     /**
      * Creates a new AguiAgentAdapter.
@@ -77,6 +95,7 @@ public class AguiAgentAdapter {
         this.agent = Objects.requireNonNull(agent, "agent cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
+        this.toolConverter = new AguiToolConverter();
     }
 
     /**
@@ -106,32 +125,104 @@ public class AguiAgentAdapter {
 
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
+                    RuntimeContext runtimeContext = buildRuntimeContext(input);
+                    ToolInjection toolInjection = ToolInjection.empty();
+                    Flux<Event> agentEvents;
+                    try {
+                        toolInjection = injectFrontendTools(input);
+                        agentEvents = agent.stream(msgs, options, runtimeContext);
+                        if (agentEvents == null) {
+                            agentEvents = agent.stream(msgs, options);
+                        }
+                        agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+                    } catch (Throwable error) {
+                        toolInjection.close();
+                        return Flux.concat(
+                                Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                errorEvents(threadId, runId, error));
+                    }
+
+                    ToolInjection activeToolInjection = toolInjection;
 
                     return Flux.concat(
                                     // Emit RUN_STARTED
-                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                    Flux.just(
+                                            new AguiEvent.RunStarted(threadId, runId, null, input)),
                                     // Stream agent events and convert to AG-UI events
                                     // Use concatMapIterable to preserve strict event ordering
-                                    agent.stream(msgs, options)
-                                            .concatMapIterable(event -> convertEvent(event, state)),
+                                    agentEvents.concatMapIterable(
+                                            event -> convertEvent(event, state)),
                                     // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> finishRun(state)))
-                            .onErrorResume(
-                                    error -> {
-                                        // On error, emit RawEvent with error info followed by
-                                        // RunFinished
-                                        String errorMessage =
-                                                error.getMessage() != null
-                                                        ? error.getMessage()
-                                                        : error.getClass().getSimpleName();
-                                        return Flux.just(
-                                                new AguiEvent.Raw(
-                                                        threadId,
-                                                        runId,
-                                                        Map.of("error", errorMessage)),
-                                                new AguiEvent.RunFinished(threadId, runId));
-                                    });
+                            .doFinally(signalType -> activeToolInjection.close())
+                            .onErrorResume(error -> errorEvents(threadId, runId, error));
                 });
+    }
+
+    private RuntimeContext buildRuntimeContext(RunAgentInput input) {
+        return RuntimeContext.builder()
+                .sessionId(input.getThreadId())
+                .put(RunAgentInput.class, input)
+                .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
+                .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
+                .put(RUNTIME_CONTEXT_MESSAGES_KEY, input.getMessages())
+                .put(RUNTIME_CONTEXT_TOOLS_KEY, input.getTools())
+                .put(RUNTIME_CONTEXT_CONTEXT_KEY, input.getContext())
+                .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
+                .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
+                .build();
+    }
+
+    private ToolInjection injectFrontendTools(RunAgentInput input) {
+        if (!input.hasTools()) {
+            return ToolInjection.empty();
+        }
+
+        ToolMergeMode mergeMode =
+                config.getToolMergeMode() != null
+                        ? config.getToolMergeMode()
+                        : ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+        if (mergeMode == ToolMergeMode.AGENT_ONLY) {
+            return ToolInjection.empty();
+        }
+
+        Toolkit toolkit = agent.getToolkit();
+        if (toolkit == null) {
+            return ToolInjection.empty();
+        }
+
+        Map<String, AgentTool> previousTools = new LinkedHashMap<>();
+        if (mergeMode == ToolMergeMode.FRONTEND_ONLY) {
+            for (String toolName : toolkit.getToolNames()) {
+                AgentTool previousTool = toolkit.getTool(toolName);
+                if (previousTool != null) {
+                    previousTools.put(toolName, previousTool);
+                    toolkit.removeTool(toolName);
+                }
+            }
+        }
+
+        List<SchemaOnlyTool> registeredTools = new ArrayList<>();
+        for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
+            AgentTool previousTool = toolkit.getTool(schema.getName());
+            if (previousTool != null) {
+                previousTools.putIfAbsent(schema.getName(), previousTool);
+            }
+
+            SchemaOnlyTool frontendTool = new SchemaOnlyTool(schema);
+            toolkit.registerAgentTool(frontendTool);
+            registeredTools.add(frontendTool);
+        }
+
+        return new ToolInjection(toolkit, registeredTools, previousTools);
+    }
+
+    private Flux<AguiEvent> errorEvents(String threadId, String runId, Throwable error) {
+        String errorMessage =
+                error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+        return Flux.just(
+                new AguiEvent.RunError(threadId, runId, errorMessage, mapErrorCode(error)),
+                new AguiEvent.RunFinished(threadId, runId));
     }
 
     /**
@@ -375,6 +466,58 @@ public class AguiAgentAdapter {
             return JsonUtils.getJsonCodec().toJson(input);
         } catch (JsonException e) {
             return "{}";
+        }
+    }
+
+    private static String mapErrorCode(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "TIMEOUT_ERROR";
+        }
+        if (error instanceof java.lang.InterruptedException) {
+            return "INTERRUPTED_ERROR";
+        }
+        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
+            return "INVALID_INPUT_ERROR";
+        }
+        return "INTERNAL_ERROR";
+    }
+
+    private static class ToolInjection {
+        private static final ToolInjection EMPTY =
+                new ToolInjection(null, Collections.emptyList(), Collections.emptyMap());
+
+        private final Toolkit toolkit;
+        private final List<SchemaOnlyTool> registeredTools;
+        private final Map<String, AgentTool> previousTools;
+
+        ToolInjection(
+                Toolkit toolkit,
+                List<SchemaOnlyTool> registeredTools,
+                Map<String, AgentTool> previousTools) {
+            this.toolkit = toolkit;
+            this.registeredTools = registeredTools;
+            this.previousTools = previousTools;
+        }
+
+        static ToolInjection empty() {
+            return EMPTY;
+        }
+
+        void close() {
+            if (toolkit == null) {
+                return;
+            }
+
+            for (int i = registeredTools.size() - 1; i >= 0; i--) {
+                SchemaOnlyTool tool = registeredTools.get(i);
+                toolkit.removeToolIfSame(tool.getName(), tool);
+            }
+
+            for (Map.Entry<String, AgentTool> entry : previousTools.entrySet()) {
+                if (toolkit.getTool(entry.getKey()) == null) {
+                    toolkit.registerAgentTool(entry.getValue());
+                }
+            }
         }
     }
 

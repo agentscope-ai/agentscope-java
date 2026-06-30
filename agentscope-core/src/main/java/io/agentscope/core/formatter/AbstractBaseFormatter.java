@@ -18,6 +18,7 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -87,6 +88,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
                         block -> {
                             if (block instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
+                            } else if (block instanceof HintBlock hb) {
+                                return Stream.of(hb.getHint());
                             } else if (block instanceof ThinkingBlock) {
                                 // IMPORTANT: ThinkingBlock is NOT sent back to LLM APIs
                                 // ThinkingBlock is stored in memory but skipped when formatting
@@ -115,6 +118,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     protected String extractTextContent(ContentBlock block) {
         if (block instanceof TextBlock tb) {
             return tb.getText();
+        } else if (block instanceof HintBlock hb) {
+            return hb.getHint();
         }
         return "";
     }

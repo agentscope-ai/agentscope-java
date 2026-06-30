@@ -17,13 +17,13 @@ package io.agentscope.examples.documentation2.context;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -72,15 +72,15 @@ public class RuntimeContextExample {
                         .defaultSessionId("runtime-context-demo")
                         .build();
 
-        int loaded = agent.getAgentState().getContext().size();
-        System.out.println("Loaded " + loaded + " message(s) from session.");
-
         RuntimeContext ctx =
                 RuntimeContext.builder()
                         .userId("alice")
                         .sessionId("runtime-context-demo")
                         .put("request_id", "req-001")
                         .build();
+
+        int loaded = agent.getAgentState(ctx).getContext().size();
+        System.out.println("Loaded " + loaded + " message(s) from session.");
 
         Msg first = agent.call(List.of(new UserMessage("Hi, my name is Alice.")), ctx).block();
         System.out.println("Assistant: " + (first == null ? "" : first.getTextContent()));
@@ -90,7 +90,7 @@ public class RuntimeContextExample {
 
         System.out.println(
                 "Final context size: "
-                        + agent.getAgentState().getContext().size()
+                        + agent.getAgentState(ctx).getContext().size()
                         + " message(s).");
     }
 }
