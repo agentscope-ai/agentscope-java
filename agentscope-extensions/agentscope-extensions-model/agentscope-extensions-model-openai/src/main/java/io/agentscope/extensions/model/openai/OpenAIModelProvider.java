@@ -17,11 +17,13 @@ package io.agentscope.extensions.model.openai;
 
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.spi.ModelProvider;
+import java.util.regex.Pattern;
 
 /** OpenAI provider registered through {@link java.util.ServiceLoader}. */
 public final class OpenAIModelProvider implements ModelProvider {
 
     private static final String PREFIX = "openai:";
+    private static final Pattern MODEL_ID = Pattern.compile("openai:.+");
 
     @Override
     public String providerId() {
@@ -30,11 +32,14 @@ public final class OpenAIModelProvider implements ModelProvider {
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null && modelId.startsWith(PREFIX) && modelId.length() > PREFIX.length();
+        return modelId != null && MODEL_ID.matcher(modelId).matches();
     }
 
     @Override
     public Model create(String modelId) {
+        if (!supports(modelId)) {
+            throw new IllegalArgumentException("Unsupported OpenAI model id: " + modelId);
+        }
         String modelName = modelId.substring(PREFIX.length());
         String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {

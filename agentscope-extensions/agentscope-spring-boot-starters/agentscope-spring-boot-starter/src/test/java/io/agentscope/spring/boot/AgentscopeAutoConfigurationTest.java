@@ -84,6 +84,46 @@ class AgentscopeAutoConfigurationTest {
     }
 
     @Test
+    void shouldCreateDashScopeModelWhenProviderIsDashscope() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-dashscope-key",
+                        "agentscope.dashscope.model-name=qwen-max")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context.getBean(Model.class).getModelName())
+                                    .isEqualTo("qwen-max");
+                        });
+    }
+
+    @Test
+    void shouldFailClearlyWhenDashScopeExtensionIsMissing() {
+        AgentscopeProperties properties = new AgentscopeProperties();
+        properties.getModel().setProvider("dashscope");
+        properties.getDashscope().setApiKey("test-dashscope-key");
+        properties.getDashscope().setModelName("qwen-max");
+
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread()
+                .setContextClassLoader(
+                        new HidingClassLoader(
+                                original,
+                                "io.agentscope.extensions.model.dashscope"
+                                        + ".DashScopeChatModelFactory"));
+        try {
+            assertThatThrownBy(() -> ModelProviderType.DASHSCOPE.createModel(properties))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("agentscope-extensions-model-dashscope");
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
+    }
+
+    @Test
     void shouldCreateOpenAIModelWhenProviderIsOpenAI() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
