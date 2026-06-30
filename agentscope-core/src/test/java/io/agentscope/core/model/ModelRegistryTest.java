@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
@@ -71,13 +70,6 @@ class ModelRegistryTest {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
-    void resolve_dashscopeShortFormat_createsDashScopeChatModel() {
-        Model m = ModelRegistry.resolve("qwen-max");
-        assertInstanceOf(DashScopeChatModel.class, m);
-    }
-
-    @Test
     void resolve_unknownModel_throwsWithHelpMessage() {
         IllegalArgumentException ex =
                 assertThrows(
@@ -85,17 +77,20 @@ class ModelRegistryTest {
                         () -> ModelRegistry.resolve("totally-unknown-id"));
         assertTrue(ex.getMessage().contains("Cannot resolve model"));
         assertTrue(ex.getMessage().contains("OPENAI_API_KEY"));
+        assertTrue(ex.getMessage().contains("agentscope-extensions-model-dashscope"));
     }
 
     @Test
     void resolve_caching_returnsSameInstance() {
-        Model a = ModelRegistry.resolve("ollama:llama3");
-        Model b = ModelRegistry.resolve("ollama:llama3");
+        ModelRegistry.registerFactory("local:(.+)", id -> new StubModel(id));
+
+        Model a = ModelRegistry.resolve("local:alpha");
+        Model b = ModelRegistry.resolve("local:alpha");
         assertSame(a, b);
     }
 
     @Test
-    void registerFactory_userFactory_takesPriorityOverBuiltin() {
+    void registerFactory_userFactory_resolvesMatchingPattern() {
         Model custom = new StubModel("custom-openai");
         ModelRegistry.registerFactory("openai:(.+)", id -> custom);
         assertSame(custom, ModelRegistry.resolve("openai:anything"));
@@ -104,6 +99,27 @@ class ModelRegistryTest {
     @Test
     void canResolve_openAiWithoutExtension_returnsFalse() {
         assertFalse(ModelRegistry.canResolve("openai:gpt-5.5"));
+    }
+
+    @Test
+    void canResolve_geminiWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("gemini:gemini-2.0-flash"));
+    }
+
+    @Test
+    void canResolve_anthropicWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("anthropic:claude-sonnet-4.5"));
+    }
+
+    @Test
+    void canResolve_dashscopeWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("dashscope:qwen-max"));
+        assertFalse(ModelRegistry.canResolve("qwen-max"));
+    }
+
+    @Test
+    void canResolve_ollamaWithoutExtension_returnsFalse() {
+        assertFalse(ModelRegistry.canResolve("ollama:llama3"));
     }
 
     @Test

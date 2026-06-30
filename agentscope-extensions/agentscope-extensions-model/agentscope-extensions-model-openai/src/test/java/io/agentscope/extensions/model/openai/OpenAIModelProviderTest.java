@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ModelRegistry;
@@ -35,6 +36,15 @@ class OpenAIModelProviderTest {
         assertTrue(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports("openai:"));
         assertFalse(provider.supports("dashscope:qwen-max"));
+    }
+
+    @Test
+    void createRejectsUnsupportedModelIdsBeforeReadingEnvironment() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+
+        assertThrows(IllegalArgumentException.class, () -> provider.create("openai:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("gpt-4o-mini"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
 
     @Test
