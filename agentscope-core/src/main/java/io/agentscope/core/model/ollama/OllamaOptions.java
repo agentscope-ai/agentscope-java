@@ -344,6 +344,7 @@ public class OllamaOptions {
                 .mirostatEta(fromOptions.getMirostatEta())
                 .penalizeNewline(fromOptions.getPenalizeNewline())
                 .stop(fromOptions.getStop())
+                .executionConfig(fromOptions.getExecutionConfig())
                 .build();
     }
 
@@ -1015,7 +1016,8 @@ public class OllamaOptions {
                 .mirostatTau(this.mirostatTau)
                 .mirostatEta(this.mirostatEta)
                 .penalizeNewline(this.penalizeNewline)
-                .stop(this.stop);
+                .stop(this.stop)
+                .executionConfig(this.executionConfig);
     }
 
     // @formatter:on
