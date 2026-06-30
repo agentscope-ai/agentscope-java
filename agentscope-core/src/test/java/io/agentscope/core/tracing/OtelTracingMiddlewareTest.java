@@ -396,6 +396,57 @@ class OtelTracingMiddlewareTest {
         assertTrue(callIds.contains("call-b"));
     }
 
+    @Test
+    void onActing_multiTool_spanNameTruncatedButAttributeContainsAll() {
+        Agent agent = stubAgent("multi-tool-agent2", "agent-104");
+        ToolUseBlock t1 = ToolUseBlock.builder().id("c1").name("search").input(Map.of()).build();
+        ToolUseBlock t2 = ToolUseBlock.builder().id("c2").name("calc").input(Map.of()).build();
+        ToolUseBlock t3 = ToolUseBlock.builder().id("c3").name("fetchUrl").input(Map.of()).build();
+        ActingInput input = new ActingInput(List.of(t1, t2, t3));
+
+        ToolResultEndEvent r1 =
+                new ToolResultEndEvent("reply-1", "c1", "search", ToolResultState.SUCCESS);
+        ToolResultEndEvent r2 =
+                new ToolResultEndEvent("reply-1", "c2", "calc", ToolResultState.SUCCESS);
+        ToolResultEndEvent r3 =
+                new ToolResultEndEvent("reply-1", "c3", "fetchUrl", ToolResultState.SUCCESS);
+
+        middleware.onActing(agent, null, input, in -> Flux.just(r1, r2, r3)).collectList().block();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertEquals(1, spans.size());
+
+        SpanData span = spans.get(0);
+        // span name uses first tool + count suffix to cap cardinality
+        assertEquals("execute_tool search (+2 more)", span.getName());
+        // gen_ai.tool.name attribute still has all names
+        String toolNames =
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.stringKey(
+                                        "gen_ai.tool.name"));
+        assertNotNull(toolNames);
+        assertTrue(toolNames.contains("search"));
+        assertTrue(toolNames.contains("calc"));
+        assertTrue(toolNames.contains("fetchUrl"));
+    }
+
+    @Test
+    void onActing_singleTool_spanNameIsToolName() {
+        Agent agent = stubAgent("single-tool-agent", "agent-105");
+        ToolUseBlock t1 = ToolUseBlock.builder().id("c1").name("myTool").input(Map.of()).build();
+        ActingInput input = new ActingInput(List.of(t1));
+
+        ToolResultEndEvent r1 =
+                new ToolResultEndEvent("reply-1", "c1", "myTool", ToolResultState.SUCCESS);
+
+        middleware.onActing(agent, null, input, in -> Flux.just(r1)).collectList().block();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertEquals(1, spans.size());
+        assertEquals("execute_tool myTool", spans.get(0).getName());
+    }
+
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
