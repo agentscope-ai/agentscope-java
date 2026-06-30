@@ -163,6 +163,8 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
+ * import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+ *
  * // Create a model (requires dependency: agentscope-extensions-model-dashscope)
  * DashScopeChatModel model = DashScopeChatModel.builder()
  *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
