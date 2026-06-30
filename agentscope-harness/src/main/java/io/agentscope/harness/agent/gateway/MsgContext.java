@@ -35,6 +35,10 @@ import java.util.Objects;
  * @param threadTs optional provider-specific thread timestamp or message anchor
  * @param extra additional key/value pairs for adapters
  * @param userId optional authenticated user identity for HarnessAgent namespace isolation
+ * @param businessContext optional business parameters (e.g., tenantId, modelConfigId, datasourceId)
+ *     passed from the caller; these are injected into {@link
+ *     io.agentscope.core.agent.RuntimeContext} but do <em>not</em> participate in {@link
+ *     #canonicalKey()} computation (session routing is unaffected by business parameters)
  */
 public record MsgContext(
         String channel,
@@ -43,15 +47,17 @@ public record MsgContext(
         String threadId,
         String threadTs,
         Map<String, String> extra,
-        String userId) {
+        String userId,
+        Map<String, Object> businessContext) {
 
     public MsgContext {
         extra = extra != null ? Map.copyOf(extra) : Map.of();
+        businessContext = businessContext != null ? Map.copyOf(businessContext) : Map.of();
     }
 
     /**
      * Convenience constructor without {@code userId} (backwards-compatible for callsites that do
-     * not carry user identity).
+     * not carry user identity) and without {@code businessContext}.
      */
     public MsgContext(
             String channel,
@@ -60,17 +66,43 @@ public record MsgContext(
             String threadId,
             String threadTs,
             Map<String, String> extra) {
-        this(channel, group, room, threadId, threadTs, extra, null);
+        this(channel, group, room, threadId, threadTs, extra, null, Map.of());
+    }
+
+    /**
+     * Convenience constructor with {@code userId} but without {@code businessContext}
+     * (backwards-compatible for callsites that carry user identity but no business parameters).
+     */
+    public MsgContext(
+            String channel,
+            String group,
+            String room,
+            String threadId,
+            String threadTs,
+            Map<String, String> extra,
+            String userId) {
+        this(channel, group, room, threadId, threadTs, extra, userId, Map.of());
     }
 
     /** Default single-conversation context (no channel metadata, no userId). */
     public static MsgContext defaultContext() {
-        return new MsgContext("default", null, null, null, null, Map.of(), null);
+        return new MsgContext("default", null, null, null, null, Map.of(), null, Map.of());
     }
 
     /** Returns a copy of this context with the given {@code userId} set. */
     public MsgContext withUserId(String userId) {
-        return new MsgContext(channel, group, room, threadId, threadTs, extra, userId);
+        return new MsgContext(
+                channel, group, room, threadId, threadTs, extra, userId, businessContext);
+    }
+
+    /** Returns a copy of this context with the given {@code businessContext} merged in. */
+    public MsgContext withBusinessContext(Map<String, Object> businessContext) {
+        if (businessContext == null || businessContext.isEmpty()) {
+            return this;
+        }
+        Map<String, Object> merged = new java.util.HashMap<>(this.businessContext);
+        merged.putAll(businessContext);
+        return new MsgContext(channel, group, room, threadId, threadTs, extra, userId, merged);
     }
 
     /** Stable key for session routing: same logical conversation maps to the same gateway session id. */

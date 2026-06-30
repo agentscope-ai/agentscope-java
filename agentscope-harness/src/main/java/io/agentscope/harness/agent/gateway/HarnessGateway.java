@@ -183,6 +183,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ctx.userId() != null && !ctx.userId().isBlank()) {
             rtcBuilder.userId(ctx.userId());
         }
+        injectBusinessContext(rtcBuilder, ctx);
         RuntimeContext runtimeContext = rtcBuilder.build();
 
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
@@ -217,6 +218,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ctx.userId() != null && !ctx.userId().isBlank()) {
             rtcBuilder.userId(ctx.userId());
         }
+        injectBusinessContext(rtcBuilder, ctx);
         RuntimeContext runtimeContext = rtcBuilder.build();
 
         return withGatedStream(gateKey, () -> ha.streamEvents(messages, runtimeContext));
@@ -446,6 +448,17 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         String sessionId = sessionMap.computeIfAbsent(gateKey, HarnessGateway::generateSessionId);
         sessionToGateKey.put(sessionId, gateKey);
         return sessionId;
+    }
+
+    /**
+     * Injects business context parameters from {@link MsgContext#businessContext()} into the {@link
+     * RuntimeContext.Builder} so middlewares and tools can access them via
+     * {@link RuntimeContext#get(String)}.
+     */
+    private static void injectBusinessContext(RuntimeContext.Builder builder, MsgContext ctx) {
+        if (ctx.businessContext() != null && !ctx.businessContext().isEmpty()) {
+            builder.putAll(ctx.businessContext());
+        }
     }
 
     /**

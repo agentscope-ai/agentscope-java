@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent.gateway.channel;
 
 import io.agentscope.core.message.Msg;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -53,6 +55,19 @@ import java.util.Set;
  *     card); the router still builds session and outbound context normally so bindings continue to
  *     control {@code sessionScope} and outbound addressing. {@code null} for normal binding-driven
  *     routing.
+ * @param businessContext optional business parameters passed from the caller (e.g., {@code
+ *     tenantId}, {@code modelConfigId}, {@code datasourceId}). These values are injected into
+ *     {@link io.agentscope.core.agent.RuntimeContext} and accessible to middlewares and tools via
+ *     {@link io.agentscope.core.agent.RuntimeContext#get(String)}.
+ *     <p><b>Recommended:</b> Pass simple types (String, Integer, Boolean). Complex objects should
+ *     be resolved internally via their IDs rather than passed through this channel.
+ *     <p>Example:
+ *     <pre>{@code
+ *     InboundMessage msg = InboundMessage.builder(channelId, peer, messages)
+ *         .putBusinessParam("tenantId", "tenant-123")
+ *         .putBusinessParam("modelConfigId", "gpt-4")
+ *         .build();
+ *     }</pre>
  */
 public record InboundMessage(
         String channelId,
@@ -64,13 +79,15 @@ public record InboundMessage(
         String team,
         Set<String> roles,
         List<Msg> messages,
-        String preferredAgentId) {
+        String preferredAgentId,
+        Map<String, Object> businessContext) {
 
     public InboundMessage {
         Objects.requireNonNull(channelId, "channelId");
         Objects.requireNonNull(peer, "peer");
         Objects.requireNonNull(messages, "messages");
         roles = roles != null ? Set.copyOf(roles) : Set.of();
+        businessContext = businessContext != null ? Map.copyOf(businessContext) : Map.of();
     }
 
     /**
@@ -90,7 +107,8 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
-                null);
+                null,
+                Map.of());
     }
 
     /**
@@ -110,7 +128,8 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
-                agentId);
+                agentId,
+                Map.of());
     }
 
     /**
@@ -129,7 +148,8 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
-                null);
+                null,
+                Map.of());
     }
 
     /**
@@ -148,7 +168,8 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
-                null);
+                null,
+                Map.of());
     }
 
     /** Whether this message originates from a direct / DM peer. */
@@ -177,6 +198,7 @@ public record InboundMessage(
         private String team;
         private Set<String> roles = Set.of();
         private String preferredAgentId;
+        private Map<String, Object> businessContext = Map.of();
 
         private Builder(String channelId, Peer peer, List<Msg> messages) {
             this.channelId = channelId;
@@ -219,6 +241,26 @@ public record InboundMessage(
             return this;
         }
 
+        public Builder businessContext(Map<String, Object> businessContext) {
+            this.businessContext = businessContext != null ? businessContext : Map.of();
+            return this;
+        }
+
+        public Builder putBusinessParam(String key, Object value) {
+            if (key == null) {
+                return this;
+            }
+            if (!(this.businessContext instanceof HashMap)) {
+                this.businessContext = new HashMap<>(this.businessContext);
+            }
+            if (value == null) {
+                ((HashMap<String, Object>) this.businessContext).remove(key);
+            } else {
+                ((HashMap<String, Object>) this.businessContext).put(key, value);
+            }
+            return this;
+        }
+
         public InboundMessage build() {
             return new InboundMessage(
                     channelId,
@@ -230,7 +272,8 @@ public record InboundMessage(
                     team,
                     roles,
                     messages,
-                    preferredAgentId);
+                    preferredAgentId,
+                    businessContext);
         }
     }
 }
