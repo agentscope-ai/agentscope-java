@@ -33,6 +33,7 @@ public final class SandboxContext {
     private final Sandbox externalSandbox;
     private final SandboxState externalSandboxState;
     private final IsolationScope isolationScope;
+    private final boolean keepAlive;
 
     private SandboxContext(Builder builder) {
         this.client = builder.client;
@@ -42,6 +43,7 @@ public final class SandboxContext {
         this.externalSandbox = builder.externalSandbox;
         this.externalSandboxState = builder.externalSandboxState;
         this.isolationScope = builder.isolationScope;
+        this.keepAlive = builder.keepAlive;
     }
 
     public SandboxClient<?> getClient() {
@@ -72,6 +74,10 @@ public final class SandboxContext {
         return isolationScope;
     }
 
+    public boolean isKeepAlive() {
+        return keepAlive;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -85,6 +91,7 @@ public final class SandboxContext {
         private Sandbox externalSandbox;
         private SandboxState externalSandboxState;
         private IsolationScope isolationScope;
+        private boolean keepAlive = false;
 
         private Builder() {}
 
@@ -120,6 +127,11 @@ public final class SandboxContext {
 
         public Builder isolationScope(IsolationScope isolationScope) {
             this.isolationScope = isolationScope;
+            return this;
+        }
+
+        public Builder keepAlive(boolean keepAlive) {
+            this.keepAlive = keepAlive;
             return this;
         }
 

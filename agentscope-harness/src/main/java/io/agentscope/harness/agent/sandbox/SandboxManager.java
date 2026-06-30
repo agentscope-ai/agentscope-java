@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -139,7 +140,7 @@ public class SandboxManager {
         }
     }
 
-    public void release(SandboxAcquireResult result) {
+    public void release(SandboxAcquireResult result, SandboxContext sandboxContext) {
         if (result == null) {
             return;
         }
@@ -162,10 +163,13 @@ public class SandboxManager {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
         }
 
-        try {
-            sandbox.shutdown();
-        } catch (Exception e) {
-            log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+        boolean keepAlive = sandboxContext != null && sandboxContext.isKeepAlive();
+        if (!keepAlive) {
+            try {
+                sandbox.shutdown();
+            } catch (Exception e) {
+                log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -207,6 +211,70 @@ public class SandboxManager {
         } catch (Exception e) {
             log.warn("[sandbox] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Archives the sandbox state for the given isolation key: loads persisted state, resumes the
+     * sandbox, stops it (persisting the snapshot), shuts it down (destroying resources), deletes
+     * the state from the store, and returns the final serialized state for external persistence.
+     *
+     * <p>Intended for out-of-band graceful teardown (e.g. session pause/timeout), where there is
+     * no active {@link RuntimeContext} and no running {@code HarnessAgent} instance. Callers
+     * should persist the returned JSON to their own data store (MySQL, audit log, etc.).
+     *
+     * @param key the isolation key identifying the state slot to archive
+     * @return the final serialized sandbox state, or empty if no state was found
+     */
+    public Optional<String> archive(SandboxIsolationKey key) {
+        try {
+            Optional<String> stateJson = stateStore.load(key);
+            if (stateJson.isEmpty()) {
+                return Optional.empty();
+            }
+            SandboxState state = client.deserializeState(stateJson.get());
+            Sandbox sandbox = client.resume(state);
+            try {
+                sandbox.stop();
+            } catch (Exception e) {
+                log.warn("[sandbox] Failed to stop sandbox during archive: {}", e.getMessage(), e);
+            }
+            try {
+                sandbox.shutdown();
+            } catch (Exception e) {
+                log.warn(
+                        "[sandbox] Failed to shutdown sandbox during archive: {}",
+                        e.getMessage(),
+                        e);
+            }
+            String finalJson = client.serializeState(sandbox.getState());
+            stateStore.delete(key);
+            return Optional.of(finalJson);
+        } catch (Exception e) {
+            log.warn("[sandbox] Failed to archive sandbox for key {}: {}", key, e.getMessage(), e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Convenience method for archiving a user-scoped sandbox state.
+     *
+     * @param userId the user identifier
+     * @return the final serialized sandbox state, or empty if no state was found
+     * @see #archive(SandboxIsolationKey)
+     */
+    public Optional<String> archiveForUser(String userId) {
+        return archive(new SandboxIsolationKey(IsolationScope.USER, userId));
+    }
+
+    /**
+     * Convenience method for archiving a session-scoped sandbox state.
+     *
+     * @param sessionId the session identifier
+     * @return the final serialized sandbox state, or empty if no state was found
+     * @see #archive(SandboxIsolationKey)
+     */
+    public Optional<String> archiveForSession(String sessionId) {
+        return archive(new SandboxIsolationKey(IsolationScope.SESSION, sessionId));
     }
 
     public void clearState(SandboxContext sandboxContext, RuntimeContext runtimeContext) {
