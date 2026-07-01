@@ -2232,7 +2232,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void startThinking(List<AgentEvent> events) {
                 if (thinkingStarted.compareAndSet(false, true)) {
-                    currentThinkingBlockId = replyId + "_thinking_" + thinkingBlockCounter.incrementAndGet();
+                    currentThinkingBlockId =
+                            replyId + "_thinking_" + thinkingBlockCounter.incrementAndGet();
                     events.add(new ThinkingBlockStartEvent(replyId, currentThinkingBlockId));
                 }
             }
