@@ -16,8 +16,12 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.model.spi.ModelProvider;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -44,7 +48,8 @@ public final class ModelRegistry {
     private static final ConcurrentHashMap<String, Model> namedModels = new ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<ProviderEntry> userFactories =
             new CopyOnWriteArrayList<>();
-    private static final ConcurrentHashMap<String, Model> resolvedCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ModelCacheKey, Model> resolvedCache =
+            new ConcurrentHashMap<>();
     private static volatile List<ModelProvider> serviceProviders;
 
     private ModelRegistry() {}
@@ -71,6 +76,21 @@ public final class ModelRegistry {
     public static void registerFactory(String modelNameRegex, ModelFactory factory) {
         Objects.requireNonNull(modelNameRegex, "modelNameRegex");
         Objects.requireNonNull(factory, "factory");
+        registerFactory(modelNameRegex, (modelId, context) -> factory.create(modelId));
+    }
+
+    /**
+     * Registers a context-aware factory matched against the full {@code modelId} string using
+     * {@link Pattern#matches}. Newly registered factories are consulted before older user
+     * registrations and before SPI providers.
+     *
+     * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
+     *     full model id
+     * @param factory creates a {@link Model} from the full model id and creation context
+     */
+    public static void registerFactory(String modelNameRegex, ContextModelFactory factory) {
+        Objects.requireNonNull(modelNameRegex, "modelNameRegex");
+        Objects.requireNonNull(factory, "factory");
         Pattern pattern = Pattern.compile(modelNameRegex);
         userFactories.add(0, new ProviderEntry(pattern, factory));
     }
@@ -82,7 +102,22 @@ public final class ModelRegistry {
      * @throws IllegalArgumentException if the id cannot be resolved or creation fails
      */
     public static Model resolve(String modelId) {
+        return resolve(modelId, ModelCreationContext.empty());
+    }
+
+    /**
+     * Resolves a {@link Model} for the given id and creation context: named registration first,
+     * then cache when enabled, then user factories (newest first), then SPI providers.
+     *
+     * <p>Non-empty context resolution is not cached unless the context uses
+     * {@link CachePolicy#ENABLED}.
+     *
+     * @throws IllegalArgumentException if the id cannot be resolved, the context cannot be safely
+     * cached, or creation fails
+     */
+    public static Model resolve(String modelId, ModelCreationContext context) {
         Objects.requireNonNull(modelId, "modelId");
+        Objects.requireNonNull(context, "context");
         String trimmed = modelId.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalArgumentException("modelId must not be blank");
@@ -93,13 +128,16 @@ public final class ModelRegistry {
             return named;
         }
 
-        Model cached = resolvedCache.get(trimmed);
-        if (cached != null) {
-            return cached;
+        ModelCacheKey cacheKey = cacheKey(trimmed, context);
+        if (cacheKey != null) {
+            Model cached = resolvedCache.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
         }
 
         ProviderEntry entry = findMatchingUserEntry(trimmed);
-        ModelProvider provider = entry == null ? findServiceProvider(trimmed) : null;
+        ModelProvider provider = entry == null ? findServiceProvider(trimmed, context) : null;
         if (entry == null && provider == null) {
             throw new IllegalArgumentException(buildNotFoundMessage(trimmed));
         }
@@ -107,10 +145,10 @@ public final class ModelRegistry {
         try {
             Model created;
             if (entry != null) {
-                created = entry.factory().create(trimmed);
+                created = entry.factory().create(trimmed, context);
                 Objects.requireNonNull(created, "ModelFactory returned null for: " + trimmed);
             } else {
-                created = provider.create(trimmed);
+                created = provider.create(trimmed, context);
                 Objects.requireNonNull(
                         created,
                         "ModelProvider "
@@ -118,7 +156,9 @@ public final class ModelRegistry {
                                 + " returned null for: "
                                 + trimmed);
             }
-            resolvedCache.put(trimmed, created);
+            if (cacheKey != null) {
+                resolvedCache.put(cacheKey, created);
+            }
             return created;
         } catch (RuntimeException e) {
             throw new IllegalArgumentException(
@@ -127,10 +167,19 @@ public final class ModelRegistry {
     }
 
     /**
-     * Returns {@code true} if {@link #resolve(String)} can find a named model or a matching factory
-     * pattern (without creating an instance).
+     * Returns {@code true} if {@link #resolve(String)} can find a named model or a matching factory/
+     * provider pattern (without creating an instance).
      */
     public static boolean canResolve(String modelId) {
+        return canResolve(modelId, ModelCreationContext.empty());
+    }
+
+    /**
+     * Returns {@code true} if {@link #resolve(String, ModelCreationContext)} can find a named model
+     * or a matching factory/provider pattern (without creating an instance).
+     */
+    public static boolean canResolve(String modelId, ModelCreationContext context) {
+        Objects.requireNonNull(context, "context");
         if (modelId == null) {
             return false;
         }
@@ -141,7 +190,8 @@ public final class ModelRegistry {
         if (namedModels.containsKey(trimmed)) {
             return true;
         }
-        return findMatchingUserEntry(trimmed) != null || findServiceProvider(trimmed) != null;
+        return findMatchingUserEntry(trimmed) != null
+                || findServiceProvider(trimmed, context) != null;
     }
 
     /**
@@ -168,7 +218,14 @@ public final class ModelRegistry {
         Model create(String modelId);
     }
 
-    private record ProviderEntry(Pattern pattern, ModelFactory factory) {}
+    @FunctionalInterface
+    public interface ContextModelFactory {
+        Model create(String modelId, ModelCreationContext context);
+    }
+
+    private record ProviderEntry(Pattern pattern, ContextModelFactory factory) {}
+
+    private record ModelCacheKey(String modelId, String cacheIdentity) {}
 
     private static ProviderEntry findMatchingUserEntry(String modelId) {
         for (ProviderEntry e : userFactories) {
@@ -179,12 +236,12 @@ public final class ModelRegistry {
         return null;
     }
 
-    private static ModelProvider findServiceProvider(String modelId) {
+    private static ModelProvider findServiceProvider(String modelId, ModelCreationContext context) {
         ModelProvider matched = null;
         for (ModelProvider provider : loadServiceProviders()) {
             boolean supports;
             try {
-                supports = provider.supports(modelId);
+                supports = provider.supports(modelId, context);
             } catch (RuntimeException | LinkageError e) {
                 logger.warn(
                         "Skipping ModelProvider {} because supports(\"{}\") failed",
@@ -208,6 +265,76 @@ public final class ModelRegistry {
             matched = provider;
         }
         return matched;
+    }
+
+    /**
+     * Builds the registry cache key for a model resolution.
+     *
+     * <p>The rules intentionally avoid treating arbitrary context objects as comparable:
+     *
+     * <ul>
+     *   <li>Empty contexts keep the legacy behavior and cache only by {@code modelId}.
+     *   <li>Non-empty contexts are not cached unless {@link CachePolicy#ENABLED} is selected.
+     *   <li>An explicit {@code cacheId} is the authoritative identity for complex contexts.
+     *   <li>Without {@code cacheId}, only standard simple fields are fingerprinted. Options and
+     *       components are opaque and must not rely on deep hashing or object {@code hashCode()}.
+     * </ul>
+     */
+    private static ModelCacheKey cacheKey(String modelId, ModelCreationContext context) {
+        if (context.isEmpty()) {
+            return new ModelCacheKey(modelId, "legacy");
+        }
+        if (context.getCachePolicy() == CachePolicy.DISABLED
+                || context.getCachePolicy() == CachePolicy.DEFAULT) {
+            return null;
+        }
+
+        String cacheId = context.getCacheId();
+        if (cacheId != null) {
+            return new ModelCacheKey(modelId, "explicit:" + cacheId);
+        }
+        if (context.hasOpaqueCacheInputs()) {
+            throw new IllegalArgumentException(
+                    "ModelCreationContext cachePolicy(ENABLED) with options or components "
+                            + "requires an explicit cacheId");
+        }
+        return new ModelCacheKey(modelId, "standard:" + standardContextFingerprint(context));
+    }
+
+    /**
+     * Creates a cache fingerprint from provider-neutral simple fields only.
+     *
+     * <p>API keys are never written to the key in plain text. The digest is not intended as a
+     * security boundary; it only prevents accidental secret exposure in heap dumps, logs, and test
+     * diagnostics.
+     */
+    private static String standardContextFingerprint(ModelCreationContext context) {
+        return "apiKeySha256="
+                + sha256Hex(context.getApiKey())
+                + "|baseUrl="
+                + valueOf(context.getBaseUrl())
+                + "|endpointPath="
+                + valueOf(context.getEndpointPath())
+                + "|stream="
+                + valueOf(context.getStream())
+                + "|enableThinking="
+                + valueOf(context.getEnableThinking());
+    }
+
+    private static String valueOf(Object value) {
+        return value == null ? "<null>" : value.toString();
+    }
+
+    private static String sha256Hex(String value) {
+        if (value == null) {
+            return "<null>";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     private static List<ModelProvider> loadServiceProviders() {
