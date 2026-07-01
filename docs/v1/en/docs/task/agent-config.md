@@ -479,12 +479,12 @@ The following example demonstrates the complete usage of all core configuration 
 package io.agentscope.tutorial;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ExecutionConfig;

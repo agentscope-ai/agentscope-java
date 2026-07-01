@@ -20,11 +20,11 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.spring.boot.model.ModelProviderType;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,93 +33,23 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
 
 /**
- * Spring Boot auto-configuration that exposes default Model, Memory, Toolkit
- * and ReActAgent beans
- * for AgentScope.
+ * Spring Boot auto-configuration that exposes default Memory, Toolkit and ReActAgent beans for
+ * AgentScope.
  *
- * <p>
- * Basic configuration with DashScope (default provider):
+ * <p>Model beans are provided by provider-specific starters such as
+ * {@code agentscope-dashscope-spring-boot-starter}, {@code agentscope-openai-spring-boot-starter},
+ * {@code agentscope-gemini-spring-boot-starter}, {@code agentscope-anthropic-spring-boot-starter},
+ * or by user-defined {@link Model} beans.
+ *
+ * <p>Basic configuration:
  *
  * <pre>{@code
  * agentscope:
- *   # Select model provider (defaults to dashscope when omitted)
- *   model:
- *     provider: dashscope
- *
- *   dashscope:
- *     enabled: true
- *     api-key: ${DASHSCOPE_API_KEY}
- *     model-name: qwen-plus
- *     stream: true
- *     enable-thinking: true
- *
  *   agent:
  *     enabled: true
  *     name: "Assistant"
  *     sys-prompt: "You are a helpful AI assistant."
  *     max-iters: 10
- * }</pre>
- *
- * <p>
- * Using OpenAI as provider:
- *
- * <pre>{@code
- * agentscope:
- *   model:
- *     provider: openai
- *
- *   openai:
- *     enabled: true
- *     api-key: ${OPENAI_API_KEY}
- *     model-name: gpt-4.1-mini
- *     stream: true
- * }</pre>
- *
- * <p>
- * Using Gemini as provider (direct API):
- *
- * <pre>{@code
- * agentscope:
- *   model:
- *     provider: gemini
- *
- *   gemini:
- *     enabled: true
- *     api-key: ${GEMINI_API_KEY}
- *     model-name: gemini-2.0-flash
- *     stream: true
- * }</pre>
- *
- * <p>
- * Using Gemini via Vertex AI:
- *
- * <pre>{@code
- * agentscope:
- *   model:
- *     provider: gemini
- *
- *   gemini:
- *     enabled: true
- *     project: your-gcp-project-id
- *     location: us-central1
- *     model-name: gemini-2.0-flash
- *     vertex-ai: true
- *     stream: true
- * }</pre>
- *
- * <p>
- * Using Anthropic as provider:
- *
- * <pre>{@code
- * agentscope:
- *   model:
- *     provider: anthropic
- *
- *   anthropic:
- *     enabled: true
- *     api-key: ${ANTHROPIC_API_KEY}
- *     model-name: claude-sonnet-4.5
- *     stream: true
  * }</pre>
  */
 @AutoConfiguration
@@ -164,22 +94,6 @@ public class AgentscopeAutoConfiguration {
     }
 
     /**
-     * Default Model implementation.
-     *
-     * <p>
-     * If DashScopeChatModel is on the classpath and dashscope auto-configuration is
-     * enabled, this
-     * method creates a DashScopeChatModel based on {@link ModelProviderType}
-     * settings.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean(Model.class)
-    public Model agentscopeModel(AgentscopeProperties properties) {
-        return ModelProviderType.fromProperties(properties).createModel(properties);
-    }
-
-    /**
      * Default ReActAgent that wires together the configured Model, Memory and
      * Toolkit beans using
      * {@link AgentProperties}.
@@ -188,6 +102,7 @@ public class AgentscopeAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(Model.class)
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
