@@ -59,7 +59,9 @@ import java.util.Objects;
  * <p>Implementations are provided by extension modules:
  * <ul>
  *   <li>{@code agentscope-extensions-redis} — {@code RedisDistributedStore}</li>
- *   <li>{@code agentscope-extensions-oss} — {@code OssDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-oss-aliyun} — {@code AliyunOssDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-oss-aws} — {@code AwsS3DistributedStore}</li>
+ *   <li>{@code agentscope-extensions-oss-tencent} — {@code TencentCosDistributedStore}</li>
  *   <li>{@code agentscope-extensions-mysql} — {@code MysqlDistributedStore}</li>
  * </ul>
  *

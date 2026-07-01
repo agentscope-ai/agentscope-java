@@ -21,20 +21,38 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-oss</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-oss</artifactId>
-    <name>AgentScope Java - Extensions - OSS</name>
-    <description>Object storage backed AgentStateStore, BaseStore and snapshot storage across cloud vendors (Alibaba Cloud OSS, AWS S3, Tencent Cloud COS)</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-oss-aws</artifactId>
+    <name>AgentScope Java - Extensions - OSS - AWS S3</name>
+    <description>AWS S3 backed AgentStateStore, BaseStore and snapshot storage</description>
 
-    <modules>
-        <module>agentscope-extensions-oss-base</module>
-        <module>agentscope-extensions-oss-aliyun</module>
-        <module>agentscope-extensions-oss-aws</module>
-        <module>agentscope-extensions-oss-tencent</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-oss-base</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- AWS SDK for Java v2 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.46.17</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

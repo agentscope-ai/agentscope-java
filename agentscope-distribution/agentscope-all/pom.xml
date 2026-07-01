@@ -318,16 +318,29 @@
             <optional>true</optional>
         </dependency>
 
+<!--     Oss Store   -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-oss</artifactId>
+            <artifactId>agentscope-extensions-oss-base</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-oss-aliyun</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-cos</artifactId>
+            <artifactId>agentscope-extensions-oss-tencent</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-oss-aws</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>

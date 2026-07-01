@@ -21,20 +21,34 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-oss</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-oss</artifactId>
-    <name>AgentScope Java - Extensions - OSS</name>
-    <description>Object storage backed AgentStateStore, BaseStore and snapshot storage across cloud vendors (Alibaba Cloud OSS, AWS S3, Tencent Cloud COS)</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-oss-base</artifactId>
+    <name>AgentScope Java - Extensions - OSS - Base</name>
+    <description>SDK-independent abstractions shared by all object storage vendor implementations</description>
 
-    <modules>
-        <module>agentscope-extensions-oss-base</module>
-        <module>agentscope-extensions-oss-aliyun</module>
-        <module>agentscope-extensions-oss-aws</module>
-        <module>agentscope-extensions-oss-tencent</module>
-    </modules>
+    <dependencies>
+        <!--
+          Compile-scope, non-optional so vendor sub-modules and downstream consumers
+          transitively inherit them via agentscope-extensions-oss-base. This eliminates
+          the boilerplate of re-declaring the two core deps in every vendor pom.
+        -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
