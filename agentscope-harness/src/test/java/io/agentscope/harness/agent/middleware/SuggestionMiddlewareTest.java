@@ -134,7 +134,8 @@ class SuggestionMiddlewareTest {
         List<AgentEvent> events = runMiddleware(mw, assistantMsg("   "));
 
         assertFalse(events.stream().anyMatch(e -> e instanceof SuggestionResultEvent));
-        assertInstanceOf(AgentEndEvent.class, events.get(events.size() - 1), "AgentEndEvent still last");
+        assertInstanceOf(
+                AgentEndEvent.class, events.get(events.size() - 1), "AgentEndEvent still last");
     }
 
     @Test
