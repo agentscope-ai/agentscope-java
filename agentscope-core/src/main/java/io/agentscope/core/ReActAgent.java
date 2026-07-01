@@ -2177,7 +2177,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
                     events.add(
                             new ThinkingBlockDeltaEvent(
-                                    blockLifecycle.replyId, "thinking", tb.getThinking()));
+                                    blockLifecycle.replyId,
+                                    blockLifecycle.thinkingBlockId(),
+                                    tb.getThinking()));
                 }
             } else if (withToolEvents && block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
@@ -2209,6 +2211,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
             private final AtomicInteger textBlockCounter = new AtomicInteger(0);
             private volatile String currentTextBlockId;
+            private final AtomicInteger thinkingBlockCounter = new AtomicInteger(0);
+            private volatile String currentThinkingBlockId;
 
             private ModelCallBlockLifecycle(String replyId) {
                 this.replyId = replyId;
@@ -2228,8 +2232,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void startThinking(List<AgentEvent> events) {
                 if (thinkingStarted.compareAndSet(false, true)) {
-                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+                    currentThinkingBlockId = replyId + "_thinking_" + thinkingBlockCounter.incrementAndGet();
+                    events.add(new ThinkingBlockStartEvent(replyId, currentThinkingBlockId));
                 }
+            }
+
+            String thinkingBlockId() {
+                return currentThinkingBlockId;
             }
 
             private void startToolCall(String toolId, String toolName, List<AgentEvent> events) {
@@ -2253,7 +2262,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void flushThinking(List<AgentEvent> events) {
                 if (thinkingStarted.compareAndSet(true, false)) {
-                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                    events.add(new ThinkingBlockEndEvent(replyId, currentThinkingBlockId));
                 }
             }
 
@@ -3156,7 +3165,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             new ThinkingBlockDeltaEvent(
                                                                                     blockLifecycle
                                                                                             .replyId,
-                                                                                    "thinking",
+                                                                                    blockLifecycle
+                                                                                            .thinkingBlockId(),
                                                                                     tb
                                                                                             .getThinking()));
                                                                 }
