@@ -215,6 +215,30 @@ class ClasspathSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("Should reuse JAR file system across repository instances")
+    void testReuseJarFileSystemAcrossRepositories() throws Exception {
+        Path jarPath = createTestJarInFolder("shared-skill", "Shared Skill", "Shared content");
+
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()});
+                ClasspathSkillRepository firstRepository =
+                        new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+                ClasspathSkillRepository secondRepository =
+                        new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader)) {
+
+            AgentSkill firstSkill = firstRepository.getSkill("shared-skill");
+            AgentSkill secondSkill = secondRepository.getSkill("shared-skill");
+
+            assertEquals("shared-skill", firstSkill.getName());
+            assertEquals("shared-skill", secondSkill.getName());
+
+            firstRepository.close();
+
+            AgentSkill stillAccessible = secondRepository.getSkill("shared-skill");
+            assertEquals("shared-skill", stillAccessible.getName());
+        }
+    }
+
+    @Test
     @DisplayName("Should load skills from Spring Boot Fat JAR (BOOT-INF/classes/)")
     void testLoadFromSpringBootJar() throws Exception {
         Path jarPath = createSpringBootTestJar("sb-skill", "SB Skill", "SB content");
@@ -312,6 +336,37 @@ class ClasspathSkillRepositoryTest {
             assertEquals("nested-lib-skill", skill.getName());
             assertEquals("Nested Lib Skill", skill.getDescription());
             assertTrue(skill.getSkillContent().contains("Nested lib content"));
+        } finally {
+            TestNestedFileSystemProvider.configuredInnerJarPath = null;
+        }
+    }
+
+    @Test
+    @DisplayName("Should reuse nested JAR file system across repository instances")
+    void testReuseNestedJarFileSystemAcrossRepositories() throws Exception {
+        Path outerJarPath =
+                createSpringBootNestedLibTestJar(
+                        "nested-shared-skill", "Nested Shared Skill", "Nested shared content");
+        Path innerJarPath = extractInnerJar(outerJarPath, "BOOT-INF/lib/nested-skill.jar");
+
+        TestNestedFileSystemProvider.configuredInnerJarPath = innerJarPath;
+        try (ClasspathSkillRepository firstRepository =
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", createNestedJarClassLoader(outerJarPath));
+                ClasspathSkillRepository secondRepository =
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", createNestedJarClassLoader(outerJarPath))) {
+
+            AgentSkill firstSkill = firstRepository.getSkill("nested-shared-skill");
+            AgentSkill secondSkill = secondRepository.getSkill("nested-shared-skill");
+
+            assertEquals("nested-shared-skill", firstSkill.getName());
+            assertEquals("nested-shared-skill", secondSkill.getName());
+
+            firstRepository.close();
+
+            AgentSkill stillAccessible = secondRepository.getSkill("nested-shared-skill");
+            assertEquals("nested-shared-skill", stillAccessible.getName());
         } finally {
             TestNestedFileSystemProvider.configuredInnerJarPath = null;
         }
@@ -693,6 +748,37 @@ class ClasspathSkillRepositoryTest {
             }
         }
         return innerJarPath;
+    }
+
+    private ClassLoader createNestedJarClassLoader(Path outerJarPath) {
+        return new ClassLoader(ClassLoader.getSystemClassLoader()) {
+            @Override
+            public URL getResource(String name) {
+                if ("jar-skills".equals(name)) {
+                    try {
+                        String nestedUrlStr =
+                                "jar:nested:"
+                                        + outerJarPath.toUri().getRawPath()
+                                        + "/!BOOT-INF/lib/nested-skill.jar!/"
+                                        + name;
+                        return new URL(
+                                null,
+                                nestedUrlStr,
+                                new URLStreamHandler() {
+                                    @Override
+                                    protected URLConnection openConnection(URL u)
+                                            throws IOException {
+                                        throw new UnsupportedOperationException(
+                                                "nested URL for test only");
+                                    }
+                                });
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return super.getResource(name);
+            }
+        };
     }
 
     /**
