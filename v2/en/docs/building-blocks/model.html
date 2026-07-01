@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T16:04:46+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-07-01T12:22:29+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -907,7 +907,7 @@
 <h1>Model<a class="headerlink" href="#model" title="Link to this heading">¶</a></h1>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
-<p>The model layer is two-tiered: at the top sit <strong>Credentials</strong> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.credential</span></code>), which carry a provider’s API auth fields; below them sit <strong>Chat Models</strong> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model</span></code>), the concrete inference implementations attached to a credential.</p>
+<p>The model layer is two-tiered: at the top sit <strong>Credentials</strong> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.credential</span></code>), which carry a provider’s API auth fields; below them sit <strong>Chat Models</strong>, the concrete inference implementations attached to a credential.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>CredentialBase/
 └── ChatModelBase/
     ├── OpenAIChatModel
@@ -919,6 +919,104 @@
 </div>
 <p>A <strong>Credential</strong> carries a provider’s API auth fields (<code class="docutils literal notranslate"><span class="pre">apiKey</span></code>, <code class="docutils literal notranslate"><span class="pre">baseUrl</span></code>, …). Starting from a credential, you can call <code class="docutils literal notranslate"><span class="pre">listModels()</span></code> to enumerate the models available under that provider (returns <code class="docutils literal notranslate"><span class="pre">Mono&lt;List&lt;ModelCard&gt;&gt;</span></code>).</p>
 <p>This layering matches the natural UX in a frontend — register the credential first, then pick a model under it — so the UI authenticates once and shows everything that provider supports.</p>
+</section>
+<section id="provider-module-migration">
+<h2>Provider module migration<a class="headerlink" href="#provider-module-migration" title="Link to this heading">¶</a></h2>
+<p>Provider-specific model implementations have been moved out of <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> into independent extension modules. The core module now keeps the shared model contracts and runtime utilities, while each provider module owns its chat model, credential, formatter, DTO, exception, and SDK/API client code.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<th class="head"><p>Maven artifact</p></th>
+<th class="head"><p>Main package</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>OpenAI</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>DashScope</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-dashscope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.dashscope</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-gemini</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.gemini</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-anthropic</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.anthropic</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Ollama</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-ollama</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.ollama</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="migration-checklist">
+<h3>Migration checklist<a class="headerlink" href="#migration-checklist" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Add the provider extension module dependency. For example, DashScope:</p></li>
+</ol>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-model-dashscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>Other provider artifacts follow the same pattern: <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-gemini</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-anthropic</span></code>, and <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-ollama</span></code>.</p>
+<ol class="arabic simple" start="2">
+<li><p>Replace provider imports from <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.*</span></code> with <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.&lt;provider&gt;.*</span></code>.</p></li>
+<li><p>Replace provider formatter imports from <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.formatter.&lt;provider&gt;.*</span></code> with <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.&lt;provider&gt;.formatter.*</span></code>.</p></li>
+<li><p>For Spring Boot applications, replace the generic model creation path with the matching provider-specific starter and its <code class="docutils literal notranslate"><span class="pre">agentscope.&lt;provider&gt;.*</span></code> properties.</p></li>
+</ol>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-openai-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="non-spring-applications">
+<h3>Non-Spring applications<a class="headerlink" href="#non-spring-applications" title="Link to this heading">¶</a></h3>
+<p>When using provider classes directly, add the corresponding extension dependency and update imports. For example:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Then create the model with the provider builder and pass the <code class="docutils literal notranslate"><span class="pre">Model</span></code> instance to the agent:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="spring-boot-applications">
+<h3>Spring Boot applications<a class="headerlink" href="#spring-boot-applications" title="Link to this heading">¶</a></h3>
+<p>For Spring Boot, prefer provider-specific starters such as <code class="docutils literal notranslate"><span class="pre">agentscope-openai-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-dashscope-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-gemini-spring-boot-starter</span></code>, and <code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code>. These starters directly depend on the matching model extension, create Spring-managed <code class="docutils literal notranslate"><span class="pre">Model</span></code> beans, and leave the generic starter focused on common AgentScope infrastructure.</p>
+<p>OpenAI example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">model</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai</span>
+<span class="w">  </span><span class="nt">openai</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">api-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${OPENAI_API_KEY}</span>
+<span class="w">    </span><span class="nt">model-name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4.1-mini</span>
+<span class="w">    </span><span class="nt">stream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="chat-model">
 <h2>Chat model<a class="headerlink" href="#chat-model" title="Link to this heading">¶</a></h2>
@@ -963,8 +1061,8 @@
 <input checked="checked" id="sd-tab-item-0" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" for="sd-tab-item-0">
 Streaming</label><div class="sd-tab-content docutils">
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -979,8 +1077,8 @@ Streaming</label><div class="sd-tab-content docutils">
 <input id="sd-tab-item-1" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" for="sd-tab-item-1">
 Tools</label><div class="sd-tab-content docutils">
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
@@ -1000,8 +1098,8 @@ Tools</label><div class="sd-tab-content docutils">
 <input id="sd-tab-item-2" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" for="sd-tab-item-2">
 Reasoning</label><div class="sd-tab-content docutils">
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
@@ -1063,9 +1161,9 @@ Reasoning</label><div class="sd-tab-content docutils">
 <p>The <code class="docutils literal notranslate"><span class="pre">Model</span></code> interface exposes a unified <code class="docutils literal notranslate"><span class="pre">stream(messages,</span> <span class="pre">tools,</span> <span class="pre">options)</span></code> returning <code class="docutils literal notranslate"><span class="pre">Flux&lt;ChatResponse&gt;</span></code>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.UserMessage</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ChatResponse</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
@@ -1149,8 +1247,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 </table>
 </div>
 <p>To switch to multi-agent mode, just pass the MultiAgent variant — no agent code changes:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1161,7 +1259,7 @@ Reasoning</label><div class="sd-tab-content docutils">
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Per-provider formatters (under <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.formatter</span></code>):</p>
+<p>Per-provider formatters now live with their provider extension modules:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1394,7 +1492,7 @@ Reasoning</label><div class="sd-tab-content docutils">
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-25</div>
+              Last updated on 2026-07-01</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1431,6 +1529,12 @@ Reasoning</label><div class="sd-tab-content docutils">
             <ul>
 <li><a class="reference internal" href="#">Model</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#provider-module-migration">Provider module migration</a><ul>
+<li><a class="reference internal" href="#migration-checklist">Migration checklist</a></li>
+<li><a class="reference internal" href="#non-spring-applications">Non-Spring applications</a></li>
+<li><a class="reference internal" href="#spring-boot-applications">Spring Boot applications</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#chat-model">Chat model</a><ul>
 <li><a class="reference internal" href="#creating-a-chat-model">Creating a chat model</a></li>
 <li><a class="reference internal" href="#calling-a-chat-model">Calling a chat model</a></li>
