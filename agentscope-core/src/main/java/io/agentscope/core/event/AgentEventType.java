@@ -86,6 +86,9 @@ public enum AgentEventType {
     SUBAGENT_EXPOSED("SUBAGENT_EXPOSED"),
 
     HINT_BLOCK("HINT_BLOCK"),
+
+    SUGGESTION_RESULT("SUGGESTION_RESULT"),
+
     CUSTOM("CUSTOM");
 
     private final String value;
