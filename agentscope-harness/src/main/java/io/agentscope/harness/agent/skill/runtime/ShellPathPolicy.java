@@ -148,8 +148,10 @@ public final class ShellPathPolicy {
     }
 
     /**
-     * Escapes space characters with backslash so the path can be safely used in shell commands
-     * by the LLM.
+     * Escapes spaces with backslash (e.g. {@code "a b" -> "a\ b"}) so the value can be embedded
+     * unquoted in POSIX shell commands without word-splitting.
+     *
+     * <p>This is not a general-purpose shell escaping routine.
      */
     static String escapeSpaces(String value) {
         return value.indexOf(' ') >= 0 ? value.replace(" ", "\\ ") : value;
