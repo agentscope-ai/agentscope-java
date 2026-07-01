@@ -1040,7 +1040,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? model.supportsNativeStructuredOutputWithTools()
                         : model.supportsNativeStructuredOutput();
         if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema);
+            return doNativeStructuredCall(msgs, jsonSchema)
+                    .onErrorResume(
+                            e -> {
+                                log.warn(
+                                        "Native structured output failed ({}) — falling back to"
+                                                + " synthetic tool path",
+                                        e.getMessage() != null
+                                                ? e.getMessage()
+                                                : e.getClass().getSimpleName());
+                                return doFallbackStructuredCall(msgs, jsonSchema);
+                            });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
     }
@@ -1077,11 +1087,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .strict(true)
                                             .build());
 
+                    int contextSizeBefore = scope.state.contextMutable().size();
+
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
+                                    })
+                            .doOnError(
+                                    e -> {
+                                        List<Msg> ctx = scope.state.contextMutable();
+                                        while (ctx.size() > contextSizeBefore) {
+                                            ctx.remove(ctx.size() - 1);
+                                        }
+                                        scope.nativeResponseFormat = null;
                                     });
                 });
     }
@@ -1914,7 +1934,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         event.getEffectiveGenerateOptions() != null
                                                 ? event.getEffectiveGenerateOptions()
                                                 : buildGenerateOptions();
-                                if (nativeResponseFormat != null) {
+                                if (nativeResponseFormat != null && soTool == null) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
