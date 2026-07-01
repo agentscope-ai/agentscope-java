@@ -26,6 +26,7 @@ package io.agentscope.spring.boot.properties;
  *     enabled: true
  *     api-key: ${DASHSCOPE_API_KEY}
  *     model-name: qwen-plus
+ *     # base-url: # optional
  *     stream: true
  *     enable-thinking: true
  * }</pre>
@@ -46,6 +47,11 @@ public class DashscopeProperties {
      * DashScope model name, for example {@code qwen-plus} or {@code qwen-max}.
      */
     private String modelName = "qwen-plus";
+
+    /**
+     * Optional DashScope API base URL.
+     */
+    private String baseUrl;
 
     /**
      * Whether to enable streaming responses.
@@ -79,6 +85,14 @@ public class DashscopeProperties {
 
     public void setModelName(String modelName) {
         this.modelName = modelName;
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
     }
 
     public boolean isStream() {

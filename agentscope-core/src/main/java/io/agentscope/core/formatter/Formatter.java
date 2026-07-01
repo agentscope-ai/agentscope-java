@@ -35,6 +35,16 @@ import java.util.List;
  *
  * <p>Each formatter is type-safe and handles the exact types expected by the provider's SDK.
  *
+ * <p><b>Dependency:</b> This interface requires the provider-specific extension module.
+ * For DashScope, add the following Maven dependency:
+ * <pre>{@code
+ * <dependency>
+ *     <groupId>agentscope</groupId>
+ *     <artifactId>agentscope-extensions-model-dashscope</artifactId>
+ *     <version>${agentscope.version}</version>
+ * </dependency>
+ * }</pre>
+ *
  * @param <TReq> Provider-specific request message type (e.g., com.alibaba.dashscope.common.Message
  *               for DashScope, or ChatCompletionMessageParam for OpenAI)
  * @param <TResp> Provider-specific response type (e.g., GenerationResult for DashScope,
