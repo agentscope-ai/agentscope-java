@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.model;
 
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import io.agentscope.spring.boot.properties.AnthropicProperties;
@@ -45,17 +44,7 @@ public enum ModelProviderType {
                                 + " auto-configuration is enabled");
             }
 
-            DashScopeChatModel.Builder builder =
-                    DashScopeChatModel.builder()
-                            .apiKey(dashscope.getApiKey())
-                            .modelName(dashscope.getModelName())
-                            .stream(dashscope.isStream());
-
-            if (dashscope.getEnableThinking() != null) {
-                builder.enableThinking(dashscope.getEnableThinking());
-            }
-
-            return builder.build();
+            return createDashScopeModel(dashscope);
         }
     },
     OPENAI("openai") {
@@ -143,6 +132,50 @@ public enum ModelProviderType {
             }
         }
         throw new IllegalStateException("Unsupported agentscope.model.provider: " + normalized);
+    }
+
+    private static Model createDashScopeModel(DashscopeProperties dashscope) {
+        try {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader == null) {
+                classLoader = ModelProviderType.class.getClassLoader();
+            }
+            Class<?> factoryClass =
+                    Class.forName(
+                            "io.agentscope.extensions.model.dashscope.DashScopeChatModelFactory",
+                            true,
+                            classLoader);
+            Method create =
+                    factoryClass.getMethod(
+                            "create",
+                            String.class,
+                            String.class,
+                            boolean.class,
+                            String.class,
+                            Boolean.class);
+            return (Model)
+                    create.invoke(
+                            null,
+                            dashscope.getApiKey(),
+                            dashscope.getModelName(),
+                            dashscope.isStream(),
+                            dashscope.getBaseUrl(),
+                            dashscope.getEnableThinking());
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "DashScope provider requires agentscope-extensions-model-dashscope on the"
+                            + " classpath",
+                    e);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "DashScope extension is incompatible with this Spring Boot starter", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to create DashScope model", cause);
+        }
     }
 
     private static Model createOpenAiModel(OpenAIProperties openai) {
