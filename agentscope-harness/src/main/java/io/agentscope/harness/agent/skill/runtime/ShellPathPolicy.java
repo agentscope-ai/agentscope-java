@@ -112,9 +112,14 @@ public final class ShellPathPolicy {
 
     private String joinSkills(String skillName) {
         return switch (mode) {
-            case SANDBOX -> sandboxPrefix + "/skills/" + skillName;
+            case SANDBOX -> escapeSpaces(sandboxPrefix + "/skills/" + skillName);
             case LOCAL_WITH_SHELL ->
-                    workspaceRoot.resolve("skills").resolve(skillName).toAbsolutePath().toString();
+                    escapeSpaces(
+                            workspaceRoot
+                                    .resolve("skills")
+                                    .resolve(skillName)
+                                    .toAbsolutePath()
+                                    .toString());
             case NO_SHELL -> null;
         };
     }
@@ -122,21 +127,31 @@ public final class ShellPathPolicy {
     private String joinCache(String sourceNs, String skillName) {
         return switch (mode) {
             case SANDBOX ->
-                    sandboxPrefix
-                            + "/"
-                            + MarketplaceStager.CACHE_DIR
-                            + "/"
-                            + sourceNs
-                            + "/"
-                            + skillName;
+                    escapeSpaces(
+                            sandboxPrefix
+                                    + "/"
+                                    + MarketplaceStager.CACHE_DIR
+                                    + "/"
+                                    + sourceNs
+                                    + "/"
+                                    + skillName);
             case LOCAL_WITH_SHELL ->
-                    workspaceRoot
-                            .resolve(MarketplaceStager.CACHE_DIR)
-                            .resolve(sourceNs)
-                            .resolve(skillName)
-                            .toAbsolutePath()
-                            .toString();
+                    escapeSpaces(
+                            workspaceRoot
+                                    .resolve(MarketplaceStager.CACHE_DIR)
+                                    .resolve(sourceNs)
+                                    .resolve(skillName)
+                                    .toAbsolutePath()
+                                    .toString());
             case NO_SHELL -> null;
         };
+    }
+
+    /**
+     * Escapes space characters with backslash so the path can be safely used in shell commands
+     * by the LLM.
+     */
+    static String escapeSpaces(String value) {
+        return value.indexOf(' ') >= 0 ? value.replace(" ", "\\ ") : value;
     }
 }
