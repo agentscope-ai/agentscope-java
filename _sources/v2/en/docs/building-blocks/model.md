@@ -247,20 +247,54 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
-> **Structured output with tool calling**
->
-> When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. If you encounter this, set `nativeStructuredOutputWithTools(false)` when building the model — the framework will use a synthetic tool approach for structured output, fully compatible with the ReAct tool-calling loop:
->
-> ```java
-> OpenAIChatModel model = OpenAIChatModel.builder()
->         .apiKey("...")
->         .baseUrl("https://api.moonshot.cn/v1")
->         .modelName("moonshot-v1-8k")
->         .nativeStructuredOutputWithTools(false)
->         .build();
-> ```
->
-> `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
+#### Structured output path selection
+
+The framework provides two structured output paths:
+
+| Path | Condition | Mechanism |
+|------|-----------|-----------|
+| **Native** | `supportsNativeStructuredOutput() = true` | Uses `response_format` + `json_schema` for direct JSON output |
+| **Fallback** (default) | `supportsNativeStructuredOutput() = false` | Injects a `generate_response` synthetic tool; model returns structured data via tool call |
+
+If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
+
+#### Default behavior per provider
+
+| Provider | `supportsNativeStructuredOutput` | Notes |
+|----------|----------------------------------|-------|
+| OpenAI (GPT-4o, etc.) | `true` | Native `json_schema` support |
+| OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
+| DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
+| Anthropic | `false` (default) | — |
+
+> **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output at all — the framework forces the fallback path.
+
+#### Explicit configuration
+
+If you confirm your model/endpoint supports `json_schema`, enable the native path via builder:
+
+```java
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .nativeStructuredOutput(true)  // explicitly enable native json_schema path
+        .build();
+```
+
+#### Structured output with tool calling
+
+When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. Set `nativeStructuredOutputWithTools(false)` to resolve this:
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey("...")
+        .baseUrl("https://api.moonshot.cn/v1")
+        .modelName("moonshot-v1-8k")
+        .nativeStructuredOutputWithTools(false)
+        .build();
+```
+
+`DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
 
 ### Formatter
 
