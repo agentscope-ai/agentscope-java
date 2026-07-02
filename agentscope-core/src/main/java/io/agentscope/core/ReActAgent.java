@@ -163,7 +163,9 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
- * // Create a model
+ * import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+ *
+ * // Create a model (requires dependency: agentscope-extensions-model-dashscope)
  * DashScopeChatModel model = DashScopeChatModel.builder()
  *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
  *     .modelName("qwen-plus")
@@ -1038,7 +1040,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? model.supportsNativeStructuredOutputWithTools()
                         : model.supportsNativeStructuredOutput();
         if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema);
+            return doNativeStructuredCall(msgs, jsonSchema)
+                    .onErrorResume(
+                            e -> {
+                                log.warn(
+                                        "Native structured output failed ({}) — falling back to"
+                                                + " synthetic tool path",
+                                        e.getMessage() != null
+                                                ? e.getMessage()
+                                                : e.getClass().getSimpleName());
+                                return doFallbackStructuredCall(msgs, jsonSchema);
+                            });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
     }
@@ -1075,11 +1087,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .strict(true)
                                             .build());
 
+                    int contextSizeBefore = scope.state.contextMutable().size();
+
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
+                                    })
+                            .doOnError(
+                                    e -> {
+                                        List<Msg> ctx = scope.state.contextMutable();
+                                        while (ctx.size() > contextSizeBefore) {
+                                            ctx.remove(ctx.size() - 1);
+                                        }
+                                        scope.nativeResponseFormat = null;
                                     });
                 });
     }
@@ -1912,7 +1934,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         event.getEffectiveGenerateOptions() != null
                                                 ? event.getEffectiveGenerateOptions()
                                                 : buildGenerateOptions();
-                                if (nativeResponseFormat != null) {
+                                if (nativeResponseFormat != null && soTool == null) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
@@ -3769,11 +3791,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Configures the model from a string id resolved via {@link ModelRegistry}: a named
-         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
-         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
-         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
-         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
-         * etc.).
+         * registration ({@link ModelRegistry#register(String, Model)}) or an extension provider
+         * pattern such as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code
+         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}.
+         * Extension modules read API keys from their standard environment variables when auto-created.
          *
          * @param modelId registry id or {@code provider:model} string
          * @return this builder
