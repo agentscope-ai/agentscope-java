@@ -29,7 +29,7 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.ListObjectsV2Request;
 import com.aliyun.oss.model.ListObjectsV2Result;
 import com.aliyun.oss.model.OSSObjectSummary;
-import io.agentscope.extensions.oss.base.OssListPage;
+import io.agentscope.extensions.oss.base.OssListObjectPage;
 import java.io.InputStream;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,7 +80,7 @@ class AliyunOssAdapterTest {
         result.setNextContinuationToken("next-token");
         when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
 
-        OssListPage page = adapter.list("prefix/", null, 100);
+        OssListObjectPage page = adapter.list("prefix/", null, 100);
 
         assertEquals(1, page.objects().size());
         assertEquals("prefix/a", page.objects().get(0).key());
@@ -92,7 +92,7 @@ class AliyunOssAdapterTest {
         ListObjectsV2Result result = new ListObjectsV2Result();
         result.setTruncated(false);
         when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
-        OssListPage page = adapter.list("prefix/", null, 100);
+        OssListObjectPage page = adapter.list("prefix/", null, 100);
         assertNull(page.nextContinuationToken());
         assertTrue(page.objects().isEmpty());
     }

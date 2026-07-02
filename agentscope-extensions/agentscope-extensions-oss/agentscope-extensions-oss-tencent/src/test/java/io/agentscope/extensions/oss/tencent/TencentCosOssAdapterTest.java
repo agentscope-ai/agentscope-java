@@ -30,7 +30,7 @@ import com.qcloud.cos.exception.CosServiceException;
 import com.qcloud.cos.model.COSObjectSummary;
 import com.qcloud.cos.model.ListObjectsRequest;
 import com.qcloud.cos.model.ObjectListing;
-import io.agentscope.extensions.oss.base.OssListPage;
+import io.agentscope.extensions.oss.base.OssListObjectPage;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,7 +76,7 @@ class TencentCosOssAdapterTest {
         listing.setNextMarker("marker-b");
         when(mockCos.listObjects(any(ListObjectsRequest.class))).thenReturn(listing);
 
-        OssListPage page = adapter.list("prefix/", null, 100);
+        OssListObjectPage page = adapter.list("prefix/", null, 100);
 
         assertEquals(1, page.objects().size());
         assertEquals("prefix/a", page.objects().get(0).key());
@@ -88,7 +88,7 @@ class TencentCosOssAdapterTest {
         ObjectListing listing = new ObjectListing();
         listing.setTruncated(false);
         when(mockCos.listObjects(any(ListObjectsRequest.class))).thenReturn(listing);
-        OssListPage page = adapter.list("prefix/", null, 100);
+        OssListObjectPage page = adapter.list("prefix/", null, 100);
         assertNull(page.nextContinuationToken());
     }
 

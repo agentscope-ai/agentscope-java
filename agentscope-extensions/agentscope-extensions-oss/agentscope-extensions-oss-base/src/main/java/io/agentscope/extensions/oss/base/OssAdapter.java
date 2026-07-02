@@ -73,7 +73,7 @@ public interface OssAdapter {
 
     /**
      * Lists a single page of objects under {@code prefix}. Callers drive pagination by
-     * feeding {@link OssListPage#nextContinuationToken()} back into the next call until
+     * feeding {@link OssListObjectPage#nextContinuationToken()} back into the next call until
      * it returns {@code null}.
      *
      * @param prefix prefix filter (must not be {@code null}; use {@code ""} for whole bucket)
@@ -82,7 +82,7 @@ public interface OssAdapter {
      * @param maxKeys upper bound on the number of results per page
      * @return the page of results
      */
-    OssListPage list(String prefix, String continuationToken, int maxKeys);
+    OssListObjectPage list(String prefix, String continuationToken, int maxKeys);
 
     /**
      * Batch-deletes the given keys. The default implementation deletes them one by one;

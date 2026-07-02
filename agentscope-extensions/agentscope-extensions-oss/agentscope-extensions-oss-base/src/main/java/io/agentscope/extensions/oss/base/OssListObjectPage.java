@@ -24,4 +24,4 @@ import java.util.List;
  * @param nextContinuationToken opaque token used to fetch the next page, or {@code null}
  *     when the current page is the last one
  */
-public record OssListPage(List<OssSummary> objects, String nextContinuationToken) {}
+public record OssListObjectPage(List<OssObjectSummary> objects, String nextContinuationToken) {}

@@ -16,8 +16,8 @@
 package io.agentscope.extensions.oss.aws;
 
 import io.agentscope.extensions.oss.base.OssAdapter;
-import io.agentscope.extensions.oss.base.OssListPage;
-import io.agentscope.extensions.oss.base.OssSummary;
+import io.agentscope.extensions.oss.base.OssListObjectPage;
+import io.agentscope.extensions.oss.base.OssObjectSummary;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -107,24 +107,24 @@ public class AwsS3OssAdapter implements OssAdapter {
     }
 
     @Override
-    public OssListPage list(String prefix, String continuationToken, int maxKeys) {
+    public OssListObjectPage list(String prefix, String continuationToken, int maxKeys) {
         ListObjectsV2Request.Builder request =
                 ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix).maxKeys(maxKeys);
         if (continuationToken != null) {
             request.continuationToken(continuationToken);
         }
         ListObjectsV2Response response = s3Client.listObjectsV2(request.build());
-        List<OssSummary> objects = new ArrayList<>();
+        List<OssObjectSummary> objects = new ArrayList<>();
         if (response.contents() != null) {
             for (software.amazon.awssdk.services.s3.model.S3Object obj : response.contents()) {
-                objects.add(new OssSummary(obj.key()));
+                objects.add(new OssObjectSummary(obj.key()));
             }
         }
         String next =
                 Boolean.TRUE.equals(response.isTruncated())
                         ? response.nextContinuationToken()
                         : null;
-        return new OssListPage(objects, next);
+        return new OssListObjectPage(objects, next);
     }
 
     @Override

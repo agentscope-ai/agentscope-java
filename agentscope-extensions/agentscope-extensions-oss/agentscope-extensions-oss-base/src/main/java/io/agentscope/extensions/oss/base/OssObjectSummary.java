@@ -20,4 +20,4 @@ package io.agentscope.extensions.oss.base;
  *
  * @param key the full object key
  */
-public record OssSummary(String key) {}
+public record OssObjectSummary(String key) {}

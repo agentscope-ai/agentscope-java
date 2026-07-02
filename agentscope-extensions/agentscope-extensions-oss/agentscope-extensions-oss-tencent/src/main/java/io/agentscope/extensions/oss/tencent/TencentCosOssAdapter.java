@@ -26,8 +26,8 @@ import com.qcloud.cos.model.ObjectListing;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
 import io.agentscope.extensions.oss.base.OssAdapter;
-import io.agentscope.extensions.oss.base.OssListPage;
-import io.agentscope.extensions.oss.base.OssSummary;
+import io.agentscope.extensions.oss.base.OssListObjectPage;
+import io.agentscope.extensions.oss.base.OssObjectSummary;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
@@ -106,7 +106,7 @@ public class TencentCosOssAdapter implements OssAdapter {
     }
 
     @Override
-    public OssListPage list(String prefix, String continuationToken, int maxKeys) {
+    public OssListObjectPage list(String prefix, String continuationToken, int maxKeys) {
         ListObjectsRequest request = new ListObjectsRequest();
         request.setBucketName(bucketName);
         request.setPrefix(prefix);
@@ -115,14 +115,14 @@ public class TencentCosOssAdapter implements OssAdapter {
             request.setMarker(continuationToken);
         }
         ObjectListing result = cosClient.listObjects(request);
-        List<OssSummary> objects = new ArrayList<>();
+        List<OssObjectSummary> objects = new ArrayList<>();
         if (result.getObjectSummaries() != null) {
             for (COSObjectSummary summary : result.getObjectSummaries()) {
-                objects.add(new OssSummary(summary.getKey()));
+                objects.add(new OssObjectSummary(summary.getKey()));
             }
         }
         String next = result.isTruncated() ? result.getNextMarker() : null;
-        return new OssListPage(objects, next);
+        return new OssListObjectPage(objects, next);
     }
 
     @Override

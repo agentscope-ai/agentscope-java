@@ -125,8 +125,8 @@ public abstract class AbstractOssBaseStore implements BaseStore {
             List<String> dataKeys = new ArrayList<>();
             String continuationToken = null;
             do {
-                OssListPage page = adapter.list(prefix, continuationToken, LIST_PAGE_SIZE);
-                for (OssSummary summary : page.objects()) {
+                OssListObjectPage page = adapter.list(prefix, continuationToken, LIST_PAGE_SIZE);
+                for (OssObjectSummary summary : page.objects()) {
                     String k = summary.key();
                     if (k.endsWith(JSON_SUFFIX) && !k.endsWith(VERSION_SUFFIX)) {
                         dataKeys.add(k);

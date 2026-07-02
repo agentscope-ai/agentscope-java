@@ -146,7 +146,7 @@ public abstract class AbstractOssAgentStateStore implements AgentStateStore {
     public boolean exists(String userId, String sessionId) {
         String prefix = sessionPrefix(userId, sessionId);
         try {
-            OssListPage page = adapter.list(prefix, null, 1);
+            OssListObjectPage page = adapter.list(prefix, null, 1);
             return page.objects() != null && !page.objects().isEmpty();
         } catch (Exception e) {
             throw new RuntimeException("Failed to check session existence", e);
@@ -248,8 +248,8 @@ public abstract class AbstractOssAgentStateStore implements AgentStateStore {
         List<String> keys = new ArrayList<>();
         String continuationToken = null;
         do {
-            OssListPage page = adapter.list(prefix, continuationToken, LIST_PAGE_SIZE);
-            for (OssSummary summary : page.objects()) {
+            OssListObjectPage page = adapter.list(prefix, continuationToken, LIST_PAGE_SIZE);
+            for (OssObjectSummary summary : page.objects()) {
                 keys.add(summary.key());
             }
             continuationToken = page.nextContinuationToken();

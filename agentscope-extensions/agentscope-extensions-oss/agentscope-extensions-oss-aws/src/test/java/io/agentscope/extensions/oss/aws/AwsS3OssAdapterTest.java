@@ -25,7 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.extensions.oss.base.OssListPage;
+import io.agentscope.extensions.oss.base.OssListObjectPage;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,7 +78,7 @@ class AwsS3OssAdapterTest {
                         .build();
         when(mockS3.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        OssListPage page = adapter.list("prefix/", null, 50);
+        OssListObjectPage page = adapter.list("prefix/", null, 50);
 
         assertEquals(1, page.objects().size());
         assertEquals("prefix/a", page.objects().get(0).key());
@@ -89,7 +89,7 @@ class AwsS3OssAdapterTest {
     void listReturnsNullTokenWhenNotTruncated() {
         ListObjectsV2Response response = ListObjectsV2Response.builder().isTruncated(false).build();
         when(mockS3.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
-        OssListPage page = adapter.list("prefix/", null, 50);
+        OssListObjectPage page = adapter.list("prefix/", null, 50);
         assertNull(page.nextContinuationToken());
     }
 
