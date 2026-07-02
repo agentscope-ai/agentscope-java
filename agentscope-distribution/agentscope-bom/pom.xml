@@ -436,6 +436,34 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope OpenAI Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope DashScope Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Gemini Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-gemini-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Anthropic Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-anthropic-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Chat Completions Web Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
