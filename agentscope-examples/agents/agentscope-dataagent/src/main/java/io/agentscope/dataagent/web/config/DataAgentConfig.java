@@ -150,10 +150,14 @@ public class DataAgentConfig {
     //  web-layer components that need JSON serialization.
     // -----------------------------------------------------------------
 
+    /**
+     * Provides a shared Jackson {@link ObjectMapper} for components that rely on constructor
+     * injection. Registers any Jackson modules found on the classpath (e.g. Java Time).
+     */
     @Bean
     @ConditionalOnMissingBean(ObjectMapper.class)
     public ObjectMapper objectMapper() {
-        return new ObjectMapper();
+        return new ObjectMapper().findAndRegisterModules();
     }
 
     // -----------------------------------------------------------------
