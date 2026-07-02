@@ -168,7 +168,8 @@ public class ResponsesController {
             return createNonStreamingResponse(prepared.request(), conversion, responseId)
                     .map(response -> stateService.save(response, prepared));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.badRequest().body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(responseBuilder.buildInvalidRequestError(e));
         }
@@ -199,7 +200,8 @@ public class ResponsesController {
                             createResponseStream(
                                     prepared.request(), conversion, responseId, prepared));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.badRequest().body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(responseBuilder.buildInvalidRequestError(e));
         }
@@ -322,7 +324,8 @@ public class ResponsesController {
             return createNonStreamingResponse(prepared.request(), conversion, responseId)
                     .map(response -> stateService.save(response, prepared));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.badRequest().body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(responseBuilder.buildInvalidRequestError(e));
         }

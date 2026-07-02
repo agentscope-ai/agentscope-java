@@ -93,7 +93,8 @@ public class ConversationsController {
         try {
             return ResponseEntity.ok(stateService.retrieveConversation(conversationId));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 
@@ -113,7 +114,8 @@ public class ConversationsController {
         try {
             return ResponseEntity.ok(stateService.updateConversation(conversationId, request));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 
@@ -129,7 +131,8 @@ public class ConversationsController {
         try {
             return ResponseEntity.ok(stateService.deleteConversation(conversationId));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 
@@ -178,7 +181,8 @@ public class ConversationsController {
                     stateService.createConversationItems(
                             conversationId, request != null ? request.getItems() : null));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 
@@ -197,7 +201,8 @@ public class ConversationsController {
         try {
             return ResponseEntity.ok(stateService.retrieveConversationItem(conversationId, itemId));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 
@@ -216,7 +221,8 @@ public class ConversationsController {
         try {
             return ResponseEntity.ok(stateService.deleteConversationItem(conversationId, itemId));
         } catch (ResponsesValidationException e) {
-            return ResponseEntity.status(404).body(responseBuilder.buildErrorResponse(e));
+            return ResponseEntity.status(responseStatus(e))
+                    .body(responseBuilder.buildErrorResponse(e));
         }
     }
 

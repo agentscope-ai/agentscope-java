@@ -129,10 +129,28 @@ class ResponsesControllerTest {
                                           "input": "Hello"
                                         }
                                         """))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("not_found"))
                 .andExpect(jsonPath("$.error.param").value("response_id"));
 
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownPreviousResponseIdFromSseEndpoint() throws Exception {
+        Object response =
+                controller.createResponseStream(
+                        request(
+                                """
+                                {
+                                  "previous_response_id": "resp_old",
+                                  "input": "Hello"
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
         verifyNoInteractions(agentProvider);
     }
 
@@ -177,8 +195,8 @@ class ResponsesControllerTest {
         assertThat(second.getOutputText()).isEqualTo("Second answer");
         ArgumentCaptor<List<Msg>> messagesCaptor = ArgumentCaptor.forClass(List.class);
         verify(agent, times(2)).call(messagesCaptor.capture());
-        assertThat(messagesCaptor.getAllValues().get(1).size())
-                .isGreaterThan(messagesCaptor.getAllValues().get(0).size());
+        assertThat(messagesCaptor.getAllValues().get(1))
+                .hasSizeGreaterThan(messagesCaptor.getAllValues().get(0).size());
     }
 
     @Test
@@ -243,6 +261,24 @@ class ResponsesControllerTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getOutputText()).isEqualTo("Compacted answer");
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownPreviousResponseIdWhenCompacting() throws Exception {
+        Object response =
+                controller.compactResponseInput(
+                        request(
+                                """
+                                {
+                                  "previous_response_id": "resp_old",
+                                  "input": "Summarize this context"
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        verifyNoInteractions(agentProvider);
     }
 
     @Test

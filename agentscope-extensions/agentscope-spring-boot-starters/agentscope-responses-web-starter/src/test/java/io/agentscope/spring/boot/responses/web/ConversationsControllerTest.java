@@ -21,6 +21,7 @@ import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
 import io.agentscope.core.responses.model.ResponsesConversation;
 import io.agentscope.core.responses.model.ResponsesConversationItemsRequest;
 import io.agentscope.core.responses.model.ResponsesConversationRequest;
+import io.agentscope.core.responses.model.ResponsesErrorResponse;
 import io.agentscope.spring.boot.responses.service.ResponsesStateService;
 import java.util.List;
 import java.util.Map;
@@ -103,5 +104,32 @@ class ConversationsControllerTest {
                 (ResponseEntity<?>)
                         controller.deleteConversationItem(created.getId(), (String) item.get("id"));
         assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownConversation() {
+        ResponseEntity<?> response =
+                (ResponseEntity<?>) controller.retrieveConversation("conv_missing");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("not_found");
+        assertThat(error.getError().getParam()).isEqualTo("conversation_id");
+    }
+
+    @Test
+    void shouldReturnBadRequestForInvalidConversationItemPagination() {
+        ResponsesConversation created =
+                (ResponsesConversation)
+                        ((ResponseEntity<?>) controller.createConversation(null)).getBody();
+
+        ResponseEntity<?> response =
+                (ResponseEntity<?>)
+                        controller.listConversationItems(created.getId(), null, -1, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("invalid_request");
+        assertThat(error.getError().getParam()).isEqualTo("limit");
     }
 }
