@@ -15,7 +15,7 @@
 ```java
 package com.alibaba.cloud.ai.examples.multiagents.pipeline;
 
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
