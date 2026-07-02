@@ -18,17 +18,24 @@ package io.agentscope.harness.agent.bus;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.tracing.Tracer;
+import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.Disposable;
 
 class WorkspaceMessageBusTest {
 
@@ -234,5 +241,87 @@ class WorkspaceMessageBusTest {
                         .filter(p -> p.toString().endsWith(".json"))
                         .count();
         assertTrue(jsonFiles >= 1, "Should have at least one .json queue entry");
+    }
+
+    // ---- Scheduler affinity regression guard ----
+
+    /**
+     * Locks in that {@link WorkspaceMessageBus#subscribe(String)} emits its heartbeat ticks on
+     * the {@code boundedElastic} scheduler.
+     *
+     * <p>Why this matters: the per-tick downstream consumer ({@code WakeupDispatcher} calls
+     * {@code queueDrain(...).block()}) is blocking file I/O, and it runs on the same thread that
+     * emits the tick. It must not land on {@code parallel()} — that pool is shared, CPU-core-sized,
+     * and blocking it starves the global timer. Note that
+     * {@code Flux.interval(d).subscribeOn(boundedElastic())} does <b>not</b> move ticks off
+     * {@code parallel} ({@code subscribeOn} only relocates the subscribe call, not the timer);
+     * only {@code Flux.interval(d, boundedElastic())} does. This test guards against a silent
+     * revert to the ineffective {@code subscribeOn} form.
+     */
+    @Test
+    void subscribeEmitsTicksOnBoundedElastic() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<String> thread = new AtomicReference<>();
+        Disposable d =
+                bus.subscribe("regression")
+                        .doOnNext(m -> thread.set(Thread.currentThread().getName()))
+                        .take(1)
+                        .subscribe(m -> latch.countDown());
+        try {
+            // First tick arrives after POLL_INTERVAL (3s); allow headroom.
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "no tick within 5s");
+            assertNotNull(thread.get());
+            assertTrue(
+                    thread.get().startsWith("boundedElastic"),
+                    "subscribe() tick emitted on " + thread.get() + ", expected boundedElastic");
+        } finally {
+            d.dispose();
+        }
+    }
+
+    /**
+     * Reproduces the "open Studio → crash" scenario at the agentscope layer.
+     *
+     * <p>Registering a non-Noop {@link Tracer} triggers {@link TracerRegistry#enableTracingHook()},
+     * which installs a <b>global</b> {@code Hooks.onEachOperator} lift wrapping every Reactor
+     * operator in the JVM (the deprecated hook smartwe's Studio integration turns on via
+     * {@code TelemetryTracer}). The per-tick consumer calls {@code .block()} — exactly what
+     * {@code WakeupDispatcher.drainAndDispatch()} does. On a {@code parallel} (NonBlocking) tick
+     * thread, {@code Mono.block()} throws {@code IllegalStateException}; subscribe() must therefore
+     * emit ticks on {@code boundedElastic} (non-NonBlocking) so blocking per-tick work is legal.
+     *
+     * <p>This test fails on the old {@code Flux.interval(d).subscribeOn(boundedElastic)} form and
+     * passes once the timer runs on {@code boundedElastic}.
+     */
+    @Test
+    void subscribeTickSafeUnderGlobalTracingHook() throws InterruptedException {
+        // non-Noop Tracer → register() enables the global onEachOperator lift.
+        TracerRegistry.register(new Tracer() {});
+        try {
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<Throwable> error = new AtomicReference<>();
+            Disposable d =
+                    bus.subscribe("hook-block-check")
+                            .doOnNext(
+                                    m -> {
+                                        try {
+                                            // Mimic drainAndDispatch()'s blocking call.
+                                            bus.queuePeek("anything").block();
+                                        } catch (Throwable t) {
+                                            error.set(t);
+                                        }
+                                    })
+                            .take(1)
+                            .subscribe(m -> latch.countDown());
+            try {
+                assertTrue(latch.await(5, TimeUnit.SECONDS), "no tick within 5s");
+                assertNull(error.get(), () -> "blocking on subscribe() tick threw: " + error.get());
+            } finally {
+                d.dispose();
+            }
+        } finally {
+            // Global hook cleanup — must not leak into other tests in the JVM.
+            TracerRegistry.resetToNoop();
+        }
     }
 }
