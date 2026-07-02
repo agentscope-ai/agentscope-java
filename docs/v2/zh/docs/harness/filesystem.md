@@ -235,7 +235,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `NoopSnapshotSpec` | 不快照（默认） |
 | `LocalSnapshotSpec(Path)` | 快照存宿主本地磁盘 |
 | `RedisSnapshotSpec` | 快照存 Redis |
-| `OssSnapshotSpec` | 快照存对象存储（阿里云 OSS） |
+| `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | 快照存对象存储（阿里云 OSS / AWS S3 / 腾讯云 COS） |
 | `RemoteSnapshotSpec` | 快照存 `BaseStore` |
 
 #### 示例场景：编程助手（Docker + 本地快照）

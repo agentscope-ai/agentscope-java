@@ -1,17 +1,17 @@
 ```{note}
-本页面内容已迁移至 [分布式存储 — OSS](../distributed/oss.md)。以下内容保留作为参考，但建议使用新文档。
+本页介绍的是**阿里云 OSS** 状态存储。除此之外还提供 AWS S3、腾讯云 COS 两种实现——完整对比见 [对象存储（OSS / S3 / COS）](../distributed/oss.md)；或直接查阅 `AwsS3AgentStateStore`（模块 `agentscope-extensions-oss-aws`）与 `TencentCosAgentStateStore`（模块 `agentscope-extensions-oss-tencent`）。
 ```
 
-# OSS 状态存储
+# 阿里云 OSS 状态存储
 
-`agentscope-extensions-oss` 把 AgentScope 的 Agent 状态持久化到阿里云对象存储（OSS）。适合大容量数据和阿里云生态的场景。
+`agentscope-extensions-oss-aliyun` 把 AgentScope 的 Agent 状态持久化到阿里云对象存储（OSS）。适合大容量数据和阿里云生态的场景。
 
 ## 添加依赖
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-oss</artifactId>
+    <artifactId>agentscope-extensions-oss-aliyun</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -22,11 +22,11 @@
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.extensions.oss.OssAgentStateStore;
+import io.agentscope.extensions.oss.aliyun.AliyunOssAgentStateStore;
 
 OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
 
-AgentStateStore stateStore = OssAgentStateStore.builder()
+AgentStateStore stateStore = AliyunOssAgentStateStore.builder()
     .ossClient(ossClient)
     .bucketName("my-agentscope-bucket")
     .keyPrefix("agentscope/state/")

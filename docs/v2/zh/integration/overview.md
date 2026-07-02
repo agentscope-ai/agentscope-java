@@ -11,7 +11,7 @@
 - [分布式存储总览](distributed/index.md) — `DistributedStore` API、能力矩阵、混合后端
 - [Redis](distributed/redis.md) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
 - [MySQL / JDBC](distributed/mysql.md) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
-- [阿里云 OSS](distributed/oss.md) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
+- [阿里云 OSS](distributed/oss.md) — `AgentStateStore` + `AliyunOssBaseStore` + `AliyunOssSnapshotSpec`
 
 ## 沙箱执行环境（Sandbox）
 
