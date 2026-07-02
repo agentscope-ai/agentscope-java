@@ -25,6 +25,7 @@ import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
+import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpClientTransport;
@@ -217,6 +218,53 @@ public class McpClientBuilder {
     public McpClientBuilder customizeStreamableHttpClient(Consumer<HttpClient.Builder> customizer) {
         if (transportConfig instanceof StreamableHttpTransportConfig) {
             ((StreamableHttpTransportConfig) transportConfig).customizeHttpClient(customizer);
+        }
+        return this;
+    }
+
+    /**
+     * Registers a per-request HTTP customizer for dynamic request modification
+     * (only applicable for HTTP transports: SSE and StreamableHTTP).
+     *
+     * <p>Unlike {@link #header(String, String)} which sets static headers at build time,
+     * this customizer is invoked for <strong>every</strong> HTTP request, enabling
+     * dynamic token injection for OAuth/STS scenarios where credentials expire.
+     *
+     * <p>This method delegates directly to the MCP SDK's
+     * {@code httpRequestCustomizer(McpSyncHttpClientRequestCustomizer)} API, which
+     * provides the HTTP method, endpoint URI, request body, and transport context
+     * for each request.
+     *
+     * <p>Example usage with dynamic OAuth token:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp-server")
+     *         .streamableHttpTransport("https://mcp.example.com/http")
+     *         .httpRequestCustomizer((builder, method, uri, body, ctx) -> {
+     *             String token = tokenService.getToken();
+     *             builder.header("Authorization", "Bearer " + token);
+     *         })
+     *         .buildSync();
+     * }</pre>
+     *
+     * <p>Example with SSE transport:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp-server")
+     *         .sseTransport("https://mcp.example.com/sse")
+     *         .httpRequestCustomizer((builder, method, uri, body, ctx) -> {
+     *             builder.header("Authorization", "Bearer " + tokenProvider.getToken());
+     *             builder.header("X-Request-Id", UUID.randomUUID().toString());
+     *         })
+     *         .buildAsync()
+     *         .block();
+     * }</pre>
+     *
+     * @param customizer per-request customizer invoked before each HTTP request
+     * @return this builder
+     * @since 2.0.0
+     */
+    public McpClientBuilder httpRequestCustomizer(McpSyncHttpClientRequestCustomizer customizer) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).setHttpRequestCustomizer(customizer);
         }
         return this;
     }
@@ -609,6 +657,7 @@ public class McpClientBuilder {
         protected final String url;
         protected Map<String, String> headers = new HashMap<>();
         protected Map<String, String> queryParams = new HashMap<>();
+        protected McpSyncHttpClientRequestCustomizer httpRequestCustomizer;
 
         protected HttpTransportConfig(String url) {
             this.url = url;
@@ -637,6 +686,10 @@ public class McpClientBuilder {
                 throw new IllegalArgumentException("Query parameters map cannot be null");
             }
             this.queryParams = new HashMap<>(queryParams);
+        }
+
+        public void setHttpRequestCustomizer(McpSyncHttpClientRequestCustomizer customizer) {
+            this.httpRequestCustomizer = customizer;
         }
 
         /**
@@ -743,6 +796,11 @@ public class McpClientBuilder {
                         });
             }
 
+            // Apply per-request HTTP customizer for dynamic token injection, etc.
+            if (httpRequestCustomizer != null) {
+                clientTransportBuilder.httpRequestCustomizer(httpRequestCustomizer);
+            }
+
             return clientTransportBuilder.build();
         }
     }
@@ -782,6 +840,11 @@ public class McpClientBuilder {
                         requestBuilder -> {
                             headers.forEach(requestBuilder::header);
                         });
+            }
+
+            // Apply per-request HTTP customizer for dynamic token injection, etc.
+            if (httpRequestCustomizer != null) {
+                clientTransportBuilder.httpRequestCustomizer(httpRequestCustomizer);
             }
 
             return clientTransportBuilder.build();
