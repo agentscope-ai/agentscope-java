@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,8 +27,10 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -411,6 +414,96 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(summaryTextStart > summaryThinkingEnd);
         assertTrue(summaryTextEnd > summaryTextStart);
         assertTrue(summaryModelEnd > summaryTextEnd);
+    }
+
+    @Test
+    void textAndThinkingBlocksUseUniqueConsistentBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("think")
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("answer")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        String textStartId = firstOf(events, TextBlockStartEvent.class).getBlockId();
+        String textDeltaId = firstOf(events, TextBlockDeltaEvent.class).getBlockId();
+        String textEndId = firstOf(events, TextBlockEndEvent.class).getBlockId();
+        String thinkingStartId = firstOf(events, ThinkingBlockStartEvent.class).getBlockId();
+        String thinkingDeltaId = firstOf(events, ThinkingBlockDeltaEvent.class).getBlockId();
+        String thinkingEndId = firstOf(events, ThinkingBlockEndEvent.class).getBlockId();
+
+        // Block ids must be non-empty and no longer hardcoded to the block type name.
+        assertTrue(textStartId != null && !textStartId.isEmpty());
+        assertNotEquals("text", textStartId);
+        assertNotEquals("thinking", thinkingStartId);
+
+        // Start/Delta/End of the same block must share one id.
+        assertEquals(textStartId, textDeltaId);
+        assertEquals(textStartId, textEndId);
+        assertEquals(thinkingStartId, thinkingDeltaId);
+        assertEquals(thinkingStartId, thinkingEndId);
+
+        // Different block types must have different ids.
+        assertNotEquals(textStartId, thinkingStartId);
+    }
+
+    @Test
+    void separateModelCallsAllocateDifferentTextBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        TextBlock.builder()
+                                                                .text("summary")
+                                                                .build()))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        // First model call emits a tool use with no text block; the summary model call
+        // emits a text block. Collect all text block start ids to ensure the loop text
+        // block (if any) and the summary text block never reuse an id.
+        List<String> textBlockIds =
+                events.stream()
+                        .filter(TextBlockStartEvent.class::isInstance)
+                        .map(e -> ((TextBlockStartEvent) e).getBlockId())
+                        .distinct()
+                        .toList();
+        assertEquals(
+                events.stream().filter(TextBlockStartEvent.class::isInstance).count(),
+                (long) textBlockIds.size(),
+                "each text block start must carry a distinct block id");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T firstOf(List<AgentEvent> events, Class<T> type) {
+        for (AgentEvent e : events) {
+            if (type.isInstance(e)) {
+                return (T) e;
+            }
+        }
+        return null;
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {

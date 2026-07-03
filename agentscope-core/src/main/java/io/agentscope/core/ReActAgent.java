@@ -2188,14 +2188,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 blockLifecycle.startText(events);
                 if (tb.getText() != null && !tb.getText().isEmpty()) {
                     events.add(
-                            new TextBlockDeltaEvent(blockLifecycle.replyId, "text", tb.getText()));
+                            new TextBlockDeltaEvent(
+                                    blockLifecycle.replyId,
+                                    blockLifecycle.currentTextBlockId(),
+                                    tb.getText()));
                 }
             } else if (block instanceof ThinkingBlock tb) {
                 blockLifecycle.startThinking(events);
                 if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
                     events.add(
                             new ThinkingBlockDeltaEvent(
-                                    blockLifecycle.replyId, "thinking", tb.getThinking()));
+                                    blockLifecycle.replyId,
+                                    blockLifecycle.currentThinkingBlockId(),
+                                    tb.getThinking()));
                 }
             } else if (withToolEvents && block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
@@ -2224,6 +2229,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final String replyId;
             private final AtomicBoolean textStarted = new AtomicBoolean(false);
             private final AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            // Unique block ids allocated lazily on start and shared across the block's
+            // Start/Delta/End events, following the tool-call block precedent (toolId).
+            private final AtomicReference<String> textBlockId = new AtomicReference<>();
+            private final AtomicReference<String> thinkingBlockId = new AtomicReference<>();
             private final Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
 
             private ModelCallBlockLifecycle(String replyId) {
@@ -2233,14 +2242,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private void startText(List<AgentEvent> events) {
                 flushThinking(events);
                 if (textStarted.compareAndSet(false, true)) {
-                    events.add(new TextBlockStartEvent(replyId, "text"));
+                    textBlockId.set(newBlockId());
+                    events.add(new TextBlockStartEvent(replyId, textBlockId.get()));
                 }
             }
 
             private void startThinking(List<AgentEvent> events) {
                 if (thinkingStarted.compareAndSet(false, true)) {
-                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+                    thinkingBlockId.set(newBlockId());
+                    events.add(new ThinkingBlockStartEvent(replyId, thinkingBlockId.get()));
                 }
+            }
+
+            /** Current text block id; non-null only while a text block is open. */
+            private String currentTextBlockId() {
+                return textBlockId.get();
+            }
+
+            /** Current thinking block id; non-null only while a thinking block is open. */
+            private String currentThinkingBlockId() {
+                return thinkingBlockId.get();
             }
 
             private void startToolCall(String toolId, String toolName, List<AgentEvent> events) {
@@ -2258,13 +2279,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void flushText(List<AgentEvent> events) {
                 if (textStarted.compareAndSet(true, false)) {
-                    events.add(new TextBlockEndEvent(replyId, "text"));
+                    events.add(new TextBlockEndEvent(replyId, textBlockId.getAndSet(null)));
                 }
             }
 
             private void flushThinking(List<AgentEvent> events) {
                 if (thinkingStarted.compareAndSet(true, false)) {
-                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                    events.add(new ThinkingBlockEndEvent(replyId, thinkingBlockId.getAndSet(null)));
                 }
             }
 
@@ -2279,6 +2300,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 flushText(events);
                 flushThinking(events);
                 flushAllToolCalls(events);
+            }
+
+            private String newBlockId() {
+                return UUID.randomUUID().toString().replace("-", "");
             }
         }
 
@@ -3152,7 +3177,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             new TextBlockDeltaEvent(
                                                                                     blockLifecycle
                                                                                             .replyId,
-                                                                                    "text",
+                                                                                    blockLifecycle
+                                                                                            .currentTextBlockId(),
                                                                                     tb.getText()));
                                                                 }
                                                             } else if (block
@@ -3166,7 +3192,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             new ThinkingBlockDeltaEvent(
                                                                                     blockLifecycle
                                                                                             .replyId,
-                                                                                    "thinking",
+                                                                                    blockLifecycle
+                                                                                            .currentThinkingBlockId(),
                                                                                     tb
                                                                                             .getThinking()));
                                                                 }
