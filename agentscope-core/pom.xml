@@ -90,35 +90,6 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
-        <!-- DashScope Java SDK (optional - only needed for Embedding) -->
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>dashscope-sdk-java</artifactId>
-            <optional>true</optional>
-            <exclusions>
-                <exclusion>
-                    <artifactId>slf4j-simple</artifactId>
-                    <groupId>org.slf4j</groupId>
-                </exclusion>
-                <exclusion>
-                    <artifactId>lombok</artifactId>
-                    <groupId>org.projectlombok</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <!-- Google Gemini Java SDK -->
-        <dependency>
-            <groupId>com.google.genai</groupId>
-            <artifactId>google-genai</artifactId>
-        </dependency>
-
-        <!-- Anthropic Java SDK -->
-        <dependency>
-            <groupId>com.anthropic</groupId>
-            <artifactId>anthropic-java</artifactId>
-        </dependency>
-
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
@@ -248,18 +219,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-
-            <!-- Exclude pre-existing broken tests (references symbols that were removed
-                 elsewhere in the v2 migration; tracked separately). -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <testExcludes>
-                        <exclude>io/agentscope/core/e2e/MultiAgentE2ETest.java</exclude>
-                    </testExcludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>
