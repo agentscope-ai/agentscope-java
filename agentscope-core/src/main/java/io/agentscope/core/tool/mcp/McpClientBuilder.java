@@ -103,6 +103,8 @@ public class McpClientBuilder {
     private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
     private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
     private List<String> protocolVersions;
+    private Boolean resumableStreams;
+    private Boolean openConnectionOnStartup;
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -189,7 +191,14 @@ public class McpClientBuilder {
      * @return this builder
      */
     public McpClientBuilder streamableHttpTransport(String url) {
-        this.transportConfig = new StreamableHttpTransportConfig(url);
+        StreamableHttpTransportConfig config = new StreamableHttpTransportConfig(url);
+        if (resumableStreams != null) {
+            config.resumableStreams = resumableStreams;
+        }
+        if (openConnectionOnStartup != null) {
+            config.openConnectionOnStartup = openConnectionOnStartup;
+        }
+        this.transportConfig = config;
         return this;
     }
 
@@ -218,6 +227,41 @@ public class McpClientBuilder {
         if (transportConfig instanceof StreamableHttpTransportConfig) {
             ((StreamableHttpTransportConfig) transportConfig).customizeHttpClient(customizer);
         }
+        return this;
+    }
+
+    /**
+     * Enables or disables resumable (SSE) streams for StreamableHTTP transport.
+     * Only applicable after calling {@link #streamableHttpTransport(String)}.
+     *
+     * <p>Set to {@code false} when connecting to Streamable HTTP MCP servers that
+     * disable SSE and only accept POST requests. Defaults to the SDK's built-in
+     * default ({@code true}) when not called.
+     *
+     * @param value {@code true} to enable SSE streams (default), {@code false} to disable
+     * @return this builder
+     */
+    public McpClientBuilder resumableStreams(boolean value) {
+        this.resumableStreams = value;
+        return this;
+    }
+
+    /**
+     * Controls whether the transport opens a persistent connection on startup
+     * for StreamableHTTP transport.
+     * Only applicable after calling {@link #streamableHttpTransport(String)}.
+     *
+     * <p>Set to {@code false} together with
+     * {@link #resumableStreams(boolean) resumableStreams(false)} when connecting
+     * to SSE-disabled servers. Defaults to the SDK's built-in default ({@code true})
+     * when not called.
+     *
+     * @param value {@code true} to open connection on startup (default),
+     *              {@code false} to skip
+     * @return this builder
+     */
+    public McpClientBuilder openConnectionOnStartup(boolean value) {
+        this.openConnectionOnStartup = value;
         return this;
     }
 
@@ -750,6 +794,8 @@ public class McpClientBuilder {
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
         private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
         private Consumer<HttpClient.Builder> httpClientCustomizer = null;
+        Boolean resumableStreams;
+        Boolean openConnectionOnStartup;
 
         public StreamableHttpTransportConfig(String url) {
             super(url);
@@ -773,6 +819,14 @@ public class McpClientBuilder {
             // Apply HTTP client customization if provided
             if (httpClientCustomizer != null) {
                 clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
+            // Apply SSE/stream options if explicitly set
+            if (resumableStreams != null) {
+                clientTransportBuilder.resumableStreams(resumableStreams);
+            }
+            if (openConnectionOnStartup != null) {
+                clientTransportBuilder.openConnectionOnStartup(openConnectionOnStartup);
             }
 
             clientTransportBuilder.endpoint(extractEndpoint());
