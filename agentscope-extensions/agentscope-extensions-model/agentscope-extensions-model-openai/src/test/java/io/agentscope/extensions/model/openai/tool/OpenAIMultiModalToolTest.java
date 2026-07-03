@@ -56,7 +56,7 @@ class OpenAIMultiModalToolTest {
                 .thenReturn(jsonResponse);
 
         Mono<ToolResultBlock> resultMono =
-                tool.openaiTextToImage(prompt, "dall-e-3", 1, "1024x1024", "standard", "url");
+                tool.openaiTextToImage(prompt, 1, "1024x1024", "standard", "url");
         ToolResultBlock result = resultMono.block();
 
         assertNotNull(result);
@@ -91,7 +91,7 @@ class OpenAIMultiModalToolTest {
                 new OpenAIMultiModalTool(client, "my-custom-vision-model");
 
         Mono<ToolResultBlock> resultMono =
-                toolWithCustomModel.openaiImageToText(imageUrl, null, null, null);
+                toolWithCustomModel.openaiImageToText(imageUrl, null, null);
         ToolResultBlock result = resultMono.block();
 
         assertNotNull(result);

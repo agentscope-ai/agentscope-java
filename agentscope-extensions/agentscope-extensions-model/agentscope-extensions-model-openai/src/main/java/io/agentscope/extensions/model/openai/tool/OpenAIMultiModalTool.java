@@ -292,7 +292,6 @@ public class OpenAIMultiModalTool {
      * Generate image(s) based on the given prompt.
      *
      * @param prompt the text prompt to generate image
-     * @param model the model to use (e.g., "dall-e-3", "dall-e-2")
      * @param n the number of images to generate (1 for dall-e-3, 1-10 for dall-e-2)
      * @param size the size of the image (e.g., "1024x1024", "1792x1024", "1024x1792")
      * @param quality the quality of the image ("standard" or "hd" for dall-e-3)
@@ -307,11 +306,6 @@ public class OpenAIMultiModalTool {
     public Mono<ToolResultBlock> openaiTextToImage(
             @ToolParam(name = "prompt", description = "The text prompt to generate image")
                     String prompt,
-            @ToolParam(
-                            name = "model",
-                            description = "The model to use, e.g., 'dall-e-3', 'dall-e-2'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "n",
                             description =
@@ -338,10 +332,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     String responseFormat) {
 
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> !s.trim().isEmpty())
-                        .orElse(this.defaultImageGenModel);
+        String finalModel = this.defaultImageGenModel;
         Integer finalN = Optional.ofNullable(n).orElse(1);
         String finalSize =
                 Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1024x1024");
@@ -437,7 +428,6 @@ public class OpenAIMultiModalTool {
      *
      * @param imageUrls the URLs of the images to analyze
      * @param prompt the text prompt describing what to extract from the images
-     * @param model the vision model to use (leave empty to use the configured default)
      * @param maxTokens the maximum number of tokens in the response
      * @return a ToolResultBlock containing the text description of the images
      */
@@ -458,22 +448,12 @@ public class OpenAIMultiModalTool {
                             required = false)
                     String prompt,
             @ToolParam(
-                            name = "model",
-                            description =
-                                    "The vision model to use (leave empty to use the configured"
-                                            + " default)",
-                            required = false)
-                    String model,
-            @ToolParam(
                             name = "max_tokens",
                             description = "The maximum number of tokens in the response",
                             required = false)
                     Integer maxTokens) {
 
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> !s.trim().isEmpty())
-                        .orElse(this.defaultVisionModel);
+        String finalModel = this.defaultVisionModel;
         String finalPrompt =
                 Optional.ofNullable(prompt)
                         .filter(s -> !s.trim().isEmpty())
@@ -565,7 +545,6 @@ public class OpenAIMultiModalTool {
      * Convert text to audio (speech) using OpenAI TTS models.
      *
      * @param text the text to convert to speech
-     * @param model the TTS model to use (e.g., "tts-1", "tts-1-hd")
      * @param voice the voice to use ("alloy", "echo", "fable", "onyx", "nova", "shimmer")
      * @param responseFormat the audio format ("mp3", "opus", "aac", "flac")
      * @param speed the speed of the speech (0.25 to 4.0)
@@ -578,11 +557,6 @@ public class OpenAIMultiModalTool {
                             + "Returns audio as base64 data.")
     public Mono<ToolResultBlock> openaiTextToAudio(
             @ToolParam(name = "text", description = "The text to convert to speech") String text,
-            @ToolParam(
-                            name = "model",
-                            description = "The TTS model to use, e.g., 'tts-1', 'tts-1-hd'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "voice",
                             description =
@@ -601,10 +575,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     Double speed) {
 
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> !s.trim().isEmpty())
-                        .orElse(this.defaultTtsModel);
+        String finalModel = this.defaultTtsModel;
         String finalVoice =
                 Optional.ofNullable(voice).filter(s -> !s.trim().isEmpty()).orElse("alloy");
         String finalResponseFormat =
@@ -654,7 +625,6 @@ public class OpenAIMultiModalTool {
      * This is a placeholder implementation.
      *
      * @param audioUrl the URL of the audio file to transcribe
-     * @param model the transcription model to use (e.g., "whisper-1")
      * @param language the language of the audio (ISO-639-1 code, optional)
      * @param prompt optional text to guide the model's style
      * @param responseFormat the format of the response ("json", "text", "verbose_json", etc.)
@@ -669,11 +639,6 @@ public class OpenAIMultiModalTool {
     public Mono<ToolResultBlock> openaiAudioToText(
             @ToolParam(name = "audio_url", description = "The URL of the audio file to transcribe")
                     String audioUrl,
-            @ToolParam(
-                            name = "model",
-                            description = "The transcription model to use, e.g., 'whisper-1'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "language",
                             description = "The language of the audio (ISO-639-1 code, optional)",
@@ -697,10 +662,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     Double temperature) {
 
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> !s.trim().isEmpty())
-                        .orElse(this.defaultSttModel);
+        String finalModel = this.defaultSttModel;
         String finalResponseFormat =
                 Optional.ofNullable(responseFormat).filter(s -> !s.trim().isEmpty()).orElse("text");
 
