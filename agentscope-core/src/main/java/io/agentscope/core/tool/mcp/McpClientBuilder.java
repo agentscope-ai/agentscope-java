@@ -222,6 +222,33 @@ public class McpClientBuilder {
     }
 
     /**
+     * Enables or disables resumable streams for StreamableHTTP transport.
+     *
+     * @param resumableStreams whether resumable streams should be enabled
+     * @return this builder
+     */
+    public McpClientBuilder resumableStreams(boolean resumableStreams) {
+        if (transportConfig instanceof StreamableHttpTransportConfig) {
+            ((StreamableHttpTransportConfig) transportConfig).resumableStreams(resumableStreams);
+        }
+        return this;
+    }
+
+    /**
+     * Controls whether StreamableHTTP transport opens a connection during startup.
+     *
+     * @param openConnectionOnStartup whether to open the connection during startup
+     * @return this builder
+     */
+    public McpClientBuilder openConnectionOnStartup(boolean openConnectionOnStartup) {
+        if (transportConfig instanceof StreamableHttpTransportConfig) {
+            ((StreamableHttpTransportConfig) transportConfig)
+                    .openConnectionOnStartup(openConnectionOnStartup);
+        }
+        return this;
+    }
+
+    /**
      * Adds an HTTP header (only applicable for HTTP transports).
      *
      * @param key   header name
@@ -750,6 +777,8 @@ public class McpClientBuilder {
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
         private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
         private Consumer<HttpClient.Builder> httpClientCustomizer = null;
+        private Boolean resumableStreams = null;
+        private Boolean openConnectionOnStartup = null;
 
         public StreamableHttpTransportConfig(String url) {
             super(url);
@@ -764,6 +793,14 @@ public class McpClientBuilder {
             this.httpClientCustomizer = customizer;
         }
 
+        public void resumableStreams(boolean resumableStreams) {
+            this.resumableStreams = resumableStreams;
+        }
+
+        public void openConnectionOnStartup(boolean openConnectionOnStartup) {
+            this.openConnectionOnStartup = openConnectionOnStartup;
+        }
+
         @Override
         public McpClientTransport createTransport() {
             if (clientTransportBuilder == null) {
@@ -773,6 +810,14 @@ public class McpClientBuilder {
             // Apply HTTP client customization if provided
             if (httpClientCustomizer != null) {
                 clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
+            if (resumableStreams != null) {
+                clientTransportBuilder.resumableStreams(resumableStreams);
+            }
+
+            if (openConnectionOnStartup != null) {
+                clientTransportBuilder.openConnectionOnStartup(openConnectionOnStartup);
             }
 
             clientTransportBuilder.endpoint(extractEndpoint());

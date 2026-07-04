@@ -69,6 +69,14 @@ public class McpServerConfig {
     @JsonProperty("queryParams")
     private Map<String, String> queryParams;
 
+    /** http: whether StreamableHTTP should use resumable streams. */
+    @JsonProperty("resumableStreams")
+    private Boolean resumableStreams;
+
+    /** http: whether StreamableHTTP should open a connection during startup. */
+    @JsonProperty("openConnectionOnStartup")
+    private Boolean openConnectionOnStartup;
+
     /**
      * Optional allowlist of tools to import from this server. When {@code null} or empty, all
      * tools the server advertises are registered.
@@ -146,6 +154,22 @@ public class McpServerConfig {
 
     public void setEnableTools(List<String> enableTools) {
         this.enableTools = enableTools;
+    }
+
+    public Boolean getResumableStreams() {
+        return resumableStreams;
+    }
+
+    public void setResumableStreams(Boolean resumableStreams) {
+        this.resumableStreams = resumableStreams;
+    }
+
+    public Boolean getOpenConnectionOnStartup() {
+        return openConnectionOnStartup;
+    }
+
+    public void setOpenConnectionOnStartup(Boolean openConnectionOnStartup) {
+        this.openConnectionOnStartup = openConnectionOnStartup;
     }
 
     public Duration getTimeout() {
