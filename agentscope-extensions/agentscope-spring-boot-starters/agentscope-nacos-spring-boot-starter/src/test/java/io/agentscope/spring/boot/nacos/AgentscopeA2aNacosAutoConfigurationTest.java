@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.ai.AiFactory;
 import com.alibaba.nacos.api.ai.AiService;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
@@ -32,6 +33,8 @@ import io.agentscope.spring.boot.nacos.properties.a2a.AgentScopeA2aNacosProperti
 import io.agentscope.spring.boot.nacos.properties.a2a.NacosA2aDiscoveryProperties;
 import io.agentscope.spring.boot.nacos.properties.a2a.NacosA2aRegistryProperties;
 import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -230,6 +233,39 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                                 NacosA2aDiscoveryProperties discoveryProperties =
                                         properties.getDiscovery();
                                 assertThat(discoveryProperties.isEnabled()).isTrue();
+                            });
+        }
+    }
+
+    @Test
+    void shouldNotOverwriteGlobalNacosServerWhenA2aServerNotSet() {
+        try (MockedStatic<AiFactory> mockedStatic = Mockito.mockStatic(AiFactory.class)) {
+            AtomicReference<Properties> capturedProperties = new AtomicReference<>();
+            mockedStatic
+                    .when(() -> AiFactory.createAiService(any(Properties.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                capturedProperties.set(invocation.getArgument(0));
+                                return mockAiService;
+                            });
+
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
+                    .withPropertyValues(
+                            "agentscope.nacos.server-addr=production.nacos.com:8848",
+                            "agentscope.nacos.namespace=prod-ns",
+                            "agentscope.a2a.nacos.enabled=true")
+                    .run(
+                            context -> {
+                                assertThat(capturedProperties.get()).isNotNull();
+                                assertThat(
+                                                capturedProperties
+                                                        .get()
+                                                        .get(PropertyKeyConst.SERVER_ADDR))
+                                        .isEqualTo("production.nacos.com:8848");
+                                assertThat(capturedProperties.get().get(PropertyKeyConst.NAMESPACE))
+                                        .isEqualTo("prod-ns");
                             });
         }
     }
