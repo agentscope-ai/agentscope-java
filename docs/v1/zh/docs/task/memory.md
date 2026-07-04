@@ -232,6 +232,8 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 
 基于 [ReMe](https://github.com/agentscope-ai/ReMe) 的长期记忆实现。
 
+ReMe `0.4.x` 已切换为基于 `session_id` 的 job 接口，不再使用旧版 `workspace_id` personal-memory 端点。
+
 **使用示例**：
 
 ```java
@@ -240,7 +242,7 @@ import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.reme.ReMeLongTermMemory;
 
 ReMeLongTermMemory longTermMemory = ReMeLongTermMemory.builder()
-        .userId("example_user")
+        .sessionId("example-session")
         .apiBaseUrl("http://localhost:8002")
         .build();
 

@@ -18,53 +18,103 @@ package io.agentscope.core.memory.reme;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Request object for adding memories to ReMe API.
+ * Request object for recording messages through ReMe's {@code auto_memory} job.
  *
- * <p>This request is sent to the ReMe API's {@code POST /summary_personal_memory} endpoint
- * to record new memories. ReMe will process the trajectories and extract memorable information.
+ * <p>ReMe 0.4.x accepts a flat message list plus a session identifier instead of the
+ * legacy personal-memory trajectory payload.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ReMeAddRequest {
 
-    /** Workspace identifier for memory organization. */
-    @JsonProperty("workspace_id")
-    private String workspaceId;
+    /** Messages to append into the ReMe session. */
+    private List<ReMeMessage> messages;
 
-    /** List of trajectories (conversation sequences) to process. */
-    private List<ReMeTrajectory> trajectories;
+    /** ReMe session identifier. */
+    @JsonProperty("session_id")
+    private String sessionId;
+
+    /** Optional hint forwarded to ReMe's memory evolution step. */
+    @JsonProperty("memory_hint")
+    private String memoryHint;
+
+    /** Optional job metadata. */
+    private Map<String, Object> metadata;
 
     /** Default constructor for Jackson. */
     public ReMeAddRequest() {}
 
     /**
-     * Creates a new ReMeAddRequest with specified workspace ID and trajectories.
+     * Creates a new ReMeAddRequest.
      *
-     * @param workspaceId The workspace identifier
-     * @param trajectories The list of trajectories
+     * @param messages Messages to record
+     * @param sessionId ReMe session ID
+     * @param memoryHint Optional memory hint
+     * @param metadata Optional metadata
      */
-    public ReMeAddRequest(String workspaceId, List<ReMeTrajectory> trajectories) {
-        this.workspaceId = workspaceId;
-        this.trajectories = trajectories;
+    public ReMeAddRequest(
+            List<ReMeMessage> messages,
+            String sessionId,
+            String memoryHint,
+            Map<String, Object> metadata) {
+        this.messages = messages;
+        this.sessionId = sessionId;
+        this.memoryHint = memoryHint;
+        this.metadata = metadata;
     }
 
-    // Getters and Setters
+    public List<ReMeMessage> getMessages() {
+        return messages;
+    }
 
+    public void setMessages(List<ReMeMessage> messages) {
+        this.messages = messages;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public String getMemoryHint() {
+        return memoryHint;
+    }
+
+    public void setMemoryHint(String memoryHint) {
+        this.memoryHint = memoryHint;
+    }
+
+    public Map<String, Object> getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(Map<String, Object> metadata) {
+        this.metadata = metadata;
+    }
+
+    /**
+     * Legacy accessor kept for source compatibility.
+     *
+     * @deprecated ReMe 0.4.x uses {@code session_id}; use {@link #getSessionId()} instead.
+     */
+    @Deprecated
     public String getWorkspaceId() {
-        return workspaceId;
+        return sessionId;
     }
 
+    /**
+     * Legacy mutator kept for source compatibility.
+     *
+     * @deprecated ReMe 0.4.x uses {@code session_id}; use {@link #setSessionId(String)} instead.
+     */
+    @Deprecated
     public void setWorkspaceId(String workspaceId) {
-        this.workspaceId = workspaceId;
-    }
-
-    public List<ReMeTrajectory> getTrajectories() {
-        return trajectories;
-    }
-
-    public void setTrajectories(List<ReMeTrajectory> trajectories) {
-        this.trajectories = trajectories;
+        this.sessionId = workspaceId;
     }
 
     /**
@@ -78,21 +128,44 @@ public class ReMeAddRequest {
 
     /** Builder for ReMeAddRequest. */
     public static class Builder {
-        private String workspaceId;
-        private List<ReMeTrajectory> trajectories;
+        private List<ReMeMessage> messages;
+        private String sessionId;
+        private String memoryHint;
+        private Map<String, Object> metadata;
 
-        public Builder workspaceId(String workspaceId) {
-            this.workspaceId = workspaceId;
+        public Builder messages(List<ReMeMessage> messages) {
+            this.messages = messages;
             return this;
         }
 
-        public Builder trajectories(List<ReMeTrajectory> trajectories) {
-            this.trajectories = trajectories;
+        public Builder sessionId(String sessionId) {
+            this.sessionId = sessionId;
+            return this;
+        }
+
+        public Builder memoryHint(String memoryHint) {
+            this.memoryHint = memoryHint;
+            return this;
+        }
+
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
+        /**
+         * Legacy builder alias kept for source compatibility.
+         *
+         * @deprecated ReMe 0.4.x uses {@code session_id}; use {@link #sessionId(String)}.
+         */
+        @Deprecated
+        public Builder workspaceId(String workspaceId) {
+            this.sessionId = workspaceId;
             return this;
         }
 
         public ReMeAddRequest build() {
-            return new ReMeAddRequest(workspaceId, trajectories);
+            return new ReMeAddRequest(messages, sessionId, memoryHint, metadata);
         }
     }
 }

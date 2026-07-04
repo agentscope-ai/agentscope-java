@@ -24,25 +24,6 @@ import java.util.stream.Collectors;
 
 /**
  * Response object from ReMe's search memory API.
- *
- * <p>This response is returned from the {@code POST /retrieve_personal_memory} endpoint
- * after performing a memory search. The actual response format is:
- * <pre>{@code
- * {
- *   "answer": "string",
- *   "success": true,
- *   "metadata": {
- *     "memory_list": [
- *       {
- *         "workspace_id": "...",
- *         "memory_id": "...",
- *         "content": "...",
- *         ...
- *       }
- *     ]
- *   }
- * }
- * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ReMeSearchResponse {
@@ -86,16 +67,12 @@ public class ReMeSearchResponse {
     }
 
     /**
-     * Gets the list of memory fragments from metadata as strings.
-     *
-     * <p>This method extracts the content from each memory item for backward compatibility.
-     *
-     * @return List of memory content strings, or empty list if not available
+     * Extracts search result text fragments.
      */
     public List<String> getMemories() {
-        if (metadata != null && metadata.getMemoryList() != null) {
-            return metadata.getMemoryList().stream()
-                    .map(MemoryItem::getContent)
+        if (metadata != null && metadata.getResults() != null) {
+            return metadata.getResults().stream()
+                    .map(SearchResult::getText)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         }
@@ -115,135 +92,82 @@ public class ReMeSearchResponse {
                 + '}';
     }
 
-    /** Metadata object containing memory list. */
+    /** Metadata returned by ReMe's search job. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Metadata {
-        @JsonProperty("memory_list")
-        private List<MemoryItem> memoryList;
+        private List<SearchResult> results;
 
-        public List<MemoryItem> getMemoryList() {
-            return memoryList;
+        private Map<String, Object> counts;
+
+        @JsonProperty("link_expansion")
+        private Map<String, Object> linkExpansion;
+
+        public List<SearchResult> getResults() {
+            return results;
         }
 
-        public void setMemoryList(List<MemoryItem> memoryList) {
-            this.memoryList = memoryList;
+        public void setResults(List<SearchResult> results) {
+            this.results = results;
+        }
+
+        public Map<String, Object> getCounts() {
+            return counts;
+        }
+
+        public void setCounts(Map<String, Object> counts) {
+            this.counts = counts;
+        }
+
+        public Map<String, Object> getLinkExpansion() {
+            return linkExpansion;
+        }
+
+        public void setLinkExpansion(Map<String, Object> linkExpansion) {
+            this.linkExpansion = linkExpansion;
         }
 
         @Override
         public String toString() {
             return "Metadata{"
-                    + "memoryList="
-                    + (memoryList != null ? memoryList.size() + " items" : "null")
+                    + "results="
+                    + (results != null ? results.size() + " items" : "null")
                     + '}';
         }
     }
 
-    /** Represents a single memory item in the response. */
+    /** Represents a single search hit in the response. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class MemoryItem {
-        @JsonProperty("workspace_id")
-        private String workspaceId;
+    public static class SearchResult {
+        private String id;
 
-        @JsonProperty("memory_id")
-        private String memoryId;
-
-        @JsonProperty("memory_type")
-        private String memoryType;
-
-        @JsonProperty("when_to_use")
-        private String whenToUse;
-
-        private String content;
-
-        private Double score;
-
-        @JsonProperty("time_created")
-        private String timeCreated;
-
-        @JsonProperty("time_modified")
-        private String timeModified;
-
-        private String author;
+        private String text;
 
         private Map<String, Object> metadata;
 
-        private String target;
+        private String path;
 
-        @JsonProperty("reflection_subject")
-        private String reflectionSubject;
+        @JsonProperty("start_line")
+        private Integer startLine;
 
-        // Getters and Setters
+        @JsonProperty("end_line")
+        private Integer endLine;
 
-        public String getWorkspaceId() {
-            return workspaceId;
+        private Map<String, Object> scores;
+
+        public String getId() {
+            return id;
         }
 
-        public void setWorkspaceId(String workspaceId) {
-            this.workspaceId = workspaceId;
+        public void setId(String id) {
+            this.id = id;
         }
 
-        public String getMemoryId() {
-            return memoryId;
+        public String getText() {
+            return text;
         }
 
-        public void setMemoryId(String memoryId) {
-            this.memoryId = memoryId;
-        }
-
-        public String getMemoryType() {
-            return memoryType;
-        }
-
-        public void setMemoryType(String memoryType) {
-            this.memoryType = memoryType;
-        }
-
-        public String getWhenToUse() {
-            return whenToUse;
-        }
-
-        public void setWhenToUse(String whenToUse) {
-            this.whenToUse = whenToUse;
-        }
-
-        public String getContent() {
-            return content;
-        }
-
-        public void setContent(String content) {
-            this.content = content;
-        }
-
-        public Double getScore() {
-            return score;
-        }
-
-        public void setScore(Double score) {
-            this.score = score;
-        }
-
-        public String getTimeCreated() {
-            return timeCreated;
-        }
-
-        public void setTimeCreated(String timeCreated) {
-            this.timeCreated = timeCreated;
-        }
-
-        public String getTimeModified() {
-            return timeModified;
-        }
-
-        public void setTimeModified(String timeModified) {
-            this.timeModified = timeModified;
-        }
-
-        public String getAuthor() {
-            return author;
-        }
-
-        public void setAuthor(String author) {
-            this.author = author;
+        public void setText(String text) {
+            this.text = text;
         }
 
         public Map<String, Object> getMetadata() {
@@ -254,20 +178,36 @@ public class ReMeSearchResponse {
             this.metadata = metadata;
         }
 
-        public String getTarget() {
-            return target;
+        public String getPath() {
+            return path;
         }
 
-        public void setTarget(String target) {
-            this.target = target;
+        public void setPath(String path) {
+            this.path = path;
         }
 
-        public String getReflectionSubject() {
-            return reflectionSubject;
+        public Integer getStartLine() {
+            return startLine;
         }
 
-        public void setReflectionSubject(String reflectionSubject) {
-            this.reflectionSubject = reflectionSubject;
+        public void setStartLine(Integer startLine) {
+            this.startLine = startLine;
+        }
+
+        public Integer getEndLine() {
+            return endLine;
+        }
+
+        public void setEndLine(Integer endLine) {
+            this.endLine = endLine;
+        }
+
+        public Map<String, Object> getScores() {
+            return scores;
+        }
+
+        public void setScores(Map<String, Object> scores) {
+            this.scores = scores;
         }
     }
 }

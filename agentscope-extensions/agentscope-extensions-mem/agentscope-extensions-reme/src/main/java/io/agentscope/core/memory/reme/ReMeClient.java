@@ -33,8 +33,8 @@ import reactor.core.scheduler.Schedulers;
 public class ReMeClient {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    private static final String SUMMARY_ENDPOINT = "/summary_personal_memory";
-    private static final String RETRIEVE_ENDPOINT = "/retrieve_personal_memory";
+    private static final String AUTO_MEMORY_ENDPOINT = "/auto_memory";
+    private static final String SEARCH_ENDPOINT = "/search";
 
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
@@ -73,7 +73,7 @@ public class ReMeClient {
      * <p>This is a generic method that handles HTTP communication, JSON serialization,
      * error handling, and response parsing for all POST endpoints.
      *
-     * @param endpoint The API endpoint path (e.g., "/summary_personal_memory")
+     * @param endpoint The API endpoint path (e.g., "/auto_memory")
      * @param request The request object to serialize as JSON
      * @param responseType The class of the response type
      * @param operationName A human-readable name for the operation (for error messages)
@@ -131,37 +131,33 @@ public class ReMeClient {
     }
 
     /**
-     * Adds memories to ReMe by sending trajectories for processing.
+     * Records messages through ReMe's {@code auto_memory} job.
      *
-     * <p>This method calls the {@code POST /summary_personal_memory} endpoint. ReMe will
-     * process the trajectories and extract memorable information.
+     * <p>This method calls the {@code POST /auto_memory} endpoint.
      *
      * <p>The operation is performed asynchronously on the bounded elastic scheduler
      * to avoid blocking the caller thread.
      *
-     * @param request The add request containing trajectories and workspace ID
+     * @param request The auto-memory request
      * @return A Mono emitting the response
      */
     public Mono<ReMeAddResponse> add(ReMeAddRequest request) {
-        return executePost(
-                SUMMARY_ENDPOINT, request, ReMeAddResponse.class, "summary_personal_memory");
+        return executePost(AUTO_MEMORY_ENDPOINT, request, ReMeAddResponse.class, "auto_memory");
     }
 
     /**
      * Searches memories in ReMe using the provided query.
      *
-     * <p>This method calls the {@code POST /retrieve_personal_memory} endpoint to find
-     * memories relevant to the query string.
+     * <p>This method calls the {@code POST /search} endpoint.
      *
      * <p>The operation is performed asynchronously on the bounded elastic scheduler
      * to avoid blocking the caller thread.
      *
-     * @param request The search request containing query, workspace ID, and topK
+     * @param request The search request containing query and search parameters
      * @return A Mono emitting the search response with relevant memories
      */
     public Mono<ReMeSearchResponse> search(ReMeSearchRequest request) {
-        return executePost(
-                RETRIEVE_ENDPOINT, request, ReMeSearchResponse.class, "retrieve_personal_memory");
+        return executePost(SEARCH_ENDPOINT, request, ReMeSearchResponse.class, "search");
     }
 
     /**
