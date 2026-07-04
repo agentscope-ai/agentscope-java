@@ -239,6 +239,30 @@ class ClasspathSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("Should reuse JAR file system across different classpath roots in same JAR")
+    void testReuseJarFileSystemAcrossDifferentRootsInSameJar() throws Exception {
+        Path jarPath = createTestJarWithTwoSkillRoots();
+
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()});
+                ClasspathSkillRepository firstRepository =
+                        new ClasspathSkillRepositoryWithClassLoader("jar-skills-a", classLoader);
+                ClasspathSkillRepository secondRepository =
+                        new ClasspathSkillRepositoryWithClassLoader("jar-skills-b", classLoader)) {
+
+            AgentSkill firstSkill = firstRepository.getSkill("skill-a");
+            AgentSkill secondSkill = secondRepository.getSkill("skill-b");
+
+            assertEquals("skill-a", firstSkill.getName());
+            assertEquals("skill-b", secondSkill.getName());
+
+            firstRepository.close();
+
+            AgentSkill stillAccessible = secondRepository.getSkill("skill-b");
+            assertEquals("skill-b", stillAccessible.getName());
+        }
+    }
+
+    @Test
     @DisplayName("Should load skills from Spring Boot Fat JAR (BOOT-INF/classes/)")
     void testLoadFromSpringBootJar() throws Exception {
         Path jarPath = createSpringBootTestJar("sb-skill", "SB Skill", "SB content");
@@ -610,6 +634,34 @@ class ClasspathSkillRepositoryTest {
             JarEntry entry2 = new JarEntry("jar-skills/skill-two/SKILL.md");
             jos.putNextEntry(entry2);
             jos.write(skill2Md.getBytes(StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        return jarPath;
+    }
+
+    private Path createTestJarWithTwoSkillRoots() throws IOException {
+        Path jarPath = tempDir.resolve("two-skill-roots.jar");
+
+        try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            jos.putNextEntry(new JarEntry("jar-skills-a/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("jar-skills-a/skill-a/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("jar-skills-a/skill-a/SKILL.md"));
+            jos.write(
+                    "---\nname: skill-a\ndescription: Skill A\n---\nContent A"
+                            .getBytes(StandardCharsets.UTF_8));
+            jos.closeEntry();
+
+            jos.putNextEntry(new JarEntry("jar-skills-b/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("jar-skills-b/skill-b/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("jar-skills-b/skill-b/SKILL.md"));
+            jos.write(
+                    "---\nname: skill-b\ndescription: Skill B\n---\nContent B"
+                            .getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 

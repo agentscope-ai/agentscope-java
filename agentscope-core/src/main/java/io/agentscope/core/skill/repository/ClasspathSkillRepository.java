@@ -147,8 +147,8 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
 
             if ("jar".equals(uri.getScheme())) {
                 this.isJar = true;
-                this.jarFileSystemUri = uri;
-                this.fileSystem = acquireFileSystem(uri);
+                this.jarFileSystemUri = toFileSystemUri(uri);
+                this.fileSystem = acquireFileSystem(jarFileSystemUri);
                 String schemeSpecificUriPath = uri.getSchemeSpecificPart();
                 String actualResourcePath =
                         schemeSpecificUriPath.substring(schemeSpecificUriPath.lastIndexOf("!") + 1);
@@ -274,6 +274,16 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      */
     public boolean isJarEnvironment() {
         return isJar;
+    }
+
+    private static URI toFileSystemUri(URI resourceUri) {
+        String schemeSpecificPart = resourceUri.getSchemeSpecificPart();
+        int lastBang = schemeSpecificPart.lastIndexOf('!');
+        if (lastBang < 0) {
+            return resourceUri;
+        }
+        return URI.create(
+                resourceUri.getScheme() + ":" + schemeSpecificPart.substring(0, lastBang));
     }
 
     private static FileSystem acquireFileSystem(URI uri) throws IOException {
