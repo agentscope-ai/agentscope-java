@@ -1446,4 +1446,106 @@ class McpClientBuilderTest {
                                 .stdioTransport("echo", "test")
                                 .protocolVersions(null, null));
     }
+
+    // ==================== Resumable Streams Tests ====================
+
+    private static Object getTransportConfig(McpClientBuilder builder) throws Exception {
+        Field field = McpClientBuilder.class.getDeclaredField("transportConfig");
+        field.setAccessible(true);
+        return field.get(builder);
+    }
+
+    private static Object getTransportConfigFieldValue(McpClientBuilder builder, String fieldName)
+            throws Exception {
+        Object transportConfig = getTransportConfig(builder);
+        Field field = transportConfig.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(transportConfig);
+    }
+
+    @Test
+    void testResumableStreams_AfterStreamableHttpTransport() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("resumable-after")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .resumableStreams(false);
+
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "resumableStreams"),
+                "resumableStreams should be stored on transport config");
+    }
+
+    @Test
+    void testOpenConnectionOnStartup_AfterStreamableHttpTransport() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("open-after")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .openConnectionOnStartup(false);
+
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "openConnectionOnStartup"),
+                "openConnectionOnStartup should be stored on transport config");
+    }
+
+    @Test
+    void testResumableStreams_BeforeStreamableHttpTransport() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("resumable-before")
+                        .resumableStreams(false)
+                        .streamableHttpTransport("https://mcp.example.com/http");
+
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "resumableStreams"),
+                "resumableStreams should be stored even when called before"
+                        + " streamableHttpTransport");
+    }
+
+    @Test
+    void testOpenConnectionOnStartup_BeforeStreamableHttpTransport() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("open-before")
+                        .openConnectionOnStartup(false)
+                        .streamableHttpTransport("https://mcp.example.com/http");
+
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "openConnectionOnStartup"),
+                "openConnectionOnStartup should be stored even when called before"
+                        + " streamableHttpTransport");
+    }
+
+    @Test
+    void testResumableStreams_OnSseTransportIsIgnored() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("resumable-sse")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .resumableStreams(false);
+
+        Object transportConfig = getTransportConfig(builder);
+        assertEquals("SseTransportConfig", transportConfig.getClass().getSimpleName());
+    }
+
+    @Test
+    void testResumableStreams_BeforeAnyTransportDoesNotThrow() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("resumable-no-transport").resumableStreams(false);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testBothOptions_Combined() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("both-options")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .resumableStreams(false)
+                        .openConnectionOnStartup(false);
+
+        assertEquals(Boolean.FALSE, getTransportConfigFieldValue(builder, "resumableStreams"));
+        assertEquals(
+                Boolean.FALSE, getTransportConfigFieldValue(builder, "openConnectionOnStartup"));
+    }
 }
