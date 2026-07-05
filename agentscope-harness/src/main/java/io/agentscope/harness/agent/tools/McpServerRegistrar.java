@@ -142,6 +142,12 @@ public final class McpServerRegistrar {
             throw new IllegalArgumentException("http MCP server '" + name + "' requires a 'url'.");
         }
         builder.streamableHttpTransport(cfg.getUrl());
+        if (cfg.getResumableStreams() != null) {
+            builder.resumableStreams(cfg.getResumableStreams());
+        }
+        if (cfg.getOpenConnectionOnStartup() != null) {
+            builder.openConnectionOnStartup(cfg.getOpenConnectionOnStartup());
+        }
         if (cfg.getHeaders() != null && !cfg.getHeaders().isEmpty()) {
             builder.headers(cfg.getHeaders());
         }

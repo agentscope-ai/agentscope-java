@@ -193,10 +193,10 @@ public class McpClientBuilder {
     public McpClientBuilder streamableHttpTransport(String url) {
         StreamableHttpTransportConfig config = new StreamableHttpTransportConfig(url);
         if (resumableStreams != null) {
-            config.resumableStreams = resumableStreams;
+            config.resumableStreams(resumableStreams);
         }
         if (openConnectionOnStartup != null) {
-            config.openConnectionOnStartup = openConnectionOnStartup;
+            config.openConnectionOnStartup(openConnectionOnStartup);
         }
         this.transportConfig = config;
         return this;
@@ -232,7 +232,6 @@ public class McpClientBuilder {
 
     /**
      * Enables or disables resumable (SSE) streams for StreamableHTTP transport.
-     * Only applicable after calling {@link #streamableHttpTransport(String)}.
      *
      * <p>Set to {@code false} when connecting to Streamable HTTP MCP servers that
      * disable SSE and only accept POST requests. Defaults to the SDK's built-in
@@ -243,18 +242,18 @@ public class McpClientBuilder {
      */
     public McpClientBuilder resumableStreams(boolean value) {
         this.resumableStreams = value;
+        if (transportConfig instanceof StreamableHttpTransportConfig config) {
+            config.resumableStreams(value);
+        }
         return this;
     }
 
     /**
-     * Controls whether the transport opens a persistent connection on startup
-     * for StreamableHTTP transport.
-     * Only applicable after calling {@link #streamableHttpTransport(String)}.
+     * Controls whether StreamableHTTP transport opens a persistent connection on startup.
      *
-     * <p>Set to {@code false} together with
-     * {@link #resumableStreams(boolean) resumableStreams(false)} when connecting
-     * to SSE-disabled servers. Defaults to the SDK's built-in default ({@code true})
-     * when not called.
+     * <p>Set to {@code false} together with {@link #resumableStreams(boolean)
+     * resumableStreams(false)} when connecting to SSE-disabled servers.
+     * Defaults to the SDK's built-in default ({@code true}) when not called.
      *
      * @param value {@code true} to open connection on startup (default),
      *              {@code false} to skip
@@ -262,6 +261,9 @@ public class McpClientBuilder {
      */
     public McpClientBuilder openConnectionOnStartup(boolean value) {
         this.openConnectionOnStartup = value;
+        if (transportConfig instanceof StreamableHttpTransportConfig config) {
+            config.openConnectionOnStartup(value);
+        }
         return this;
     }
 
@@ -794,8 +796,8 @@ public class McpClientBuilder {
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
         private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
         private Consumer<HttpClient.Builder> httpClientCustomizer = null;
-        Boolean resumableStreams;
-        Boolean openConnectionOnStartup;
+        private Boolean resumableStreams = null;
+        private Boolean openConnectionOnStartup = null;
 
         public StreamableHttpTransportConfig(String url) {
             super(url);
@@ -810,6 +812,14 @@ public class McpClientBuilder {
             this.httpClientCustomizer = customizer;
         }
 
+        public void resumableStreams(boolean resumableStreams) {
+            this.resumableStreams = resumableStreams;
+        }
+
+        public void openConnectionOnStartup(boolean openConnectionOnStartup) {
+            this.openConnectionOnStartup = openConnectionOnStartup;
+        }
+
         @Override
         public McpClientTransport createTransport() {
             if (clientTransportBuilder == null) {
@@ -821,10 +831,10 @@ public class McpClientBuilder {
                 clientTransportBuilder.customizeClient(httpClientCustomizer);
             }
 
-            // Apply SSE/stream options if explicitly set
             if (resumableStreams != null) {
                 clientTransportBuilder.resumableStreams(resumableStreams);
             }
+
             if (openConnectionOnStartup != null) {
                 clientTransportBuilder.openConnectionOnStartup(openConnectionOnStartup);
             }
