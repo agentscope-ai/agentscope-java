@@ -102,7 +102,9 @@ public class SandboxManager {
                         log.debug(
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
-                        SandboxState state = client.deserializeState(stateJson.get());
+                        SandboxState state =
+                                client.deserializeState(
+                                        stateJson.get(), sandboxContext.getSnapshotSpec());
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
