@@ -402,6 +402,8 @@ class McpClientBuilderTest {
         McpClientBuilder builder =
                 McpClientBuilder.create("full-http-client")
                         .streamableHttpTransport("https://mcp.higress.ai/http")
+                        .resumableStreams(false)
+                        .openConnectionOnStartup(false)
                         .header("X-API-Key", "secret-key")
                         .header("X-Request-ID", "request-123")
                         .timeout(Duration.ofMinutes(2))
@@ -1059,6 +1061,39 @@ class McpClientBuilderTest {
     }
 
     @Test
+    void testStreamableHttpTransport_ResumableOptions() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("streamable-options")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .resumableStreams(false)
+                        .openConnectionOnStartup(false);
+
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "resumableStreams"),
+                "resumableStreams should be stored on streamable HTTP transport config");
+        assertEquals(
+                Boolean.FALSE,
+                getTransportConfigFieldValue(builder, "openConnectionOnStartup"),
+                "openConnectionOnStartup should be stored on streamable HTTP transport config");
+    }
+
+    @Test
+    void testStreamableHttpTransport_ResumableOptionsIgnoredOnSseTransport() throws Exception {
+        McpClientBuilder builder =
+                McpClientBuilder.create("sse-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .resumableStreams(false)
+                        .openConnectionOnStartup(false);
+
+        Object transportConfig = getTransportConfig(builder);
+        assertEquals(
+                "SseTransportConfig",
+                transportConfig.getClass().getSimpleName(),
+                "transport type should remain SSE");
+    }
+
+    @Test
     void testCustomizeStreamableHttpClient_MultipleCustomizations() {
         McpClientBuilder builder =
                 McpClientBuilder.create("multi-custom-http")
@@ -1445,5 +1480,19 @@ class McpClientBuilderTest {
                         McpClientBuilder.create("pv-all-null")
                                 .stdioTransport("echo", "test")
                                 .protocolVersions(null, null));
+    }
+
+    private static Object getTransportConfig(McpClientBuilder builder) throws Exception {
+        Field transportConfigField = McpClientBuilder.class.getDeclaredField("transportConfig");
+        transportConfigField.setAccessible(true);
+        return transportConfigField.get(builder);
+    }
+
+    private static Object getTransportConfigFieldValue(McpClientBuilder builder, String fieldName)
+            throws Exception {
+        Object transportConfig = getTransportConfig(builder);
+        Field field = transportConfig.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(transportConfig);
     }
 }

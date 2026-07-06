@@ -107,6 +107,8 @@ class ToolsConfigLoaderTest {
                     "http": {
                       "transport": "http",
                       "url": "https://mcp.example.com/http",
+                      "resumableStreams": false,
+                      "openConnectionOnStartup": false,
                       "headers": { "X-Tenant": "acme" },
                       "queryParams": { "region": "us" }
                     },
@@ -133,6 +135,8 @@ class ToolsConfigLoaderTest {
         McpServerConfig http = cfg.getMcpServers().get("http");
         assertEquals("http", http.getTransport());
         assertEquals("https://mcp.example.com/http", http.getUrl());
+        assertEquals(Boolean.FALSE, http.getResumableStreams());
+        assertEquals(Boolean.FALSE, http.getOpenConnectionOnStartup());
         assertEquals("acme", http.getHeaders().get("X-Tenant"));
         assertEquals("us", http.getQueryParams().get("region"));
 
