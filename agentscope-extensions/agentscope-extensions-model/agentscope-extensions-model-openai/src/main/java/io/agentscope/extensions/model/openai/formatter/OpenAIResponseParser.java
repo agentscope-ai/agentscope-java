@@ -250,12 +250,22 @@ public class OpenAIResponseParser {
 
                                     Map<String, Object> argsMap = new HashMap<>();
                                     if (!arguments.isEmpty()) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> parsed =
-                                                JsonUtils.getJsonCodec()
-                                                        .fromJson(arguments, Map.class);
-                                        if (parsed != null) {
-                                            argsMap.putAll(parsed);
+                                        try {
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, Object> parsed =
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(arguments, Map.class);
+                                            if (parsed != null) {
+                                                argsMap.putAll(parsed);
+                                            }
+                                        } catch (Exception parseEx) {
+                                            log.warn(
+                                                    "Failed to parse tool call arguments as JSON;"
+                                                            + " preserving raw arguments: id={},"
+                                                            + " name={}, error={}",
+                                                    toolCallId,
+                                                    name,
+                                                    parseEx.getMessage());
                                         }
                                     }
 

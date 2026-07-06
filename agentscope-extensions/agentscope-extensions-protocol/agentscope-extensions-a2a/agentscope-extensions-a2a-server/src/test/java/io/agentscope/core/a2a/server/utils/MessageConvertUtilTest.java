@@ -32,6 +32,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -216,6 +217,70 @@ class MessageConvertUtilTest {
         assertEquals(1, result.get(1).getContent().size());
         assertInstanceOf(TextBlock.class, result.get(1).getContent().get(0));
         assertEquals("text2", ((TextBlock) result.get(1).getContent().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should restore Msg role from part metadata")
+    void testConvertFromMessageToMsgsWithRoleMetadata() {
+        // Given
+        Message message = mock(Message.class);
+
+        Map<String, Object> partMetadata = new HashMap<>();
+        String msgId = "assistant-msg";
+        partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
+        partMetadata.put(MessageConstants.MSG_ROLE_METADATA_KEY, MsgRole.ASSISTANT.name());
+        partMetadata.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                MessageConstants.BlockContent.TYPE_THINKING);
+
+        TextPart part = new TextPart("thinking content", partMetadata);
+
+        when(message.getMetadata()).thenReturn(null);
+        when(message.getRole()).thenReturn(Message.Role.USER);
+        when(message.getParts()).thenReturn(List.of(part));
+
+        // When
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        Msg msg = result.get(0);
+        assertEquals(msgId, msg.getId());
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertEquals(1, msg.getContent().size());
+        assertInstanceOf(ThinkingBlock.class, msg.getContent().get(0));
+        assertEquals("thinking content", ((ThinkingBlock) msg.getContent().get(0)).getThinking());
+    }
+
+    @Test
+    @DisplayName("Should preserve roles when converting mixed history through A2A message")
+    void testRoundTripMixedHistoryPreservesRoles() {
+        Msg userMsg =
+                Msg.builder()
+                        .id("user-msg")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("please review").build()))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .id("assistant-msg")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(ThinkingBlock.builder().thinking("checking diff").build()))
+                        .build();
+
+        Message message =
+                MessageConvertUtil.convertFromMsgToMessage(
+                        List.of(userMsg, assistantMsg), taskId, contextId);
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        assertEquals(Message.Role.USER, message.getRole());
+        assertEquals(2, result.size());
+        assertEquals(MsgRole.USER, result.get(0).getRole());
+        assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
+        assertInstanceOf(ThinkingBlock.class, result.get(1).getContent().get(0));
+        assertEquals(
+                "checking diff", ((ThinkingBlock) result.get(1).getContent().get(0)).getThinking());
     }
 
     @Test
