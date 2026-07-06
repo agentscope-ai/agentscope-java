@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -249,6 +251,8 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Video - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DataBlock db) {
+                convertDataBlock(db, contentParts);
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -432,11 +436,78 @@ public class OpenAIMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
         return false;
+    }
+
+    private void convertDataBlock(DataBlock db, List<OpenAIContentPart> contentParts) {
+        Source source = db.getSource();
+        if (source == null) {
+            log.warn("DataBlock has null source, skipping");
+            return;
+        }
+
+        String mimeType;
+        if (source instanceof Base64Source b64) {
+            mimeType = b64.getMediaType();
+        } else if (source instanceof URLSource u) {
+            mimeType = MediaUtils.determineMediaType(u.getUrl());
+        } else {
+            log.warn("DataBlock has unknown source type: {}", source.getClass().getSimpleName());
+            return;
+        }
+
+        if (mimeType == null || mimeType.equals("application/octet-stream")) {
+            log.warn("DataBlock has unrecognized MIME type '{}', skipping", mimeType);
+            contentParts.add(
+                    OpenAIContentPart.text("[Data - unrecognized type: " + mimeType + "]"));
+            return;
+        }
+
+        try {
+            if (mimeType.startsWith("image/")) {
+                String imageUrl = convertImageSourceToUrl(source);
+                contentParts.add(OpenAIContentPart.imageUrl(imageUrl));
+            } else if (mimeType.startsWith("audio/")) {
+                if (source instanceof Base64Source b64) {
+                    String audioData = b64.getData();
+                    if (audioData == null || audioData.isEmpty()) {
+                        contentParts.add(OpenAIContentPart.text("[Audio - data missing]"));
+                        return;
+                    }
+                    String format = detectAudioFormat(mimeType);
+                    if (format == null) {
+                        format = "wav";
+                    }
+                    contentParts.add(OpenAIContentPart.inputAudio(audioData, format));
+                } else if (source instanceof URLSource u) {
+                    String url = u.getUrl();
+                    if (url == null || url.isEmpty()) {
+                        contentParts.add(OpenAIContentPart.text("[Audio URL - missing]"));
+                        return;
+                    }
+                    log.warn("URL-based audio not directly supported, using text reference");
+                    contentParts.add(OpenAIContentPart.text("[Audio URL: " + url + "]"));
+                }
+            } else if (mimeType.startsWith("video/")) {
+                String videoUrl = convertVideoSourceToUrl(source);
+                contentParts.add(OpenAIContentPart.videoUrl(videoUrl));
+            } else {
+                log.warn("DataBlock has unrecognized MIME type '{}', skipping", mimeType);
+                contentParts.add(
+                        OpenAIContentPart.text("[Data - unrecognized type: " + mimeType + "]"));
+            }
+        } catch (Exception e) {
+            String errorMsg =
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Failed to process DataBlock: {}", errorMsg);
+            contentParts.add(
+                    OpenAIContentPart.text("[Data - processing failed: " + errorMsg + "]"));
+        }
     }
 
     /**
