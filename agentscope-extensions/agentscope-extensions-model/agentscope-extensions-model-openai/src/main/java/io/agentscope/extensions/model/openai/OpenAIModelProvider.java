@@ -33,6 +33,7 @@ public final class OpenAIModelProvider implements ModelProvider {
     private static final String PREFIX = "openai:";
     private static final Pattern MODEL_ID = Pattern.compile("openai:.+");
     private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
+    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
 
@@ -102,6 +103,10 @@ public final class OpenAIModelProvider implements ModelProvider {
         Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
+        }
+        Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
+        if (nativeStructuredOutput != null) {
+            builder.nativeStructuredOutput(nativeStructuredOutput);
         }
         Boolean nativeStructuredOutputWithTools =
                 booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);

@@ -72,6 +72,7 @@ public class OpenAIChatModel extends ChatModelBase {
     private final OpenAIClient client;
     private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
     private final GenerateOptions configuredOptions;
+    private Boolean nativeStructuredOutput;
 
     /**
      * Creates a new OpenAI chat model instance with pre-configured options.
@@ -200,7 +201,7 @@ public class OpenAIChatModel extends ChatModelBase {
 
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return true;
+        return nativeStructuredOutput != null ? nativeStructuredOutput : true;
     }
 
     /**
@@ -229,6 +230,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
 
         /**
@@ -382,6 +384,23 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model supports native structured output via
+         * {@code response_format}.
+         *
+         * <p>Defaults to {@code true}, which is correct for OpenAI's own models. Set to
+         * {@code false} for OpenAI-compatible providers that do not reliably return schema
+         * constrained JSON through {@code response_format}; the agent will use the
+         * {@code generate_response} fallback path instead.
+         *
+         * @param nativeStructuredOutput false to use fallback structured output
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutput(boolean nativeStructuredOutput) {
+            this.nativeStructuredOutput = nativeStructuredOutput;
+            return this;
+        }
+
+        /**
          * Sets whether this model correctly handles native structured output
          * ({@code response_format}) alongside tool calling.
          *
@@ -443,6 +462,7 @@ public class OpenAIChatModel extends ChatModelBase {
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
             }
+            model.nativeStructuredOutput = nativeStructuredOutput;
             return model;
         }
 

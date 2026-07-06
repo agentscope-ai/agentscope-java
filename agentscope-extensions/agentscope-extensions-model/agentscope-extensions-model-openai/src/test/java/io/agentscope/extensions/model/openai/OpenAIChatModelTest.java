@@ -95,6 +95,22 @@ class OpenAIChatModelTest {
     }
 
     @Test
+    @DisplayName("Should allow native structured output capability override")
+    void testNativeStructuredOutputCapabilityOverride() {
+        OpenAIChatModel defaultModel =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").build();
+        OpenAIChatModel fallbackModel =
+                OpenAIChatModel.builder()
+                        .apiKey("test-api-key")
+                        .modelName("gpt-4")
+                        .nativeStructuredOutput(false)
+                        .build();
+
+        assertTrue(defaultModel.supportsNativeStructuredOutput());
+        assertFalse(fallbackModel.supportsNativeStructuredOutput());
+    }
+
+    @Test
     @DisplayName("Should make non-streaming call successfully")
     void testNonStreamingCall() throws Exception {
         String responseJson =
