@@ -29,7 +29,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
@@ -49,7 +48,7 @@ import reactor.core.publisher.Flux;
  * message lengths. At DEBUG level, additionally logs tool call arguments, tool result
  * content, reasoning text, and input message details.
  */
-public class AgentTraceMiddleware implements MiddlewareBase {
+public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(AgentTraceMiddleware.class);
 
