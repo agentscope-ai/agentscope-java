@@ -22,10 +22,13 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,11 +77,16 @@ import org.slf4j.LoggerFactory;
  */
 public class ClasspathSkillRepository implements AgentSkillRepository {
 
+    private static final Object FILE_SYSTEM_MONITOR = new Object();
+
+    private static final Map<URI, SharedFileSystemRef> SHARED_FILE_SYSTEMS = new HashMap<>();
+
     private final Logger logger = LoggerFactory.getLogger(ClasspathSkillRepository.class);
 
     private final FileSystem fileSystem;
     private final Path skillBasePath;
     private final boolean isJar;
+    private final URI jarFileSystemUri;
     private final String source;
     private final String resourcePath;
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -139,7 +147,8 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
 
             if ("jar".equals(uri.getScheme())) {
                 this.isJar = true;
-                this.fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
+                this.jarFileSystemUri = toFileSystemUri(uri);
+                this.fileSystem = acquireFileSystem(jarFileSystemUri);
                 String schemeSpecificUriPath = uri.getSchemeSpecificPart();
                 String actualResourcePath =
                         schemeSpecificUriPath.substring(schemeSpecificUriPath.lastIndexOf("!") + 1);
@@ -148,6 +157,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
             } else {
                 this.isJar = false;
                 this.fileSystem = null;
+                this.jarFileSystemUri = null;
                 this.skillBasePath = Path.of(uri);
             }
             logger.info("is in Jar environment: {}", this.isJar);
@@ -266,6 +276,58 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
         return isJar;
     }
 
+    private static URI toFileSystemUri(URI resourceUri) {
+        String schemeSpecificPart = resourceUri.getSchemeSpecificPart();
+        int lastBang = schemeSpecificPart.lastIndexOf('!');
+        if (lastBang < 0) {
+            return resourceUri;
+        }
+        return URI.create(
+                resourceUri.getScheme() + ":" + schemeSpecificPart.substring(0, lastBang));
+    }
+
+    private static FileSystem acquireFileSystem(URI uri) throws IOException {
+        synchronized (FILE_SYSTEM_MONITOR) {
+            SharedFileSystemRef existingRef = SHARED_FILE_SYSTEMS.get(uri);
+            if (existingRef != null && existingRef.fileSystem.isOpen()) {
+                existingRef.refCount++;
+                return existingRef.fileSystem;
+            }
+            SHARED_FILE_SYSTEMS.remove(uri);
+
+            FileSystem fileSystem;
+            boolean closeWhenUnused = false;
+            try {
+                fileSystem = FileSystems.getFileSystem(uri);
+            } catch (FileSystemNotFoundException ignored) {
+                fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
+                closeWhenUnused = true;
+            }
+
+            SHARED_FILE_SYSTEMS.put(uri, new SharedFileSystemRef(fileSystem, closeWhenUnused));
+            return fileSystem;
+        }
+    }
+
+    private static void releaseFileSystem(URI uri) throws IOException {
+        synchronized (FILE_SYSTEM_MONITOR) {
+            SharedFileSystemRef ref = SHARED_FILE_SYSTEMS.get(uri);
+            if (ref == null) {
+                return;
+            }
+
+            ref.refCount--;
+            if (ref.refCount > 0) {
+                return;
+            }
+
+            SHARED_FILE_SYSTEMS.remove(uri);
+            if (ref.closeWhenUnused && ref.fileSystem.isOpen()) {
+                ref.fileSystem.close();
+            }
+        }
+    }
+
     private void checkNotClosed() {
         if (closed.get()) {
             throw new IllegalStateException("ClasspathSkillRepository has been closed");
@@ -283,12 +345,24 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        if (fileSystem != null) {
+        if (jarFileSystemUri != null) {
             try {
-                fileSystem.close();
+                releaseFileSystem(jarFileSystemUri);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to close classpath file system", e);
             }
+        }
+    }
+
+    private static final class SharedFileSystemRef {
+
+        private final FileSystem fileSystem;
+        private final boolean closeWhenUnused;
+        private int refCount = 1;
+
+        private SharedFileSystemRef(FileSystem fileSystem, boolean closeWhenUnused) {
+            this.fileSystem = fileSystem;
+            this.closeWhenUnused = closeWhenUnused;
         }
     }
 }
