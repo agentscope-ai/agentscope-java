@@ -37,9 +37,9 @@ This pattern is inspired by research showing that multi-agent debate can improve
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // Define the debate topic
 String topic = """
@@ -207,12 +207,12 @@ Here's a complete, runnable example:
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.pipeline.MsgHub;
 
 public class MultiAgentDebateExample {

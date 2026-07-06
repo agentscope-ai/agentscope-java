@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.RawContentBlockDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.Usage;
@@ -314,6 +315,26 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_stream_123", response.getId());
         assertTrue(response.getContent().isEmpty()); // MessageStart has no content
+    }
+
+    @Test
+    void testParseStreamEventThinkingDelta() throws Exception {
+        RawContentBlockDeltaEvent deltaEvent =
+                RawContentBlockDeltaEvent.builder()
+                        .index(0)
+                        .thinkingDelta("Let me reason through this.")
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockDelta(deltaEvent);
+
+        Instant startTime = Instant.now();
+        ChatResponse response = invokeParseStreamEvent(event, startTime);
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("Let me reason through this.", parsedThinking.getThinking());
+        assertNull(response.getUsage());
     }
 
     @Test
