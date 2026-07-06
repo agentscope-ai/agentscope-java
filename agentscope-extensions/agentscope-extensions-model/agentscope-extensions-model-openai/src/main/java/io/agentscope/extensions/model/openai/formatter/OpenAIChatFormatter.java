@@ -258,6 +258,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                             request.setIncludeReasoning((Boolean) value);
                         }
                         break;
+                    case "thinking_budget":
+                        if (value instanceof Number number) {
+                            request.setThinkingBudget(number.intValue());
+                        }
+                        break;
                     case "stop":
                         if (value instanceof List) {
                             @SuppressWarnings("unchecked")

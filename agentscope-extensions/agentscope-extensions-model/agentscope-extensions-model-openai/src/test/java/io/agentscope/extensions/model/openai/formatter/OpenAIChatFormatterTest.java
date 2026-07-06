@@ -492,6 +492,26 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
+        @DisplayName(
+                "Should let additionalBodyParams override thinkingBudget without duplicate extra"
+                        + " param")
+        void testThinkingBudgetAdditionalBodyParamOverride() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("qwen3").messages(List.of()).build();
+
+            GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(2048).build();
+            GenerateOptions options =
+                    GenerateOptions.builder().additionalBodyParam("thinking_budget", 4096).build();
+
+            formatter.applyOptions(request, options, defaultOptions);
+
+            assertEquals(4096, request.getThinkingBudget());
+            assertTrue(
+                    request.getExtraParams() == null
+                            || !request.getExtraParams().containsKey("thinking_budget"));
+        }
+
+        @Test
         @DisplayName("Should apply include_reasoning parameter")
         void testApplyIncludeReasoning() {
             OpenAIRequest request =
