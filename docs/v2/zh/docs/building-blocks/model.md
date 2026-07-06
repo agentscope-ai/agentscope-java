@@ -5,7 +5,9 @@ description: "在 AgentScope Java 中配置并连接 LLM 模型提供商"
 
 ## 概述
 
-模型层采用两层结构：上层是 **Credential**（`io.agentscope.core.credential`），承载某个提供商的 API 鉴权字段；下层是 **Chat Model**，即在该凭证基础上对接的具体推理模型实现。
+模型层把共享契约和具体模型提供商实现分开。`agentscope-core` 只保留通用 API（`Model`、`ChatModelBase`、`Formatter`、`ModelRegistry` 和 `ModelProvider` SPI）；OpenAI、DashScope、Gemini、Anthropic、Ollama 的具体实现分别位于各自的模型扩展模块中。
+
+运行时模型层采用两层结构：上层是 **Credential**（基于 `io.agentscope.core.credential` 中的通用基类），承载某个提供商的 API 鉴权字段；下层是 **Chat Model**，即在该凭证基础上对接的具体推理模型实现。
 
 ```text
 CredentialBase/
@@ -21,54 +23,30 @@ CredentialBase/
 
 这种分层与前端的自然交互流程一致 —— 先注册凭证，再从凭证下挑选模型 —— 让界面只需鉴权一次，就能展示该提供商支持的所有模型。
 
-## Provider 模块迁移
+## 选择模型创建方式
 
-Provider-specific 的模型实现已经从 `agentscope-core` 迁移到独立 extension module 中。core 现在只保留共享模型契约与运行时工具；每个 provider module 自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 代码。
+### 字符串 model id
 
-| Provider | Maven artifact | 主要包名 |
-|----------|----------------|----------|
-| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
-| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
-| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
-| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
-| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
+简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini` 这样的字符串 id。引入对应模型扩展模块，在环境变量中设置提供商的 `API_KEY`，然后直接把 id 传给 agent：
 
-### 迁移步骤
-
-1. 增加对应 provider extension module 依赖。以 DashScope 为例：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-dashscope</artifactId>
-</dependency>
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model("dashscope:qwen-plus") // 底层由 ModelRegistry.resolve(modelId) 解析
+                .build();
 ```
 
-其他 provider artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
+扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
-2. 将 provider 模型 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
-3. 将 provider formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
-4. Spring Boot 应用中，改用对应 provider-specific starter 和 `agentscope.<provider>.*` 配置：
+### 显式 Model builder
 
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-openai-spring-boot-starter</artifactId>
-</dependency>
-```
-
-### 非 Spring 应用
-
-直接使用 provider 类时，需要引入对应 extension 依赖，并更新 import。例如：
+需要自定义 API key、base URL、formatter、transport、timeout、生成参数或其他提供商专属配置时，推荐显式构造模型，再把 `Model` 实例传给 agent：
 
 ```java
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
-```
 
-然后通过 provider builder 创建模型，并把 `Model` 实例传给 agent：
-
-```java
 DashScopeChatModel model =
         DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
@@ -86,7 +64,7 @@ ReActAgent agent =
 
 ### Spring Boot 应用
 
-Spring Boot 场景下，优先使用 provider-specific starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`。这些 starter 直接依赖对应 model extension，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。
+Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
 
 OpenAI 示例：
 
@@ -100,6 +78,92 @@ agentscope:
     stream: true
 ```
 
+## 模型扩展模块
+
+特定模型提供商的实现已经从 `agentscope-core` 迁移到独立扩展模块中。每个模型适配模块自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 等。
+
+| 提供商 | Maven artifact | 主要包名 |
+|--------|----------------|----------|
+| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
+| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
+| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
+| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
+
+### 迁移步骤
+
+1. 增加对应模型提供商扩展模块依赖。以 DashScope 为例：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+</dependency>
+```
+
+其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
+
+2. 将模型提供商实现的 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
+3. 将模型提供商 formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
+4. Spring Boot 应用中，改用对应提供商 starter 和 `agentscope.<provider>.*` 配置：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+</dependency>
+```
+
+## ModelRegistry 与 ModelCreationContext
+
+`ModelRegistry` 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。解析时按优先级依次尝试：通过 `ModelRegistry.register(name, model)` 直接注册的命名模型实例、通过 `registerFactory(regex, factory)` 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 `ModelProvider` 实现。
+
+简单场景推荐使用 `provider:model` 格式的 id 和环境变量中的 `API_KEY`；需要精细控制时，则使用显式的模型 Builder 及 `ModelCreationContext` 进行配置。
+
+### 高级集成上下文
+
+`ModelCreationContext` 面向需要动态创建模型、但不方便直接依赖具体提供商 builder 的集成层代码，例如多租户网关、插件系统或框架适配层。它可以把 API key、base URL、endpoint path、stream 模式，以及扩展模块定义的 options/components 传给 SPI 提供商实现：
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
+import io.agentscope.core.model.ModelRegistry;
+
+ModelCreationContext context =
+        ModelCreationContext.builder()
+                .apiKey(tenantApiKey)
+                .baseUrl(tenantBaseUrl)
+                .stream(false)
+                // 扩展模块定义的标量配置，key 由具体模型提供商文档约定。
+                .option("contextWindowSize", 128000)
+                // 以类型为 key 的组件对象，用于传入更复杂的提供商配置、transport 或 formatter。
+                .component(
+                        GenerateOptions.class,
+                        GenerateOptions.builder()
+                                .parallelToolCalls(false)
+                                .build())
+                .build();
+
+Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
+```
+
+### 缓存策略
+
+`ModelRegistry` 会缓存简单`provider:model`解析出的模型。带 context（`ModelCreationContext`）解析出的模型默认不缓存，避免不同租户的 API key、base URL 或 stream 配置复用到同一个模型实例。
+
+| 策略 | 行为 |
+|------|------|
+| `DEFAULT` | `resolve(String)` 保持按 model id 缓存的旧行为；`resolve(String, nonEmptyContext)` 默认不缓存。 |
+| `DISABLED` | 永不缓存，每次解析都会创建新的模型实例。 |
+| `ENABLED` | 显式开启缓存。建议用 `cacheId(...)` 表达租户或配置维度的身份。 |
+
+如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
+
+### ModelProvider SPI
+
+模型提供商扩展模块通过 Java SPI 暴露 `META-INF/services/io.agentscope.core.model.spi.ModelProvider`，由 `ModelRegistry` 自动发现。新的模型提供商可以实现 `supports(String, ModelCreationContext)` 和 `create(String, ModelCreationContext)` 来消费 context。简单模型提供商仍可只实现原有的 `supports(String)` 和 `create(String)`，因为 context-aware 方法提供了兼容默认实现。
+
 ## Chat Model
 
 **Chat Model** 是驱动 agent 对话与工具调用的 LLM，输入输出可以是文本之外的多模态内容。AgentScope Java 当前提供以下 Chat Model 类：
@@ -112,7 +176,7 @@ agentscope:
 | Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
 | Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
 
-凭证类：`OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`、`DeepSeekCredential`、`KimiCredential`、`XAICredential`。
+模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
 
 ### 创建 Chat Model
 
@@ -178,7 +242,7 @@ DashScopeChatModel model =
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `apiKey` | `String` | API key（部分 provider 也支持 `credential(...)` 方式注入） |
+| `apiKey` | `String` | API key（部分提供商也支持 `credential(...)` 方式注入） |
 | `modelName` | `String` | 模型标识符（如 `"qwen-plus"`） |
 | `stream` | `boolean` | 是否流式输出 |
 | `defaultOptions` | `GenerateOptions` | 提供商专属生成参数（`temperature`、`maxTokens`、`thinkingBudget`、`parallelToolCalls` 等） |
@@ -442,8 +506,8 @@ ModelCard 字段当前最小化；能力标记（输入/输出 MIME 类型）与
 通过 `CredentialBase#listModels()` 获取 Model Card，返回 `Mono<List<ModelCard>>`：
 
 ```java
-import io.agentscope.core.credential.AnthropicCredential;
 import io.agentscope.core.credential.ModelCard;
+import io.agentscope.extensions.model.anthropic.credential.AnthropicCredential;
 import java.util.List;
 
 AnthropicCredential cred = new AnthropicCredential(System.getenv("ANTHROPIC_API_KEY"));
