@@ -128,6 +128,7 @@ public class MessageConvertUtil {
         Set<String> msgIds = new LinkedHashSet<>();
         Map<String, List<ContentBlock>> partsByMsgId = new HashMap<>();
         Map<String, String> msgIdToName = new HashMap<>();
+        Map<String, MsgRole> msgIdToRole = new HashMap<>();
         message.getParts().stream()
                 .filter(Objects::nonNull)
                 .forEach(
@@ -145,6 +146,10 @@ public class MessageConvertUtil {
                                     .add(PART_PARSER.parse(part));
                             msgIds.add(msgId);
                             msgIdToName.put(msgId, getMsgName(part));
+                            MsgRole role = getMsgRole(part);
+                            if (role != null) {
+                                msgIdToRole.putIfAbsent(msgId, role);
+                            }
                         });
         msgIds.forEach(
                 msgId ->
@@ -152,7 +157,9 @@ public class MessageConvertUtil {
                                 Msg.builder()
                                         .id(msgId)
                                         .name(msgIdToName.get(msgId))
-                                        .role(MsgRole.USER)
+                                        .role(
+                                                msgIdToRole.getOrDefault(
+                                                        msgId, convertRole(message.getRole())))
                                         .content(partsByMsgId.get(msgId))
                                         .metadata(getMsgMetadata(message, msgId))
                                         .build()));
@@ -175,6 +182,28 @@ public class MessageConvertUtil {
             return null;
         }
         return part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+    }
+
+    private static MsgRole getMsgRole(Part<?> part) {
+        if (null == part.getMetadata()) {
+            return null;
+        }
+        Object role = part.getMetadata().get(MessageConstants.MSG_ROLE_METADATA_KEY);
+        if (role == null) {
+            return null;
+        }
+        try {
+            return MsgRole.valueOf(role.toString());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static MsgRole convertRole(Message.Role role) {
+        if (role == Message.Role.AGENT) {
+            return MsgRole.ASSISTANT;
+        }
+        return MsgRole.USER;
     }
 
     @SuppressWarnings("unchecked")

@@ -323,7 +323,7 @@ class ModelTimeoutRetryTest {
 
     /**
      * Helper method that applies timeout and retry logic to a response Flux, mimicking the
-     * behavior in DashScopeChatModel and OpenAIChatModel.
+     * behavior in provider extension models.
      */
     private Flux<ChatResponse> applyTimeoutAndRetry(
             Flux<ChatResponse> responseFlux, GenerateOptions options) {
