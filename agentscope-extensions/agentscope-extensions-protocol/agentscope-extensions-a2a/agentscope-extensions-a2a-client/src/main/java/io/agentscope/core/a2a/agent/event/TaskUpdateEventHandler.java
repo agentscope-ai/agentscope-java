@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.agent.event;
 
 import io.a2a.client.TaskUpdateEvent;
 import io.a2a.spec.TaskArtifactUpdateEvent;
+import io.a2a.spec.TaskState;
 import io.a2a.spec.TaskStatus;
 import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.UpdateEvent;
@@ -89,6 +90,22 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
         public void handle(TaskStatusUpdateEvent event, ClientEventContext context) {
             String currentRequestId = context.getCurrentRequestId();
             if (event.isFinal()) {
+                TaskState state = event.getStatus().state();
+                if (!TaskState.COMPLETED.equals(state)) {
+                    String errorMsg =
+                            "A2A task ended with state: "
+                                    + state
+                                    + (event.getStatus().message() != null
+                                            ? ", message: " + event.getStatus().message()
+                                            : "");
+                    LoggerUtil.warn(
+                            log,
+                            "[{}] A2aAgent task ended with non-completed state: {}.",
+                            currentRequestId,
+                            state);
+                    context.getSink().success(Msg.builder().textContent(errorMsg).build());
+                    return;
+                }
                 Msg msg =
                         MessageConvertUtil.convertFromArtifact(
                                 context.getTask().getArtifacts(), context.getAgent().getName());

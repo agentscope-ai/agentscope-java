@@ -38,6 +38,9 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -114,6 +117,72 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("user interrupt persists recovery state to the store")
+    void userInterruptPersistsRecoveryState() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CountDownLatch subscribed = new CountDownLatch(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new DelayedFirstChunkModel(subscribed))
+                        .stateStore(store)
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        CompletableFuture<Msg> future =
+                agent.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+
+        assertTrue(subscribed.await(5, TimeUnit.SECONDS), "model stream should start");
+        agent.interrupt("u1", "sessA");
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(
+                "I noticed that you have interrupted me. What can I do for you?",
+                reply.getTextContent());
+
+        ReActAgent reborn = agent(store);
+        List<String> texts = allText(reborn.getAgentState("u1", "sessA"));
+        assertTrue(texts.contains("hello"), "user input should remain in persisted session state");
+        assertTrue(
+                texts.contains("I noticed that you have interrupted me. What can I do for you?"),
+                "interrupt recovery message should be persisted to the state store");
+    }
+
+    private static final class DelayedFirstChunkModel extends ChatModelBase {
+        private final CountDownLatch subscribed;
+
+        private DelayedFirstChunkModel(CountDownLatch subscribed) {
+            this.subscribed = subscribed;
+        }
+
+        @Override
+        public String getModelName() {
+            return "delayed-first-chunk";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.defer(
+                    () -> {
+                        subscribed.countDown();
+                        return Flux.just(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("model reply")
+                                                                        .build()))
+                                                .build())
+                                .delaySubscription(Duration.ofMillis(200));
+                    });
+        }
     }
 
     private static Msg userMsg(String text) {
