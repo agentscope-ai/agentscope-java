@@ -80,6 +80,12 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         if (reasoningEffort != null) {
             request.setReasoningEffort(reasoningEffort);
         }
+        // Apply thinking budget
+        Integer thinkingBudget =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (thinkingBudget != null) {
+            request.setThinkingBudget(thinkingBudget);
+        }
 
         // Apply top_p
         Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
