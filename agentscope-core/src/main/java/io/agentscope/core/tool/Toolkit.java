@@ -721,6 +721,16 @@ public class Toolkit {
         return groupManager.getToolGroup(groupName);
     }
 
+    /**
+     * Find all {@link SkillToolGroup} names whose {@code activateOnSkill} matches the given skill.
+     *
+     * @param skillId The skill identifier to match against
+     * @return List of matching group names (never null, may be empty)
+     */
+    public List<String> findSkillToolGroupNames(String skillId) {
+        return groupManager.findSkillToolGroupNames(skillId);
+    }
+
     // ==================== Meta Tool Registration ====================
 
     /**

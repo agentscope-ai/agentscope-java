@@ -496,6 +496,25 @@ class ToolGroupManager {
     }
 
     /**
+     * Find all {@link SkillToolGroup} names whose {@code activateOnSkill} matches the given skill.
+     *
+     * @param skillId The skill identifier to match against
+     * @return List of matching group names (empty if none found)
+     */
+    public List<String> findSkillToolGroupNames(String skillId) {
+        if (skillId == null) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (ToolGroup group : toolGroups.values()) {
+            if (group instanceof SkillToolGroup stg && skillId.equals(stg.getActivateOnSkill())) {
+                result.add(group.getName());
+            }
+        }
+        return result;
+    }
+
+    /**
      * Copy all tool groups from this manager to another manager.
      *
      * @param target The target manager to copy tool groups to

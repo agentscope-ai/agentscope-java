@@ -374,6 +374,7 @@ class SkillToolFactory {
         skillRegistry.setSkillActive(skillId, true);
         logger.info("Activated skill: {}", skillId);
 
+        // Convention-based activation (SkillBox.SkillRegistration creates plain ToolGroups)
         String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
         if (toolkit.getToolGroup(toolsGroupName) != null) {
             toolkit.updateToolGroups(List.of(toolsGroupName), true);
@@ -381,6 +382,13 @@ class SkillToolFactory {
                     "Activated skill tool group: {} and its tools: {}",
                     toolsGroupName,
                     toolkit.getToolGroup(toolsGroupName).getTools());
+        }
+
+        // Field-based activation (SkillToolGroups created via createSkillToolGroup)
+        List<String> boundGroups = toolkit.findSkillToolGroupNames(skillId);
+        if (!boundGroups.isEmpty()) {
+            toolkit.updateToolGroups(boundGroups, true);
+            logger.info("Activated bound skill tool groups: {}", boundGroups);
         }
     }
 }
