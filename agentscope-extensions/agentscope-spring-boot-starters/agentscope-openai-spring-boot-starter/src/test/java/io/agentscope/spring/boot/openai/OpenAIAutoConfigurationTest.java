@@ -146,12 +146,36 @@ class OpenAIAutoConfigurationTest {
                         });
     }
 
+    @Test
+    void shouldApplyOpenAIChatModelBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(CustomBuilderConfiguration.class)
+                .withPropertyValues(
+                        "agentscope.model.provider=openai",
+                        "agentscope.openai.api-key=test-openai-key",
+                        "agentscope.openai.model-name=gpt-4.1-mini")
+                .run(
+                        context -> {
+                            OpenAIChatModel model = context.getBean(OpenAIChatModel.class);
+                            assertThat(model.getModelName()).isEqualTo("customized-model-name");
+                        });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
         @Bean
         Model customModel() {
             return new TestModel();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomBuilderConfiguration {
+
+        @Bean
+        OpenAIChatModelBuilderCustomizer testOpenAIChatModelBuilderCustomizer() {
+            return builder -> builder.modelName("customized-model-name");
         }
     }
 
