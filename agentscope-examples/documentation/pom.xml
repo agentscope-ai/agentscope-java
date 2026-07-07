@@ -27,7 +27,7 @@
     </parent>
 
     <groupId>io.agentscope.examples</groupId>
-    <artifactId>documentation2</artifactId>
+    <artifactId>documentation</artifactId>
     <packaging>jar</packaging>
 
     <name>AgentScope Java - Examples - Documentation</name>
