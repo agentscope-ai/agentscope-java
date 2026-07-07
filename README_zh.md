@@ -82,6 +82,8 @@ AgentScope 设计上能够与现有企业基础设施集成，无需大规模改
 ```
 
 ```java
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .sysPrompt("You are a helpful AI assistant.")

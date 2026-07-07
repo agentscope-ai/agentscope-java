@@ -15,11 +15,16 @@
  */
 package io.agentscope.extensions.model.ollama;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +52,24 @@ class OllamaModelProviderTest {
         assertThrows(IllegalArgumentException.class, () -> provider.create("ollama:"));
         assertThrows(IllegalArgumentException.class, () -> provider.create("llama3"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
+    }
+
+    @Test
+    void createUsesModelCreationContext() {
+        OllamaModelProvider provider = new OllamaModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .baseUrl("http://ollama.example.com")
+                        .component(OllamaOptions.class, OllamaOptions.builder().build())
+                        .component(ProxyConfig.class, ProxyConfig.http("localhost", 8080))
+                        .option("contextWindowSize", 128000)
+                        .build();
+
+        Model model = provider.create("ollama:llama3", context);
+
+        assertTrue(model instanceof OllamaChatModel);
+        assertTrue(model.getModelName().equals("llama3"));
+        assertEquals(128000, model.getContextWindowSize());
     }
 
     @Test

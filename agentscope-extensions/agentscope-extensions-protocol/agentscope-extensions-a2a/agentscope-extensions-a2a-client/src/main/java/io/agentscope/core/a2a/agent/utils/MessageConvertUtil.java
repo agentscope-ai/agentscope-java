@@ -129,10 +129,39 @@ public class MessageConvertUtil {
                                                                         MessageConstants
                                                                                 .SOURCE_NAME_METADATA_KEY,
                                                                         msg.getName());
+                                                        if (msg.getRole() != null) {
+                                                            part.getMetadata()
+                                                                    .put(
+                                                                            MessageConstants
+                                                                                    .MSG_ROLE_METADATA_KEY,
+                                                                            msg.getRole().name());
+                                                        }
                                                     })
                                             .toList());
                         });
-        return builder.parts(parts).metadata(metadata).role(Message.Role.USER).build();
+        return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
+    }
+
+    private static Message.Role resolveMessageRole(List<Msg> msgs) {
+        List<Message.Role> roles =
+                msgs.stream()
+                        .filter(Objects::nonNull)
+                        .map(Msg::getRole)
+                        .filter(Objects::nonNull)
+                        .map(MessageConvertUtil::convertRole)
+                        .distinct()
+                        .toList();
+        if (roles.size() == 1) {
+            return roles.get(0);
+        }
+        return Message.Role.USER;
+    }
+
+    private static Message.Role convertRole(MsgRole role) {
+        if (role == MsgRole.ASSISTANT || role == MsgRole.TOOL) {
+            return Message.Role.AGENT;
+        }
+        return Message.Role.USER;
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
