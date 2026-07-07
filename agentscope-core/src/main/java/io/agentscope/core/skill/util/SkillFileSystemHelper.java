@@ -304,13 +304,13 @@ public final class SkillFileSystemHelper {
             return false;
         }
 
-        Path dirToDelete = skillDir.get();
+        Path dirToDelete = skillDir.get().toAbsolutePath().normalize();
         Path absoluteBaseDir = baseDir.toAbsolutePath().normalize();
 
         try {
             if (dirToDelete.equals(absoluteBaseDir)) {
                 // Root-level skill: only remove SKILL.md, keep other files intact
-                Files.delete(dirToDelete.resolve(SKILL_FILE_NAME));
+                Files.deleteIfExists(dirToDelete.resolve(SKILL_FILE_NAME));
             } else {
                 deleteDirectory(dirToDelete);
             }
