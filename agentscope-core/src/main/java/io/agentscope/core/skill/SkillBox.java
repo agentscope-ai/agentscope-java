@@ -38,8 +38,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Manages a collection of {@link AgentSkill} instances and exposes them as tools.
  *
- * Since 2.0.0, Skillbox has been redesigned as an internal-use only class,
- * use SkillRepository instead for defining SkillBox.
+ * Since 2.0.0, SkillBox is intended for internal use only; prefer skill repositories
+ * ({@code AgentSkillRepository}) for defining and loading skills.
  */
 public class SkillBox {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
