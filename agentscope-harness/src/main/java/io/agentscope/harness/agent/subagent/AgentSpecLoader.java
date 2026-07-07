@@ -295,6 +295,7 @@ public final class AgentSpecLoader {
         }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
+        List<String> skills = parseToolNames(asString(fm.get("skills")));
 
         SubagentDeclaration.Builder builder =
                 SubagentDeclaration.builder()
@@ -309,7 +310,8 @@ public final class AgentSpecLoader {
                         .mode(declMode)
                         .hidden(hidden)
                         .exposeToUser(exposeToUser)
-                        .tools(tools.isEmpty() ? null : tools);
+                        .tools(tools.isEmpty() ? null : tools)
+                        .skills(skills.isEmpty() ? null : skills);
 
         if (workspacePath != null) {
             builder.workspace(workspacePath);

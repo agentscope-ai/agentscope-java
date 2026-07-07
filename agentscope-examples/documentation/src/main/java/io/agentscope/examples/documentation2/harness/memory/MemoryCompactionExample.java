@@ -67,6 +67,14 @@ public class MemoryCompactionExample {
                                 CompactionConfig.builder()
                                         .triggerMessages(6)
                                         .keepMessages(2)
+                                        // keepTokens defaults to dynamic mode (-1), which the
+                                        // middleware resolves from the model context window to a
+                                        // large token budget (e.g. ~8k) that always exceeds this
+                                        // short demo conversation — so the message-count keep
+                                        // window (keepMessages) is never used and compaction never
+                                        // fires. Set keepTokens(0) to force message-count keep mode
+                                        // so compaction actually triggers after a few turns.
+                                        .keepTokens(0)
                                         .build())
                         .memory(
                                 MemoryConfig.builder()
@@ -118,11 +126,20 @@ public class MemoryCompactionExample {
             System.out.println();
         }
 
+        // Wait briefly for the asynchronous memory flush / consolidation to finish
+        // writing before we read the generated files back from disk.
+        Thread.sleep(3000);
+
         // ── Check generated memory files ────────────────────────────────────
 
         System.out.println("── Memory files on disk ──\n");
 
-        Path memoryDir = workspace.resolve("memory");
+        // Memory files are written under the runtime-data namespace derived from the
+        // RuntimeContext (default IsolationScope.USER falls back to sessionId when no
+        // userId is set), e.g. <workspace>/<sessionId>/memory/. Resolve the paths through
+        // the agent's WorkspaceManager so we read from the same location they were written
+        // to, rather than assuming they live directly under the workspace root.
+        Path memoryDir = agent.getWorkspaceManager().getMemoryDir(ctx);
         if (Files.isDirectory(memoryDir)) {
             Files.list(memoryDir).sorted().forEach(p -> System.out.println("  " + p.getFileName()));
         } else {
@@ -141,7 +158,7 @@ public class MemoryCompactionExample {
             }
         }
 
-        Path memoryMd = workspace.resolve("MEMORY.md");
+        Path memoryMd = agent.getWorkspaceManager().resolveRuntimeDataPath(ctx, "MEMORY.md");
         if (Files.exists(memoryMd)) {
             String content = Files.readString(memoryMd);
             System.out.println("\n── MEMORY.md content ──");
@@ -151,9 +168,6 @@ public class MemoryCompactionExample {
                 System.out.println(content);
             }
         }
-
-        // Wait briefly for async flush to complete before printing final state
-        Thread.sleep(3000);
 
         System.out.println("\nWorkspace: " + workspace);
         System.out.println("\n" + "=".repeat(60));

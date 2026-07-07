@@ -35,6 +35,7 @@
         <module>agentscope-extensions-protocol</module>
         <module>agentscope-extensions-mem</module>
         <module>agentscope-extensions-oss</module>
+        <module>agentscope-extensions-cos</module>
         <module>agentscope-extensions-redis</module>
         <module>agentscope-extensions-mysql</module>
         <module>agentscope-extensions-rag</module>

@@ -83,6 +83,19 @@ public enum AguiEventType {
      * A custom event with structured data.
      */
     CUSTOM,
+
+    RUN_ERROR,
+
+    STEP_STARTED,
+    STEP_FINISHED,
+
+    TEXT_MESSAGE_CHUNK,
+    TOOL_CALL_CHUNK,
+
+    MESSAGES_SNAPSHOT,
+    ACTIVITY_SNAPSHOT,
+    ACTIVITY_DELTA,
+
     /**
      * Indicates the start of a reasoning/thinking phase.
      */
@@ -111,5 +124,7 @@ public enum AguiEventType {
     /**
      * Indicates the end of a reasoning/thinking phase.
      */
-    REASONING_END
+    REASONING_END,
+
+    REASONING_ENCRYPTED_VALUE
 }

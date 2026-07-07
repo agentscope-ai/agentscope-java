@@ -21,7 +21,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 3. **NEVER use `ThreadLocal`** - Use Reactor Context with `Mono.deferContextual()`.
 4. **NEVER hardcode API keys** - Always use `System.getenv()`.
 5. **NEVER ignore errors silently** - Always log errors and provide fallback values.
-6. **NEVER use wrong import paths** - All models are in `io.agentscope.core.model.*`, NOT `io.agentscope.model.*`.
+6. **NEVER use wrong import paths** - Shared model interfaces are in `io.agentscope.core.model.*`; provider models are in `io.agentscope.extensions.model.<provider>.*`.
 
 **✅ ALWAYS DO:**
 1. **Use `Mono` and `Flux`** for all asynchronous operations.
@@ -29,7 +29,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 3. **Use Builder pattern** for creating agents, models, and messages.
 4. **Include error handling** with `.onErrorResume()` or `.onErrorReturn()`.
 5. **Add logging** with SLF4J for important operations.
-6. **Use correct imports**: `import io.agentscope.core.model.DashScopeChatModel;`
+6. **Use correct imports**: `import io.agentscope.extensions.model.dashscope.DashScopeChatModel;`
 7. **Use correct APIs** (many methods don't exist or have changed):
    - `toolkit.registerTool()` NOT `registerObject()`
    - `toolkit.getToolNames()` NOT `getTools()`
@@ -56,7 +56,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 2. Check: Are all operations non-blocking? → If no, **FIX IT**.
 3. Check: Does it have error handling? → If no, **ADD IT**.
 4. Check: Are API keys from environment? → If no, **CHANGE IT**.
-5. Check: Are imports correct? → If using `io.agentscope.model.*`, **FIX TO** `io.agentscope.core.model.*`.
+5. Check: Are imports correct? → If using provider models from `io.agentscope.core.model.*`, **FIX TO** `io.agentscope.extensions.model.<provider>.*`.
 
 **Default code structure for agent logic:**
 ```java
@@ -118,6 +118,11 @@ public static void main(String[] args) {
         <artifactId>agentscope-core</artifactId>
         <version>${agentscope.version}</version>
     </dependency>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        <version>${agentscope.version}</version>
+    </dependency>
 </dependencies>
 ```
 
@@ -165,23 +170,23 @@ public static void main(String[] args) {
 </dependency>
 ```
 
-### Available Model Classes (all in agentscope-core)
+### Available Model Classes (provider-specific extension modules)
 
 ```java
 // DashScope (Alibaba Cloud)
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // OpenAI
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 
 // Gemini (Google)
-import io.agentscope.core.model.GeminiChatModel;
+import io.agentscope.extensions.model.gemini.GeminiChatModel;
 
 // Anthropic (Claude)
-import io.agentscope.core.model.AnthropicChatModel;
+import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
 
 // Ollama (Local models)
-import io.agentscope.core.model.OllamaChatModel;
+import io.agentscope.extensions.model.ollama.OllamaChatModel;
 ```
 
 ### Optional Extensions
@@ -320,7 +325,7 @@ Extend `AgentBase` and implement `doCall(List<Msg> msgs)`:
 public class MyAgent extends AgentBase {
     private final Model model;
     private final Memory memory;
-    
+
     public MyAgent(String name, Model model) {
         super(name, "A custom agent", true, List.of());
         this.model = model;
@@ -333,7 +338,7 @@ public class MyAgent extends AgentBase {
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
-        
+
         // 2. Call model or logic
         return model.generate(memory.getMessages(), null, null)
             .map(response -> Msg.builder()
@@ -362,7 +367,7 @@ Use `@Tool` annotation for function-based tools. Tools can return:
 public class WeatherTools {
     @Tool(description = "Get current weather for a city. Returns temperature and conditions.")
     public String getWeather(
-            @ToolParam(name = "city", description = "City name, e.g., 'San Francisco'") 
+            @ToolParam(name = "city", description = "City name, e.g., 'San Francisco'")
             String city) {
         // Implementation
         return "Sunny, 25°C";
@@ -374,10 +379,10 @@ public class WeatherTools {
 ```java
 public class AsyncTools {
     private final WebClient webClient;
-    
+
     @Tool(description = "Fetch data from trusted API endpoint")
     public Mono<String> fetchData(
-            @ToolParam(name = "url", description = "API endpoint URL (must start with https://api.myservice.com)") 
+            @ToolParam(name = "url", description = "API endpoint URL (must start with https://api.myservice.com)")
             String url) {
         // SECURITY: Validate URL to prevent SSRF
         if (!url.startsWith("https://api.myservice.com")) {
@@ -444,7 +449,7 @@ Hook loggingHook = new Hook() {
             return Mono.just(event);
         }
     }
-    
+
     @Override
     public int priority() {
         return 500;  // Low priority (logging)
@@ -475,7 +480,7 @@ Hook loggingHook = new Hook() {
         }
         return Mono.just(event);
     }
-    
+
     @Override
     public int priority() {
         return 500;
@@ -597,7 +602,7 @@ void testAgentCall() {
         .role(MsgRole.USER)
         .content(TextBlock.builder().text("Hello").build())
         .build();
-    
+
     StepVerifier.create(agent.call(input))
         .assertNext(response -> {
             assertEquals(MsgRole.ASSISTANT, response.getRole());
@@ -616,12 +621,12 @@ void testWithMockModel() {
         .thenReturn(Mono.just(ChatResponse.builder()
             .text("Mocked response")
             .build()));
-    
+
     ReActAgent agent = ReActAgent.builder()
         .name("TestAgent")
         .model(mockModel)
         .build();
-    
+
     // Test agent behavior
 }
 ```
@@ -722,7 +727,7 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    ```java
    // ❌ WRONG
    Thread.sleep(1000);
-   
+
    // ✅ CORRECT
    return Mono.delay(Duration.ofSeconds(1));
    ```
@@ -740,7 +745,7 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    ```java
    // ❌ WRONG
    .onErrorResume(e -> Mono.empty())
-   
+
    // ✅ CORRECT
    .onErrorResume(e -> {
        log.error("Operation failed", e);
@@ -752,7 +757,7 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    ```java
    // ❌ WRONG
    ThreadLocal<String> context = new ThreadLocal<>();
-   
+
    // ✅ CORRECT
    return Mono.deferContextual(ctx -> {
        String value = ctx.get("key");
@@ -775,7 +780,7 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    ```java
    // ❌ WRONG
    String apiKey = "sk-1234567890";
-   
+
    // ✅ CORRECT
    String apiKey = System.getenv("OPENAI_API_KEY");
    ```
@@ -788,7 +793,7 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
        case PostActingEvent e -> handleActing(e);
        default -> Mono.just(event);
    };
-   
+
    // ✅ CORRECT - Java 17 compatible
    if (event instanceof PreReasoningEvent e) {
        return handleReasoning(e);
@@ -878,7 +883,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -890,9 +895,9 @@ import java.time.format.DateTimeFormatter;
  * Complete example demonstrating AgentScope best practices.
  */
 public class CompleteExample {
-    
+
     private static final Logger log = LoggerFactory.getLogger(CompleteExample.class);
-    
+
     public static void main(String[] args) {
         // 1. Create model (no .temperature() method, use defaultOptions)
         Model model = DashScopeChatModel.builder()
@@ -900,12 +905,12 @@ public class CompleteExample {
             .modelName("qwen-plus")
             .stream(true)
             .build();
-        
+
         // 2. Create toolkit with tools
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new WeatherTools());
         toolkit.registerTool(new TimeTools());
-        
+
         // 3. Create hook for streaming output
         Hook streamingHook = new Hook() {
             @Override
@@ -918,13 +923,13 @@ public class CompleteExample {
                 }
                 return Mono.just(event);
             }
-            
+
             @Override
             public int priority() {
                 return 500;  // Low priority
             }
         };
-        
+
         // 4. Build agent
         ReActAgent agent = ReActAgent.builder()
             .name("Assistant")
@@ -935,7 +940,7 @@ public class CompleteExample {
             .hook(streamingHook)
             .maxIters(10)
             .build();
-        
+
         // 5. Use agent
         Msg userMsg = Msg.builder()
             .role(MsgRole.USER)
@@ -943,57 +948,57 @@ public class CompleteExample {
                 .text("What's the weather in San Francisco and what time is it?")
                 .build())
             .build();
-        
+
         try {
             System.out.println("User: " + userMsg.getTextContent());
             System.out.print("Assistant: ");
-            
+
             // ⚠️ IMPORTANT: .block() is ONLY allowed in main() methods for demo purposes
             // NEVER use .block() in agent logic, service methods, or library code
             Msg response = agent.call(userMsg).block();
-            
+
             System.out.println("\n\n--- Response Details ---");
             System.out.println("Role: " + response.getRole());
             System.out.println("Content: " + response.getTextContent());
-            
+
         } catch (Exception e) {
             log.error("Error during agent execution", e);
             System.err.println("Error: " + e.getMessage());
         }
     }
-    
+
     /**
      * Example tool class for weather information.
      */
     public static class WeatherTools {
-        
+
         @Tool(description = "Get current weather for a city. Returns temperature and conditions.")
         public String getWeather(
-                @ToolParam(name = "city", description = "City name, e.g., 'San Francisco'") 
+                @ToolParam(name = "city", description = "City name, e.g., 'San Francisco'")
                 String city) {
-            
+
             log.info("Getting weather for city: {}", city);
-            
+
             // Simulate API call
             return String.format("Weather in %s: Sunny, 22°C, Light breeze", city);
         }
     }
-    
+
     /**
      * Example tool class for time information.
      */
     public static class TimeTools {
-        
-        private static final DateTimeFormatter FORMATTER = 
+
+        private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        
+
         @Tool(description = "Get current date and time")
         public String getCurrentTime() {
             LocalDateTime now = LocalDateTime.now();
             String formatted = now.format(FORMATTER);
-            
+
             log.info("Returning current time: {}", formatted);
-            
+
             return "Current time: " + formatted;
         }
     }

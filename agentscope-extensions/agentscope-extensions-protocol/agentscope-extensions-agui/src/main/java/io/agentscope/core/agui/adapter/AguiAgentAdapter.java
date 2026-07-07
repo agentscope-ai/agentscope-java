@@ -146,7 +146,8 @@ public class AguiAgentAdapter {
 
                     return Flux.concat(
                                     // Emit RUN_STARTED
-                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                    Flux.just(
+                                            new AguiEvent.RunStarted(threadId, runId, null, input)),
                                     // Stream agent events and convert to AG-UI events
                                     // Use concatMapIterable to preserve strict event ordering
                                     agentEvents.concatMapIterable(
@@ -220,7 +221,7 @@ public class AguiAgentAdapter {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
         return Flux.just(
-                new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)),
+                new AguiEvent.RunError(threadId, runId, errorMessage, mapErrorCode(error)),
                 new AguiEvent.RunFinished(threadId, runId));
     }
 
@@ -466,6 +467,19 @@ public class AguiAgentAdapter {
         } catch (JsonException e) {
             return "{}";
         }
+    }
+
+    private static String mapErrorCode(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "TIMEOUT_ERROR";
+        }
+        if (error instanceof java.lang.InterruptedException) {
+            return "INTERRUPTED_ERROR";
+        }
+        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
+            return "INVALID_INPUT_ERROR";
+        }
+        return "INTERNAL_ERROR";
     }
 
     private static class ToolInjection {

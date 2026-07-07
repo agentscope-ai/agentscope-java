@@ -82,6 +82,8 @@ Built for enterprise deployment requirements:
 ```
 
 ```java
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .sysPrompt("You are a helpful AI assistant.")

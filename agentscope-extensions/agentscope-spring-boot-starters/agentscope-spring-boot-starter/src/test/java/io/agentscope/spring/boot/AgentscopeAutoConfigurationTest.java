@@ -16,179 +16,133 @@
 package io.agentscope.spring.boot;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.model.AnthropicChatModel;
-import io.agentscope.core.model.GeminiChatModel;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.spring.boot.model.ModelProviderType;
-import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import reactor.core.publisher.Flux;
 
 /**
  * Tests for {@link AgentscopeAutoConfiguration}.
- *
- * <p>These tests verify that the auto-configuration creates the expected beans under different
- * property setups.
  */
-@ExtendWith(OutputCaptureExtension.class)
 class AgentscopeAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                    .withPropertyValues(
-                            "agentscope.agent.enabled=true",
-                            "agentscope.dashscope.api-key=test-api-key");
+                    .withPropertyValues("agentscope.agent.enabled=true");
 
     @Test
-    void shouldCreateDefaultBeansWhenEnabled() {
+    void shouldCreateMemoryAndToolkitWhenEnabled() {
         contextRunner.run(
                 context -> {
                     assertThat(context).hasSingleBean(Memory.class);
                     assertThat(context).hasSingleBean(Toolkit.class);
-                    assertThat(context).hasSingleBean(Model.class);
-                    assertThat(context).hasSingleBean(ReActAgent.class);
+                    assertThat(context).doesNotHaveBean(Model.class);
+                    assertThat(context).doesNotHaveBean(ReActAgent.class);
                 });
     }
 
     @Test
-    void shouldNotCreateReActAgentWhenDisabled() {
+    void shouldCreateReActAgentWhenModelBeanExists() {
         contextRunner
+                .withUserConfiguration(CustomModelConfiguration.class)
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(Memory.class);
+                            assertThat(context).hasSingleBean(Toolkit.class);
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context).hasSingleBean(ReActAgent.class);
+                        });
+    }
+
+    @Test
+    void shouldNotCreateBeansWhenAgentIsDisabled() {
+        contextRunner
+                .withUserConfiguration(CustomModelConfiguration.class)
                 .withPropertyValues("agentscope.agent.enabled=false")
                 .run(
                         context -> {
+                            assertThat(context).hasSingleBean(Model.class);
                             assertThat(context).doesNotHaveBean(ReActAgent.class);
                             assertThat(context).doesNotHaveBean(Memory.class);
                             assertThat(context).doesNotHaveBean(Toolkit.class);
-                            assertThat(context).doesNotHaveBean(Model.class);
                         });
     }
 
     @Test
-    void shouldFailWhenApiKeyMissing() {
-        new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                .withPropertyValues("agentscope.agent.enabled=true")
-                .run(
-                        context ->
-                                assertThat(context.getStartupFailure())
-                                        .isNotNull()
-                                        .hasMessageContaining(
-                                                "agentscope.dashscope.api-key must be configured"));
-    }
-
-    @Test
-    void shouldCreateOpenAIModelWhenProviderIsOpenAI() {
-        new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                .withPropertyValues(
-                        "agentscope.agent.enabled=true",
-                        "agentscope.model.provider=openai",
-                        "agentscope.openai.api-key=test-openai-key",
-                        "agentscope.openai.model-name=gpt-4.1-mini")
+    void shouldBackOffWhenUserDefinesMemoryToolkitAndAgentBeans() {
+        contextRunner
+                .withUserConfiguration(CustomAgentConfiguration.class)
                 .run(
                         context -> {
-                            assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class).getModelName())
-                                    .isEqualTo("gpt-4.1-mini");
+                            assertThat(context).hasSingleBean(Memory.class);
+                            assertThat(context).hasSingleBean(Toolkit.class);
+                            assertThat(context).hasSingleBean(ReActAgent.class);
+                            assertThat(context.getBean("customMemory"))
+                                    .isSameAs(context.getBean(Memory.class));
+                            assertThat(context.getBean("customToolkit"))
+                                    .isSameAs(context.getBean(Toolkit.class));
+                            assertThat(context.getBean("customAgent"))
+                                    .isSameAs(context.getBean(ReActAgent.class));
                         });
     }
 
-    @Test
-    void shouldCreateOpenAIModelWithCustomEndpointPath() {
-        new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                .withPropertyValues(
-                        "agentscope.agent.enabled=true",
-                        "agentscope.model.provider=openai",
-                        "agentscope.openai.api-key=test-openai-key",
-                        "agentscope.openai.model-name=gpt-4.1-mini",
-                        "agentscope.openai.endpoint-path=/v4/chat/completions")
-                .run(
-                        context -> {
-                            assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class).getModelName())
-                                    .isEqualTo("gpt-4.1-mini");
-                        });
-    }
+    @Configuration(proxyBeanMethods = false)
+    static class CustomModelConfiguration {
 
-    @Test
-    void shouldFailClearlyWhenOpenAIExtensionIsMissing() {
-        AgentscopeProperties properties = new AgentscopeProperties();
-        properties.getOpenai().setApiKey("test-openai-key");
-        properties.getOpenai().setModelName("gpt-4.1-mini");
-
-        ClassLoader original = Thread.currentThread().getContextClassLoader();
-        Thread.currentThread()
-                .setContextClassLoader(
-                        new HidingClassLoader(
-                                original,
-                                "io.agentscope.extensions.model.openai.OpenAIChatModelFactory"));
-        try {
-            assertThatThrownBy(() -> ModelProviderType.OPENAI.createModel(properties))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("agentscope-extensions-model-openai");
-        } finally {
-            Thread.currentThread().setContextClassLoader(original);
+        @Bean
+        Model customModel() {
+            return new TestModel();
         }
     }
 
-    @Test
-    void shouldCreateGeminiModelWhenProviderIsGemini() {
-        new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                .withPropertyValues(
-                        "agentscope.agent.enabled=true",
-                        "agentscope.model.provider=gemini",
-                        "agentscope.gemini.api-key=test-gemini-key",
-                        "agentscope.gemini.model-name=gemini-2.0-flash")
-                .run(
-                        context -> {
-                            assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(GeminiChatModel.class);
-                        });
+    @Configuration(proxyBeanMethods = false)
+    static class CustomAgentConfiguration {
+
+        @Bean
+        Model customModel() {
+            return new TestModel();
+        }
+
+        @Bean
+        Memory customMemory() {
+            return new InMemoryMemory();
+        }
+
+        @Bean
+        Toolkit customToolkit() {
+            return new Toolkit();
+        }
+
+        @Bean
+        ReActAgent customAgent(Model model, Toolkit toolkit) {
+            return ReActAgent.builder().name("customAgent").model(model).toolkit(toolkit).build();
+        }
     }
 
-    @Test
-    void shouldCreateAnthropicModelWhenProviderIsAnthropic() {
-        new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                .withPropertyValues(
-                        "agentscope.agent.enabled=true",
-                        "agentscope.model.provider=anthropic",
-                        "agentscope.anthropic.api-key=test-anthropic-key",
-                        "agentscope.anthropic.model-name=claude-sonnet-4.5")
-                .run(
-                        context -> {
-                            assertThat(context).hasSingleBean(Model.class);
-                            assertThat(context.getBean(Model.class))
-                                    .isInstanceOf(AnthropicChatModel.class);
-                        });
-    }
-
-    private static final class HidingClassLoader extends ClassLoader {
-        private final String hiddenClassName;
-
-        private HidingClassLoader(ClassLoader parent, String hiddenClassName) {
-            super(parent);
-            this.hiddenClassName = hiddenClassName;
+    private static final class TestModel implements Model {
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.empty();
         }
 
         @Override
-        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            if (hiddenClassName.equals(name)) {
-                throw new ClassNotFoundException(name);
-            }
-            return super.loadClass(name, resolve);
+        public String getModelName() {
+            return "custom-model";
         }
     }
 }

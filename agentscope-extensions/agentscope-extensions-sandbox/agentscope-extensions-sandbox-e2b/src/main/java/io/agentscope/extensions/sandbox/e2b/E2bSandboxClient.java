@@ -67,6 +67,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
         state.setPersistenceMode(merged.getPersistenceMode());
+        state.setCodec(merged.getCodec());
         state.setSandboxDomain(merged.getDomain());
 
         if (snapshotSpec != null) {
@@ -83,7 +84,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        return new E2bSandbox(e2b, merge(null));
+        E2bSandboxClientOptions resumed = merge(null);
+        resumed.setCodec(e2b.getCodec());
+        return new E2bSandbox(e2b, resumed);
     }
 
     @Override
@@ -132,6 +135,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getPersistenceMode() != null) {
             o.setPersistenceMode(call.getPersistenceMode());
         }
+        if (call.getCodec() != null) {
+            o.setCodec(call.getCodec());
+        }
         if (call.getTemplateId() != null) {
             o.setTemplateId(call.getTemplateId());
         }
@@ -157,6 +163,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setSandboxTimeoutSeconds(src.getSandboxTimeoutSeconds());
         o.setRunUser(src.getRunUser());
         o.setPersistenceMode(src.getPersistenceMode());
+        o.setCodec(src.getCodec());
         o.setHttpClient(src.getHttpClient());
         o.setConnectTimeoutSeconds(src.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());

@@ -21,14 +21,14 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ModelRegistry;
 
 /**
- * ModelRegistryExample - Demonstrates how the framework's built-in model providers let you
+ * ModelRegistryExample - Demonstrates how extension model providers let you
  * create an agent by supplying only a model-ID string.
  *
  * <p>AgentScope pre-registers factory patterns for every supported provider. You do not need
  * to construct model objects yourself — just pass a {@code "provider:model-name"} string to
  * {@link ReActAgent.Builder#model(String)} and the framework resolves it automatically.
  *
- * <p><b>Built-in provider strings and required environment variables:</b>
+ * <p><b>Provider strings and required environment variables:</b>
  * <pre>
  *   "openai:gpt-4o"               OPENAI_API_KEY
  *   "dashscope:qwen-max"          DASHSCOPE_API_KEY
@@ -66,7 +66,7 @@ public class ModelRegistryExample {
         // ModelRegistry.canResolve() probes the registry without actually creating a model.
         // Use it at startup to give users an early, clear error message.
         System.out.println(
-                "Available built-in providers (requires corresponding API key env var):");
+                "Available provider extensions (requires corresponding module and env var):");
         System.out.println(
                 "  openai:gpt-4o               → " + ModelRegistry.canResolve("openai:gpt-4o"));
         System.out.println(

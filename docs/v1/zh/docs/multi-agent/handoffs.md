@@ -108,7 +108,7 @@ public String transferToSales(
 import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
 // 销售智能体：具备 transfer_to_support

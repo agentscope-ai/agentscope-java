@@ -16,8 +16,12 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.model.spi.ModelProvider;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -32,12 +36,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Registry for resolving {@link Model} instances from string identifiers (named instances or
  * {@code provider:model} patterns). User-registered factories take precedence over providers
- * loaded from the {@link ModelProvider} SPI and built-in providers.
+ * loaded from the {@link ModelProvider} SPI.
  *
- * <p>Provider extension modules read API keys from their own standard environment variables when
- * auto-creating models. Remaining built-in providers read {@code DASHSCOPE_API_KEY}, {@code
- * GEMINI_API_KEY}, {@code ANTHROPIC_API_KEY} (optional for Anthropic SDK), {@code OLLAMA_BASE_URL}
- * (optional, defaults to {@code http://localhost:11434}).
+ * <p>Provider extension modules read API keys from their own standard environment
+ * variables when auto-creating models.
  */
 public final class ModelRegistry {
 
@@ -46,59 +48,9 @@ public final class ModelRegistry {
     private static final ConcurrentHashMap<String, Model> namedModels = new ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<ProviderEntry> userFactories =
             new CopyOnWriteArrayList<>();
-    private static final List<ProviderEntry> builtinFactories = new ArrayList<>();
-    private static final ConcurrentHashMap<String, Model> resolvedCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ModelCacheKey, Model> resolvedCache =
+            new ConcurrentHashMap<>();
     private static volatile List<ModelProvider> serviceProviders;
-
-    static {
-        registerBuiltin(
-                "dashscope:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("dashscope:".length());
-                    String apiKey = requireApiKey("DASHSCOPE_API_KEY", modelId);
-                    return DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
-                                    true)
-                            .build();
-                });
-        registerBuiltin(
-                "qwen.+",
-                modelId -> {
-                    String apiKey = requireApiKey("DASHSCOPE_API_KEY", modelId);
-                    return DashScopeChatModel.builder().apiKey(apiKey).modelName(modelId).stream(
-                                    true)
-                            .build();
-                });
-        registerBuiltin(
-                "anthropic:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("anthropic:".length());
-                    String apiKey = env("ANTHROPIC_API_KEY");
-                    return AnthropicChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
-                                    true)
-                            .build();
-                });
-        registerBuiltin(
-                "gemini:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("gemini:".length());
-                    String apiKey = requireApiKey("GEMINI_API_KEY", modelId);
-                    return GeminiChatModel.builder()
-                            .apiKey(apiKey)
-                            .modelName(modelName)
-                            .streamEnabled(true)
-                            .build();
-                });
-        registerBuiltin(
-                "ollama:(.+)",
-                modelId -> {
-                    String modelName = modelId.substring("ollama:".length());
-                    String baseUrl = env("OLLAMA_BASE_URL");
-                    if (baseUrl == null || baseUrl.isBlank()) {
-                        baseUrl = "http://localhost:11434";
-                    }
-                    return OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl).build();
-                });
-    }
 
     private ModelRegistry() {}
 
@@ -115,7 +67,7 @@ public final class ModelRegistry {
     /**
      * Registers a factory matched against the full {@code modelId} string using {@link
      * Pattern#matches}. Newly registered factories are consulted before older user registrations
-     * and before built-in providers.
+     * and before SPI providers.
      *
      * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
      *     full model id
@@ -124,19 +76,48 @@ public final class ModelRegistry {
     public static void registerFactory(String modelNameRegex, ModelFactory factory) {
         Objects.requireNonNull(modelNameRegex, "modelNameRegex");
         Objects.requireNonNull(factory, "factory");
+        registerFactory(modelNameRegex, (modelId, context) -> factory.create(modelId));
+    }
+
+    /**
+     * Registers a context-aware factory matched against the full {@code modelId} string using
+     * {@link Pattern#matches}. Newly registered factories are consulted before older user
+     * registrations and before SPI providers.
+     *
+     * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
+     *     full model id
+     * @param factory creates a {@link Model} from the full model id and creation context
+     */
+    public static void registerFactory(String modelNameRegex, ContextModelFactory factory) {
+        Objects.requireNonNull(modelNameRegex, "modelNameRegex");
+        Objects.requireNonNull(factory, "factory");
         Pattern pattern = Pattern.compile(modelNameRegex);
         userFactories.add(0, new ProviderEntry(pattern, factory));
     }
 
     /**
      * Resolves a {@link Model} for the given id: named registration first, then cached
-     * factory-created instance, then user factories (newest first), then SPI providers, then
-     * built-in factories.
+     * factory-created instance, then user factories (newest first), then SPI providers.
      *
      * @throws IllegalArgumentException if the id cannot be resolved or creation fails
      */
     public static Model resolve(String modelId) {
+        return resolve(modelId, ModelCreationContext.empty());
+    }
+
+    /**
+     * Resolves a {@link Model} for the given id and creation context: named registration first,
+     * then cache when enabled, then user factories (newest first), then SPI providers.
+     *
+     * <p>Non-empty context resolution is not cached unless the context uses
+     * {@link CachePolicy#ENABLED}.
+     *
+     * @throws IllegalArgumentException if the id cannot be resolved, the context cannot be safely
+     * cached, or creation fails
+     */
+    public static Model resolve(String modelId, ModelCreationContext context) {
         Objects.requireNonNull(modelId, "modelId");
+        Objects.requireNonNull(context, "context");
         String trimmed = modelId.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalArgumentException("modelId must not be blank");
@@ -147,37 +128,37 @@ public final class ModelRegistry {
             return named;
         }
 
-        Model cached = resolvedCache.get(trimmed);
-        if (cached != null) {
-            return cached;
+        ModelCacheKey cacheKey = cacheKey(trimmed, context);
+        if (cacheKey != null) {
+            Model cached = resolvedCache.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
         }
 
         ProviderEntry entry = findMatchingUserEntry(trimmed);
-        ModelProvider provider = entry == null ? findServiceProvider(trimmed) : null;
-        ProviderEntry builtinEntry =
-                entry == null && provider == null ? findMatchingBuiltinEntry(trimmed) : null;
-        if (entry == null && provider == null && builtinEntry == null) {
+        ModelProvider provider = entry == null ? findServiceProvider(trimmed, context) : null;
+        if (entry == null && provider == null) {
             throw new IllegalArgumentException(buildNotFoundMessage(trimmed));
         }
 
         try {
             Model created;
             if (entry != null) {
-                created = entry.factory().create(trimmed);
+                created = entry.factory().create(trimmed, context);
                 Objects.requireNonNull(created, "ModelFactory returned null for: " + trimmed);
-            } else if (provider != null) {
-                created = provider.create(trimmed);
+            } else {
+                created = provider.create(trimmed, context);
                 Objects.requireNonNull(
                         created,
                         "ModelProvider "
                                 + provider.providerId()
                                 + " returned null for: "
                                 + trimmed);
-            } else {
-                created = builtinEntry.factory().create(trimmed);
-                Objects.requireNonNull(created, "ModelFactory returned null for: " + trimmed);
             }
-            resolvedCache.put(trimmed, created);
+            if (cacheKey != null) {
+                resolvedCache.put(cacheKey, created);
+            }
             return created;
         } catch (RuntimeException e) {
             throw new IllegalArgumentException(
@@ -186,10 +167,19 @@ public final class ModelRegistry {
     }
 
     /**
-     * Returns {@code true} if {@link #resolve(String)} can find a named model or a matching factory
-     * pattern (without creating an instance).
+     * Returns {@code true} if {@link #resolve(String)} can find a named model or a matching factory/
+     * provider pattern (without creating an instance).
      */
     public static boolean canResolve(String modelId) {
+        return canResolve(modelId, ModelCreationContext.empty());
+    }
+
+    /**
+     * Returns {@code true} if {@link #resolve(String, ModelCreationContext)} can find a named model
+     * or a matching factory/provider pattern (without creating an instance).
+     */
+    public static boolean canResolve(String modelId, ModelCreationContext context) {
+        Objects.requireNonNull(context, "context");
         if (modelId == null) {
             return false;
         }
@@ -201,13 +191,12 @@ public final class ModelRegistry {
             return true;
         }
         return findMatchingUserEntry(trimmed) != null
-                || findServiceProvider(trimmed) != null
-                || findMatchingBuiltinEntry(trimmed) != null;
+                || findServiceProvider(trimmed, context) != null;
     }
 
     /**
-     * Clears named models, user-registered factories, and the factory-resolution cache. Built-in
-     * provider rules are preserved. Intended for tests.
+     * Clears named models, user-registered factories, the factory-resolution cache,
+     * and cached SPI providers. Intended for tests.
      */
     public static void reset() {
         namedModels.clear();
@@ -229,11 +218,14 @@ public final class ModelRegistry {
         Model create(String modelId);
     }
 
-    private record ProviderEntry(Pattern pattern, ModelFactory factory) {}
-
-    private static void registerBuiltin(String regex, ModelFactory factory) {
-        builtinFactories.add(new ProviderEntry(Pattern.compile(regex), factory));
+    @FunctionalInterface
+    public interface ContextModelFactory {
+        Model create(String modelId, ModelCreationContext context);
     }
+
+    private record ProviderEntry(Pattern pattern, ContextModelFactory factory) {}
+
+    private record ModelCacheKey(String modelId, String cacheIdentity) {}
 
     private static ProviderEntry findMatchingUserEntry(String modelId) {
         for (ProviderEntry e : userFactories) {
@@ -244,21 +236,12 @@ public final class ModelRegistry {
         return null;
     }
 
-    private static ProviderEntry findMatchingBuiltinEntry(String modelId) {
-        for (ProviderEntry e : builtinFactories) {
-            if (e.pattern().matcher(modelId).matches()) {
-                return e;
-            }
-        }
-        return null;
-    }
-
-    private static ModelProvider findServiceProvider(String modelId) {
+    private static ModelProvider findServiceProvider(String modelId, ModelCreationContext context) {
         ModelProvider matched = null;
         for (ModelProvider provider : loadServiceProviders()) {
             boolean supports;
             try {
-                supports = provider.supports(modelId);
+                supports = provider.supports(modelId, context);
             } catch (RuntimeException | LinkageError e) {
                 logger.warn(
                         "Skipping ModelProvider {} because supports(\"{}\") failed",
@@ -282,6 +265,76 @@ public final class ModelRegistry {
             matched = provider;
         }
         return matched;
+    }
+
+    /**
+     * Builds the registry cache key for a model resolution.
+     *
+     * <p>The rules intentionally avoid treating arbitrary context objects as comparable:
+     *
+     * <ul>
+     *   <li>Empty contexts keep the legacy behavior and cache only by {@code modelId}.
+     *   <li>Non-empty contexts are not cached unless {@link CachePolicy#ENABLED} is selected.
+     *   <li>An explicit {@code cacheId} is the authoritative identity for complex contexts.
+     *   <li>Without {@code cacheId}, only standard simple fields are fingerprinted. Options and
+     *       components are opaque and must not rely on deep hashing or object {@code hashCode()}.
+     * </ul>
+     */
+    private static ModelCacheKey cacheKey(String modelId, ModelCreationContext context) {
+        if (context.isEmpty()) {
+            return new ModelCacheKey(modelId, "legacy");
+        }
+        if (context.getCachePolicy() == CachePolicy.DISABLED
+                || context.getCachePolicy() == CachePolicy.DEFAULT) {
+            return null;
+        }
+
+        String cacheId = context.getCacheId();
+        if (cacheId != null) {
+            return new ModelCacheKey(modelId, "explicit:" + cacheId);
+        }
+        if (context.hasOpaqueCacheInputs()) {
+            throw new IllegalArgumentException(
+                    "ModelCreationContext cachePolicy(ENABLED) with options or components "
+                            + "requires an explicit cacheId");
+        }
+        return new ModelCacheKey(modelId, "standard:" + standardContextFingerprint(context));
+    }
+
+    /**
+     * Creates a cache fingerprint from provider-neutral simple fields only.
+     *
+     * <p>API keys are never written to the key in plain text. The digest is not intended as a
+     * security boundary; it only prevents accidental secret exposure in heap dumps, logs, and test
+     * diagnostics.
+     */
+    private static String standardContextFingerprint(ModelCreationContext context) {
+        return "apiKeySha256="
+                + sha256Hex(context.getApiKey())
+                + "|baseUrl="
+                + valueOf(context.getBaseUrl())
+                + "|endpointPath="
+                + valueOf(context.getEndpointPath())
+                + "|stream="
+                + valueOf(context.getStream())
+                + "|enableThinking="
+                + valueOf(context.getEnableThinking());
+    }
+
+    private static String valueOf(Object value) {
+        return value == null ? "<null>" : value.toString();
+    }
+
+    private static String sha256Hex(String value) {
+        if (value == null) {
+            return "<null>";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     private static List<ModelProvider> loadServiceProviders() {
@@ -346,22 +399,6 @@ public final class ModelRegistry {
         return false;
     }
 
-    private static String env(String key) {
-        return System.getenv(key);
-    }
-
-    private static String requireApiKey(String envKey, String modelId) {
-        String v = env(envKey);
-        if (v == null || v.isBlank()) {
-            throw new IllegalStateException(
-                    "Environment variable "
-                            + envKey
-                            + " is required to auto-create model: "
-                            + modelId);
-        }
-        return v;
-    }
-
     private static String buildNotFoundMessage(String modelId) {
         return "Cannot resolve model: \""
                 + modelId
@@ -369,14 +406,23 @@ public final class ModelRegistry {
                 + "  - No named model registered with this name. Use ModelRegistry.register(\""
                 + modelId
                 + "\", instance).\n"
-                + "  - No matching provider factory or extension SPI provider. Remaining built-in"
-                + " providers: dashscope, gemini, anthropic, ollama.\n"
+                + "  - No matching provider factory or extension SPI provider.\n"
                 + "    Format: \"<provider>:<model-name>\", e.g. \"openai:gpt-5.5\","
-                + " \"dashscope:qwen-max\", \"dashscope:qwen3.7-plus\".\n"
+                + " \"gemini:gemini-2.0-flash\", \"dashscope:qwen-max\","
+                + " \"dashscope:qwen3.7-plus\".\n"
                 + "  - OpenAI models require the agentscope-extensions-model-openai module on the"
                 + " classpath and OPENAI_API_KEY.\n"
+                + "  - Gemini models require the agentscope-extensions-model-gemini module on the"
+                + " classpath and GEMINI_API_KEY.\n"
+                + "  - Anthropic models require the agentscope-extensions-model-anthropic module"
+                + " on the classpath.\n"
+                + "  - DashScope models require the agentscope-extensions-model-dashscope module"
+                + " on the classpath and DASHSCOPE_API_KEY.\n"
                 + "  - DashScope short form: \"qwen*\" model ids (e.g. \"qwen-max\","
-                + " \"qwen3.7-plus\") require DASHSCOPE_API_KEY.\n"
+                + " \"qwen3.7-plus\") are provided by agentscope-extensions-model-dashscope.\n"
+                + "  - Ollama models require the agentscope-extensions-model-ollama module on the"
+                + " classpath. OLLAMA_BASE_URL is optional and defaults to"
+                + " http://localhost:11434.\n"
                 + "  - Missing API key environment variable (e.g., DASHSCOPE_API_KEY).";
     }
 }

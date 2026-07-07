@@ -72,7 +72,8 @@ public final class KimiCredential extends CredentialBase {
     public Class<? extends ChatModelBase> getChatModelClass() {
         throw new UnsupportedOperationException(
                 "KimiChatModel is not implemented in agentscope-core yet."
-                        + " Use the OpenAIChatModel against the Kimi base URL instead.");
+                        + " Use io.agentscope.extensions.model.openai.OpenAIChatModel against the"
+                        + " Kimi base URL instead.");
     }
 
     @Override

@@ -188,24 +188,24 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         verify(slowSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
         verify(fastSpy, never()).interrupt(any(RuntimeContext.class));
 
-        // ---- proof #2: wait for slow_tool to finish its 4s sleep ----
-        // mono.block() returns ~3s (after timeout + fast retry), but slow_tool
-        // is still running on the old agent's detached .subscribe() thread.
-        Thread.sleep(3_000);
+        // ---- proof #2: cancellation propagates to the inner tool execution ----
+        // Since sink.onCancel(lifecycleDisposable) properly disposes the inner
+        // subscription, slow_tool's Thread.sleep is interrupted before it can
+        // write to the file. Wait briefly to confirm nothing was written.
+        Thread.sleep(2_000);
 
-        // ---- proof #3: slow_tool wrote exactly 1 line then stopped ----
+        // ---- proof #3: slow_tool wrote 0 lines (properly cancelled) ----
         long fileLines = Files.readAllLines(tmpFile).size();
         assertEquals(
-                1, fileLines, "Expected exactly 1 tool invocation, got %d".formatted(fileLines));
-
-        // ---- proof #4: wait 3 more seconds → no new lines (loop is dead) ----
-        Thread.sleep(3_000);
-        long fileLinesAfter = Files.readAllLines(tmpFile).size();
-        assertEquals(
+                0,
                 fileLines,
-                fileLinesAfter,
-                "File should be frozen at %d lines. Agent loop did not restart."
+                "Expected 0 tool invocations (cancelled before write), got %d"
                         .formatted(fileLines));
+
+        // ---- proof #4: wait more → still no lines (loop is dead) ----
+        Thread.sleep(2_000);
+        long fileLinesAfter = Files.readAllLines(tmpFile).size();
+        assertEquals(0, fileLinesAfter, "File should remain empty. Agent loop did not restart.");
 
         // ---- proof #5: MockModel was called exactly once ----
         // If interrupt didn't work, the agent loop would call reasoning() again

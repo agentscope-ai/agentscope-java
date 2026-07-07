@@ -108,7 +108,7 @@ Create a sales and a support agent as `AgentScopeAgent`, each with its own ReAct
 import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
 // Sales agent: has transfer_to_support

@@ -76,8 +76,14 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 "for f in "
                         + escapedPath
                         + "/*; do "
-                        + "  if [ -d \"$f\" ]; then echo \"DIR:$f\"; "
-                        + "  elif [ -f \"$f\" ]; then echo \"FILE:$f\"; fi; "
+                        + "  if [ -d \"$f\" ]; then "
+                        + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
+                        + "    printf 'DIR:%s\\t%s\\n' \"$f\" \"$mtime\"; "
+                        + "  elif [ -f \"$f\" ]; then "
+                        + "    size=$(stat -c '%s' \"$f\" 2>/dev/null || echo 0); "
+                        + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
+                        + "    printf 'FILE:%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
+                        + "  fi; "
                         + "done 2>/dev/null";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
@@ -86,9 +92,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (result.output() != null && !result.output().isBlank()) {
             for (String line : result.output().strip().split("\n")) {
                 if (line.startsWith("DIR:")) {
-                    entries.add(FileInfo.ofDir(line.substring(4), ""));
+                    String payload = line.substring(4);
+                    String[] parts = payload.split("\t", 2);
+                    String dirPath = parts[0];
+                    long mtimeMs = parts.length > 1 ? parseEpochSeconds(parts[1]) : 0L;
+                    entries.add(FileInfo.ofDir(dirPath, mtimeMs));
                 } else if (line.startsWith("FILE:")) {
-                    entries.add(FileInfo.ofFile(line.substring(5), 0, ""));
+                    String payload = line.substring(5);
+                    String[] parts = payload.split("\t", 3);
+                    String filePath = parts[0];
+                    long size = parts.length > 1 ? parseLongSafe(parts[1]) : 0L;
+                    long mtimeMs = parts.length > 2 ? parseEpochSeconds(parts[2]) : 0L;
+                    entries.add(FileInfo.ofFile(filePath, size, mtimeMs));
                 }
             }
         }
@@ -322,7 +337,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedPattern = FilesystemUtils.shellQuote(stripRecursivePrefix(pattern));
 
         String cmd =
-                "find " + escapedPath + " -type f -name " + escapedPattern + " 2>/dev/null | sort";
+                "find "
+                        + escapedPath
+                        + " -type f -name "
+                        + escapedPattern
+                        + " 2>/dev/null | sort | while IFS= read -r f; do "
+                        + "  size=$(stat -c '%s' \"$f\" 2>/dev/null || echo 0); "
+                        + "  mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
+                        + "  printf '%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
+                        + "done";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
@@ -333,7 +356,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
         List<FileInfo> entries = new ArrayList<>();
         for (String line : output.split("\n")) {
-            if (!line.isBlank()) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] parts = line.split("\t", 3);
+            if (parts.length >= 3) {
+                String filePath = parts[0].trim();
+                long size = parseLongSafe(parts[1]);
+                long mtimeMs = parseEpochSeconds(parts[2]);
+                entries.add(FileInfo.ofFile(filePath, size, mtimeMs));
+            } else {
                 entries.add(FileInfo.ofFile(line.trim(), 0, ""));
             }
         }
@@ -392,6 +424,19 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             return pattern.substring(3);
         }
         return pattern;
+    }
+
+    private static long parseLongSafe(String s) {
+        try {
+            return Long.parseLong(s.trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private static long parseEpochSeconds(String s) {
+        long epochSec = parseLongSafe(s);
+        return epochSec * 1000;
     }
 
     private static String jsonEscape(String s) {

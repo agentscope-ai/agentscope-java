@@ -128,7 +128,7 @@ if (msg.hasContentBlocks(ToolResultBlock.class)) {
 
 ### 事件生命周期
 
-每个事件都携带 `getReplyId()`，将其关联到正在构建的消息。在一次回复中，`getBlockId()` 或 `getToolCallId()` 标识事件所属的内容块。事件遵循 **start → delta → end** 模式：
+每个事件都携带 `getReplyId()`，将其关联到正在构建的消息。在一次回复中，`getBlockId()` 或 `getToolCallId()` 用作事件关联键，表示事件属于同一个内容块生命周期。事件遵循 **start → delta → end** 模式：
 
 ```{mermaid}
 sequenceDiagram
@@ -175,7 +175,7 @@ sequenceDiagram
     Agent->>Client: AgentEndEvent
 ```
 
-同一次回复中的所有事件共享相同的 `replyId`。在回复内部，用 `blockId` 关联文本/思考/数据块事件，用 `toolCallId` 关联工具调用和工具结果事件。
+同一次回复中的所有事件共享相同的 `replyId`。在回复内部，用 `blockId` 关联文本/思考/数据块事件，用 `toolCallId` 关联工具调用和工具结果事件。`blockId` 是 `replyId` 作用域内的关联键，不要求是全局唯一的随机 ID；当某类内容块在一次回复中最多出现一个生命周期时，实现可以使用稳定的类型标识（如文本块的固定标识）作为 `blockId`。
 
 ### 事件类型
 
@@ -221,14 +221,14 @@ sequenceDiagram
     | 方法 | 类型 | 说明 |
     |------|------|------|
     | `getReplyId()` | `String` | 回复消息 ID |
-    | `getBlockId()` | `String` | 文本块唯一标识符 |
+    | `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
 
     **TextBlockDeltaEvent** — 增量文本内容到达。
 
     | 方法 | 类型 | 说明 |
     |------|------|------|
     | `getReplyId()` | `String` | 回复消息 ID |
-    | `getBlockId()` | `String` | 文本块唯一标识符 |
+    | `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
     | `getDelta()` | `String` | 增量文本内容 |
 
     **TextBlockEndEvent** — 文本块完成。
@@ -236,11 +236,11 @@ sequenceDiagram
     | 方法 | 类型 | 说明 |
     |------|------|------|
     | `getReplyId()` | `String` | 回复消息 ID |
-    | `getBlockId()` | `String` | 文本块唯一标识符 |
+    | `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
 :::
 
   :::{dropdown} 思考流式事件
-**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** —— 与文本流式事件结构对应，仅用于模型的思维链内容。
+**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** —— 与文本流式事件结构对应，仅用于模型的思维链内容；`blockId` 同样表示当前回复中的关联键。
 :::
 
   :::{dropdown} 数据流式事件

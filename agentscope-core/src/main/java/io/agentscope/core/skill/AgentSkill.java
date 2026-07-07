@@ -63,10 +63,8 @@ import java.util.Set;
  *
  * @see io.agentscope.core.skill.util.SkillUtil
  * @see io.agentscope.core.skill.util.MarkdownSkillParser
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
+ * Manage markdown skill catalogs in application code.
  */
-@Deprecated(since = "2.0.0")
 public class AgentSkill {
     private final Map<String, Object> metadata;
     private final String skillContent;

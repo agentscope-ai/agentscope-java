@@ -106,7 +106,7 @@ Items in this section compile and run on 2.0, but each has been marked for remov
 
 - `SkillBox` (the class) and `Builder.skillBox(SkillBox)` are both `@Deprecated(forRemoval = true, since = "2.0.0")`.
 - Recommended path: register one or more `AgentSkillRepository` implementations (built-ins: `ClasspathSkillRepository`, `FileSystemSkillRepository`) via `Builder.skillRepository(...)` / `.skillRepositories(...)`. When at least one repository is registered, `DynamicSkillMiddleware` is auto-installed and rebuilds the skill prompt on every `call()`.
-- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`. To disable the auto-installed middleware (so an external orchestrator like `HarnessAgent` can attach its own), use `Builder.dynamicSkillsEnabled(false)`.
+- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`.
 
 Detail → [Skill](harness/skill.md)
 

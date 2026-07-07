@@ -56,6 +56,18 @@
             <artifactId>agentscope-extensions-model-openai</artifactId>
         </dependency>
 
+        <!-- Anthropic model implementation -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-anthropic</artifactId>
+        </dependency>
+
+        <!-- DashScope model implementation -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+
         <!-- IM channel implementations -->
         <dependency>
             <groupId>io.agentscope</groupId>

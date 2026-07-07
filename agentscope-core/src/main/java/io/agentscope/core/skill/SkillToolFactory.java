@@ -38,10 +38,7 @@ import reactor.core.publisher.Mono;
 /**
  * Factory for creating skill access tools that allow agents to dynamically load and access skills.
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
-@Deprecated(since = "2.0.0")
 class SkillToolFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);

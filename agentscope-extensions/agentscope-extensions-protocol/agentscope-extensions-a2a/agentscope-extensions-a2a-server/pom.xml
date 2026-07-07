@@ -52,6 +52,11 @@
             <groupId>io.github.a2asdk</groupId>
             <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>
