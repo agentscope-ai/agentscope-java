@@ -4251,7 +4251,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
          *     should prefer {@link #skillRepository(AgentSkillRepository)}.
          */
-        @Deprecated(forRemoval = true, since = "2.0.0")
+        @Deprecated(since = "2.0.0")
         public Builder skillBox(SkillBox skillBox) {
             this.skillBox = skillBox;
             return this;

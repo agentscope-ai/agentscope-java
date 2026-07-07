@@ -64,10 +64,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * String markdown = MarkdownSkillParser.generate(metadata, content);
  * }</pre>
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
-@Deprecated(since = "2.0.0")
 public class MarkdownSkillParser {
 
     private static final int FRONTMATTER_CODE_POINT_LIMIT = 16_384;

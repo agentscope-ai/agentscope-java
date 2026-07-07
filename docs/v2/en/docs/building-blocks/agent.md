@@ -591,7 +591,6 @@ Skills are hot-loadable Markdown prompt modules that the LLM activates on demand
 ```java
 ReActAgent.builder()
         .skillRepository(new MysqlSkillRepository(dataSource))
-        .dynamicSkillsEnabled(true)     // allow LLM to load new skills at runtime
         .build();
 ```
 
