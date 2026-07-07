@@ -562,6 +562,24 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
+    @DisplayName("Should only delete SKILL.md for root-level skill, keep other files")
+    void testDeleteSkill_RootLevelSkill() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skill-delete");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-del-skill\ndescription: Root Delete\n---\nContent",
+                StandardCharsets.UTF_8);
+        Files.writeString(rootSkillDir.resolve("extra.txt"), "important data");
+
+        assertTrue(SkillFileSystemHelper.deleteSkill(rootSkillDir, "root-del-skill"));
+        assertFalse(Files.exists(rootSkillDir.resolve("SKILL.md")));
+        assertTrue(Files.exists(rootSkillDir.resolve("extra.txt")));
+        assertTrue(Files.exists(rootSkillDir));
+        assertFalse(SkillFileSystemHelper.skillExists(rootSkillDir, "root-del-skill"));
+    }
+
+    @Test
     @DisplayName("Should throw when root skill name does not match requested name")
     void testLoadSkill_RootLevelSkillNameMismatch() throws IOException {
         Path rootSkillDir = tempDir.resolve("root-skill-dir5");
