@@ -552,7 +552,7 @@ class MetaToolFactoryTest {
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
 
         Map<String, Object> input = new HashMap<>();
-        input.put("to_activate", List.of("code_tools"));
+        input.put("to_activate", List.of("code_tools_skill_tools"));
 
         // Act
         ToolResultBlock result = callTool(metaTool, input);

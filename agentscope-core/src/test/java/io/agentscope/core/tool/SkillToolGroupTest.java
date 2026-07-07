@@ -155,11 +155,22 @@ class SkillToolGroupTest {
         ToolGroupManager manager = new ToolGroupManager();
         manager.createSkillToolGroup("code_tools", "Code execution tools", false, "coding");
 
-        ToolGroup retrieved = manager.getToolGroup("code_tools");
+        ToolGroup retrieved = manager.getToolGroup("code_tools_skill_tools");
         assertNotNull(retrieved);
         assertInstanceOf(SkillToolGroup.class, retrieved);
         assertEquals("coding", ((SkillToolGroup) retrieved).getActivateOnSkill());
         assertFalse(retrieved.isActive());
+    }
+
+    @Test
+    void testCreateSkillToolGroupIdempotentSuffix() {
+        ToolGroupManager manager = new ToolGroupManager();
+        manager.createSkillToolGroup(
+                "code_tools_skill_tools", "Code execution tools", false, "coding");
+
+        ToolGroup retrieved = manager.getToolGroup("code_tools_skill_tools");
+        assertNotNull(retrieved);
+        assertEquals("coding", ((SkillToolGroup) retrieved).getActivateOnSkill());
     }
 
     @Test
@@ -170,7 +181,7 @@ class SkillToolGroupTest {
         ToolGroupManager target = new ToolGroupManager();
         source.copyTo(target);
 
-        ToolGroup copied = target.getToolGroup("code_tools");
+        ToolGroup copied = target.getToolGroup("code_tools_skill_tools");
         assertNotNull(copied);
         assertInstanceOf(SkillToolGroup.class, copied);
         assertEquals("coding", ((SkillToolGroup) copied).getActivateOnSkill());
@@ -182,7 +193,7 @@ class SkillToolGroupTest {
         ToolGroupManager manager = new ToolGroupManager();
         manager.createSkillToolGroup("skill_tools", "desc", false, "my_skill");
 
-        assertTrue(manager.getMetaGroupNames().contains("skill_tools"));
+        assertTrue(manager.getMetaGroupNames().contains("skill_tools_skill_tools"));
     }
 
     private static int countOccurrences(String text, String substring) {

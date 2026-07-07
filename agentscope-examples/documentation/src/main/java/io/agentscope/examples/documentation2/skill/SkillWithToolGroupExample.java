@@ -43,9 +43,9 @@ import java.nio.file.Paths;
  *
  * <p><b>Pattern:</b>
  * <pre>
- *   toolkit.createSkillToolGroup("analysis-tools", "Data analysis tools", false, "data-analysis");
- *   toolkit.registration().tool(new AnalysisTools()).group("analysis-tools").apply();
- *   // Agent loads the "data-analysis" SKILL.md → "analysis-tools" group becomes active
+ *   toolkit.createSkillToolGroup("data-analysis", "Data analysis tools", false, "data-analysis");
+ *   toolkit.registration().tool(new AnalysisTools()).group("data-analysis_skill_tools").apply();
+ *   // Agent loads the "data-analysis" SKILL.md → "data-analysis_skill_tools" group becomes active
  * </pre>
  *
  * <p><b>Skill file structure (SKILLS_DIR/data-analysis/SKILL.md):</b>
@@ -81,8 +81,9 @@ public class SkillWithToolGroupExample {
 
     /**
      * Name of the tool group bound to the skill.
+     * Must match the skill name so that automatic activation works.
      */
-    private static final String TOOL_GROUP = "skill-tools";
+    private static final String TOOL_GROUP = "data-analysis";
 
     /**
      * Runs the skill-with-tool-group example.
@@ -129,7 +130,9 @@ public class SkillWithToolGroupExample {
                 ACTIVATING_SKILL);
 
         // ── 2. Register tools into the skill-bound group ──────────────────────────────
-        toolkit.registration().tool(new DataTools()).group(TOOL_GROUP).apply();
+        // createSkillToolGroup appends "_skill_tools" internally, so the registered
+        // internal group name is "data-analysis_skill_tools" rather than "data-analysis".
+        toolkit.registration().tool(new DataTools()).group(TOOL_GROUP + "_skill_tools").apply();
 
         // ── 3. Register a plain tool (always active, no group) ────────────────────────
         toolkit.registerTool(new InfoTool());

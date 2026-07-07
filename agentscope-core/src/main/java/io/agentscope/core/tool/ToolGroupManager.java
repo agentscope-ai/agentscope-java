@@ -33,6 +33,9 @@ class ToolGroupManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolGroupManager.class);
 
+    /** Suffix appended to skill-bound tool group names for internal lookup. */
+    public static final String SKILL_TOOL_GROUP_SUFFIX = "_skill_tools";
+
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
     private volatile List<String> activeGroups = new CopyOnWriteArrayList<>();
@@ -120,7 +123,13 @@ class ToolGroupManager {
     /**
      * Create a {@link SkillToolGroup} bound to a specific skill.
      *
-     * @param groupName Name of the tool group
+     * <p>The provided {@code groupName} is automatically suffixed with
+     * {@value #SKILL_TOOL_GROUP_SUFFIX} so that it matches the name produced by
+     * {@code RegisteredSkill.getToolsGroupName()}. Callers should pass the bare
+     * skill-related name (e.g. {@code "data-analysis"}) without appending the
+     * suffix themselves.
+     *
+     * @param groupName Name of the tool group (without the {@code _skill_tools} suffix)
      * @param description Description of the tool group
      * @param active Whether the tool group is active by default
      * @param activateOnSkill The skill name that this group is bound to
@@ -128,9 +137,13 @@ class ToolGroupManager {
      */
     public void createSkillToolGroup(
             String groupName, String description, boolean active, String activateOnSkill) {
+        String internalName =
+                groupName.endsWith(SKILL_TOOL_GROUP_SUFFIX)
+                        ? groupName
+                        : groupName + SKILL_TOOL_GROUP_SUFFIX;
         SkillToolGroup group =
                 SkillToolGroup.skillBuilder()
-                        .name(groupName)
+                        .name(internalName)
                         .description(description)
                         .active(active)
                         .activateOnSkill(activateOnSkill)
