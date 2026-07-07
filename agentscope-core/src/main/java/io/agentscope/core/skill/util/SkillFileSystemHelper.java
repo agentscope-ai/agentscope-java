@@ -240,20 +240,35 @@ public final class SkillFileSystemHelper {
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
-                Path skillDir = validateAndResolvePath(baseDir, skillName);
 
-                if (Files.exists(skillDir)) {
-                    if (!force) {
-                        logger.info(
-                                "Skill directory already exists and force=false: {}", skillName);
-                        continue; // Skip to the next skill if force=false
-                    } else {
-                        logger.info("Overwriting existing skill directory: {}", skillName);
-                        deleteDirectory(skillDir);
+                // Determine whether this skill matches a root-level skill directory
+                boolean isRootSkill =
+                        hasSkillFile(baseDir)
+                                && skillName.equals(readSkillName(baseDir).orElse(null));
+
+                Path skillDir;
+                if (isRootSkill) {
+                    skillDir = baseDir.toAbsolutePath().normalize();
+                    Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
+                    if (Files.exists(skillFile) && !force) {
+                        logger.info("Root skill already exists and force=false: {}", skillName);
+                        continue;
                     }
+                } else {
+                    skillDir = validateAndResolvePath(baseDir, skillName);
+                    if (Files.exists(skillDir)) {
+                        if (!force) {
+                            logger.info(
+                                    "Skill directory already exists and force=false: {}",
+                                    skillName);
+                            continue; // Skip to the next skill if force=false
+                        } else {
+                            logger.info("Overwriting existing skill directory: {}", skillName);
+                            deleteDirectory(skillDir);
+                        }
+                    }
+                    Files.createDirectories(skillDir);
                 }
-
-                Files.createDirectories(skillDir);
 
                 String skillMdContent =
                         MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
@@ -266,12 +281,14 @@ public final class SkillFileSystemHelper {
                     Path resourceFile = skillDir.resolve(entry.getKey());
                     Files.createDirectories(resourceFile.getParent());
                     String content = entry.getValue();
-                    if (content != null && content.startsWith("base64:")) {
-                        String base64 = content.substring("base64:".length());
-                        byte[] bytes = Base64.getDecoder().decode(base64);
-                        Files.write(resourceFile, bytes);
-                    } else {
-                        Files.writeString(resourceFile, content, StandardCharsets.UTF_8);
+                    if (content != null) {
+                        if (content.startsWith("base64:")) {
+                            String base64 = content.substring("base64:".length());
+                            byte[] bytes = Base64.getDecoder().decode(base64);
+                            Files.write(resourceFile, bytes);
+                        } else {
+                            Files.writeString(resourceFile, content, StandardCharsets.UTF_8);
+                        }
                     }
                 }
 
