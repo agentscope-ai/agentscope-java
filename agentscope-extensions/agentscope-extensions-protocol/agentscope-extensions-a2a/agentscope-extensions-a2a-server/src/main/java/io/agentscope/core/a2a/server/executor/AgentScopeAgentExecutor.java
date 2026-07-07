@@ -197,13 +197,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             processStreamingOutput(resultFlux, taskUpdater, context);
         } catch (Exception e) {
             log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            taskUpdater.fail(
-                    taskUpdater.newAgentMessage(
-                            List.of(
-                                    new TextPart(
-                                            "Error processing streaming output: "
-                                                    + e.getMessage())),
-                            Map.of()));
+            try {
+                taskUpdater.fail(
+                        taskUpdater.newAgentMessage(
+                                List.of(
+                                        new TextPart(
+                                                "Error processing streaming output: "
+                                                        + e.getMessage())),
+                                Map.of()));
+            } catch (IllegalStateException ignored) {
+                // doOnError already transitioned the task to a terminal state; nothing to do.
+            }
         }
     }
 
