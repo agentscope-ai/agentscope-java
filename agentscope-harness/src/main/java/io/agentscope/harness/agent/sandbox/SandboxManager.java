@@ -140,6 +140,27 @@ public class SandboxManager {
         }
     }
 
+    /**
+     * Releases the sandbox with default behavior (no keepAlive).
+     *
+     * @deprecated Use {@link #release(SandboxAcquireResult, SandboxContext)} to control keepAlive.
+     */
+    @Deprecated
+    public void release(SandboxAcquireResult result) {
+        release(result, null);
+    }
+
+    /**
+     * Releases the sandbox, optionally keeping it alive for reuse across calls.
+     *
+     * <p>When {@link SandboxContext#isKeepAlive()} is {@code true}, only {@link Sandbox#stop()}
+     * (snapshot) is called — the underlying resource (container/Pod) is preserved so subsequent
+     * calls can resume without cold-start latency. Otherwise both stop and shutdown are performed.
+     *
+     * @param result the acquire result holding the sandbox reference
+     * @param sandboxContext context controlling release behavior; may be null (defaults to full
+     *     shutdown)
+     */
     public void release(SandboxAcquireResult result, SandboxContext sandboxContext) {
         if (result == null) {
             return;

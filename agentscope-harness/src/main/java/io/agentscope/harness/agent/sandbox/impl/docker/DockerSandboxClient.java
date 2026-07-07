@@ -49,7 +49,12 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
         this(objectMapper, null);
     }
 
-    // snapshotSpec used in resume() to re-inject snapshot client after deserialization
+    /**
+     * @param objectMapper optional mapper; when null a default mapper is created with harness
+     *     Jackson module registered
+     * @param snapshotSpec used in {@link #resume} to re-inject the snapshot client after
+     *     deserialization. When null, the snapshot field is left as-is (backward-compatible).
+     */
     public DockerSandboxClient(ObjectMapper objectMapper, SandboxSnapshotSpec snapshotSpec) {
         this.objectMapper =
                 objectMapper != null
