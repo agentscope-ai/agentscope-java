@@ -109,7 +109,14 @@ class SkillRuntimeTest {
         void localWithShellResolveEscapesSpaces() {
             ShellPathPolicy policy = ShellPathPolicy.localWithShell(Paths.get("/tmp/my workspace"));
             String result = policy.resolve("my skill", new StageResult.WorkspaceNative());
-            assertEquals("/tmp/my\\ workspace/skills/my\\ skill", result);
+            String expected =
+                    Paths.get("/tmp/my workspace")
+                            .resolve("skills")
+                            .resolve("my skill")
+                            .toAbsolutePath()
+                            .toString()
+                            .replace(" ", "\\ ");
+            assertEquals(expected, result);
         }
 
         @Test
