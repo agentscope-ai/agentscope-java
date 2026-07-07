@@ -212,7 +212,7 @@ public class DashScopeMediaConverter {
     public DashScopeContentPart convertDataBlockToContentPart(DataBlock dataBlock)
             throws Exception {
         Source source = dataBlock.getSource();
-        String mimeType = resolveMimeType(source);
+        String mimeType = MediaUtils.resolveMimeType(source);
 
         if (mimeType.startsWith("image/")) {
             String url = sourceToUrl(source);
@@ -227,28 +227,6 @@ public class DashScopeMediaConverter {
             throw new IllegalArgumentException(
                     "Cannot route DataBlock: unrecognised MIME type '" + mimeType + "'");
         }
-    }
-
-    // resolve MIME type from any Source subtype
-    private String resolveMimeType(Source source) {
-        if (source instanceof Base64Source b64) {
-            return b64.getMediaType();
-        }
-        if (source instanceof URLSource urlSource) {
-            String hint = urlSource.getMimeType();
-            if (hint != null && !hint.isBlank()) {
-                return hint;
-            }
-            String inferred = MediaUtils.determineMediaType(urlSource.getUrl());
-            if (!"application/octet-stream".equals(inferred)) {
-                return inferred;
-            }
-            throw new IllegalArgumentException(
-                    "Cannot determine MIME type for URL '"
-                            + urlSource.getUrl()
-                            + "'; set URLSource.mimeType explicitly");
-        }
-        throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
     }
 
     // convert any Source to a URL/data-URL string

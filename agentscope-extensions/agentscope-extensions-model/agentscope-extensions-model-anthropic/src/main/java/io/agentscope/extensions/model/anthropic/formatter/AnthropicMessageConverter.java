@@ -225,6 +225,13 @@ public class AnthropicMessageConverter {
                         } catch (Exception e) {
                             log.warn("Failed to process ImageBlock in tool result: {}", e);
                         }
+                    } else if (cb instanceof DataBlock db) {
+                        try {
+                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
+                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                        } catch (Exception e) {
+                            log.warn("Failed to process DataBlock in tool result: {}", e);
+                        }
                     }
                 }
             }

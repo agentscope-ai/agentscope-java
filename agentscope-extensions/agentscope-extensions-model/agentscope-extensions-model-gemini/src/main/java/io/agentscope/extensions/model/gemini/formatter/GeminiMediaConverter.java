@@ -105,24 +105,17 @@ public class GeminiMediaConverter {
      */
     public Part convertToInlineDataPart(DataBlock block) {
         Source source = block.getSource();
+        String mimeType = MediaUtils.resolveMimeType(source);
         byte[] data;
-        String mimeType;
 
         if (source instanceof Base64Source base64Source) {
             data = Base64.getDecoder().decode(base64Source.getData());
-            mimeType = base64Source.getMediaType();
         } else if (source instanceof URLSource urlSource) {
-            String url = urlSource.getUrl();
             try {
-                data = readFileAsBytes(url);
+                data = readFileAsBytes(urlSource.getUrl());
             } catch (IOException e) {
-                throw new RuntimeException("Failed to read DataBlock file: " + url, e);
-            }
-            String hint = urlSource.getMimeType();
-            if (hint != null && !hint.isBlank()) {
-                mimeType = hint;
-            } else {
-                mimeType = resolveMimeTypeFromUrl(url);
+                throw new RuntimeException(
+                        "Failed to read DataBlock file: " + urlSource.getUrl(), e);
             }
         } else {
             throw new IllegalArgumentException(
@@ -131,27 +124,6 @@ public class GeminiMediaConverter {
 
         Blob blob = Blob.builder().data(data).mimeType(mimeType).build();
         return Part.builder().inlineData(blob).build();
-    }
-
-    // infer mimeType from URL extension via MediaUtils (handles query strings correctly)
-    private String resolveMimeTypeFromUrl(String url) {
-        String ext = MediaUtils.getExtension(url);
-        if (ext.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "Cannot determine MIME type for URL '"
-                            + url
-                            + "'; set URLSource.mimeType explicitly");
-        }
-        for (Map.Entry<String, List<String>> entry : SUPPORTED_EXTENSIONS.entrySet()) {
-            if (entry.getValue().contains(ext)) {
-                String category = entry.getKey();
-                return category + "/" + ("jpg".equals(ext) ? "jpeg" : ext);
-            }
-        }
-        throw new IllegalArgumentException(
-                "Cannot determine MIME type for URL '"
-                        + url
-                        + "'; set URLSource.mimeType explicitly");
     }
 
     /**

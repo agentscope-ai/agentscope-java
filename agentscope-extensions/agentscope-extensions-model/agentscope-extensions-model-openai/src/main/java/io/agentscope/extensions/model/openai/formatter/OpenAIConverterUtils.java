@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
-import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
@@ -112,40 +111,5 @@ public final class OpenAIConverterUtils {
         } else {
             throw new IllegalArgumentException("Unknown source type: " + source.getClass());
         }
-    }
-
-    /**
-     * Resolve the MIME type from a Source.
-     *
-     * <p>Resolution order:
-     * <ol>
-     *   <li>{@code Base64Source.mediaType} — always explicit</li>
-     *   <li>{@code URLSource.mimeType} — caller-supplied hint for extension-less URLs</li>
-     *   <li>{@code MediaUtils.determineMediaType(url)} — extension-based inference</li>
-     * </ol>
-     *
-     * @param source The source to resolve MIME type from
-     * @return MIME type string (e.g. "image/jpeg")
-     * @throws IllegalArgumentException if the type cannot be determined or source type is unknown
-     */
-    public static String resolveMimeType(Source source) {
-        if (source instanceof Base64Source b64) {
-            return b64.getMediaType();
-        }
-        if (source instanceof URLSource urlSource) {
-            String hint = urlSource.getMimeType();
-            if (hint != null && !hint.isBlank()) {
-                return hint;
-            }
-            String inferred = MediaUtils.determineMediaType(urlSource.getUrl());
-            if (!"application/octet-stream".equals(inferred)) {
-                return inferred;
-            }
-            throw new IllegalArgumentException(
-                    "Cannot determine MIME type for URL '"
-                            + urlSource.getUrl()
-                            + "'; set URLSource.mimeType explicitly");
-        }
-        throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
     }
 }

@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -257,7 +258,7 @@ public class OpenAIMessageConverter {
                         log.warn("DataBlock has null source, skipping");
                         continue;
                     }
-                    String mimeType = OpenAIConverterUtils.resolveMimeType(source);
+                    String mimeType = MediaUtils.resolveMimeType(source);
                     if (mimeType.startsWith("image/")) {
                         contentParts.add(
                                 OpenAIContentPart.imageUrl(convertImageSourceToUrl(source)));
