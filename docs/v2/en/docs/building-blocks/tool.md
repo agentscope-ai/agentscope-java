@@ -391,7 +391,7 @@ ReActAgent agent =
                 .build();
 ```
 
-Multiple `skillRepository(...)` calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use `skillRepositories(List<AgentSkillRepository>)` to replace the list. Pass `dynamicSkillsEnabled(false)` to opt out of the auto-installed middleware (handy when an outer orchestrator like `HarnessAgent` attaches its own subclass).
+Multiple `skillRepository(...)` calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use `skillRepositories(List<AgentSkillRepository>)` to replace the list.
 
 Reference implementations: `agentscope-examples/documentation/.../skill/AgentSkillExample.java`, `skill/SkillWithToolGroupExample.java`.
 
