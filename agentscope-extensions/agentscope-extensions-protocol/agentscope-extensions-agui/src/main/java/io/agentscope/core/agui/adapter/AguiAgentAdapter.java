@@ -79,6 +79,7 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_CONTEXT_KEY = "agui.context";
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
+    public static final String FORWARDED_PROP_USER_ID_KEY = "userId";
 
     private final Agent agent;
     private final AguiAdapterConfig config;
@@ -160,17 +161,27 @@ public class AguiAgentAdapter {
     }
 
     private RuntimeContext buildRuntimeContext(RunAgentInput input) {
-        return RuntimeContext.builder()
-                .sessionId(input.getThreadId())
-                .put(RunAgentInput.class, input)
-                .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
-                .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
-                .put(RUNTIME_CONTEXT_MESSAGES_KEY, input.getMessages())
-                .put(RUNTIME_CONTEXT_TOOLS_KEY, input.getTools())
-                .put(RUNTIME_CONTEXT_CONTEXT_KEY, input.getContext())
-                .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
-                .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
-                .build();
+        RuntimeContext.Builder builder =
+                RuntimeContext.builder()
+                        .sessionId(input.getThreadId())
+                        .put(RunAgentInput.class, input)
+                        .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
+                        .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
+                        .put(RUNTIME_CONTEXT_MESSAGES_KEY, input.getMessages())
+                        .put(RUNTIME_CONTEXT_TOOLS_KEY, input.getTools())
+                        .put(RUNTIME_CONTEXT_CONTEXT_KEY, input.getContext())
+                        .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
+                        .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps());
+
+        Object userId = input.getForwardedProp(FORWARDED_PROP_USER_ID_KEY);
+        if (userId != null) {
+            String userIdValue = userId.toString().trim();
+            if (!userIdValue.isEmpty()) {
+                builder.userId(userIdValue);
+            }
+        }
+
+        return builder.build();
     }
 
     private ToolInjection injectFrontendTools(RunAgentInput input) {

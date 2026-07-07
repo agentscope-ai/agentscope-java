@@ -103,6 +103,51 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testRunSetsUserIdFromForwardedPropsIntoRuntimeContext() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-user")
+                        .runId("run-user")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .forwardedProps(Map.of("userId", "user-123"))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("user-123", context.getUserId());
+        assertSame(
+                input.getForwardedProps(),
+                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_FORWARDED_PROPS_KEY));
+    }
+
+    @Test
+    void testRunIgnoresEmptyUserIdFromForwardedProps() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-no-user")
+                        .runId("run-no-user")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .forwardedProps(Map.of("userId", "  "))
+                        .build();
+
+        adapter.run(input).collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertNull(context.getUserId());
+    }
+
+    @Test
     void testRunRegistersFrontendToolsForRunAndCleansUp() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
