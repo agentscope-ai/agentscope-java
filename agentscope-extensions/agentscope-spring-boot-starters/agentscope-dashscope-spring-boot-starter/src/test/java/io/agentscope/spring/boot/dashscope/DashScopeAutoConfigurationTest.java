@@ -162,12 +162,36 @@ class DashScopeAutoConfigurationTest {
                         });
     }
 
+    @Test
+    void shouldApplyDashScopeChatModelBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(CustomBuilderConfiguration.class)
+                .withPropertyValues(
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-dashscope-key",
+                        "agentscope.dashscope.model-name=qwen-max")
+                .run(
+                        context -> {
+                            DashScopeChatModel model = context.getBean(DashScopeChatModel.class);
+                            assertThat(model.getModelName()).isEqualTo("customized-qwen");
+                        });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
         @Bean
         Model customModel() {
             return new TestModel();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomBuilderConfiguration {
+
+        @Bean
+        DashScopeChatModelBuilderCustomizer testDashScopeChatModelBuilderCustomizer() {
+            return builder -> builder.modelName("customized-qwen");
         }
     }
 
