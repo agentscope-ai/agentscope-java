@@ -247,9 +247,10 @@ public final class SkillFileSystemHelper {
                                 && skillName.equals(readSkillName(baseDir).orElse(null));
 
                 Path skillDir;
+                Path skillFile;
                 if (isRootSkill) {
                     skillDir = baseDir.toAbsolutePath().normalize();
-                    Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
+                    skillFile = skillDir.resolve(SKILL_FILE_NAME);
                     if (Files.exists(skillFile) && !force) {
                         logger.info("Root skill already exists and force=false: {}", skillName);
                         continue;
@@ -268,12 +269,12 @@ public final class SkillFileSystemHelper {
                         }
                     }
                     Files.createDirectories(skillDir);
+                    skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 }
 
                 String skillMdContent =
                         MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
 
-                Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 Files.writeString(skillFile, skillMdContent, StandardCharsets.UTF_8);
 
                 Map<String, String> resources = skill.getResources();
