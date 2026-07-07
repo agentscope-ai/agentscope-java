@@ -106,7 +106,7 @@ v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在
 
 - `SkillBox` 类与 `Builder.skillBox(SkillBox)` 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`
 - 新方式：通过 `AgentSkillRepository`（内置 `ClasspathSkillRepository`、`FileSystemSkillRepository`）注入技能，使用 `Builder.skillRepository(...)` / `.skillRepositories(...)`。只要注册了至少一个 repository，`DynamicSkillMiddleware` 会自动安装，在每次 `call()` 前重建 skill prompt
-- 细粒度过滤：`Builder.skillFilter(SkillFilter)`。若需要关闭自动中间件（例如让 `HarnessAgent` 接管），用 `Builder.dynamicSkillsEnabled(false)`
+- 细粒度过滤：`Builder.skillFilter(SkillFilter)`
 
 详见 → [技能](harness/skill.md)
 
