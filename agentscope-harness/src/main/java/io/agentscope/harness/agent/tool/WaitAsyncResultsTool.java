@@ -18,7 +18,11 @@ package io.agentscope.harness.agent.tool;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,9 +41,24 @@ public class WaitAsyncResultsTool {
     private static final long POLL_INTERVAL_MS = 3000;
 
     private final MessageBus messageBus;
+    private final TaskRepository taskRepository;
+    private final AsyncToolRegistry asyncToolRegistry;
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
+        this(messageBus, null, null);
+    }
+
+    public WaitAsyncResultsTool(MessageBus messageBus, TaskRepository taskRepository) {
+        this(messageBus, taskRepository, null);
+    }
+
+    public WaitAsyncResultsTool(
+            MessageBus messageBus,
+            TaskRepository taskRepository,
+            AsyncToolRegistry asyncToolRegistry) {
         this.messageBus = messageBus;
+        this.taskRepository = taskRepository;
+        this.asyncToolRegistry = asyncToolRegistry;
     }
 
     @Tool(
@@ -86,6 +105,11 @@ public class WaitAsyncResultsTool {
                 return "Async results have arrived. Continue reasoning — "
                         + "the results will be injected into your context automatically.";
             }
+            if (!hasRunningTasks(runtimeContext, sessionId)) {
+                log.info("wait_async_results: no running async tasks, session={}", sessionId);
+                return "No async tasks are currently running. Continue reasoning with the available"
+                        + " context.";
+            }
             // Cap sleep to the remaining budget so the tool never overshoots the caller's timeout.
             Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
         }
@@ -95,5 +119,23 @@ public class WaitAsyncResultsTool {
                 + timeout
                 + "s. No async results yet. "
                 + "You may continue with other work or try waiting again.";
+    }
+
+    private boolean hasRunningTasks(RuntimeContext runtimeContext, String sessionId) {
+        if (taskRepository == null && asyncToolRegistry == null) {
+            return true;
+        }
+        boolean hasSubagentTasks =
+                taskRepository != null
+                        && (!taskRepository
+                                        .listTasks(runtimeContext, sessionId, TaskStatus.PENDING)
+                                        .isEmpty()
+                                || !taskRepository
+                                        .listTasks(runtimeContext, sessionId, TaskStatus.RUNNING)
+                                        .isEmpty());
+        boolean hasAsyncTools =
+                asyncToolRegistry != null
+                        && !asyncToolRegistry.findStale(sessionId, Duration.ZERO).block().isEmpty();
+        return hasSubagentTasks || hasAsyncTools;
     }
 }
