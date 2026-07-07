@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
+    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/tool.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1391,7 +1391,7 @@ SSE</label><div class="sd-tab-content docutils">
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Multiple <code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use <code class="docutils literal notranslate"><span class="pre">skillRepositories(List&lt;AgentSkillRepository&gt;)</span></code> to replace the list. Pass <code class="docutils literal notranslate"><span class="pre">dynamicSkillsEnabled(false)</span></code> to opt out of the auto-installed middleware (handy when an outer orchestrator like <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> attaches its own subclass).</p>
+<p>Multiple <code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use <code class="docutils literal notranslate"><span class="pre">skillRepositories(List&lt;AgentSkillRepository&gt;)</span></code> to replace the list.</p>
 <p>Reference implementations: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../skill/AgentSkillExample.java</span></code>, <code class="docutils literal notranslate"><span class="pre">skill/SkillWithToolGroupExample.java</span></code>.</p>
 </section>
 <section id="how-skills-work">
@@ -1668,7 +1668,7 @@ Human-in-the-Loop</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-07</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -12105,7 +12105,6 @@ Skills are hot-loadable Markdown prompt modules that the LLM activates on demand
 ```java
 ReActAgent.builder()
         .skillRepository(new MysqlSkillRepository(dataSource))
-        .dynamicSkillsEnabled(true)     // allow LLM to load new skills at runtime
         .build();
 ```
 
@@ -14242,7 +14241,7 @@ ReActAgent agent =
                 .build();
 ```
 
-Multiple `skillRepository(...)` calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use `skillRepositories(List<AgentSkillRepository>)` to replace the list. Pass `dynamicSkillsEnabled(false)` to opt out of the auto-installed middleware (handy when an outer orchestrator like `HarnessAgent` attaches its own subclass).
+Multiple `skillRepository(...)` calls append in order (low → high priority); when two repositories expose a skill with the same name, the later entry wins. Use `skillRepositories(List<AgentSkillRepository>)` to replace the list.
 
 Reference implementations: `agentscope-examples/documentation/.../skill/AgentSkillExample.java`, `skill/SkillWithToolGroupExample.java`.
 
@@ -17879,7 +17878,7 @@ Items in this section compile and run on 2.0, but each has been marked for remov
 
 - `SkillBox` (the class) and `Builder.skillBox(SkillBox)` are both `@Deprecated(forRemoval = true, since = "2.0.0")`.
 - Recommended path: register one or more `AgentSkillRepository` implementations (built-ins: `ClasspathSkillRepository`, `FileSystemSkillRepository`) via `Builder.skillRepository(...)` / `.skillRepositories(...)`. When at least one repository is registered, `DynamicSkillMiddleware` is auto-installed and rebuilds the skill prompt on every `call()`.
-- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`. To disable the auto-installed middleware (so an external orchestrator like `HarnessAgent` can attach its own), use `Builder.dynamicSkillsEnabled(false)`.
+- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`.
 
 Detail → [Skill](harness/skill.md)
 
@@ -18046,6 +18045,135 @@ description: "Per-version change records for AgentScope Java"
 ---
 
 This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the [V1 Migration Guide](../change-log.md).
+
+---
+
+## 2.0.0-RC5
+
+> Released: 2026-07-07
+
+### Breaking Changes
+
+- **Model provider modularization** — OpenAI, Gemini, Anthropic, DashScope, and Ollama model providers have been moved from `agentscope-core` into independent `agentscope-extensions-model-*` extension modules. Applications must add the corresponding extension dependency ([#1890](https://github.com/agentscope-ai/agentscope-java/pull/1890), [#1916](https://github.com/agentscope-ai/agentscope-java/pull/1916), [#1947](https://github.com/agentscope-ai/agentscope-java/pull/1947), [#1972](https://github.com/agentscope-ai/agentscope-java/pull/1972))
+
+### Added
+
+- Unified `DataBlock` support in all provider message converters (OpenAI, DashScope, Gemini, Anthropic), covering single-agent, multi-agent, and tool-result paths ([#1933](https://github.com/agentscope-ai/agentscope-java/pull/1933))
+- Native structured output handling with tools — models that support structured output can enforce JSON schema constraints alongside tool calls ([#1904](https://github.com/agentscope-ai/agentscope-java/pull/1904))
+- Native structured output support for DashScope models ([#1935](https://github.com/agentscope-ai/agentscope-java/pull/1935))
+- `httpRequestCustomizer` support in `McpClientBuilder` for dynamic token injection (e.g. OAuth refresh) ([#1992](https://github.com/agentscope-ai/agentscope-java/pull/1992))
+- Align `AguiEvent` with the AG-UI protocol spec — add missing event types ([#1862](https://github.com/agentscope-ai/agentscope-java/pull/1862))
+- Optional skill allowlist filter for subagents ([#1873](https://github.com/agentscope-ai/agentscope-java/pull/1873))
+- `knownSkillNames` support in `NacosSkillRepository` ([#1853](https://github.com/agentscope-ai/agentscope-java/pull/1853))
+- `CosAgentStateStore`, `CosBaseStore` and `CosDistributedStore` for Tencent Cloud COS-backed state persistence ([#1857](https://github.com/agentscope-ai/agentscope-java/pull/1857))
+- Expose cached prompt tokens in `ChatUsage` ([#1868](https://github.com/agentscope-ai/agentscope-java/pull/1868))
+
+### Fixed
+
+**Core / Agent**
+
+- Persist agent state on user interrupt recovery ([#2008](https://github.com/agentscope-ai/agentscope-java/pull/2008))
+- Wire fallback model into `ReActAgent` ([#1851](https://github.com/agentscope-ai/agentscope-java/pull/1851))
+- Fix `ReActAgent` stream event block end ordering ([#1829](https://github.com/agentscope-ai/agentscope-java/pull/1829))
+- Update `ToolResultBlock` state before adding to agent context ([#1886](https://github.com/agentscope-ai/agentscope-java/pull/1886))
+- Reuse classpath skill JAR file systems to avoid resource leaks ([#1981](https://github.com/agentscope-ai/agentscope-java/pull/1981))
+- Resolve `serializeOnKey` gate leak in `Flux.create` callbacks ([#1796](https://github.com/agentscope-ai/agentscope-java/pull/1796))
+
+**Model Providers**
+
+- Map `thinkingBudget` to OpenAI-compatible API request ([#2028](https://github.com/agentscope-ai/agentscope-java/pull/2028))
+- Fix Anthropic stream thinking event handling ([#1943](https://github.com/agentscope-ai/agentscope-java/pull/1943))
+- Preserve `executionConfig` in `OllamaOptions` `fromOptions`/`toBuilder` ([#2011](https://github.com/agentscope-ai/agentscope-java/pull/2011))
+- Degrade forced tool choice in DashScope thinking mode ([#1882](https://github.com/agentscope-ai/agentscope-java/pull/1882))
+
+**Harness / Sandbox**
+
+- Restore remote snapshot state deserialization — re-inject `RemoteSnapshotClient` after Jackson round-trip ([#2013](https://github.com/agentscope-ai/agentscope-java/pull/2013))
+- Fix THROTTLED memory save mode losing state when recreating instances per request ([#1788](https://github.com/agentscope-ai/agentscope-java/pull/1788))
+- Propagate `userId` through wakeup dispatch ([#2001](https://github.com/agentscope-ai/agentscope-java/pull/2001))
+- Run message bus heartbeat on `boundedElastic` instead of `parallel` scheduler ([#1974](https://github.com/agentscope-ai/agentscope-java/pull/1974))
+- Avoid duplicating `GracefulShutdownMiddleware` in `fromAgent` ([#1952](https://github.com/agentscope-ai/agentscope-java/pull/1952))
+- Escape spaces in skill paths returned by `ShellPathPolicy` ([#2031](https://github.com/agentscope-ai/agentscope-java/pull/2031))
+- Fallback to simple key-value extraction when YAML parsing fails ([#2027](https://github.com/agentscope-ai/agentscope-java/pull/2027))
+- Report sandbox file sizes in `ls` ([#1838](https://github.com/agentscope-ai/agentscope-java/pull/1838))
+- Normalize Windows `list_files` paths ([#1892](https://github.com/agentscope-ai/agentscope-java/pull/1892))
+- Normalize `\r\n` to `\n` for file content in `LocalFilesystem.edit()` ([#2020](https://github.com/agentscope-ai/agentscope-java/pull/2020))
+- Treat `"."` as root equivalent in `CompositeFilesystem` ([#1830](https://github.com/agentscope-ai/agentscope-java/pull/1830))
+- Validate `working_directory` to prevent namespace escape ([#1834](https://github.com/agentscope-ai/agentscope-java/pull/1834))
+- Fall back to `LocalFilesystemSpec` when no distributed `AgentStateStore` is configured ([#1841](https://github.com/agentscope-ai/agentscope-java/pull/1841))
+- Fix WebSocket race in Kubernetes `hydrateWithArchive` causing `exit=null` ([#1903](https://github.com/agentscope-ai/agentscope-java/pull/1903))
+- Tolerate wrapped sandbox base64 downloads ([#1866](https://github.com/agentscope-ai/agentscope-java/pull/1866))
+- Remove `AgentRun` sandbox API version prefix ([#1891](https://github.com/agentscope-ai/agentscope-java/pull/1891))
+- Add connect JSON codec support for E2B sandbox ([#1844](https://github.com/agentscope-ai/agentscope-java/pull/1844))
+
+**Tracing / Observability**
+
+- Fix orphan spans in `OtelTracingMiddleware` by reading parent OTel Context from Reactor `ContextView` ([#1940](https://github.com/agentscope-ai/agentscope-java/pull/1940))
+- Fix child spans not seeing correct parent spans in `OtelTracingMiddleware` ([#1909](https://github.com/agentscope-ai/agentscope-java/pull/1909))
+- Propagate Reactor context to chunk event hooks ([#1923](https://github.com/agentscope-ai/agentscope-java/pull/1923))
+
+**Subagent**
+
+- Propagate parent `RuntimeContext` to child agents ([#1833](https://github.com/agentscope-ai/agentscope-java/pull/1833))
+- Propagate parent middleware to subagents ([#1843](https://github.com/agentscope-ai/agentscope-java/pull/1843))
+
+**A2A**
+
+- Handle streaming backpressure ([#1734](https://github.com/agentscope-ai/agentscope-java/pull/1734))
+- Preserve AgentScope message roles across A2A conversion ([#1995](https://github.com/agentscope-ai/agentscope-java/pull/1995))
+
+**AG-UI**
+
+- Propagate run input and frontend tools ([#1895](https://github.com/agentscope-ai/agentscope-java/pull/1895))
+
+**Other**
+
+- Wrap middleware `doFlush` in `Mono.defer` to prevent premature evaluation ([#1880](https://github.com/agentscope-ai/agentscope-java/pull/1880))
+- Nacos auto-configurations should be opt-in (`matchIfMissing=false`) and fix A2A server-addr override ([#1709](https://github.com/agentscope-ai/agentscope-java/pull/1709))
+- Add `ObjectMapper` bean for `MarketContributionService` in DataAgent ([#1993](https://github.com/agentscope-ai/agentscope-java/pull/1993))
+
+### Documentation
+
+- Clarify stream event `blockId` semantics ([#2016](https://github.com/agentscope-ai/agentscope-java/pull/2016))
+- Improve model provider documentation ([#1986](https://github.com/agentscope-ai/agentscope-java/pull/1986))
+- Remove invalid `ChatResponse.isLast` references ([#1921](https://github.com/agentscope-ai/agentscope-java/pull/1921))
+- Fix multi-replica Redis example — declare jedis dependency and add `stateStore` ([#1869](https://github.com/agentscope-ai/agentscope-java/pull/1869))
+- Fix `MemoryCompactionExample` to show memory files and fire compaction ([#1978](https://github.com/agentscope-ai/agentscope-java/pull/1978))
+
+---
+
+## 2.0.0-RC4
+
+> Released: 2026-06-18
+
+### Added
+
+- Agent harness now supports async tool execution and notifications, including message bus, async tool registry, and scheduled wakeup dispatching ([#1802](https://github.com/agentscope-ai/agentscope-java/pull/1802))
+- String/Message convenience overloads for agent calls; all formatters now support `HintBlock` ([#1802](https://github.com/agentscope-ai/agentscope-java/pull/1802))
+- Persistent spawn registry in tool context state enables subagent cross-replica routing and session recovery ([#1817](https://github.com/agentscope-ai/agentscope-java/pull/1817))
+- `DynamicSkillMiddleware` implements `ToolkitAware` to receive the resolved toolkit dynamically ([#1828](https://github.com/agentscope-ai/agentscope-java/pull/1828))
+- Kubernetes sandbox now supports injecting environment variables into pods ([#1789](https://github.com/agentscope-ai/agentscope-java/pull/1789))
+
+### Fixed
+
+- Fixed SIGKILL race condition in Kubernetes file uploads by using two-phase archive strategy ([#1826](https://github.com/agentscope-ai/agentscope-java/pull/1826))
+- Fixed resource leak where timed-out sub-agents were not interrupted on retry ([#1784](https://github.com/agentscope-ai/agentscope-java/pull/1784))
+- Fixed typed attributes being lost when copying `RuntimeContext` ([#1813](https://github.com/agentscope-ai/agentscope-java/pull/1813))
+- Fixed `JdbcStore` table initialization failure under MySQL utf8mb4 charset ([#1781](https://github.com/agentscope-ai/agentscope-java/pull/1781))
+- Made session JSONL offload idempotent to prevent duplicate writes ([#1774](https://github.com/agentscope-ai/agentscope-java/pull/1774))
+- Fixed OpenTelemetry context propagation in `TelemetryTracer` ([#1799](https://github.com/agentscope-ai/agentscope-java/pull/1799))
+- Fixed NPE in `OllamaChatModel` when options are null during tool choice retrieval ([#1803](https://github.com/agentscope-ai/agentscope-java/pull/1803))
+- Added missing Jackson annotations to `LocalSandboxSnapshot` for proper serialization ([#1825](https://github.com/agentscope-ai/agentscope-java/pull/1825))
+- Fixed sandbox glob not supporting `**/` recursive patterns ([#1684](https://github.com/agentscope-ai/agentscope-java/pull/1684))
+- Fixed `SkillFilter` matching using composite ID instead of skill name ([#1771](https://github.com/agentscope-ai/agentscope-java/pull/1771))
+- Allow custom default vision model in `MultiModalTool` ([#1701](https://github.com/agentscope-ai/agentscope-java/pull/1701))
+
+### Documentation
+
+- Fixed incorrect hook signatures in middleware docs ([#1835](https://github.com/agentscope-ai/agentscope-java/pull/1835))
+- Fixed references to non-existent `.sandboxContext()` in doc examples ([#1792](https://github.com/agentscope-ai/agentscope-java/pull/1792))
+- Fixed `getToolName()` → `getToolCallName()` in v2 docs ([#1760](https://github.com/agentscope-ai/agentscope-java/pull/1760))
+- Added AI context menu to documentation site
 
 ---
 
@@ -22448,7 +22576,6 @@ ReActAgent.builder()
 ```java
 ReActAgent.builder()
         .skillRepository(new MysqlSkillRepository(dataSource))
-        .dynamicSkillsEnabled(true)     // 允许 LLM 动态加载新技能
         .build();
 ```
 
@@ -24585,7 +24712,7 @@ ReActAgent agent =
                 .build();
 ```
 
-多次调用 `skillRepository(...)` 按调用顺序追加（低 → 高优先级），同名 skill 后者覆盖前者；如需替换整批，调用 `skillRepositories(List<AgentSkillRepository>)`。要让外部编排器（例如 `HarnessAgent`）接管装配过程，调用 `dynamicSkillsEnabled(false)` 关掉自动安装。
+多次调用 `skillRepository(...)` 按调用顺序追加（低 → 高优先级），同名 skill 后者覆盖前者；如需替换整批，调用 `skillRepositories(List<AgentSkillRepository>)`。
 
 参考实现：`agentscope-examples/documentation/.../skill/AgentSkillExample.java`、`skill/SkillWithToolGroupExample.java`。
 
@@ -28221,7 +28348,7 @@ v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在
 
 - `SkillBox` 类与 `Builder.skillBox(SkillBox)` 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`
 - 新方式：通过 `AgentSkillRepository`（内置 `ClasspathSkillRepository`、`FileSystemSkillRepository`）注入技能，使用 `Builder.skillRepository(...)` / `.skillRepositories(...)`。只要注册了至少一个 repository，`DynamicSkillMiddleware` 会自动安装，在每次 `call()` 前重建 skill prompt
-- 细粒度过滤：`Builder.skillFilter(SkillFilter)`。若需要关闭自动中间件（例如让 `HarnessAgent` 接管），用 `Builder.dynamicSkillsEnabled(false)`
+- 细粒度过滤：`Builder.skillFilter(SkillFilter)`
 
 详见 → [技能](harness/skill.md)
 
@@ -28388,6 +28515,135 @@ description: "AgentScope Java 各版本变更记录"
 ---
 
 本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 [V1 迁移指南](../change-log.md)。
+
+---
+
+## 2.0.0-RC5
+
+> 发布日期：2026-07-07
+
+### 重大变更
+
+- **模型提供商模块化** —— OpenAI、Gemini、Anthropic、DashScope、Ollama 模型提供商从 `agentscope-core` 拆分为独立的 `agentscope-extensions-model-*` 扩展模块。应用需添加对应扩展依赖 ([#1890](https://github.com/agentscope-ai/agentscope-java/pull/1890), [#1916](https://github.com/agentscope-ai/agentscope-java/pull/1916), [#1947](https://github.com/agentscope-ai/agentscope-java/pull/1947), [#1972](https://github.com/agentscope-ai/agentscope-java/pull/1972))
+
+### 新增
+
+- 所有模型提供商（OpenAI、DashScope、Gemini、Anthropic）统一支持 `DataBlock` 多模态内容，覆盖单 agent、多 agent 和工具结果路径 ([#1933](https://github.com/agentscope-ai/agentscope-java/pull/1933))
+- 原生结构化输出（Structured Output）与工具调用协同工作 —— 支持模型原生 JSON Schema 约束 ([#1904](https://github.com/agentscope-ai/agentscope-java/pull/1904))
+- DashScope 模型支持原生结构化输出 ([#1935](https://github.com/agentscope-ai/agentscope-java/pull/1935))
+- `McpClientBuilder` 新增 `httpRequestCustomizer`，支持动态 token 注入（如 OAuth 刷新）([#1992](https://github.com/agentscope-ai/agentscope-java/pull/1992))
+- `AguiEvent` 对齐 AG-UI 协议规范，补全缺失事件类型 ([#1862](https://github.com/agentscope-ai/agentscope-java/pull/1862))
+- 子 agent 可选技能白名单过滤 ([#1873](https://github.com/agentscope-ai/agentscope-java/pull/1873))
+- `NacosSkillRepository` 支持 `knownSkillNames` ([#1853](https://github.com/agentscope-ai/agentscope-java/pull/1853))
+- 新增 `CosAgentStateStore`、`CosBaseStore`、`CosDistributedStore`，支持腾讯云 COS 状态持久化 ([#1857](https://github.com/agentscope-ai/agentscope-java/pull/1857))
+- `ChatUsage` 暴露 cached prompt tokens ([#1868](https://github.com/agentscope-ai/agentscope-java/pull/1868))
+
+### 修复
+
+**核心 / Agent**
+
+- 用户中断恢复时持久化 agent 状态 ([#2008](https://github.com/agentscope-ai/agentscope-java/pull/2008))
+- 正确连线 fallback model 到 `ReActAgent` ([#1851](https://github.com/agentscope-ai/agentscope-java/pull/1851))
+- 修复 `ReActAgent` 流式事件 block end 顺序 ([#1829](https://github.com/agentscope-ai/agentscope-java/pull/1829))
+- 在加入 agent 上下文前更新 `ToolResultBlock` 状态 ([#1886](https://github.com/agentscope-ai/agentscope-java/pull/1886))
+- 复用 classpath skill JAR 文件系统，避免资源泄漏 ([#1981](https://github.com/agentscope-ai/agentscope-java/pull/1981))
+- 修复 `serializeOnKey` 在 `Flux.create` 回调中的 gate 泄漏 ([#1796](https://github.com/agentscope-ai/agentscope-java/pull/1796))
+
+**模型提供商**
+
+- 将 `thinkingBudget` 映射到 OpenAI 兼容 API 请求 ([#2028](https://github.com/agentscope-ai/agentscope-java/pull/2028))
+- 修复 Anthropic 流式 thinking event 处理 ([#1943](https://github.com/agentscope-ai/agentscope-java/pull/1943))
+- 保留 `OllamaOptions` `fromOptions`/`toBuilder` 中的 `executionConfig` ([#2011](https://github.com/agentscope-ai/agentscope-java/pull/2011))
+- DashScope thinking 模式下降级强制 tool choice ([#1882](https://github.com/agentscope-ai/agentscope-java/pull/1882))
+
+**Harness / 沙箱**
+
+- 修复远程快照状态反序列化 —— Jackson 往返后重新注入 `RemoteSnapshotClient` ([#2013](https://github.com/agentscope-ai/agentscope-java/pull/2013))
+- 修复 THROTTLED 记忆保存模式在每次请求新建实例时失效 ([#1788](https://github.com/agentscope-ai/agentscope-java/pull/1788))
+- 通过 wakeup dispatch 传播 `userId` ([#2001](https://github.com/agentscope-ai/agentscope-java/pull/2001))
+- message bus 心跳改用 `boundedElastic` 调度器 ([#1974](https://github.com/agentscope-ai/agentscope-java/pull/1974))
+- 避免 `fromAgent` 重复注册 `GracefulShutdownMiddleware` ([#1952](https://github.com/agentscope-ai/agentscope-java/pull/1952))
+- 转义 `ShellPathPolicy` 返回路径中的空格 ([#2031](https://github.com/agentscope-ai/agentscope-java/pull/2031))
+- YAML 解析失败时回退到简单键值提取 ([#2027](https://github.com/agentscope-ai/agentscope-java/pull/2027))
+- `ls` 命令报告沙箱文件大小 ([#1838](https://github.com/agentscope-ai/agentscope-java/pull/1838))
+- 归一化 Windows `list_files` 路径 ([#1892](https://github.com/agentscope-ai/agentscope-java/pull/1892))
+- `LocalFilesystem.edit()` 将 `\r\n` 归一化为 `\n` ([#2020](https://github.com/agentscope-ai/agentscope-java/pull/2020))
+- `CompositeFilesystem` 将 `"."` 视为根路径 ([#1830](https://github.com/agentscope-ai/agentscope-java/pull/1830))
+- 校验 `working_directory` 防止命名空间逃逸 ([#1834](https://github.com/agentscope-ai/agentscope-java/pull/1834))
+- 未配置分布式 `AgentStateStore` 时回退到 `LocalFilesystemSpec` ([#1841](https://github.com/agentscope-ai/agentscope-java/pull/1841))
+- 修复 Kubernetes `hydrateWithArchive` WebSocket 竞态导致 `exit=null` ([#1903](https://github.com/agentscope-ai/agentscope-java/pull/1903))
+- 容忍 wrapped sandbox base64 下载 ([#1866](https://github.com/agentscope-ai/agentscope-java/pull/1866))
+- 移除 `AgentRun` sandbox API 版本前缀 ([#1891](https://github.com/agentscope-ai/agentscope-java/pull/1891))
+- E2B sandbox 新增 connect JSON codec 支持 ([#1844](https://github.com/agentscope-ai/agentscope-java/pull/1844))
+
+**链路追踪 / 可观测性**
+
+- 从 Reactor `ContextView` 读取父 OTel Context，修复 `OtelTracingMiddleware` 孤立 span ([#1940](https://github.com/agentscope-ai/agentscope-java/pull/1940))
+- 修复 `OtelTracingMiddleware` 子 span 看不到正确父 span ([#1909](https://github.com/agentscope-ai/agentscope-java/pull/1909))
+- 将 Reactor context 传播到 chunk event hooks ([#1923](https://github.com/agentscope-ai/agentscope-java/pull/1923))
+
+**子 Agent**
+
+- 将父 `RuntimeContext` 传播到子 agent ([#1833](https://github.com/agentscope-ai/agentscope-java/pull/1833))
+- 将父 middleware 传播到子 agent ([#1843](https://github.com/agentscope-ai/agentscope-java/pull/1843))
+
+**A2A**
+
+- 处理流式背压 ([#1734](https://github.com/agentscope-ai/agentscope-java/pull/1734))
+- A2A 转换保留 AgentScope 消息角色 ([#1995](https://github.com/agentscope-ai/agentscope-java/pull/1995))
+
+**AG-UI**
+
+- 传播 run input 和 frontend tools ([#1895](https://github.com/agentscope-ai/agentscope-java/pull/1895))
+
+**其他**
+
+- Middleware `doFlush` 包装 `Mono.defer` 防止提前求值 ([#1880](https://github.com/agentscope-ai/agentscope-java/pull/1880))
+- Nacos auto-configurations 改为 opt-in（`matchIfMissing=false`）并修复 A2A server-addr 覆盖 ([#1709](https://github.com/agentscope-ai/agentscope-java/pull/1709))
+- DataAgent 补充 `ObjectMapper` bean ([#1993](https://github.com/agentscope-ai/agentscope-java/pull/1993))
+
+### 文档
+
+- 明确流式事件 `blockId` 语义 ([#2016](https://github.com/agentscope-ai/agentscope-java/pull/2016))
+- 改进模型提供商文档 ([#1986](https://github.com/agentscope-ai/agentscope-java/pull/1986))
+- 移除无效的 `ChatResponse.isLast` 引用 ([#1921](https://github.com/agentscope-ai/agentscope-java/pull/1921))
+- 修复多副本 Redis 示例 —— 声明 jedis 依赖并补充 `stateStore` ([#1869](https://github.com/agentscope-ai/agentscope-java/pull/1869))
+- 修复 `MemoryCompactionExample` 展示 memory 文件并触发 compaction ([#1978](https://github.com/agentscope-ai/agentscope-java/pull/1978))
+
+---
+
+## 2.0.0-RC4
+
+> 发布日期：2026-06-18
+
+### 新增
+
+- Agent harness 支持异步工具执行和通知，包括 message bus、async tool registry 和 scheduled wakeup dispatching ([#1802](https://github.com/agentscope-ai/agentscope-java/pull/1802))
+- Agent 调用新增 String/Message 便捷重载；所有 formatter 支持 `HintBlock` ([#1802](https://github.com/agentscope-ai/agentscope-java/pull/1802))
+- 持久化 spawn registry 支持子 agent 跨副本路由和 session 恢复 ([#1817](https://github.com/agentscope-ai/agentscope-java/pull/1817))
+- `DynamicSkillMiddleware` 实现 `ToolkitAware`，支持动态接收解析后的 toolkit ([#1828](https://github.com/agentscope-ai/agentscope-java/pull/1828))
+- Kubernetes sandbox 支持向 Pod 注入环境变量 ([#1789](https://github.com/agentscope-ai/agentscope-java/pull/1789))
+
+### 修复
+
+- 修复 Kubernetes 文件上传中的 SIGKILL 竞态条件，使用两阶段 archive 策略 ([#1826](https://github.com/agentscope-ai/agentscope-java/pull/1826))
+- 修复超时子 agent 未在重试时中断导致的资源泄漏 ([#1784](https://github.com/agentscope-ai/agentscope-java/pull/1784))
+- 修复复制 `RuntimeContext` 时丢失 typed attributes ([#1813](https://github.com/agentscope-ai/agentscope-java/pull/1813))
+- 修复 MySQL utf8mb4 字符集下 `JdbcStore` 表初始化失败 ([#1781](https://github.com/agentscope-ai/agentscope-java/pull/1781))
+- Session JSONL offload 改为幂等，防止重复写入 ([#1774](https://github.com/agentscope-ai/agentscope-java/pull/1774))
+- 修复 `TelemetryTracer` 中 OpenTelemetry context 传播 ([#1799](https://github.com/agentscope-ai/agentscope-java/pull/1799))
+- 修复 `OllamaChatModel` 获取 tool choice 时 options 为 null 导致 NPE ([#1803](https://github.com/agentscope-ai/agentscope-java/pull/1803))
+- 补充 `LocalSandboxSnapshot` 缺失的 Jackson 注解 ([#1825](https://github.com/agentscope-ai/agentscope-java/pull/1825))
+- 修复 sandbox glob 不支持 `**/` 递归模式 ([#1684](https://github.com/agentscope-ai/agentscope-java/pull/1684))
+- 修复 `SkillFilter` 使用 composite ID 而非 skill name 匹配 ([#1771](https://github.com/agentscope-ai/agentscope-java/pull/1771))
+- 允许 `MultiModalTool` 使用自定义默认视觉模型 ([#1701](https://github.com/agentscope-ai/agentscope-java/pull/1701))
+
+### 文档
+
+- 修复 middleware 文档中错误的 hook 签名 ([#1835](https://github.com/agentscope-ai/agentscope-java/pull/1835))
+- 修复文档示例中引用不存在的 `.sandboxContext()` ([#1792](https://github.com/agentscope-ai/agentscope-java/pull/1792))
+- 修复 v2 文档中 `getToolName()` → `getToolCallName()` ([#1760](https://github.com/agentscope-ai/agentscope-java/pull/1760))
+- 文档站点新增 AI 上下文菜单
 
 ---
 

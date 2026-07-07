@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上生产（Going to Production）" href="going-to-production.html"><link rel="prev" title="V1 迁移指南" href="../change-log.html">
+    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上生产（Going to Production）" href="going-to-production.html"><link rel="prev" title="V1 迁移指南" href="../change-log.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/others/release-notes.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -907,13 +907,157 @@
 <h1>Release Notes<a class="headerlink" href="#release-notes" title="Link to this heading">¶</a></h1>
 <p>本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 迁移指南</span></a>。</p>
 <hr class="docutils" />
+<section id="rc5">
+<h2>2.0.0-RC5<a class="headerlink" href="#rc5" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>发布日期：2026-07-07</p>
+</div></blockquote>
+<section id="id1">
+<h3>重大变更<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>模型提供商模块化</strong> —— OpenAI、Gemini、Anthropic、DashScope、Ollama 模型提供商从 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 拆分为独立的 <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-*</span></code> 扩展模块。应用需添加对应扩展依赖 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1890">#1890</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1916">#1916</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1947">#1947</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1972">#1972</a>)</p></li>
+</ul>
+</section>
+<section id="id2">
+<h3>新增<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>所有模型提供商（OpenAI、DashScope、Gemini、Anthropic）统一支持 <code class="docutils literal notranslate"><span class="pre">DataBlock</span></code> 多模态内容，覆盖单 agent、多 agent 和工具结果路径 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1933">#1933</a>)</p></li>
+<li><p>原生结构化输出（Structured Output）与工具调用协同工作 —— 支持模型原生 JSON Schema 约束 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1904">#1904</a>)</p></li>
+<li><p>DashScope 模型支持原生结构化输出 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1935">#1935</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">McpClientBuilder</span></code> 新增 <code class="docutils literal notranslate"><span class="pre">httpRequestCustomizer</span></code>，支持动态 token 注入（如 OAuth 刷新）(<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1992">#1992</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> 对齐 AG-UI 协议规范，补全缺失事件类型 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1862">#1862</a>)</p></li>
+<li><p>子 agent 可选技能白名单过滤 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1873">#1873</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code> 支持 <code class="docutils literal notranslate"><span class="pre">knownSkillNames</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1853">#1853</a>)</p></li>
+<li><p>新增 <code class="docutils literal notranslate"><span class="pre">CosAgentStateStore</span></code>、<code class="docutils literal notranslate"><span class="pre">CosBaseStore</span></code>、<code class="docutils literal notranslate"><span class="pre">CosDistributedStore</span></code>，支持腾讯云 COS 状态持久化 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1857">#1857</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ChatUsage</span></code> 暴露 cached prompt tokens (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1868">#1868</a>)</p></li>
+</ul>
+</section>
+<section id="id3">
+<h3>修复<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p><strong>核心 / Agent</strong></p>
+<ul class="simple">
+<li><p>用户中断恢复时持久化 agent 状态 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2008">#2008</a>)</p></li>
+<li><p>正确连线 fallback model 到 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1851">#1851</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 流式事件 block end 顺序 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1829">#1829</a>)</p></li>
+<li><p>在加入 agent 上下文前更新 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> 状态 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1886">#1886</a>)</p></li>
+<li><p>复用 classpath skill JAR 文件系统，避免资源泄漏 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1981">#1981</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">serializeOnKey</span></code> 在 <code class="docutils literal notranslate"><span class="pre">Flux.create</span></code> 回调中的 gate 泄漏 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1796">#1796</a>)</p></li>
+</ul>
+<p><strong>模型提供商</strong></p>
+<ul class="simple">
+<li><p>将 <code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code> 映射到 OpenAI 兼容 API 请求 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2028">#2028</a>)</p></li>
+<li><p>修复 Anthropic 流式 thinking event 处理 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1943">#1943</a>)</p></li>
+<li><p>保留 <code class="docutils literal notranslate"><span class="pre">OllamaOptions</span></code> <code class="docutils literal notranslate"><span class="pre">fromOptions</span></code>/<code class="docutils literal notranslate"><span class="pre">toBuilder</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">executionConfig</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2011">#2011</a>)</p></li>
+<li><p>DashScope thinking 模式下降级强制 tool choice (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1882">#1882</a>)</p></li>
+</ul>
+<p><strong>Harness / 沙箱</strong></p>
+<ul class="simple">
+<li><p>修复远程快照状态反序列化 —— Jackson 往返后重新注入 <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2013">#2013</a>)</p></li>
+<li><p>修复 THROTTLED 记忆保存模式在每次请求新建实例时失效 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1788">#1788</a>)</p></li>
+<li><p>通过 wakeup dispatch 传播 <code class="docutils literal notranslate"><span class="pre">userId</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2001">#2001</a>)</p></li>
+<li><p>message bus 心跳改用 <code class="docutils literal notranslate"><span class="pre">boundedElastic</span></code> 调度器 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1974">#1974</a>)</p></li>
+<li><p>避免 <code class="docutils literal notranslate"><span class="pre">fromAgent</span></code> 重复注册 <code class="docutils literal notranslate"><span class="pre">GracefulShutdownMiddleware</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1952">#1952</a>)</p></li>
+<li><p>转义 <code class="docutils literal notranslate"><span class="pre">ShellPathPolicy</span></code> 返回路径中的空格 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2031">#2031</a>)</p></li>
+<li><p>YAML 解析失败时回退到简单键值提取 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2027">#2027</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ls</span></code> 命令报告沙箱文件大小 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1838">#1838</a>)</p></li>
+<li><p>归一化 Windows <code class="docutils literal notranslate"><span class="pre">list_files</span></code> 路径 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1892">#1892</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystem.edit()</span></code> 将 <code class="docutils literal notranslate"><span class="pre">\r\n</span></code> 归一化为 <code class="docutils literal notranslate"><span class="pre">\n</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2020">#2020</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code> 将 <code class="docutils literal notranslate"><span class="pre">&quot;.&quot;</span></code> 视为根路径 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1830">#1830</a>)</p></li>
+<li><p>校验 <code class="docutils literal notranslate"><span class="pre">working_directory</span></code> 防止命名空间逃逸 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1834">#1834</a>)</p></li>
+<li><p>未配置分布式 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 时回退到 <code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1841">#1841</a>)</p></li>
+<li><p>修复 Kubernetes <code class="docutils literal notranslate"><span class="pre">hydrateWithArchive</span></code> WebSocket 竞态导致 <code class="docutils literal notranslate"><span class="pre">exit=null</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1903">#1903</a>)</p></li>
+<li><p>容忍 wrapped sandbox base64 下载 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1866">#1866</a>)</p></li>
+<li><p>移除 <code class="docutils literal notranslate"><span class="pre">AgentRun</span></code> sandbox API 版本前缀 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1891">#1891</a>)</p></li>
+<li><p>E2B sandbox 新增 connect JSON codec 支持 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1844">#1844</a>)</p></li>
+</ul>
+<p><strong>链路追踪 / 可观测性</strong></p>
+<ul class="simple">
+<li><p>从 Reactor <code class="docutils literal notranslate"><span class="pre">ContextView</span></code> 读取父 OTel Context，修复 <code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> 孤立 span (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1940">#1940</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> 子 span 看不到正确父 span (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1909">#1909</a>)</p></li>
+<li><p>将 Reactor context 传播到 chunk event hooks (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1923">#1923</a>)</p></li>
+</ul>
+<p><strong>子 Agent</strong></p>
+<ul class="simple">
+<li><p>将父 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 传播到子 agent (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1833">#1833</a>)</p></li>
+<li><p>将父 middleware 传播到子 agent (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1843">#1843</a>)</p></li>
+</ul>
+<p><strong>A2A</strong></p>
+<ul class="simple">
+<li><p>处理流式背压 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1734">#1734</a>)</p></li>
+<li><p>A2A 转换保留 AgentScope 消息角色 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1995">#1995</a>)</p></li>
+</ul>
+<p><strong>AG-UI</strong></p>
+<ul class="simple">
+<li><p>传播 run input 和 frontend tools (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1895">#1895</a>)</p></li>
+</ul>
+<p><strong>其他</strong></p>
+<ul class="simple">
+<li><p>Middleware <code class="docutils literal notranslate"><span class="pre">doFlush</span></code> 包装 <code class="docutils literal notranslate"><span class="pre">Mono.defer</span></code> 防止提前求值 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1880">#1880</a>)</p></li>
+<li><p>Nacos auto-configurations 改为 opt-in（<code class="docutils literal notranslate"><span class="pre">matchIfMissing=false</span></code>）并修复 A2A server-addr 覆盖 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1709">#1709</a>)</p></li>
+<li><p>DataAgent 补充 <code class="docutils literal notranslate"><span class="pre">ObjectMapper</span></code> bean (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1993">#1993</a>)</p></li>
+</ul>
+</section>
+<section id="id4">
+<h3>文档<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>明确流式事件 <code class="docutils literal notranslate"><span class="pre">blockId</span></code> 语义 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2016">#2016</a>)</p></li>
+<li><p>改进模型提供商文档 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1986">#1986</a>)</p></li>
+<li><p>移除无效的 <code class="docutils literal notranslate"><span class="pre">ChatResponse.isLast</span></code> 引用 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1921">#1921</a>)</p></li>
+<li><p>修复多副本 Redis 示例 —— 声明 jedis 依赖并补充 <code class="docutils literal notranslate"><span class="pre">stateStore</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1869">#1869</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">MemoryCompactionExample</span></code> 展示 memory 文件并触发 compaction (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1978">#1978</a>)</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="rc4">
+<h2>2.0.0-RC4<a class="headerlink" href="#rc4" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>发布日期：2026-06-18</p>
+</div></blockquote>
+<section id="id5">
+<h3>新增<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Agent harness 支持异步工具执行和通知，包括 message bus、async tool registry 和 scheduled wakeup dispatching (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1802">#1802</a>)</p></li>
+<li><p>Agent 调用新增 String/Message 便捷重载；所有 formatter 支持 <code class="docutils literal notranslate"><span class="pre">HintBlock</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1802">#1802</a>)</p></li>
+<li><p>持久化 spawn registry 支持子 agent 跨副本路由和 session 恢复 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1817">#1817</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> 实现 <code class="docutils literal notranslate"><span class="pre">ToolkitAware</span></code>，支持动态接收解析后的 toolkit (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1828">#1828</a>)</p></li>
+<li><p>Kubernetes sandbox 支持向 Pod 注入环境变量 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1789">#1789</a>)</p></li>
+</ul>
+</section>
+<section id="id6">
+<h3>修复<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>修复 Kubernetes 文件上传中的 SIGKILL 竞态条件，使用两阶段 archive 策略 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1826">#1826</a>)</p></li>
+<li><p>修复超时子 agent 未在重试时中断导致的资源泄漏 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1784">#1784</a>)</p></li>
+<li><p>修复复制 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 时丢失 typed attributes (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1813">#1813</a>)</p></li>
+<li><p>修复 MySQL utf8mb4 字符集下 <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code> 表初始化失败 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1781">#1781</a>)</p></li>
+<li><p>Session JSONL offload 改为幂等，防止重复写入 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1774">#1774</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">TelemetryTracer</span></code> 中 OpenTelemetry context 传播 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1799">#1799</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">OllamaChatModel</span></code> 获取 tool choice 时 options 为 null 导致 NPE (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1803">#1803</a>)</p></li>
+<li><p>补充 <code class="docutils literal notranslate"><span class="pre">LocalSandboxSnapshot</span></code> 缺失的 Jackson 注解 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1825">#1825</a>)</p></li>
+<li><p>修复 sandbox glob 不支持 <code class="docutils literal notranslate"><span class="pre">**/</span></code> 递归模式 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1684">#1684</a>)</p></li>
+<li><p>修复 <code class="docutils literal notranslate"><span class="pre">SkillFilter</span></code> 使用 composite ID 而非 skill name 匹配 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1771">#1771</a>)</p></li>
+<li><p>允许 <code class="docutils literal notranslate"><span class="pre">MultiModalTool</span></code> 使用自定义默认视觉模型 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1701">#1701</a>)</p></li>
+</ul>
+</section>
+<section id="id7">
+<h3>文档<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>修复 middleware 文档中错误的 hook 签名 (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1835">#1835</a>)</p></li>
+<li><p>修复文档示例中引用不存在的 <code class="docutils literal notranslate"><span class="pre">.sandboxContext()</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1792">#1792</a>)</p></li>
+<li><p>修复 v2 文档中 <code class="docutils literal notranslate"><span class="pre">getToolName()</span></code> → <code class="docutils literal notranslate"><span class="pre">getToolCallName()</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1760">#1760</a>)</p></li>
+<li><p>文档站点新增 AI 上下文菜单</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
 <section id="rc3">
 <h2>2.0.0-RC3<a class="headerlink" href="#rc3" title="Link to this heading">¶</a></h2>
 <blockquote>
 <div><p>发布日期：2026-06-11</p>
 </div></blockquote>
-<section id="id1">
-<h3>新增<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>新增<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">AgentResultEvent</span></code></strong> —— 新增事件类型，在 agent 调用完成后、<code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 之前发出，携带最终 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> 结果。<code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 的消费方可直接从事件流中获取最终结果，无需额外订阅 <code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code> 返回值</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">CustomEvent</span></code></strong> —— 通用可扩展事件，用于中间件向前端推送应用级通知（状态变更、团队变更等），无需为每种业务场景新增 <code class="docutils literal notranslate"><span class="pre">AgentEventType</span></code>。内置 well-known name：<code class="docutils literal notranslate"><span class="pre">state_updated</span></code>、<code class="docutils literal notranslate"><span class="pre">team_updated</span></code></p></li>
@@ -922,8 +1066,8 @@
 <li><p><strong>工具事件携带 <code class="docutils literal notranslate"><span class="pre">toolCallName</span></code></strong> —— <code class="docutils literal notranslate"><span class="pre">ToolCallDeltaEvent</span></code>、<code class="docutils literal notranslate"><span class="pre">ToolCallEndEvent</span></code>、<code class="docutils literal notranslate"><span class="pre">ToolResultDataDeltaEvent</span></code>、<code class="docutils literal notranslate"><span class="pre">ToolResultEndEvent</span></code>、<code class="docutils literal notranslate"><span class="pre">ToolResultTextDeltaEvent</span></code> 均新增 <code class="docutils literal notranslate"><span class="pre">toolCallName</span></code> 字段，消费端不再需要缓存 start 事件的名称映射</p></li>
 </ul>
 </section>
-<section id="id2">
-<h3>变更<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<section id="id9">
+<h3>变更<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">call()</span></code> 与 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 共享执行核心</strong> —— 新增内部 <code class="docutils literal notranslate"><span class="pre">buildAgentStream</span></code> 方法作为 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 和 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 的统一实现，确保 <code class="docutils literal notranslate"><span class="pre">onAgent</span></code> middleware 链在所有调用路径上一致触发。<code class="docutils literal notranslate"><span class="pre">call()</span></code> 从事件流中提取 <code class="docutils literal notranslate"><span class="pre">AgentResultEvent</span></code> 获得结果，移除了旧的独立 <code class="docutils literal notranslate"><span class="pre">agentImpl</span></code> 逻辑</p></li>
 <li><p><strong>分布式部署下 session 状态始终从 store 加载</strong> —— <code class="docutils literal notranslate"><span class="pre">activateSlotForContext</span></code> 在配置了 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 时，每次调用开头从 store 重新加载状态和权限引擎，避免分布式环境中同一 sessionId 漂移到不同机器时读到过期本地缓存</p></li>
@@ -931,8 +1075,8 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">LocalFilesystem</span></code> 路径解析简化</strong> —— 重构路径解析逻辑，减少冗余代码</p></li>
 </ul>
 </section>
-<section id="id3">
-<h3>修复<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="id10">
+<h3>修复<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>修复 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 在测试中未设置 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 导致用户隔离不准确的问题</p></li>
 </ul>
@@ -944,8 +1088,8 @@
 <blockquote>
 <div><p>发布日期：2026-06-09</p>
 </div></blockquote>
-<section id="id4">
-<h3>新增<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<section id="id11">
+<h3>新增<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">projectWritable</span></code> 模式</strong>（<code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code>）—— 开启后，agent 的文件写入按路径自动路由：工作区元数据（<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>、<code class="docutils literal notranslate"><span class="pre">agents/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code> 等）写到 workspace，其余文件（代码、配置等）直接落到项目目录。适合代码生成类 agent。详见 <a class="reference internal" href="../harness/filesystem.html#projectwritable"><span class="std std-ref">文件系统 · 项目可写模式</span></a></p></li>
 <li><p><strong>Permission 系统运行时切换</strong> —— 新增 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.setPermissionMode()</span></code> / <code class="docutils literal notranslate"><span class="pre">getPermissionMode()</span></code>，支持在运行时按 session 动态调整权限模式</p></li>
@@ -958,8 +1102,8 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> 统一接口</strong> —— 新增 <code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> 抽象，收敛分布式部署所需的所有存储组件（<code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>、<code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>、<code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>）为一键配置。内置 <code class="docutils literal notranslate"><span class="pre">RedisDistributedBackend</span></code>、<code class="docutils literal notranslate"><span class="pre">OssDistributedBackend</span></code>、<code class="docutils literal notranslate"><span class="pre">MysqlDistributedBackend</span></code> 等实现，通过 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().distributedBackend(backend)</span></code> 一行完成分布式后端接入，不再需要分别配置 stateStore、baseStore、snapshotSpec</p></li>
 </ul>
 </section>
-<section id="id5">
-<h3>变更<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id12">
+<h3>变更<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Agent 完全无状态改造</strong> —— <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 不再持有任何可变的 per-session 状态，所有可变状态封装在内部 <code class="docutils literal notranslate"><span class="pre">CallExecution</span></code> 中通过 Reactor Context 透传。同一 agent 实例可安全并发服务多个 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 组合</p></li>
 <li><p><strong>Session 接口全面改为 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong> —— 移除 <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code>、<code class="docutils literal notranslate"><span class="pre">StatePersistence</span></code> 等旧接口，统一使用 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>（内置 <code class="docutils literal notranslate"><span class="pre">InMemoryAgentStateStore</span></code>、<code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>、<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code>、<code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code>），按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 二元组自动分桶持久化</p></li>
@@ -973,8 +1117,8 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 序列化格式更新</p></li>
 </ul>
 </section>
-<section id="id6">
-<h3>修复<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="id13">
+<h3>修复<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>修复 <code class="docutils literal notranslate"><span class="pre">PermissionContextState</span></code> 在跨 session 恢复时的状态丢失问题</p></li>
 <li><p>修复 <code class="docutils literal notranslate"><span class="pre">agentscope-all</span></code> 中缺失 4 个 sandbox 扩展模块（<code class="docutils literal notranslate"><span class="pre">sandbox-kubernetes</span></code>、<code class="docutils literal notranslate"><span class="pre">sandbox-agentrun</span></code>、<code class="docutils literal notranslate"><span class="pre">sandbox-daytona</span></code>、<code class="docutils literal notranslate"><span class="pre">sandbox-e2b</span></code>）的问题</p></li>
@@ -1050,7 +1194,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-11</div>
+              Last updated on 2026-07-07</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1086,16 +1230,29 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Release Notes</a><ul>
-<li><a class="reference internal" href="#rc3">2.0.0-RC3</a><ul>
-<li><a class="reference internal" href="#id1">新增</a></li>
-<li><a class="reference internal" href="#id2">变更</a></li>
+<li><a class="reference internal" href="#rc5">2.0.0-RC5</a><ul>
+<li><a class="reference internal" href="#id1">重大变更</a></li>
+<li><a class="reference internal" href="#id2">新增</a></li>
 <li><a class="reference internal" href="#id3">修复</a></li>
+<li><a class="reference internal" href="#id4">文档</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#rc4">2.0.0-RC4</a><ul>
+<li><a class="reference internal" href="#id5">新增</a></li>
+<li><a class="reference internal" href="#id6">修复</a></li>
+<li><a class="reference internal" href="#id7">文档</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#rc3">2.0.0-RC3</a><ul>
+<li><a class="reference internal" href="#id8">新增</a></li>
+<li><a class="reference internal" href="#id9">变更</a></li>
+<li><a class="reference internal" href="#id10">修复</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#rc2">2.0.0-RC2</a><ul>
-<li><a class="reference internal" href="#id4">新增</a></li>
-<li><a class="reference internal" href="#id5">变更</a></li>
-<li><a class="reference internal" href="#id6">修复</a></li>
+<li><a class="reference internal" href="#id11">新增</a></li>
+<li><a class="reference internal" href="#id12">变更</a></li>
+<li><a class="reference internal" href="#id13">修复</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#rc1">2.0.0-RC1</a></li>

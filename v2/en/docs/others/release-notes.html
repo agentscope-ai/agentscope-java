@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Going to Production" href="going-to-production.html"><link rel="prev" title="V1 Migration Guide" href="../change-log.html">
+    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Going to Production" href="going-to-production.html"><link rel="prev" title="V1 Migration Guide" href="../change-log.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/others/release-notes.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -907,13 +907,157 @@
 <h1>Release Notes<a class="headerlink" href="#release-notes" title="Link to this heading">¶</a></h1>
 <p>This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide</span></a>.</p>
 <hr class="docutils" />
+<section id="rc5">
+<h2>2.0.0-RC5<a class="headerlink" href="#rc5" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>Released: 2026-07-07</p>
+</div></blockquote>
+<section id="breaking-changes">
+<h3>Breaking Changes<a class="headerlink" href="#breaking-changes" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Model provider modularization</strong> — OpenAI, Gemini, Anthropic, DashScope, and Ollama model providers have been moved from <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> into independent <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-*</span></code> extension modules. Applications must add the corresponding extension dependency (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1890">#1890</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1916">#1916</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1947">#1947</a>, <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1972">#1972</a>)</p></li>
+</ul>
+</section>
+<section id="added">
+<h3>Added<a class="headerlink" href="#added" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Unified <code class="docutils literal notranslate"><span class="pre">DataBlock</span></code> support in all provider message converters (OpenAI, DashScope, Gemini, Anthropic), covering single-agent, multi-agent, and tool-result paths (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1933">#1933</a>)</p></li>
+<li><p>Native structured output handling with tools — models that support structured output can enforce JSON schema constraints alongside tool calls (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1904">#1904</a>)</p></li>
+<li><p>Native structured output support for DashScope models (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1935">#1935</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">httpRequestCustomizer</span></code> support in <code class="docutils literal notranslate"><span class="pre">McpClientBuilder</span></code> for dynamic token injection (e.g. OAuth refresh) (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1992">#1992</a>)</p></li>
+<li><p>Align <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> with the AG-UI protocol spec — add missing event types (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1862">#1862</a>)</p></li>
+<li><p>Optional skill allowlist filter for subagents (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1873">#1873</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">knownSkillNames</span></code> support in <code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1853">#1853</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CosAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">CosBaseStore</span></code> and <code class="docutils literal notranslate"><span class="pre">CosDistributedStore</span></code> for Tencent Cloud COS-backed state persistence (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1857">#1857</a>)</p></li>
+<li><p>Expose cached prompt tokens in <code class="docutils literal notranslate"><span class="pre">ChatUsage</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1868">#1868</a>)</p></li>
+</ul>
+</section>
+<section id="fixed">
+<h3>Fixed<a class="headerlink" href="#fixed" title="Link to this heading">¶</a></h3>
+<p><strong>Core / Agent</strong></p>
+<ul class="simple">
+<li><p>Persist agent state on user interrupt recovery (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2008">#2008</a>)</p></li>
+<li><p>Wire fallback model into <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1851">#1851</a>)</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> stream event block end ordering (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1829">#1829</a>)</p></li>
+<li><p>Update <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> state before adding to agent context (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1886">#1886</a>)</p></li>
+<li><p>Reuse classpath skill JAR file systems to avoid resource leaks (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1981">#1981</a>)</p></li>
+<li><p>Resolve <code class="docutils literal notranslate"><span class="pre">serializeOnKey</span></code> gate leak in <code class="docutils literal notranslate"><span class="pre">Flux.create</span></code> callbacks (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1796">#1796</a>)</p></li>
+</ul>
+<p><strong>Model Providers</strong></p>
+<ul class="simple">
+<li><p>Map <code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code> to OpenAI-compatible API request (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2028">#2028</a>)</p></li>
+<li><p>Fix Anthropic stream thinking event handling (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1943">#1943</a>)</p></li>
+<li><p>Preserve <code class="docutils literal notranslate"><span class="pre">executionConfig</span></code> in <code class="docutils literal notranslate"><span class="pre">OllamaOptions</span></code> <code class="docutils literal notranslate"><span class="pre">fromOptions</span></code>/<code class="docutils literal notranslate"><span class="pre">toBuilder</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2011">#2011</a>)</p></li>
+<li><p>Degrade forced tool choice in DashScope thinking mode (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1882">#1882</a>)</p></li>
+</ul>
+<p><strong>Harness / Sandbox</strong></p>
+<ul class="simple">
+<li><p>Restore remote snapshot state deserialization — re-inject <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> after Jackson round-trip (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2013">#2013</a>)</p></li>
+<li><p>Fix THROTTLED memory save mode losing state when recreating instances per request (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1788">#1788</a>)</p></li>
+<li><p>Propagate <code class="docutils literal notranslate"><span class="pre">userId</span></code> through wakeup dispatch (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2001">#2001</a>)</p></li>
+<li><p>Run message bus heartbeat on <code class="docutils literal notranslate"><span class="pre">boundedElastic</span></code> instead of <code class="docutils literal notranslate"><span class="pre">parallel</span></code> scheduler (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1974">#1974</a>)</p></li>
+<li><p>Avoid duplicating <code class="docutils literal notranslate"><span class="pre">GracefulShutdownMiddleware</span></code> in <code class="docutils literal notranslate"><span class="pre">fromAgent</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1952">#1952</a>)</p></li>
+<li><p>Escape spaces in skill paths returned by <code class="docutils literal notranslate"><span class="pre">ShellPathPolicy</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2031">#2031</a>)</p></li>
+<li><p>Fallback to simple key-value extraction when YAML parsing fails (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2027">#2027</a>)</p></li>
+<li><p>Report sandbox file sizes in <code class="docutils literal notranslate"><span class="pre">ls</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1838">#1838</a>)</p></li>
+<li><p>Normalize Windows <code class="docutils literal notranslate"><span class="pre">list_files</span></code> paths (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1892">#1892</a>)</p></li>
+<li><p>Normalize <code class="docutils literal notranslate"><span class="pre">\r\n</span></code> to <code class="docutils literal notranslate"><span class="pre">\n</span></code> for file content in <code class="docutils literal notranslate"><span class="pre">LocalFilesystem.edit()</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2020">#2020</a>)</p></li>
+<li><p>Treat <code class="docutils literal notranslate"><span class="pre">&quot;.&quot;</span></code> as root equivalent in <code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1830">#1830</a>)</p></li>
+<li><p>Validate <code class="docutils literal notranslate"><span class="pre">working_directory</span></code> to prevent namespace escape (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1834">#1834</a>)</p></li>
+<li><p>Fall back to <code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> when no distributed <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> is configured (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1841">#1841</a>)</p></li>
+<li><p>Fix WebSocket race in Kubernetes <code class="docutils literal notranslate"><span class="pre">hydrateWithArchive</span></code> causing <code class="docutils literal notranslate"><span class="pre">exit=null</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1903">#1903</a>)</p></li>
+<li><p>Tolerate wrapped sandbox base64 downloads (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1866">#1866</a>)</p></li>
+<li><p>Remove <code class="docutils literal notranslate"><span class="pre">AgentRun</span></code> sandbox API version prefix (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1891">#1891</a>)</p></li>
+<li><p>Add connect JSON codec support for E2B sandbox (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1844">#1844</a>)</p></li>
+</ul>
+<p><strong>Tracing / Observability</strong></p>
+<ul class="simple">
+<li><p>Fix orphan spans in <code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> by reading parent OTel Context from Reactor <code class="docutils literal notranslate"><span class="pre">ContextView</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1940">#1940</a>)</p></li>
+<li><p>Fix child spans not seeing correct parent spans in <code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1909">#1909</a>)</p></li>
+<li><p>Propagate Reactor context to chunk event hooks (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1923">#1923</a>)</p></li>
+</ul>
+<p><strong>Subagent</strong></p>
+<ul class="simple">
+<li><p>Propagate parent <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> to child agents (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1833">#1833</a>)</p></li>
+<li><p>Propagate parent middleware to subagents (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1843">#1843</a>)</p></li>
+</ul>
+<p><strong>A2A</strong></p>
+<ul class="simple">
+<li><p>Handle streaming backpressure (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1734">#1734</a>)</p></li>
+<li><p>Preserve AgentScope message roles across A2A conversion (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1995">#1995</a>)</p></li>
+</ul>
+<p><strong>AG-UI</strong></p>
+<ul class="simple">
+<li><p>Propagate run input and frontend tools (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1895">#1895</a>)</p></li>
+</ul>
+<p><strong>Other</strong></p>
+<ul class="simple">
+<li><p>Wrap middleware <code class="docutils literal notranslate"><span class="pre">doFlush</span></code> in <code class="docutils literal notranslate"><span class="pre">Mono.defer</span></code> to prevent premature evaluation (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1880">#1880</a>)</p></li>
+<li><p>Nacos auto-configurations should be opt-in (<code class="docutils literal notranslate"><span class="pre">matchIfMissing=false</span></code>) and fix A2A server-addr override (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1709">#1709</a>)</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">ObjectMapper</span></code> bean for <code class="docutils literal notranslate"><span class="pre">MarketContributionService</span></code> in DataAgent (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1993">#1993</a>)</p></li>
+</ul>
+</section>
+<section id="documentation">
+<h3>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Clarify stream event <code class="docutils literal notranslate"><span class="pre">blockId</span></code> semantics (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/2016">#2016</a>)</p></li>
+<li><p>Improve model provider documentation (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1986">#1986</a>)</p></li>
+<li><p>Remove invalid <code class="docutils literal notranslate"><span class="pre">ChatResponse.isLast</span></code> references (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1921">#1921</a>)</p></li>
+<li><p>Fix multi-replica Redis example — declare jedis dependency and add <code class="docutils literal notranslate"><span class="pre">stateStore</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1869">#1869</a>)</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">MemoryCompactionExample</span></code> to show memory files and fire compaction (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1978">#1978</a>)</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="rc4">
+<h2>2.0.0-RC4<a class="headerlink" href="#rc4" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>Released: 2026-06-18</p>
+</div></blockquote>
+<section id="id1">
+<h3>Added<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Agent harness now supports async tool execution and notifications, including message bus, async tool registry, and scheduled wakeup dispatching (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1802">#1802</a>)</p></li>
+<li><p>String/Message convenience overloads for agent calls; all formatters now support <code class="docutils literal notranslate"><span class="pre">HintBlock</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1802">#1802</a>)</p></li>
+<li><p>Persistent spawn registry in tool context state enables subagent cross-replica routing and session recovery (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1817">#1817</a>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> implements <code class="docutils literal notranslate"><span class="pre">ToolkitAware</span></code> to receive the resolved toolkit dynamically (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1828">#1828</a>)</p></li>
+<li><p>Kubernetes sandbox now supports injecting environment variables into pods (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1789">#1789</a>)</p></li>
+</ul>
+</section>
+<section id="id2">
+<h3>Fixed<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Fixed SIGKILL race condition in Kubernetes file uploads by using two-phase archive strategy (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1826">#1826</a>)</p></li>
+<li><p>Fixed resource leak where timed-out sub-agents were not interrupted on retry (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1784">#1784</a>)</p></li>
+<li><p>Fixed typed attributes being lost when copying <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1813">#1813</a>)</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code> table initialization failure under MySQL utf8mb4 charset (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1781">#1781</a>)</p></li>
+<li><p>Made session JSONL offload idempotent to prevent duplicate writes (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1774">#1774</a>)</p></li>
+<li><p>Fixed OpenTelemetry context propagation in <code class="docutils literal notranslate"><span class="pre">TelemetryTracer</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1799">#1799</a>)</p></li>
+<li><p>Fixed NPE in <code class="docutils literal notranslate"><span class="pre">OllamaChatModel</span></code> when options are null during tool choice retrieval (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1803">#1803</a>)</p></li>
+<li><p>Added missing Jackson annotations to <code class="docutils literal notranslate"><span class="pre">LocalSandboxSnapshot</span></code> for proper serialization (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1825">#1825</a>)</p></li>
+<li><p>Fixed sandbox glob not supporting <code class="docutils literal notranslate"><span class="pre">**/</span></code> recursive patterns (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1684">#1684</a>)</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">SkillFilter</span></code> matching using composite ID instead of skill name (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1771">#1771</a>)</p></li>
+<li><p>Allow custom default vision model in <code class="docutils literal notranslate"><span class="pre">MultiModalTool</span></code> (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1701">#1701</a>)</p></li>
+</ul>
+</section>
+<section id="id3">
+<h3>Documentation<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Fixed incorrect hook signatures in middleware docs (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1835">#1835</a>)</p></li>
+<li><p>Fixed references to non-existent <code class="docutils literal notranslate"><span class="pre">.sandboxContext()</span></code> in doc examples (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1792">#1792</a>)</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">getToolName()</span></code> → <code class="docutils literal notranslate"><span class="pre">getToolCallName()</span></code> in v2 docs (<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/pull/1760">#1760</a>)</p></li>
+<li><p>Added AI context menu to documentation site</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
 <section id="rc3">
 <h2>2.0.0-RC3<a class="headerlink" href="#rc3" title="Link to this heading">¶</a></h2>
 <blockquote>
 <div><p>Released: 2026-06-11</p>
 </div></blockquote>
-<section id="added">
-<h3>Added<a class="headerlink" href="#added" title="Link to this heading">¶</a></h3>
+<section id="id4">
+<h3>Added<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">AgentResultEvent</span></code></strong> — new event type emitted when an agent finishes processing, immediately before <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>, carrying the final <code class="docutils literal notranslate"><span class="pre">Msg</span></code> result. Consumers of <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> can obtain the result directly from the event stream without separately subscribing to the <code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code> return value</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">CustomEvent</span></code></strong> — generic extensible event for middleware to push application-level notifications (state changes, team updates, etc.) to front-end subscribers without adding per-use-case <code class="docutils literal notranslate"><span class="pre">AgentEventType</span></code> entries. Built-in well-known names: <code class="docutils literal notranslate"><span class="pre">state_updated</span></code>, <code class="docutils literal notranslate"><span class="pre">team_updated</span></code></p></li>
@@ -931,8 +1075,8 @@
 <li><p><strong>Simplified <code class="docutils literal notranslate"><span class="pre">LocalFilesystem</span></code> path resolution</strong> — refactored path resolution logic to reduce redundant code</p></li>
 </ul>
 </section>
-<section id="fixed">
-<h3>Fixed<a class="headerlink" href="#fixed" title="Link to this heading">¶</a></h3>
+<section id="id5">
+<h3>Fixed<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Fixed <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> not setting <code class="docutils literal notranslate"><span class="pre">userId</span></code> in tests, causing inaccurate user isolation</p></li>
 </ul>
@@ -944,8 +1088,8 @@
 <blockquote>
 <div><p>Released: 2026-06-09</p>
 </div></blockquote>
-<section id="id1">
-<h3>Added<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h3>Added<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">projectWritable</span></code> mode</strong> (<code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code>) — when enabled, the agent’s file writes are routed by path: workspace metadata (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, etc.) goes to workspace; everything else (code, configs) lands in the project directory. Designed for code-generation agents. See <a class="reference internal" href="../harness/filesystem.html#project-writable-mode-projectwritable"><span class="std std-ref">Filesystem · Project-writable mode</span></a></p></li>
 <li><p><strong>Runtime permission mode switching</strong> — new <code class="docutils literal notranslate"><span class="pre">HarnessAgent.setPermissionMode()</span></code> / <code class="docutils literal notranslate"><span class="pre">getPermissionMode()</span></code> for dynamically adjusting the permission mode per session at runtime</p></li>
@@ -958,8 +1102,8 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> unified interface</strong> — new <code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> abstraction that consolidates all distributed storage components (<code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>, <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>) into a single configuration point. Built-in implementations include <code class="docutils literal notranslate"><span class="pre">RedisDistributedBackend</span></code>, <code class="docutils literal notranslate"><span class="pre">OssDistributedBackend</span></code>, and <code class="docutils literal notranslate"><span class="pre">MysqlDistributedBackend</span></code>. One call to <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().distributedBackend(backend)</span></code> wires up the entire distributed backend — no more separate stateStore, baseStore, and snapshotSpec configuration</p></li>
 </ul>
 </section>
-<section id="id2">
-<h3>Changed<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>Changed<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Agent fully stateless</strong> — <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> no longer holds any mutable per-session state; all mutable state is encapsulated in an internal <code class="docutils literal notranslate"><span class="pre">CallExecution</span></code> and propagated via Reactor Context. A single agent instance can safely serve multiple <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> combinations concurrently</p></li>
 <li><p><strong>Session interface replaced by <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong> — removed <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code>, <code class="docutils literal notranslate"><span class="pre">StatePersistence</span></code>, and related legacy interfaces; unified on <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (built-in: <code class="docutils literal notranslate"><span class="pre">InMemoryAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code>), auto-partitioned by <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code></p></li>
@@ -973,8 +1117,8 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> serialization format updates</p></li>
 </ul>
 </section>
-<section id="id3">
-<h3>Fixed<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>Fixed<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Fixed <code class="docutils literal notranslate"><span class="pre">PermissionContextState</span></code> losing state during cross-session restoration</p></li>
 <li><p>Fixed <code class="docutils literal notranslate"><span class="pre">agentscope-all</span></code> missing 4 sandbox extension modules (<code class="docutils literal notranslate"><span class="pre">sandbox-kubernetes</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-agentrun</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-daytona</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-e2b</span></code>)</p></li>
@@ -1050,7 +1194,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-11</div>
+              Last updated on 2026-07-07</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1086,16 +1230,29 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Release Notes</a><ul>
-<li><a class="reference internal" href="#rc3">2.0.0-RC3</a><ul>
+<li><a class="reference internal" href="#rc5">2.0.0-RC5</a><ul>
+<li><a class="reference internal" href="#breaking-changes">Breaking Changes</a></li>
 <li><a class="reference internal" href="#added">Added</a></li>
-<li><a class="reference internal" href="#changed">Changed</a></li>
 <li><a class="reference internal" href="#fixed">Fixed</a></li>
+<li><a class="reference internal" href="#documentation">Documentation</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#rc4">2.0.0-RC4</a><ul>
+<li><a class="reference internal" href="#id1">Added</a></li>
+<li><a class="reference internal" href="#id2">Fixed</a></li>
+<li><a class="reference internal" href="#id3">Documentation</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#rc3">2.0.0-RC3</a><ul>
+<li><a class="reference internal" href="#id4">Added</a></li>
+<li><a class="reference internal" href="#changed">Changed</a></li>
+<li><a class="reference internal" href="#id5">Fixed</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#rc2">2.0.0-RC2</a><ul>
-<li><a class="reference internal" href="#id1">Added</a></li>
-<li><a class="reference internal" href="#id2">Changed</a></li>
-<li><a class="reference internal" href="#id3">Fixed</a></li>
+<li><a class="reference internal" href="#id6">Added</a></li>
+<li><a class="reference internal" href="#id7">Changed</a></li>
+<li><a class="reference internal" href="#id8">Fixed</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#rc1">2.0.0-RC1</a></li>

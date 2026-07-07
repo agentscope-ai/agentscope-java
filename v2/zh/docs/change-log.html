@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
+    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/change-log.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -1097,7 +1097,7 @@
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">SkillBox</span></code> 类与 <code class="docutils literal notranslate"><span class="pre">Builder.skillBox(SkillBox)</span></code> 均标 <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true,</span> <span class="pre">since</span> <span class="pre">=</span> <span class="pre">&quot;2.0.0&quot;)</span></code></p></li>
 <li><p>新方式：通过 <code class="docutils literal notranslate"><span class="pre">AgentSkillRepository</span></code>（内置 <code class="docutils literal notranslate"><span class="pre">ClasspathSkillRepository</span></code>、<code class="docutils literal notranslate"><span class="pre">FileSystemSkillRepository</span></code>）注入技能，使用 <code class="docutils literal notranslate"><span class="pre">Builder.skillRepository(...)</span></code> / <code class="docutils literal notranslate"><span class="pre">.skillRepositories(...)</span></code>。只要注册了至少一个 repository，<code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> 会自动安装，在每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 前重建 skill prompt</p></li>
-<li><p>细粒度过滤：<code class="docutils literal notranslate"><span class="pre">Builder.skillFilter(SkillFilter)</span></code>。若需要关闭自动中间件（例如让 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 接管），用 <code class="docutils literal notranslate"><span class="pre">Builder.dynamicSkillsEnabled(false)</span></code></p></li>
+<li><p>细粒度过滤：<code class="docutils literal notranslate"><span class="pre">Builder.skillFilter(SkillFilter)</span></code></p></li>
 </ul>
 <p>详见 → <a class="reference internal" href="harness/skill.html"><span class="std std-doc">技能</span></a></p>
 </section>
@@ -1334,7 +1334,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-07</div>
           </div>
           <div class="right-details">
             <div class="icons">

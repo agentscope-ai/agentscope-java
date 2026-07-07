@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-06T06:41:31+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
+    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Message &amp; Event" href="message-and-event.html"><link rel="prev" title="Quickstart" href="../quickstart.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/agent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1582,7 +1582,6 @@ With Toolkit / MCP</label><div class="sd-tab-content docutils">
 <p>Skills are hot-loadable Markdown prompt modules that the LLM activates on demand:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">(</span><span class="n">dataSource</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">dynamicSkillsEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">     </span><span class="c1">// allow LLM to load new skills at runtime</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1688,7 +1687,7 @@ Middleware</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-06</div>
+              Last updated on 2026-07-07</div>
           </div>
           <div class="right-details">
             <div class="icons">
