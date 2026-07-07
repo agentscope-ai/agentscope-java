@@ -591,7 +591,6 @@ ReActAgent.builder()
 ```java
 ReActAgent.builder()
         .skillRepository(new MysqlSkillRepository(dataSource))
-        .dynamicSkillsEnabled(true)     // 允许 LLM 动态加载新技能
         .build();
 ```
 
