@@ -376,11 +376,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 AgentState legacy =
                                         LegacyStateLoader.loadFromLegacySession(
                                                 stateStore, userId, sessionId);
-                                if (legacy != null
-                                        && (!legacy.getContext().isEmpty()
-                                                || !legacy.getToolContext()
-                                                        .getActivatedGroups()
-                                                        .isEmpty())) {
+                                if (!legacy.getContext().isEmpty()
+                                        || !legacy.getToolContext()
+                                                .getActivatedGroups()
+                                                .isEmpty()) {
                                     return legacy;
                                 }
                                 return fresh;
@@ -406,6 +405,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             asb.permissionContext(permCtx);
         }
         return asb.build();
+    }
+
+    // Injects builder-time allow rules into a PermissionEngine loaded from persisted state,
+    // ensuring invariant permissions (e.g. plan-control tools) survive session restore.
+    private static void ensureInitialAllowRules(
+            PermissionEngine engine, PermissionContextState initialCtx) {
+        if (initialCtx == null || initialCtx.getAllowRules().isEmpty()) {
+            return;
+        }
+        if (engine.getContext() == initialCtx) {
+            return;
+        }
+        Map<String, List<PermissionRule>> engineAllow = engine.getAllowRules();
+        for (Map.Entry<String, List<PermissionRule>> entry :
+                initialCtx.getAllowRules().entrySet()) {
+            List<PermissionRule> existing = engineAllow.getOrDefault(entry.getKey(), List.of());
+            for (PermissionRule rule : entry.getValue()) {
+                if (!existing.contains(rule)) {
+                    engine.addRule(rule);
+                }
+            }
+        }
     }
 
     /**
@@ -468,11 +489,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         PermissionEngine loadedEngine;
         if (stateStore != null) {
             loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            ensureInitialAllowRules(loadedEngine, initialPermissionContext);
             permissionEngineCache.put(slot, loadedEngine);
         } else {
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
-                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+                            slot,
+                            k -> {
+                                PermissionEngine pe =
+                                        new PermissionEngine(loaded.getPermissionContext());
+                                ensureInitialAllowRules(pe, initialPermissionContext);
+                                return pe;
+                            });
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
         if (toolkit != null) {
