@@ -149,12 +149,36 @@ class AnthropicAutoConfigurationTest {
                         });
     }
 
+    @Test
+    void shouldApplyAnthropicChatModelBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(CustomBuilderConfiguration.class)
+                .withPropertyValues(
+                        "agentscope.model.provider=anthropic",
+                        "agentscope.anthropic.api-key=test-anthropic-key",
+                        "agentscope.anthropic.model-name=claude-sonnet-4.5")
+                .run(
+                        context -> {
+                            AnthropicChatModel model = context.getBean(AnthropicChatModel.class);
+                            assertThat(model.getModelName()).isEqualTo("customized-claude");
+                        });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
         @Bean
         Model customModel() {
             return new TestModel();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomBuilderConfiguration {
+
+        @Bean
+        AnthropicChatModelBuilderCustomizer testAnthropicChatModelBuilderCustomizer() {
+            return builder -> builder.modelName("customized-claude");
         }
     }
 
