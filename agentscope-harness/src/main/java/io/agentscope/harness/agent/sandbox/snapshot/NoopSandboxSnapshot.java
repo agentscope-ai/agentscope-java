@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -25,6 +26,7 @@ import java.io.OutputStream;
  * session stops. Each time a session is started fresh, the full manifest is applied
  * (Branch D of the start logic). Use this when workspace durability is not required.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class NoopSandboxSnapshot implements SandboxSnapshot {
 
     private static final String ID = "noop";
