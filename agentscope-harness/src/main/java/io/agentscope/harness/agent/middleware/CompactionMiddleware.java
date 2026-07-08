@@ -33,10 +33,12 @@ import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -124,6 +126,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             compactor
                                     .compactIfNeeded(
                                             rc, conversation, effectiveConfig, agentId, sessionId)
+                                    .onErrorResume(
+                                            e -> {
+                                                log.warn(
+                                                        "Compaction failed, continuing without"
+                                                                + " compaction: {}",
+                                                        e.getMessage());
+                                                return Mono.just(Optional.empty());
+                                            })
                                     .flatMapMany(
                                             optResult -> {
                                                 if (optResult.isEmpty()) {
@@ -165,20 +175,6 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                                         newMessages,
                                                                         input.tools(),
                                                                         input.options())));
-                                            })
-                                    .onErrorResume(
-                                            e -> {
-                                                log.warn(
-                                                        "Compaction failed, continuing without"
-                                                                + " compaction: {}",
-                                                        e.getMessage());
-                                                CompactionEndEvent errorEnd =
-                                                        new CompactionEndEvent(
-                                                                conversation.size(),
-                                                                conversation.size(),
-                                                                0);
-                                                return Flux.concat(
-                                                        Flux.just(errorEnd), next.apply(input));
                                             }));
                 });
     }
