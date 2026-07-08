@@ -41,21 +41,31 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
     private static final Logger log = LoggerFactory.getLogger(DockerSandboxClient.class);
 
     private final ObjectMapper objectMapper;
+    private final SandboxSnapshotSpec snapshotSpec;
 
     public DockerSandboxClient() {
-        this.objectMapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule());
+        this(null, null);
+    }
+
+    // Uses the given mapper as-is; register HarnessSandboxJacksonModule before deserializeState
+    public DockerSandboxClient(ObjectMapper objectMapper) {
+        this(objectMapper, null);
     }
 
     /**
-     * Uses the given mapper as-is. For {@link SandboxState} JSON round-trip, register {@link
-     * HarnessSandboxJacksonModule} (and any extra {@code NamedType} for custom state subclasses)
-     * on this mapper before calling {@link #deserializeState}.
+     * @param objectMapper optional mapper; when null a default mapper is created with harness
+     *     Jackson module registered
+     * @param snapshotSpec used in {@link #resume} to re-inject the snapshot client after
+     *     deserialization. When null, the snapshot field is left as-is (backward-compatible).
      */
-    public DockerSandboxClient(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public DockerSandboxClient(ObjectMapper objectMapper, SandboxSnapshotSpec snapshotSpec) {
+        this.objectMapper =
+                objectMapper != null
+                        ? objectMapper
+                        : new ObjectMapper()
+                                .findAndRegisterModules()
+                                .registerModule(new HarnessSandboxJacksonModule());
+        this.snapshotSpec = snapshotSpec;
     }
 
     @Override
@@ -101,6 +111,10 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
         if (!(state instanceof DockerSandboxState dockerState)) {
             throw new IllegalArgumentException(
                     "Expected DockerSandboxState but got: " + state.getClass().getName());
+        }
+        // Re-inject snapshot client lost during JSON serialization
+        if (snapshotSpec != null && dockerState.getSnapshot() != null) {
+            dockerState.setSnapshot(snapshotSpec.build(dockerState.getSnapshot().getId()));
         }
         log.debug(
                 "[sandbox-docker] Resuming sandbox: id={}, containerId={}",

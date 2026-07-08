@@ -46,6 +46,7 @@ public abstract class SandboxFilesystemSpec {
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
+    private boolean keepAlive = false;
 
     protected abstract SandboxClient<?> createClient();
 
@@ -107,6 +108,24 @@ public abstract class SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * When {@code true}, {@link io.agentscope.harness.agent.sandbox.SandboxManager#release}
+     * calls {@link io.agentscope.harness.agent.sandbox.Sandbox#stop()} (persisting the
+     * snapshot) but skips {@link io.agentscope.harness.agent.sandbox.Sandbox#shutdown()},
+     * leaving the underlying resource (e.g. Pod) alive for reuse in the next call.
+     *
+     * @param keepAlive true to preserve the sandbox resource across calls
+     * @return this spec
+     */
+    public SandboxFilesystemSpec keepAlive(boolean keepAlive) {
+        this.keepAlive = keepAlive;
+        return this;
+    }
+
+    public boolean isKeepAlive() {
+        return keepAlive;
+    }
+
     public final SandboxContext toSandboxContext(Path hostWorkspaceRoot) {
         SandboxClient<?> client =
                 Objects.requireNonNull(createClient(), "sandbox client is required");
@@ -117,6 +136,7 @@ public abstract class SandboxFilesystemSpec {
                 .snapshotSpec(snapshotSpecOverride != null ? snapshotSpecOverride : snapshotSpec())
                 .workspaceSpec(withProjection)
                 .isolationScope(isolationScope)
+                .keepAlive(keepAlive)
                 .build();
     }
 

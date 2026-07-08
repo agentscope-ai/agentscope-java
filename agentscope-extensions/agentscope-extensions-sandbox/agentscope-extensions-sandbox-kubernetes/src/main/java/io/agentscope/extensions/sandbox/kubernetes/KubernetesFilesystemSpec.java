@@ -99,7 +99,12 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
 
     @Override
     protected SandboxClient<?> createClient() {
-        return client != null ? client : options.createClient();
+        if (client != null) {
+            return client;
+        }
+        SandboxSnapshotSpec effective =
+                getSnapshotSpecOverride() != null ? getSnapshotSpecOverride() : snapshotSpec();
+        return new KubernetesSandboxClient(options, null, effective);
     }
 
     @Override

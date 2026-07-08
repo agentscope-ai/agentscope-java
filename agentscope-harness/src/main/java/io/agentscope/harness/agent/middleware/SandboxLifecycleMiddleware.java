@@ -90,7 +90,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             } catch (Exception e) {
                 filesystemProxy.setSandbox(null);
                 try {
-                    sandboxManager.release(result);
+                    sandboxManager.release(result, sandboxContext);
                 } catch (Exception releaseErr) {
                     log.warn(
                             "[sandbox-mw] Failed to release session after pre-call failure: {}",
@@ -124,7 +124,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
         try {
-            sandboxManager.release(result);
+            sandboxManager.release(result, sandboxContext);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
         }

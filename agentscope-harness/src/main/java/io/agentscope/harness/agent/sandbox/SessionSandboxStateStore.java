@@ -76,6 +76,22 @@ public final class SessionSandboxStateStore {
     }
 
     /**
+     * Convenience overload of {@link #load(SandboxIsolationKey)} for callers that have a scope and
+     * value directly (e.g. restore, archive, scavenger) without constructing a key manually.
+     */
+    public Optional<String> load(IsolationScope scope, String value) throws IOException {
+        return load(new SandboxIsolationKey(scope, value));
+    }
+
+    /**
+     * Convenience overload of {@link #save(SandboxIsolationKey, String)} for callers that have a
+     * scope and value directly without constructing a key manually.
+     */
+    public void save(IsolationScope scope, String value, String json) throws IOException {
+        save(new SandboxIsolationKey(scope, value), json);
+    }
+
+    /**
      * Pack the sandbox isolation key into a single sessionId string that fits the
      * {@link AgentStateStore} 2-arg slot model. The userId column is always {@code null} because
      * sandbox state is conceptually agent-scoped, not user-scoped: USER/AGENT/GLOBAL scopes are

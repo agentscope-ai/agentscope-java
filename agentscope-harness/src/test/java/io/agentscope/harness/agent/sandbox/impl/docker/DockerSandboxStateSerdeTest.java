@@ -13,67 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.sandbox.kubernetes;
+package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
-import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-class KubernetesSandboxStateSerdeTest {
-
-    @Test
-    void roundTripKubernetesState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule())
-                        .registerModule(new KubernetesHarnessSandboxJacksonModule());
-
-        KubernetesSandboxState state = new KubernetesSandboxState();
-        state.setSessionId("s1");
-        state.setNamespace("ns1");
-        state.setPodName("p1");
-        state.setWorkspaceRoot("/workspace");
-        state.setImage("ubuntu:22.04");
-        WorkspaceSpec ws = new WorkspaceSpec();
-        ws.setRoot("/tmp/host");
-        state.setWorkspaceSpec(ws);
-
-        String json = mapper.writeValueAsString(state);
-        SandboxState read = mapper.readValue(json, SandboxState.class);
-        Assertions.assertInstanceOf(KubernetesSandboxState.class, read);
-        KubernetesSandboxState k = (KubernetesSandboxState) read;
-        Assertions.assertEquals("ns1", k.getNamespace());
-        Assertions.assertEquals("p1", k.getPodName());
-    }
+class DockerSandboxStateSerdeTest {
 
     @Test
     void resumeReInjectsSnapshotClient() {
-        // Build a state with RemoteSandboxSnapshot that has id but client=null (simulating
-        // deserialization)
-        KubernetesSandboxState state = new KubernetesSandboxState();
+        DockerSandboxState state = new DockerSandboxState();
         state.setSessionId("test-session");
-        state.setNamespace("default");
-        state.setContainerName("agent");
         state.setWorkspaceRoot("/workspace");
-        state.setImage("ubuntu:24.04");
+        state.setImage("ubuntu:22.04");
         WorkspaceSpec spec = new WorkspaceSpec();
         spec.setRoot("/workspace");
         state.setWorkspaceSpec(spec);
         state.setWorkspaceRootReady(false);
 
+        // Simulate deserialization: snapshot has id but client is null
         RemoteSandboxSnapshot snapshotWithNullClient =
                 new RemoteSandboxSnapshot(null, "snap-id-123");
         state.setSnapshot(snapshotWithNullClient);
@@ -81,11 +48,9 @@ class KubernetesSandboxStateSerdeTest {
         // Client with snapshotSpec that can rebuild the client
         RemoteSnapshotClient mockClient = mock(RemoteSnapshotClient.class);
         SandboxSnapshotSpec snapshotSpec = id -> new RemoteSandboxSnapshot(mockClient, id);
-        KubernetesSandboxClient client =
-                new KubernetesSandboxClient(
-                        new KubernetesSandboxClientOptions(), null, snapshotSpec);
+        DockerSandboxClient client = new DockerSandboxClient(null, snapshotSpec);
 
-        KubernetesSandbox sandbox = (KubernetesSandbox) client.resume(state);
+        DockerSandbox sandbox = (DockerSandbox) client.resume(state);
 
         SandboxSnapshot rebuilt = sandbox.getState().getSnapshot();
         assertNotNull(rebuilt);
