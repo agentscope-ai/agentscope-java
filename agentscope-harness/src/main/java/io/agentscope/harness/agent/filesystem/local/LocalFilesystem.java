@@ -628,8 +628,28 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private Path resolveRooted(String effectiveKey) {
+        // In ROOTED mode, paths starting with "/" represent logical workspace-absolute paths
+        // (e.g. "/skills" means "<workspace>/skills"), not host-machine absolute paths.
+        // Strip the leading "/" and resolve relative to cwd, similar to resolveSandboxed().
+        // This is necessary because:
+        // - On Windows: Path.of("/skills").isAbsolute() returns false (no drive letter),
+        //   causing cwd.resolve("/skills") to resolve to <drive>:\skills which doesn't exist.
+        // - On Unix: Path.of("/skills").isAbsolute() returns true, triggering SecurityException.
+        if (effectiveKey.startsWith("/")) {
+            String stripped = effectiveKey.substring(1);
+            if (stripped.isEmpty()) {
+                return cwd;
+            }
+            // Check for path traversal attacks
+            if (stripped.contains("..") || stripped.startsWith("~")) {
+                throw new SecurityException("Path traversal not allowed: " + effectiveKey);
+            }
+            return cwd.resolve(stripped).normalize();
+        }
+
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
+            // True host absolute paths (Windows drive letters, UNC paths)
             Path normalized = target.normalize();
             if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
                 return normalized;
