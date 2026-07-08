@@ -89,7 +89,7 @@ public final class TextBlock extends ContentBlock {
          * @return A new TextBlock instance (null text will be converted to empty string)
          */
         public TextBlock build() {
-            return new TextBlock(text != null ? text : "");
+            return new TextBlock(this.text);
         }
     }
 }
