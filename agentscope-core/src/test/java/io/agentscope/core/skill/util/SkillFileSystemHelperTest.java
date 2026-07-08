@@ -680,6 +680,36 @@ class SkillFileSystemHelperTest {
                         rootSkillDir.resolve("references/guide.md"), StandardCharsets.UTF_8));
     }
 
+    @Test
+    @DisplayName("Should clear old resources when force=true for root skill")
+    void testSaveSkills_RootLevel_ForceEnabled_ClearsOldResources() throws IOException {
+        Path rootSkillDir = tempDir.resolve("root-skills-save-5");
+        Files.createDirectories(rootSkillDir);
+        Files.writeString(
+                rootSkillDir.resolve("SKILL.md"),
+                "---\nname: root-save-skill5\ndescription: Old\n---\nOld content",
+                StandardCharsets.UTF_8);
+        // Old resource that should be deleted
+        Files.createDirectories(rootSkillDir.resolve("references"));
+        Files.writeString(rootSkillDir.resolve("references/old-doc.md"), "old doc");
+
+        Map<String, String> resources = Map.of("references/readme.md", "# New Readme");
+        AgentSkill skill = new AgentSkill("root-save-skill5", "Updated", "New content", resources);
+        boolean result = SkillFileSystemHelper.saveSkills(rootSkillDir, List.of(skill), true);
+        assertTrue(result);
+
+        // Old files should be gone
+        assertFalse(Files.exists(rootSkillDir.resolve("references/old-doc.md")));
+        // New files should be present
+        assertTrue(Files.exists(rootSkillDir.resolve("references/readme.md")));
+        // Updated SKILL.md content
+        String savedContent =
+                Files.readString(rootSkillDir.resolve("SKILL.md"), StandardCharsets.UTF_8);
+        assertTrue(savedContent.contains("New content"));
+        // baseDir should still exist
+        assertTrue(Files.exists(rootSkillDir));
+    }
+
     private void createSampleSkill(String name, String description, String content)
             throws IOException {
         Path skillDir = skillsBaseDir.resolve(name);

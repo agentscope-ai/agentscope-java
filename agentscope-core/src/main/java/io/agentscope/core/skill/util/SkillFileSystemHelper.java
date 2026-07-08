@@ -241,21 +241,39 @@ public final class SkillFileSystemHelper {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
 
-                // Determine whether this skill matches a root-level skill directory
-                boolean isRootSkill =
-                        hasSkillFile(baseDir)
-                                && skillName.equals(readSkillName(baseDir).orElse(null));
-
                 Path skillDir;
                 Path skillFile;
-                if (isRootSkill) {
+                // Root-level skill: baseDir itself contains SKILL.md
+                if (hasSkillFile(baseDir)) {
                     skillDir = baseDir.toAbsolutePath().normalize();
                     skillFile = skillDir.resolve(SKILL_FILE_NAME);
-                    if (Files.exists(skillFile) && !force) {
-                        logger.info("Root skill already exists and force=false: {}", skillName);
-                        continue;
+                    if (Files.exists(skillFile)) {
+                        if (!force) {
+                            logger.info("Root skill already exists and force=false: {}", skillName);
+                            continue;
+                        } else {
+                            logger.info("Overwriting existing root skill: {}", skillName);
+                            // Delete all contents except baseDir itself
+                            try (Stream<Path> paths = Files.walk(skillDir)) {
+                                paths.sorted(Comparator.reverseOrder())
+                                        .filter(path -> !path.equals(skillDir))
+                                        .forEach(
+                                                path -> {
+                                                    try {
+                                                        Files.delete(path);
+                                                    } catch (IOException e) {
+                                                        throw new RuntimeException(
+                                                                "Failed to delete: " + path, e);
+                                                    }
+                                                });
+                            } catch (IOException e) {
+                                throw new RuntimeException(
+                                        "Failed to clean root skill directory", e);
+                            }
+                        }
                     }
                 } else {
+                    // Subdirectory skill: create a new subdirectory
                     skillDir = validateAndResolvePath(baseDir, skillName);
                     if (Files.exists(skillDir)) {
                         if (!force) {
