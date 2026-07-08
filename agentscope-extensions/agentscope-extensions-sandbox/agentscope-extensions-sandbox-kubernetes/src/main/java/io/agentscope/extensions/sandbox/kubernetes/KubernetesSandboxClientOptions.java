@@ -17,6 +17,8 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import io.fabric8.kubernetes.api.model.PodSecurityContext;
+import io.fabric8.kubernetes.api.model.SecurityContext;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import java.util.HashMap;
@@ -32,6 +34,8 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     private String containerName = "workspace";
     private String workspaceRoot = "/workspace";
     private String serviceAccount;
+    private SecurityContext containerSecurityContext;
+    private PodSecurityContext podSecurityContext;
     private Map<String, String> nodeSelector = new HashMap<>();
     private Map<String, String> podLabels = new HashMap<>();
     private String cpuRequest;
@@ -105,6 +109,22 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setServiceAccount(String serviceAccount) {
         this.serviceAccount = serviceAccount;
+    }
+
+    public SecurityContext getContainerSecurityContext() {
+        return containerSecurityContext;
+    }
+
+    public void setContainerSecurityContext(SecurityContext containerSecurityContext) {
+        this.containerSecurityContext = containerSecurityContext;
+    }
+
+    public PodSecurityContext getPodSecurityContext() {
+        return podSecurityContext;
+    }
+
+    public void setPodSecurityContext(PodSecurityContext podSecurityContext) {
+        this.podSecurityContext = podSecurityContext;
     }
 
     public Map<String, String> getNodeSelector() {

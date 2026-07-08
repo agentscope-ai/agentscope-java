@@ -159,6 +159,12 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         if (callOptions.getServiceAccount() != null) {
             o.setServiceAccount(callOptions.getServiceAccount());
         }
+        if (callOptions.getContainerSecurityContext() != null) {
+            o.setContainerSecurityContext(callOptions.getContainerSecurityContext());
+        }
+        if (callOptions.getPodSecurityContext() != null) {
+            o.setPodSecurityContext(callOptions.getPodSecurityContext());
+        }
         if (callOptions.getNodeSelector() != null && !callOptions.getNodeSelector().isEmpty()) {
             o.setNodeSelector(callOptions.getNodeSelector());
         }
@@ -183,6 +189,8 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         o.setContainerName(src.getContainerName());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setServiceAccount(src.getServiceAccount());
+        o.setContainerSecurityContext(src.getContainerSecurityContext());
+        o.setPodSecurityContext(src.getPodSecurityContext());
         o.setNodeSelector(src.getNodeSelector());
         o.setPodLabels(src.getPodLabels());
         o.setCpuRequest(src.getCpuRequest());
