@@ -53,9 +53,13 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * Simple subagent tool for agent-internal use. Much lighter than {@code SessionsTool}:
@@ -719,24 +723,44 @@ public class AgentSpawnTool {
                         Mono.<String>create(
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
+                                    AtomicBoolean outerCancelled = new AtomicBoolean(false);
+                                    Disposable.Swap innerSubscription = Disposables.swap();
 
-                                    execLocalSync(
-                                                    agent,
-                                                    sessionId,
-                                                    userId,
-                                                    task,
-                                                    spawned,
-                                                    runtimeContext)
-                                            .contextWrite(
-                                                    c -> reactor.util.context.Context.of(parentCtx))
-                                            .subscribe(
-                                                    bridge::complete,
-                                                    bridge::completeExceptionally,
-                                                    () -> {
-                                                        if (!bridge.isDone()) {
-                                                            bridge.complete(null);
-                                                        }
-                                                    });
+                                    sink.onCancel(
+                                            () -> {
+                                                outerCancelled.set(true);
+                                                innerSubscription.dispose();
+                                                bridge.cancel(false);
+                                            });
+
+                                    Disposable inner =
+                                            execLocalSync(
+                                                            agent,
+                                                            sessionId,
+                                                            userId,
+                                                            task,
+                                                            spawned,
+                                                            runtimeContext)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    reactor.util.context.Context.of(
+                                                                            parentCtx))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                if (signal == SignalType.CANCEL) {
+                                                                    interruptAgent(
+                                                                            agent, runtimeContext);
+                                                                }
+                                                            })
+                                                    .subscribe(
+                                                            bridge::complete,
+                                                            bridge::completeExceptionally,
+                                                            () -> {
+                                                                if (!bridge.isDone()) {
+                                                                    bridge.complete(null);
+                                                                }
+                                                            });
+                                    innerSubscription.update(inner);
 
                                     // Race against timeout without cancelling the bridge.
                                     // thenApply(m -> m) creates a dependent future so orTimeout
@@ -746,6 +770,9 @@ public class AgentSpawnTool {
 
                                     race.whenComplete(
                                             (msg, err) -> {
+                                                if (outerCancelled.get()) {
+                                                    return;
+                                                }
                                                 if (err != null) {
                                                     handleExecError(
                                                             err,
@@ -763,6 +790,17 @@ public class AgentSpawnTool {
                                                 }
                                             });
                                 }));
+    }
+
+    /** Interrupts a local subagent when its parent subscription is cancelled. */
+    private static void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            log.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because agent_spawn was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
+        }
     }
 
     /**
