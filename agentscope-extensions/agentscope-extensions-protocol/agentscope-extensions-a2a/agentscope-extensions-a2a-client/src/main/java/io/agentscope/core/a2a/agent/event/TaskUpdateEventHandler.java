@@ -103,7 +103,13 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                             "[{}] A2aAgent task ended with non-completed state: {}.",
                             currentRequestId,
                             state);
-                    context.getSink().success(Msg.builder().textContent(errorMsg).build());
+                    if (!context.complete(Msg.builder().textContent(errorMsg).build())) {
+                        LoggerUtil.debug(
+                                log,
+                                "[{}] TaskStatusUpdateEventHandler: duplicate terminal event"
+                                        + " ignored.",
+                                currentRequestId);
+                    }
                     return;
                 }
                 Msg msg =
@@ -112,7 +118,13 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
 
                 msg = context.publishPostReasoning(msg);
 
-                context.getSink().success(msg);
+                if (!context.complete(msg)) {
+                    LoggerUtil.debug(
+                            log,
+                            "[{}] TaskStatusUpdateEventHandler: duplicate terminal event ignored.",
+                            currentRequestId);
+                    return;
+                }
                 LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
                 LoggerUtil.debug(
                         log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);

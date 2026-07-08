@@ -19,6 +19,8 @@ package io.agentscope.core.a2a.agent.event;
 import io.a2a.client.TaskEvent;
 import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
+import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
+import io.agentscope.core.message.Msg;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,5 +48,37 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                 task.getStatus());
 
         context.publishPreReasoning();
+
+        boolean isFinal =
+                task.getStatus() != null
+                        && task.getStatus().state() != null
+                        && task.getStatus().state().isFinal();
+        if (!isFinal) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] TaskEventHandler: task state {} is not terminal, waiting for more"
+                            + " events.",
+                    context.getCurrentRequestId(),
+                    task.getStatus() != null ? task.getStatus().state() : "null");
+            return;
+        }
+
+        Msg msg;
+        if (task.getStatus() != null && task.getStatus().message() != null) {
+            msg =
+                    MessageConvertUtil.convertFromMessage(
+                            task.getStatus().message(), context.getAgent().getName());
+        } else {
+            msg =
+                    MessageConvertUtil.convertFromArtifact(
+                            task.getArtifacts(), context.getAgent().getName());
+        }
+        msg = context.publishPostReasoning(msg);
+        if (!context.complete(msg)) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] TaskEventHandler: duplicate terminal event ignored.",
+                    context.getCurrentRequestId());
+        }
     }
 }
