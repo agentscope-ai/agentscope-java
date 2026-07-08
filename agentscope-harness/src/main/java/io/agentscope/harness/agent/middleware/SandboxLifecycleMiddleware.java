@@ -53,7 +53,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    // per-session acquire results; keyed by sessionId so concurrent sessions don't interfere
+    // per-call acquire results; keyed by "userId/sessionId" so concurrent users don't interfere
     private final ConcurrentHashMap<String, SandboxAcquireResult> acquireResults =
             new ConcurrentHashMap<>();
 
@@ -78,7 +78,10 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (sandboxContext == null) {
             return;
         }
-        String sessionKey = ctx.getSessionId();
+        String sessionKey = bindingKey(ctx);
+        if (sessionKey == null) {
+            return;
+        }
         try {
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
@@ -116,7 +119,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
      * @param ctx the per-call RuntimeContext (captured at acquire time)
      */
     public void releaseForCall(RuntimeContext ctx) {
-        String sessionKey = ctx != null ? ctx.getSessionId() : null;
+        String sessionKey = ctx != null ? bindingKey(ctx) : null;
         SandboxAcquireResult result = sessionKey != null ? acquireResults.remove(sessionKey) : null;
         if (result == null) {
             return;
@@ -134,5 +137,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         }
         result.getLease().close();
         filesystemProxy.unbindSandbox(sessionKey);
+    }
+
+    // (userId ?? "__anon__") + "/" + sessionId — aligned with ReActAgent.slotKey()
+    private static String bindingKey(RuntimeContext ctx) {
+        String uid = ctx.getUserId();
+        String sid = ctx.getSessionId();
+        if (sid == null || sid.isBlank()) {
+            return null;
+        }
+        return (uid == null || uid.isBlank() ? "__anon__" : uid) + "/" + sid;
     }
 }

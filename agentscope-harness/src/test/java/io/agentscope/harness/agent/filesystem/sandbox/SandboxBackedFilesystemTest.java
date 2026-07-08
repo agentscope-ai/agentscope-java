@@ -42,13 +42,24 @@ class SandboxBackedFilesystemTest {
         return RuntimeContext.builder().sessionId(sessionId).build();
     }
 
+    private static RuntimeContext rc(String userId, String sessionId) {
+        return RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+    }
+
+    // mirrors the binding key logic in SandboxBackedFilesystem / SandboxLifecycleMiddleware
+    private static String bindKey(RuntimeContext ctx) {
+        String uid = ctx.getUserId();
+        String sid = ctx.getSessionId();
+        return (uid == null || uid.isBlank() ? "__anon__" : uid) + "/" + sid;
+    }
+
     @Test
     void downloadFiles_decodesWrappedBase64Output() {
         byte[] expected = new byte[] {1, 2, 3, 4, 5, 6};
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "AQID\nBAUG", "", false));
         RuntimeContext ctx = rc("session-a");
-        filesystem.bindSandbox(ctx.getSessionId(), sandbox);
+        filesystem.bindSandbox(bindKey(ctx), sandbox);
 
         List<FileDownloadResponse> responses =
                 filesystem.downloadFiles(ctx, List.of("/tmp/data.bin"));
@@ -65,7 +76,7 @@ class SandboxBackedFilesystemTest {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, null, "", false));
         RuntimeContext ctx = rc("session-a");
-        filesystem.bindSandbox(ctx.getSessionId(), sandbox);
+        filesystem.bindSandbox(bindKey(ctx), sandbox);
 
         List<FileDownloadResponse> responses =
                 filesystem.downloadFiles(ctx, List.of("/tmp/empty.bin"));
@@ -82,7 +93,7 @@ class SandboxBackedFilesystemTest {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeSandbox sandbox = new FakeSandbox(new ExecResult(1, "", "boom", false));
         RuntimeContext ctx = rc("session-a");
-        filesystem.bindSandbox(ctx.getSessionId(), sandbox);
+        filesystem.bindSandbox(bindKey(ctx), sandbox);
 
         List<FileDownloadResponse> responses =
                 filesystem.downloadFiles(ctx, List.of("/tmp/fail.bin"));
@@ -110,24 +121,23 @@ class SandboxBackedFilesystemTest {
         FakeSandbox sandboxA = new FakeSandbox(new ExecResult(0, "AAAA", "", false));
         FakeSandbox sandboxB = new FakeSandbox(new ExecResult(0, "BBBB", "", false));
 
-        filesystem.bindSandbox("session-a", sandboxA);
-        filesystem.bindSandbox("session-b", sandboxB);
+        RuntimeContext ctxA = rc("session-a");
+        RuntimeContext ctxB = rc("session-b");
+        filesystem.bindSandbox(bindKey(ctxA), sandboxA);
+        filesystem.bindSandbox(bindKey(ctxB), sandboxB);
 
-        // session-a routes to sandboxA
-        filesystem.downloadFiles(rc("session-a"), List.of("/f"));
+        filesystem.downloadFiles(ctxA, List.of("/f"));
         assertNotNull(sandboxA.lastCommand);
         assertNull(sandboxB.lastCommand);
 
-        // session-b routes to sandboxB
-        filesystem.downloadFiles(rc("session-b"), List.of("/g"));
+        filesystem.downloadFiles(ctxB, List.of("/g"));
         assertNotNull(sandboxB.lastCommand);
 
-        // unbind session-a; session-b still works
-        filesystem.unbindSandbox("session-a");
+        filesystem.unbindSandbox(bindKey(ctxA));
         assertThrows(
                 SandboxException.SandboxConfigurationException.class,
-                () -> filesystem.execute(rc("session-a"), "echo", null));
-        filesystem.downloadFiles(rc("session-b"), List.of("/h")); // must not throw
+                () -> filesystem.execute(ctxA, "echo", null));
+        filesystem.downloadFiles(ctxB, List.of("/h"));
     }
 
     @Test
@@ -135,9 +145,11 @@ class SandboxBackedFilesystemTest {
         int sessions = 8;
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeSandbox[] sandboxes = new FakeSandbox[sessions];
+        RuntimeContext[] contexts = new RuntimeContext[sessions];
         for (int i = 0; i < sessions; i++) {
-            sandboxes[i] = new FakeSandbox(new ExecResult(0, "AA==", "", false)); // 1 byte
-            filesystem.bindSandbox("session-" + i, sandboxes[i]);
+            sandboxes[i] = new FakeSandbox(new ExecResult(0, "AA==", "", false));
+            contexts[i] = rc("session-" + i);
+            filesystem.bindSandbox(bindKey(contexts[i]), sandboxes[i]);
         }
 
         CountDownLatch start = new CountDownLatch(1);
@@ -151,10 +163,7 @@ class SandboxBackedFilesystemTest {
                     () -> {
                         try {
                             start.await();
-                            RuntimeContext ctx = rc("session-" + idx);
-                            // each session executes a uniquely named command
-                            filesystem.execute(ctx, "cmd-" + idx, null);
-                            // verify command reached the correct sandbox
+                            filesystem.execute(contexts[idx], "cmd-" + idx, null);
                             String expected = "cmd-" + idx;
                             if (!expected.equals(sandboxes[idx].lastCommand)) {
                                 errors[idx] =
@@ -178,6 +187,24 @@ class SandboxBackedFilesystemTest {
         for (int i = 0; i < sessions; i++) {
             assertNull(errors[i], "Error in session-" + i + ": " + errors[i]);
         }
+    }
+
+    @Test
+    void sameSessionIdDifferentUsersAreIsolated() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandboxAlice = new FakeSandbox(new ExecResult(0, "AA==", "", false));
+        FakeSandbox sandboxBob = new FakeSandbox(new ExecResult(0, "AA==", "", false));
+
+        RuntimeContext ctxAlice = rc("alice", "default");
+        RuntimeContext ctxBob = rc("bob", "default");
+        filesystem.bindSandbox(bindKey(ctxAlice), sandboxAlice);
+        filesystem.bindSandbox(bindKey(ctxBob), sandboxBob);
+
+        filesystem.execute(ctxAlice, "alice-cmd", null);
+        filesystem.execute(ctxBob, "bob-cmd", null);
+
+        assertEquals("alice-cmd", sandboxAlice.lastCommand);
+        assertEquals("bob-cmd", sandboxBob.lastCommand);
     }
 
     private static final class FakeSandbox implements Sandbox {

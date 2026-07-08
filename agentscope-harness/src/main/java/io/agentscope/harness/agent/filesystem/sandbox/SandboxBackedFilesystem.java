@@ -44,7 +44,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
     private final String fsId;
-    // per-session sandbox bindings; key is sessionId (or userId for USER isolation scope)
+    // per-call sandbox bindings; key is "userId/sessionId" (aligned with ReActAgent.slotKey)
     private final ConcurrentHashMap<String, Sandbox> activeSandboxes = new ConcurrentHashMap<>();
 
     public SandboxBackedFilesystem() {
@@ -176,7 +176,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     private Sandbox requireSandbox(RuntimeContext rc) {
-        String key = rc != null ? rc.getSessionId() : null;
+        String key = rc != null ? bindingKey(rc) : null;
         Sandbox s = key != null ? activeSandboxes.get(key) : null;
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
@@ -185,6 +185,15 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
                             + "' — sandbox filesystem used outside of a call context");
         }
         return s;
+    }
+
+    private static String bindingKey(RuntimeContext rc) {
+        String uid = rc.getUserId();
+        String sid = rc.getSessionId();
+        if (sid == null || sid.isBlank()) {
+            return null;
+        }
+        return (uid == null || uid.isBlank() ? "__anon__" : uid) + "/" + sid;
     }
 
     private String shellSingleQuote(String s) {
