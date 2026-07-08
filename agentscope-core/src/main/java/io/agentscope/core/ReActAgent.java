@@ -3467,7 +3467,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .content(TextBlock.builder().text(recoveryText).build())
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);
-                    return saveStateToSession(scope).thenReturn(recoveryMsg);
+                    return saveStateToSession(scope)
+                            .thenReturn(recoveryMsg)
+                            .onErrorResume(
+                                    e -> {
+                                        log.warn(
+                                                "Failed to save agent state after user interrupt",
+                                                e);
+                                        return Mono.just(recoveryMsg);
+                                    });
                 });
     }
 
