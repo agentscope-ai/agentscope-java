@@ -16,14 +16,19 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /**
  * Middleware that manages the sandbox session lifecycle around each agent call.
@@ -53,9 +58,11 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    // per-call acquire results; keyed by "userId/sessionId" so concurrent users don't interfere
     private final ConcurrentHashMap<String, SandboxAcquireResult> acquireResults =
             new ConcurrentHashMap<>();
+    // Per-session async serialization gate — ensures same-session acquire/release pairs
+    // do not overlap even when HarnessAgent.wrappedCall is subscribed concurrently.
+    private final ConcurrentHashMap<String, Mono<Void>> sandboxGates = new ConcurrentHashMap<>();
 
     public SandboxLifecycleMiddleware(
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
@@ -63,12 +70,97 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         this.filesystemProxy = filesystemProxy;
     }
 
+    // ==================== Serialized call wrappers ====================
+
     /**
-     * Acquires the sandbox for the current call. Called from
-     * {@code ReActAgent.beforeAgentExecution()} to ensure the sandbox is available
-     * for both the {@code call()} and {@code streamEvents()} paths.
+     * Wraps a {@code Mono<Msg>} call with serialized sandbox acquire/release.
      *
-     * @param ctx the per-call RuntimeContext (must not be null)
+     * <p>Same-session calls are queued so that the second subscription waits (non-blocking)
+     * until the first completes and releases its sandbox, preventing concurrent overwrites
+     * of the filesystem binding map.
+     */
+    public Mono<Msg> serializedCall(RuntimeContext ctx, Supplier<Mono<Msg>> inner) {
+        SandboxContext sandboxContext = ctx != null ? ctx.get(SandboxContext.class) : null;
+        String sessionKey = ctx != null ? bindingKey(ctx) : null;
+        if (sessionKey == null || sandboxContext == null) {
+            return inner.get();
+        }
+        return Mono.defer(
+                () -> {
+                    Sinks.Empty<Void> release = Sinks.empty();
+                    Mono<Void> releaseMono = release.asMono();
+                    @SuppressWarnings("unchecked")
+                    Mono<Void>[] prev = new Mono[1];
+                    sandboxGates.compute(
+                            sessionKey,
+                            (k, tail) -> {
+                                prev[0] = tail == null ? Mono.empty() : tail;
+                                return releaseMono;
+                            });
+                    return prev[0].onErrorComplete()
+                            .then(
+                                    Mono.using(
+                                            () -> {
+                                                doAcquire(ctx, sandboxContext, sessionKey);
+                                                return ctx;
+                                            },
+                                            c -> inner.get(),
+                                            this::doRelease))
+                            .doFinally(
+                                    sig -> {
+                                        release.tryEmitEmpty();
+                                        sandboxGates.remove(sessionKey, releaseMono);
+                                    });
+                });
+    }
+
+    /**
+     * Wraps a {@code Flux<T>} stream with serialized sandbox acquire/release.
+     *
+     * @see #serializedCall(RuntimeContext, Supplier)
+     */
+    public <T> Flux<T> serializedFlux(RuntimeContext ctx, Supplier<Flux<T>> inner) {
+        SandboxContext sandboxContext = ctx != null ? ctx.get(SandboxContext.class) : null;
+        String sessionKey = ctx != null ? bindingKey(ctx) : null;
+        if (sessionKey == null || sandboxContext == null) {
+            return inner.get();
+        }
+        return Flux.defer(
+                () -> {
+                    Sinks.Empty<Void> release = Sinks.empty();
+                    Mono<Void> releaseMono = release.asMono();
+                    @SuppressWarnings("unchecked")
+                    Mono<Void>[] prev = new Mono[1];
+                    sandboxGates.compute(
+                            sessionKey,
+                            (k, tail) -> {
+                                prev[0] = tail == null ? Mono.empty() : tail;
+                                return releaseMono;
+                            });
+                    return prev[0].onErrorComplete()
+                            .thenMany(
+                                    Flux.using(
+                                            () -> {
+                                                doAcquire(ctx, sandboxContext, sessionKey);
+                                                return ctx;
+                                            },
+                                            c -> inner.get(),
+                                            this::doRelease))
+                            .doFinally(
+                                    sig -> {
+                                        release.tryEmitEmpty();
+                                        sandboxGates.remove(sessionKey, releaseMono);
+                                    });
+                });
+    }
+
+    // ==================== Direct acquire/release (for tests) ====================
+
+    /**
+     * Acquires the sandbox for the current call.
+     *
+     * <p><b>Warning:</b> this method does NOT serialize concurrent same-session calls.
+     * Production code should use {@link #serializedCall} or {@link #serializedFlux} instead.
      */
     public void acquireForCall(RuntimeContext ctx) {
         if (ctx == null) {
@@ -82,6 +174,22 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (sessionKey == null) {
             return;
         }
+        doAcquire(ctx, sandboxContext, sessionKey);
+    }
+
+    /**
+     * Releases the sandbox after the current call.
+     *
+     * <p><b>Warning:</b> this method does NOT serialize concurrent same-session calls.
+     * Production code should use {@link #serializedCall} or {@link #serializedFlux} instead.
+     */
+    public void releaseForCall(RuntimeContext ctx) {
+        doRelease(ctx);
+    }
+
+    // ==================== Internal ====================
+
+    private void doAcquire(RuntimeContext ctx, SandboxContext sandboxContext, String sessionKey) {
         try {
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
@@ -112,13 +220,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    /**
-     * Releases the sandbox after the current call. Called from
-     * {@code ReActAgent.afterAgentExecution()} to ensure cleanup for both paths.
-     *
-     * @param ctx the per-call RuntimeContext (captured at acquire time)
-     */
-    public void releaseForCall(RuntimeContext ctx) {
+    private void doRelease(RuntimeContext ctx) {
         String sessionKey = ctx != null ? bindingKey(ctx) : null;
         SandboxAcquireResult result = sessionKey != null ? acquireResults.remove(sessionKey) : null;
         if (result == null) {
@@ -139,8 +241,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         filesystemProxy.unbindSandbox(sessionKey);
     }
 
-    // (userId ?? "__anon__") + "/" + sessionId — aligned with ReActAgent.slotKey()
-    private static String bindingKey(RuntimeContext ctx) {
+    static String bindingKey(RuntimeContext ctx) {
         String uid = ctx.getUserId();
         String sid = ctx.getSessionId();
         if (sid == null || sid.isBlank()) {
