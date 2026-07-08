@@ -202,6 +202,17 @@ class ReActAgentStructuredOutputRetryTest {
                 4,
                 mockModel.getCallCount(),
                 "Should attempt the initial round plus exactly 3 retries");
+
+        // The injected reminders are internal artifacts: a follow-up turn on the same agent
+        // must not see them in its model input.
+        Msg followUp =
+                agent.call(userMsg("Just say hi"))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        assertNotNull(followUp);
+        assertFalse(
+                mockModel.getLastMessages().stream()
+                        .anyMatch(ReActAgentStructuredOutputRetryTest::isReminder),
+                "Give-up path should strip reminder messages from the persisted context");
     }
 
     @Test

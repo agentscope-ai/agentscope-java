@@ -1160,6 +1160,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedThinking);
                                             }
                                             scope.state.contextMutable().add(out);
+                                        } else {
+                                            // Give-up path: the reminders injected by the
+                                            // self-healing retries are internal artifacts —
+                                            // strip them so they don't pollute later turns.
+                                            scope.state
+                                                    .contextMutable()
+                                                    .removeIf(
+                                                            m ->
+                                                                    m.getMetadata() != null
+                                                                            && Boolean.TRUE.equals(
+                                                                                    m.getMetadata()
+                                                                                            .get(
+                                                                                                    MessageMetadataKeys
+                                                                                                            .STRUCTURED_OUTPUT_REMINDER)));
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
@@ -3443,6 +3457,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Msg last = msgs.get(msgs.size() - 1);
             Map<String, Object> metadata = last != null ? last.getMetadata() : null;
             return metadata != null
+                    && Boolean.TRUE.equals(
+                            metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))
                     && StructuredOutputReminder.TOOL_CHOICE
                             .toString()
                             .equals(
