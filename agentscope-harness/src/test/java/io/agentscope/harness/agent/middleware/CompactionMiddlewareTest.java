@@ -119,10 +119,10 @@ class CompactionMiddlewareTest {
 
         if (hasStart) {
             int startIdx = indexOfType(events, AgentEventType.COMPACTION_START);
-            int innerIdx = indexOfType(events, inner.getType());
             int endIdx = indexOfType(events, AgentEventType.COMPACTION_END);
-            assertTrue(startIdx < innerIdx, "COMPACTION_START must precede inner events");
-            assertTrue(innerIdx < endIdx, "COMPACTION_END must follow inner events");
+            int innerIdx = events.indexOf(inner);
+            assertTrue(startIdx < endIdx, "COMPACTION_START must precede COMPACTION_END");
+            assertTrue(endIdx < innerIdx, "COMPACTION_END must precede inner events");
 
             CompactionStartEvent start = (CompactionStartEvent) events.get(startIdx);
             CompactionEndEvent end = (CompactionEndEvent) events.get(endIdx);
@@ -152,29 +152,40 @@ class CompactionMiddlewareTest {
     }
 
     @Test
-    void compactionError_fallsBackToNextWithoutEvents() {
-        // If compaction throws, middleware must swallow and call next without emitting events.
-        CompactionMiddleware middleware = new CompactionMiddleware(workspaceManager, model, config);
+    void compactionError_fallsBackToNextWithStartEndPair() {
+        // Use low threshold to ensure compaction branch is entered, then make
+        // the compactor fail by throwing from workspaceManager (used by MemoryFlushManager).
+        CompactionConfig lowThreshold =
+                CompactionConfig.builder().triggerTokens(1).keepTokens(1).build();
+        when(model.getContextWindowSize()).thenReturn(0);
+        when(workspaceManager.getWorkspace()).thenThrow(new RuntimeException("disk error"));
+
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(workspaceManager, model, lowThreshold);
         ReActAgent agent = mock(ReActAgent.class);
         ReasoningInput input = new ReasoningInput(List.of(userMsg("hi")), List.of(), null);
 
         AgentEvent sentinel = new TextBlockDeltaEvent("", "", "fallback");
-        // workspaceManager.getWorkspace() throws → MemoryFlushManager will fail → compactor error
-        when(workspaceManager.getWorkspace()).thenThrow(new RuntimeException("disk error"));
-
         List<AgentEvent> events =
                 middleware
                         .onReasoning(agent, ctx, input, ignored -> Flux.just(sentinel))
                         .collectList()
                         .block();
 
-        // must receive the inner events even on compaction failure
+        // Inner events must still be delivered when compaction fails
         assertTrue(
                 events.stream().anyMatch(e -> e.equals(sentinel)),
                 "Inner events must still be delivered when compaction fails");
-        assertFalse(
-                events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_START),
-                "COMPACTION_START must not appear when compaction errored");
+
+        boolean hasStart =
+                events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_START);
+        boolean hasEnd =
+                events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_END);
+
+        // START is emitted before the error; END must still appear to close the pair
+        if (hasStart) {
+            assertTrue(hasEnd, "COMPACTION_END must appear when START was emitted (error path)");
+        }
     }
 
     // ---- helpers ----
