@@ -640,11 +640,14 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (stripped.isEmpty()) {
                 return cwd;
             }
-            // Check for path traversal attacks
-            if (stripped.contains("..") || stripped.startsWith("~")) {
+            if (stripped.startsWith("~")) {
                 throw new SecurityException("Path traversal not allowed: " + effectiveKey);
             }
-            return cwd.resolve(stripped).normalize();
+            Path full = cwd.resolve(stripped).normalize();
+            if (!full.startsWith(cwd)) {
+                throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+            }
+            return full;
         }
 
         Path target = Path.of(effectiveKey);

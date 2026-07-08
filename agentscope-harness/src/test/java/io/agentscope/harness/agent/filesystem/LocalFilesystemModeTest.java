@@ -263,6 +263,23 @@ class LocalFilesystemModeTest {
     }
 
     @Test
+    void rooted_leadingSlashAllowsLiteralDotDotInPathName(@TempDir Path workspace)
+            throws IOException {
+        Path dir = workspace.resolve("some..dir");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("note.txt"), "literal name", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), "/some..dir/note.txt", 0, 0);
+        assertTrue(
+                r.isSuccess(),
+                () -> "literal '..' inside a path segment should be allowed, got: " + r.error());
+        assertEquals("literal name", r.fileData().content());
+    }
+
+    @Test
     void rooted_leadingSlashPathTraversalRejected(@TempDir Path workspace) {
         LocalFilesystem fs =
                 new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
