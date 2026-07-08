@@ -81,7 +81,7 @@ public final class CodingAgentFactory {
             String image = resolveSandboxImage();
             DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec();
             sandboxSpec.image(image);
-            sandboxSpec.workspaceRoot("/home/agentscope/workspace");
+            sandboxSpec.workspaceRoot(workingDir);
             sandboxSpec.isolationScope(IsolationScope.SESSION);
             builder.filesystem(sandboxSpec);
         }
