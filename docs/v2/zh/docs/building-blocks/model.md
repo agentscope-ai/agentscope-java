@@ -114,6 +114,45 @@ agentscope:
     stream: true
 ```
 
+#### Builder customizer
+
+各模型提供商的 Spring Boot starter 还提供了有序的 builder customizer bean。它适合用于
+`application.yml` 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义
+formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。
+
+| Starter | Customizer 类型 |
+|---------|-----------------|
+| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
+| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
+| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+
+这些 customizer 会在 starter 属性绑定之后、调用 `builder.build()` 之前执行。可以注册多个
+customizer，并通过 Spring 的 `@Order` 或 `Ordered` 控制执行顺序。
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.spring.boot.openai.OpenAIChatModelBuilderCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+@Configuration(proxyBeanMethods = false)
+class ModelCustomizerConfiguration {
+
+    @Bean
+    @Order(0)
+    OpenAIChatModelBuilderCustomizer openAIModelDefaults() {
+        return builder ->
+                builder.defaultOptions(
+                        GenerateOptions.builder()
+                                .temperature(0.2)
+                                .parallelToolCalls(false)
+                                .build());
+    }
+}
+```
+
 ## ModelRegistry 与 ModelCreationContext
 
 `ModelRegistry` 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。解析时按优先级依次尝试：通过 `ModelRegistry.register(name, model)` 直接注册的命名模型实例、通过 `registerFactory(regex, factory)` 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 `ModelProvider` 实现。
