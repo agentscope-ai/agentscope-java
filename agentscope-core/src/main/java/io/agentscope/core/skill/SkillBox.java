@@ -168,14 +168,28 @@ public class SkillBox {
 
         // Dynamically update active/inactive tool groups based on skills' states
         for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) == null) {
-                continue; // Skip uncreated skill tools
+            // Name-convention path: skillId + "_skill_tools"
+            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) != null) {
+                if (!registeredSkill.isActive()) {
+                    inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
+                } else {
+                    activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
+                }
             }
-            if (!registeredSkill.isActive()) {
-                inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                continue; // Skip inactive skill's tools, its tools won't be included
+
+            // activateOnSkill path: scan SkillToolGroups bound to this skill's name
+            AgentSkill agentSkill = skillRegistry.getSkill(registeredSkill.getSkillId());
+            if (agentSkill != null) {
+                List<String> boundGroups =
+                        toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+                for (String group : boundGroups) {
+                    if (!registeredSkill.isActive()) {
+                        inactiveSkillToolGroups.add(group);
+                    } else {
+                        activeSkillToolGroups.add(group);
+                    }
+                }
             }
-            activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
         }
         toolkit.updateToolGroups(inactiveSkillToolGroups, false);
         toolkit.updateToolGroups(activeSkillToolGroups, true);
@@ -322,12 +336,22 @@ public class SkillBox {
 
         skillRegistry.setSkillActive(skillId, active);
 
-        // sync ToolGroup state
+        // sync ToolGroup state — name-convention path
         RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
         if (registeredSkill != null) {
             String toolGroupName = registeredSkill.getToolsGroupName();
             if (this.toolkit.getToolGroup(toolGroupName) != null) {
                 this.toolkit.updateToolGroups(List.of(toolGroupName), active);
+            }
+        }
+
+        // sync ToolGroup state — activateOnSkill path
+        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
+        if (agentSkill != null && this.toolkit != null) {
+            List<String> boundGroups =
+                    this.toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+            if (!boundGroups.isEmpty()) {
+                this.toolkit.updateToolGroups(boundGroups, active);
             }
         }
 
