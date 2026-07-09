@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="记忆（Memory）" href="memory/index.html"><link rel="prev" title="FAQ" href="../docs/others/faq.html">
+    <meta property="article:modified_time" content="2026-07-09T02:35:51+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="记忆（Memory）" href="memory/index.html"><link rel="prev" title="FAQ" href="../docs/others/faq.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/overview.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -907,6 +907,58 @@
 <h1>集成总览<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
 <p>本节汇总 AgentScope Java 与第三方系统、生态服务的集成扩展。每个扩展都是 <code class="docutils literal notranslate"><span class="pre">agentscope-extensions/</span></code> 下的独立 Maven 模块，按需引入即可。</p>
 <p>按主题分为以下几组：</p>
+<section id="id2">
+<h2>模型提供商<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>所有模型提供商已经迁移到独立模型扩展模块中，<code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 只保留共享模型契约。完整模型创建方式、Spring Boot 配置、formatter、credential 和高级 registry 行为见 <a class="reference internal" href="../docs/building-blocks/model.html"><span class="std std-doc">模型文档</span></a>。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>提供商</p></th>
+<th class="head"><p>Maven artifact</p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> id</p></th>
+<th class="head"><p>标准环境变量</p></th>
+<th class="head"><p>文档</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>OpenAI</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai:&lt;model&gt;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code></p></td>
+<td><p><span class="xref myst">OpenAI</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>DashScope</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-dashscope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dashscope:&lt;model&gt;</span></code> / <code class="docutils literal notranslate"><span class="pre">qwen*</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code></p></td>
+<td><p><span class="xref myst">DashScope</span></p></td>
+</tr>
+<tr class="row-even"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-gemini</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">gemini:&lt;model&gt;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code></p></td>
+<td><p><span class="xref myst">Gemini</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-anthropic</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">anthropic:&lt;model&gt;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code></p></td>
+<td><p><span class="xref myst">Anthropic</span></p></td>
+</tr>
+<tr class="row-even"><td><p>Ollama</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-ollama</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ollama:&lt;model&gt;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OLLAMA_BASE_URL</span></code>（可选）</p></td>
+<td><p><span class="xref myst">Ollama</span></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-e2e-tests</span></code> 是仓库测试模块，不是面向用户的模型集成依赖。</p>
+</div>
+</section>
 <section id="distributed-store">
 <h2>分布式存储（Distributed Store）<a class="headerlink" href="#distributed-store" title="Link to this heading">¶</a></h2>
 <p>生产多副本部署所需的全链路分布式存储组件。通过 <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> 一键配置 Agent 状态、工作区文件系统、沙箱快照与并发锁。</p>
@@ -969,8 +1021,8 @@
 <li><p><span class="xref myst">企业微信</span></p></li>
 </ul>
 </section>
-<section id="id2">
-<h2>智能体协议<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="id3">
+<h2>智能体协议<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <p>让 Agent 与外部世界以标准方式交互。</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="protocol/a2a.html"><span class="std std-doc">A2A（Agent-to-Agent）</span></a></p></li>
@@ -978,8 +1030,8 @@
 <li><p><a class="reference internal" href="protocol/agent-protocol.html"><span class="std std-doc">Agent Protocol</span></a></p></li>
 </ul>
 </section>
-<section id="id3">
-<h2>基础设施 / 中间件<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h2>基础设施 / 中间件<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p>把 Agent 接到企业基础设施。</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="infrastructure/higress.html"><span class="std std-doc">Higress AI 网关</span></a></p></li>
@@ -987,8 +1039,8 @@
 <li><p><a class="reference internal" href="infrastructure/scheduler.html"><span class="std std-doc">Scheduler（Quartz / XXL-Job）</span></a></p></li>
 </ul>
 </section>
-<section id="id4">
-<h2>生态扩展<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>生态扩展<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p>运行环境、语言生态、调试与训练流水线。</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="ecosystem/chat-completions-web.html"><span class="std std-doc">Chat Completions Web</span></a></p></li>
@@ -1055,7 +1107,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1091,15 +1143,16 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">集成总览</a><ul>
+<li><a class="reference internal" href="#id2">模型提供商</a></li>
 <li><a class="reference internal" href="#distributed-store">分布式存储（Distributed Store）</a></li>
 <li><a class="reference internal" href="#sandbox">沙箱执行环境（Sandbox）</a></li>
 <li><a class="reference internal" href="#memory">记忆（Memory）</a></li>
 <li><a class="reference internal" href="#rag">RAG 知识库</a></li>
 <li><a class="reference internal" href="#skill">技能仓库（Skill）</a></li>
 <li><a class="reference internal" href="#channel">Channel 适配器</a></li>
-<li><a class="reference internal" href="#id2">智能体协议</a></li>
-<li><a class="reference internal" href="#id3">基础设施 / 中间件</a></li>
-<li><a class="reference internal" href="#id4">生态扩展</a></li>
+<li><a class="reference internal" href="#id3">智能体协议</a></li>
+<li><a class="reference internal" href="#id4">基础设施 / 中间件</a></li>
+<li><a class="reference internal" href="#id5">生态扩展</a></li>
 </ul>
 </li>
 </ul>
