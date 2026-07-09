@@ -28,8 +28,11 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.skill.runtime.SkillLoadTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.nio.file.Path;
@@ -221,6 +224,53 @@ class PlanModeMiddlewareTest {
                 List.of("agent_spawn", "agent_send", "agent_list", "task_output", "task_list"),
                 forwardedNames);
         assertTrue(events.isEmpty(), "no denied events expected");
+    }
+
+    @Test
+    void skillLoadToolIsReadOnlyAndPermittedInPlanMode(
+            @TempDir Path project, @TempDir Path workspace) {
+        // SkillLoadTool implements AgentTool (not ToolBase) — verify isReadOnly() is true.
+        SkillLoadTool loadTool = new SkillLoadTool(new AtomicReference<>(null));
+        assertTrue(loadTool.isReadOnly(), "SkillLoadTool must be read-only");
+
+        // Build a toolkit containing the SkillLoadTool and wire a resolver matching
+        // the pattern used in HarnessAgent.Builder.build().
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(loadTool);
+        Predicate<String> resolver =
+                toolName -> {
+                    AgentTool t = toolkit.getTool(toolName);
+                    return t != null && t.isReadOnly();
+                };
+
+        PlanModeManager manager = manager(project, workspace);
+        AgentState state = AgentState.builder().build();
+        manager.enter(state);
+        StubAgent agent = new StubAgent("tester", state);
+
+        PlanModeMiddleware mw = new PlanModeMiddleware(manager, resolver);
+
+        List<ToolUseBlock> calls =
+                List.of(call("1", SkillLoadTool.TOOL_NAME), call("2", "write_file"));
+
+        AtomicReference<ActingInput> forwarded = new AtomicReference<>();
+        List<AgentEvent> events =
+                mw.onActing(
+                                agent,
+                                null,
+                                new ActingInput(calls),
+                                ai -> {
+                                    forwarded.set(ai);
+                                    return Flux.empty();
+                                })
+                        .collectList()
+                        .block();
+
+        // load_skill_through_path should pass; write_file should be denied.
+        List<String> forwardedNames =
+                forwarded.get().toolCalls().stream().map(ToolUseBlock::getName).toList();
+        assertEquals(List.of(SkillLoadTool.TOOL_NAME), forwardedNames);
+        assertEquals(3, events.size(), "denied write_file should produce start+delta+end events");
     }
 
     /** Minimal Agent stub exposing only name + state. */

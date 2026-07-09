@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.openai;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,7 +42,9 @@ public class OpenAIAutoConfiguration {
             havingValue = "true",
             matchIfMissing = true)
     @ConditionalOnMissingBean(Model.class)
-    public OpenAIChatModel openAIChatModel(OpenAIProperties properties) {
+    public OpenAIChatModel openAIChatModel(
+            OpenAIProperties properties,
+            ObjectProvider<OpenAIChatModelBuilderCustomizer> customizerObjectProvider) {
         String apiKey = trimToNull(properties.getApiKey());
         if (apiKey == null) {
             throw new IllegalStateException(
@@ -69,6 +72,10 @@ public class OpenAIAutoConfiguration {
         if (endpointPath != null) {
             builder.endpointPath(endpointPath);
         }
+
+        customizerObjectProvider
+                .orderedStream()
+                .forEach(customizer -> customizer.customize(builder));
 
         return builder.build();
     }

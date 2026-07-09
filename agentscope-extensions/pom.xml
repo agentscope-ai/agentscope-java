@@ -37,6 +37,7 @@
         <module>agentscope-extensions-oss</module>
         <module>agentscope-extensions-redis</module>
         <module>agentscope-extensions-mysql</module>
+        <module>agentscope-extensions-postgresql</module>
         <module>agentscope-extensions-rag</module>
         <module>agentscope-extensions-model</module>
         <module>agentscope-extensions-higress</module>
