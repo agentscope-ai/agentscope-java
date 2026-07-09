@@ -17,6 +17,7 @@ package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -87,6 +88,162 @@ class ModelRegistryTest {
         Model a = ModelRegistry.resolve("local:alpha");
         Model b = ModelRegistry.resolve("local:alpha");
         assertSame(a, b);
+    }
+
+    @Test
+    void resolve_withNonEmptyDefaultContext_doesNotCache() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext context = ModelCreationContext.builder().apiKey("key-a").build();
+
+        Model a = ModelRegistry.resolve("local:alpha", context);
+        Model b = ModelRegistry.resolve("local:alpha", context);
+
+        assertNotSame(a, b);
+    }
+
+    @Test
+    void resolve_withDisabledCachePolicy_doesNotCache() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("key-a")
+                        .cachePolicy(CachePolicy.DISABLED)
+                        .build();
+
+        Model a = ModelRegistry.resolve("local:alpha", context);
+        Model b = ModelRegistry.resolve("local:alpha", context);
+
+        assertNotSame(a, b);
+    }
+
+    @Test
+    void resolve_withEnabledCachePolicyAndCacheId_usesCacheId() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext first =
+                ModelCreationContext.builder()
+                        .apiKey("key-a")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId("tenant-a")
+                        .build();
+        ModelCreationContext sameCacheIdDifferentSecret =
+                ModelCreationContext.builder()
+                        .apiKey("key-b")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId("tenant-a")
+                        .build();
+        ModelCreationContext differentCacheId =
+                ModelCreationContext.builder()
+                        .apiKey("key-a")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId("tenant-b")
+                        .build();
+
+        Model a = ModelRegistry.resolve("local:alpha", first);
+        Model b = ModelRegistry.resolve("local:alpha", sameCacheIdDifferentSecret);
+        Model c = ModelRegistry.resolve("local:alpha", differentCacheId);
+
+        assertSame(a, b);
+        assertNotSame(a, c);
+    }
+
+    @Test
+    void resolve_withEnabledCachePolicyAndStandardFields_derivesSafeCacheKey() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext first =
+                ModelCreationContext.builder()
+                        .apiKey("key-a")
+                        .baseUrl("https://one.example")
+                        .stream(false)
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+        ModelCreationContext same =
+                ModelCreationContext.builder()
+                        .apiKey("key-a")
+                        .baseUrl("https://one.example")
+                        .stream(false)
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+        ModelCreationContext differentApiKey =
+                ModelCreationContext.builder()
+                        .apiKey("key-b")
+                        .baseUrl("https://one.example")
+                        .stream(false)
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+
+        Model a = ModelRegistry.resolve("local:alpha", first);
+        Model b = ModelRegistry.resolve("local:alpha", same);
+        Model c = ModelRegistry.resolve("local:alpha", differentApiKey);
+
+        assertSame(a, b);
+        assertNotSame(a, c);
+    }
+
+    @Test
+    void resolve_withEnabledCachePolicyAndOpaqueInputs_requiresCacheId() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext withOption =
+                ModelCreationContext.builder()
+                        .option("custom", "value")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+        ModelCreationContext withComponent =
+                ModelCreationContext.builder()
+                        .component(StringBuilder.class, new StringBuilder("opaque"))
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelRegistry.resolve("local:alpha", withOption));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelRegistry.resolve("local:alpha", withComponent));
+    }
+
+    @Test
+    void registerFactory_contextAwareFactory_receivesContext() {
+        ModelRegistry.registerFactory(
+                "local:(.+)", (id, context) -> new StubModel(context.getBaseUrl() + "/" + id));
+
+        Model model =
+                ModelRegistry.resolve(
+                        "local:alpha",
+                        ModelCreationContext.builder().baseUrl("https://example.com").build());
+
+        assertTrue(model.getModelName().contains("https://example.com/local:alpha"));
+    }
+
+    @Test
+    void modelCreationContext_toStringRedactsApiKey() {
+        ModelCreationContext context = ModelCreationContext.builder().apiKey("secret-key").build();
+
+        assertFalse(context.toString().contains("secret-key"));
+        assertTrue(context.toString().contains("[REDACTED]"));
+    }
+
+    @Test
+    void modelCreationContext_toBuilderCopiesExistingValues() {
+        StringBuilder component = new StringBuilder("component");
+        ModelCreationContext original =
+                ModelCreationContext.builder()
+                        .apiKey("secret-key")
+                        .baseUrl("https://example.com")
+                        .option("custom", "value")
+                        .component(StringBuilder.class, component)
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId("tenant-a")
+                        .build();
+
+        ModelCreationContext copy = original.toBuilder().baseUrl("https://other.example").build();
+
+        assertTrue(original.getBaseUrl().equals("https://example.com"));
+        assertTrue(copy.getApiKey().equals("secret-key"));
+        assertTrue(copy.getBaseUrl().equals("https://other.example"));
+        assertTrue(copy.option("custom", String.class).equals("value"));
+        assertSame(component, copy.component(StringBuilder.class));
+        assertTrue(copy.getCachePolicy() == CachePolicy.ENABLED);
+        assertTrue(copy.getCacheId().equals("tenant-a"));
     }
 
     @Test

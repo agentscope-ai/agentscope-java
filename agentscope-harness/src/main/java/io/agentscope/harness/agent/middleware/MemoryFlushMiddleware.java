@@ -79,13 +79,30 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
 
     /**
-     * Per-isolation-key flush timestamps. The key is derived from {@link #isolationScope} and the
-     * per-call {@link RuntimeContext} so the throttle window matches the memory data namespace:
-     * one window per user (USER scope), per session (SESSION scope), or a single shared window
-     * (AGENT / GLOBAL scope).
+     * Process-wide per-isolation-key flush timestamps. Static so that the throttle window
+     * survives across {@code HarnessAgent.Builder.build()} calls — each rebuild creates a new
+     * middleware instance, and an instance-level map would reset to {@link Instant#EPOCH} on
+     * every request, defeating the {@link MemoryConfig.FlushMode#THROTTLED} back-off.
+     *
+     * <p>The key is a composite of {@link IsolationScope} name and the per-call identity
+     * (see {@link #timerKeyFor(RuntimeContext)}) so the shared map correctly isolates throttle
+     * windows across scope dimensions:
+     * <ul>
+     *   <li>{@code USER:<userId>} — one window per user</li>
+     *   <li>{@code SESSION:<sessionId>} — one window per session</li>
+     *   <li>{@code AGENT:} / {@code GLOBAL:} — one shared window across the process
+     *       (prevents concurrent flush races on shared memory files)</li>
+     * </ul>
      */
-    private final ConcurrentHashMap<String, AtomicReference<Instant>> lastFlushAtByKey =
+    static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_FLUSH_AT =
             new ConcurrentHashMap<>();
+
+    /**
+     * Entries in {@link #SHARED_LAST_FLUSH_AT} whose timestamp is older than this threshold
+     * are considered stale and removed on the next cleanup sweep. This bounds the map size in
+     * long-running services with high user/session churn.
+     */
+    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
 
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
@@ -222,13 +239,38 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private AtomicReference<Instant> lastFlushAtFor(RuntimeContext rc) {
-        return lastFlushAtByKey.computeIfAbsent(
-                timerKeyFor(rc), k -> new AtomicReference<>(Instant.EPOCH));
+        return SHARED_LAST_FLUSH_AT.computeIfAbsent(
+                compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
     }
 
     /**
-     * Derives the timer map key from the configured {@link IsolationScope} and the per-call
-     * {@link RuntimeContext}, mirroring the memory data namespace:
+     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
+     * {@link #SHARED_LAST_FLUSH_AT}. This bounds the map size in long-running services with
+     * high user/session churn — stale entries represent keys that have not flushed recently
+     * and are safe to re-create on demand.
+     *
+     * <p>Package-private for unit testing.
+     */
+    static void cleanupStaleEntries() {
+        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
+        SHARED_LAST_FLUSH_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
+    }
+
+    /**
+     * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that the shared
+     * {@link #SHARED_LAST_FLUSH_AT} map never conflates throttle windows from different
+     * isolation dimensions — e.g. a {@code userId} that happens to equal a {@code sessionId}
+     * must not share a slot.
+     */
+    private String compositeTimerKey(RuntimeContext rc) {
+        return isolationScope.name() + ":" + timerKeyFor(rc);
+    }
+
+    /**
+     * Derives the per-call identity portion of the composite timer key from the configured
+     * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
+     * namespace:
      * <ul>
      *   <li>{@link IsolationScope#USER} — {@code userId} (empty string for anonymous)</li>
      *   <li>{@link IsolationScope#SESSION} — {@code sessionId} (empty string when absent)</li>

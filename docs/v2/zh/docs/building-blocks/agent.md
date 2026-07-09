@@ -82,8 +82,8 @@ ReActAgent agent =
 :::{tab-item} 显式 Model builder
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
 ReActAgent agent =
@@ -131,7 +131,7 @@ ReActAgent agent =
 ::::
 
 :::{tip}
-`ModelRegistry` 的字符串形式（`<provider>:<model>`）支持 `dashscope` / `openai` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
+`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 :::
 
 ### 参数说明
@@ -591,7 +591,6 @@ ReActAgent.builder()
 ```java
 ReActAgent.builder()
         .skillRepository(new MysqlSkillRepository(dataSource))
-        .dynamicSkillsEnabled(true)     // 允许 LLM 动态加载新技能
         .build();
 ```
 

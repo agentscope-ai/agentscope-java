@@ -24,6 +24,8 @@ import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -58,6 +60,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
+    private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
+            new AtomicReference<>();
+    private volatile Consumer<RuntimeContext> beforeStartCallback;
     private final ConcurrentHashMap<String, SandboxAcquireResult> acquireResults =
             new ConcurrentHashMap<>();
     // Per-session async serialization gate — ensures same-session acquire/release pairs
@@ -69,6 +74,19 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         this.sandboxManager = sandboxManager;
         this.filesystemProxy = filesystemProxy;
     }
+
+    /**
+     * Registers a callback that runs after the sandbox session is acquired but before
+     * {@link io.agentscope.harness.agent.sandbox.Sandbox#start()} applies workspace projection.
+     * This allows callers to materialise resources on the host workspace (e.g.
+     * {@code .skills-cache/}) so that projection picks them up in the same call.
+     *
+     * @param callback receives the per-call {@link RuntimeContext}; may be {@code null} to clear
+     */
+    public void setBeforeStartCallback(Consumer<RuntimeContext> callback) {
+        this.beforeStartCallback = callback;
+    }
+
 
     // ==================== Serialized call wrappers ====================
 
@@ -156,6 +174,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     // ==================== Direct acquire/release (for tests) ====================
 
+
     /**
      * Acquires the sandbox for the current call.
      *
@@ -191,6 +210,18 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private void doAcquire(RuntimeContext ctx, SandboxContext sandboxContext, String sessionKey) {
         try {
+            Consumer<RuntimeContext> cb = beforeStartCallback;
+            if (cb != null) {
+                try {
+                    cb.accept(ctx);
+                } catch (Exception e) {
+                    log.warn(
+                            "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
+                                    + " start: {}",
+                            e.getMessage(),
+                            e);
+                }
+            }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {
