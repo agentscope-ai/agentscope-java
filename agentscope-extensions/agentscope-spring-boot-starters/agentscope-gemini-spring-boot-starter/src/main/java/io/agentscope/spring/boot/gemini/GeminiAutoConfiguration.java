@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.gemini;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.gemini.GeminiChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,7 +42,9 @@ public class GeminiAutoConfiguration {
             havingValue = "true",
             matchIfMissing = true)
     @ConditionalOnMissingBean(Model.class)
-    public GeminiChatModel geminiChatModel(GeminiProperties properties) {
+    public GeminiChatModel geminiChatModel(
+            GeminiProperties properties,
+            ObjectProvider<GeminiChatModelBuilderCustomizer> customizerObjectProvider) {
         String modelName = trimToNull(properties.getModelName());
         if (modelName == null) {
             throw new IllegalStateException(
@@ -79,6 +82,10 @@ public class GeminiAutoConfiguration {
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }
+
+        customizerObjectProvider
+                .orderedStream()
+                .forEach(customizer -> customizer.customize(builder));
 
         return builder.build();
     }
