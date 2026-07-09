@@ -225,6 +225,10 @@ class ReActAgentHitlTest {
         Msg firstResult = agent.call(List.of()).block();
         assertNotNull(firstResult);
         assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
+        List<ToolUseBlock> returnedBlocks = firstResult.getContentBlocks(ToolUseBlock.class);
+        assertEquals(1, returnedBlocks.size());
+        assertEquals("tc1", returnedBlocks.get(0).getId());
+        assertEquals(ToolCallState.ASKING, returnedBlocks.get(0).getState());
 
         // Verify state has been persisted: ToolUseBlock should be in ASKING state
         Msg lastAssistant = null;
@@ -238,10 +242,11 @@ class ReActAgentHitlTest {
         assertNotNull(lastAssistant);
         List<ToolUseBlock> blocks = lastAssistant.getContentBlocks(ToolUseBlock.class);
         assertEquals(1, blocks.size());
+        assertEquals(returnedBlocks.get(0).getId(), blocks.get(0).getId());
         assertEquals(ToolCallState.ASKING, blocks.get(0).getState());
 
-        // Second call: resume with a confirmed ConfirmResult
-        Msg secondResult = agent.call(List.of(confirmMsg(true, blocks.get(0)))).block();
+        // Second call: resume with the ToolUseBlock returned to the caller.
+        Msg secondResult = agent.call(List.of(confirmMsg(true, returnedBlocks.get(0)))).block();
         assertNotNull(secondResult);
         // Should have proceeded normally to the next reasoning round
         assertTrue(

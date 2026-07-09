@@ -2349,7 +2349,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // collected.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
-                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
+                                    Msg stopMsg =
+                                            rs.getGenerateReason()
+                                                            == GenerateReason.PERMISSION_ASKING
+                                                    ? buildPermissionAskingStopMsg(results)
+                                                    : buildStopMsg(results, rs.getGenerateReason());
                                     return Mono.just(stopMsg);
                                 }
                                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
@@ -2827,6 +2831,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .name(getName())
                     .content(content)
                     .generateReason(reason)
+                    .build();
+        }
+
+        /**
+         * Build the user-facing stop message for permission HITL. Unlike a generic acting stop,
+         * the caller must receive the ASKING ToolUseBlocks so they can construct ConfirmResults.
+         */
+        private Msg buildPermissionAskingStopMsg(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
+            List<ContentBlock> content = new ArrayList<>();
+            Set<String> includedToolIds = new HashSet<>();
+            if (results != null) {
+                for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+                    ToolUseBlock toolUse = pair.getKey();
+                    if (toolUse != null) {
+                        content.add(toolUse);
+                        includedToolIds.add(toolUse.getId());
+                    }
+                    if (pair.getValue() != null) {
+                        content.add(pair.getValue());
+                    }
+                }
+            }
+            for (ToolUseBlock asking : askingToolCalls()) {
+                if (asking.getId() == null || includedToolIds.add(asking.getId())) {
+                    content.add(asking);
+                }
+            }
+            return AssistantMessage.builder()
+                    .name(getName())
+                    .content(content)
+                    .generateReason(GenerateReason.PERMISSION_ASKING)
                     .build();
         }
 
