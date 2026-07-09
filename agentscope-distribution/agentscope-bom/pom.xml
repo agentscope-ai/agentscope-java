@@ -239,6 +239,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions PostgreSql (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-postgresql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Sandbox -->
             <dependency>
                 <groupId>io.agentscope</groupId>

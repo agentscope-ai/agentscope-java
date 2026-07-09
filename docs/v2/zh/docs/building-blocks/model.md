@@ -23,6 +23,42 @@ CredentialBase/
 
 这种分层与前端的自然交互流程一致 —— 先注册凭证，再从凭证下挑选模型 —— 让界面只需鉴权一次，就能展示该提供商支持的所有模型。
 
+## 模型扩展模块
+
+特定模型提供商的实现已经从 `agentscope-core` 迁移到独立扩展模块中。每个模型适配模块自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 等。
+
+| 提供商 | Maven artifact | 主要包名 |
+|--------|----------------|----------|
+| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
+| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
+| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
+| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
+
+### 迁移步骤
+
+1. 增加对应模型提供商扩展模块依赖。以 DashScope 为例：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+</dependency>
+```
+
+其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
+
+2. 将模型提供商实现的 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
+3. 将模型提供商 formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
+4. Spring Boot 应用中，改用对应提供商 starter 和 `agentscope.<provider>.*` 配置：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+</dependency>
+```
+
 ## 选择模型创建方式
 
 ### 字符串 model id
@@ -76,42 +112,6 @@ agentscope:
     api-key: ${OPENAI_API_KEY}
     model-name: gpt-4.1-mini
     stream: true
-```
-
-## 模型扩展模块
-
-特定模型提供商的实现已经从 `agentscope-core` 迁移到独立扩展模块中。每个模型适配模块自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 等。
-
-| 提供商 | Maven artifact | 主要包名 |
-|--------|----------------|----------|
-| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
-| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
-| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
-| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
-| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
-
-### 迁移步骤
-
-1. 增加对应模型提供商扩展模块依赖。以 DashScope 为例：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-dashscope</artifactId>
-</dependency>
-```
-
-其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
-
-2. 将模型提供商实现的 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
-3. 将模型提供商 formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
-4. Spring Boot 应用中，改用对应提供商 starter 和 `agentscope.<provider>.*` 配置：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
-</dependency>
 ```
 
 ## ModelRegistry 与 ModelCreationContext
