@@ -130,6 +130,8 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `endpointType` | API 端点类型（默认 `AUTO` 自动识别），可选 `TEXT`（强制文本 API）或 `MULTIMODAL`（强制多模态 API） |
 | `defaultOptions` | 默认生成选项（temperature、maxTokens 等） |
 | `formatter` | 消息格式化器（默认 `DashScopeChatFormatter`） |
+| `nativeStructuredOutput` | 是否启用原生 `response_format` 结构化输出，默认 `false` |
+| `nativeStructuredOutputWithTools` | 与工具同时使用时是否启用原生结构化输出，默认跟随 `nativeStructuredOutput` |
 
 ### 端点类型（endpointType）
 
@@ -189,13 +191,16 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 ### 兼容 API
 
-适用于 DeepSeek、vLLM 等兼容提供商：
+适用于 DeepSeek、vLLM 等兼容提供商。注意需要配置对应的 Formatter 和结构化输出能力：
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("your-api-key")
         .modelName("deepseek-chat")
         .baseUrl("https://api.deepseek.com")
+        .formatter(new DeepSeekFormatter())
+        .nativeStructuredOutput(false)
+        .nativeStructuredOutputWithTools(false)
         .build();
 ```
 
@@ -206,8 +211,14 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `apiKey` | API 密钥 |
 | `modelName` | 模型名称，如 `gpt-4o`、`gpt-4o-mini` |
 | `baseUrl` | 自定义 API 端点（可选） |
+| `endpointPath` | 自定义请求路径（可选），如 `/v4/chat/completions` |
 | `stream` | 是否启用流式输出，默认 `true` |
 | `generateOptions` | 默认生成选项（注意：OpenAI 使用 `.generateOptions()` 而非 `.defaultOptions()`） |
+| `formatter` | 消息格式化器（默认 `OpenAIChatFormatter`），兼容提供商需使用对应 Formatter（如 `DeepSeekFormatter`、`GLMFormatter`） |
+| `nativeStructuredOutput` | 是否启用原生 `response_format` 结构化输出，默认 `true`。不支持的提供商（DeepSeek、vLLM 等）需设为 `false` |
+| `nativeStructuredOutputWithTools` | 与工具同时使用时是否启用原生结构化输出，默认 `true`。部分提供商会优先 `response_format` 而跳过工具调用，需设为 `false` |
+| `contextWindowSize` | 覆盖上下文窗口大小（可选，默认按模型名称自动推断） |
+| `proxy` | 代理配置（可选），如 `ProxyConfig.http("localhost", 8080)` |
 
 ## Anthropic
 
