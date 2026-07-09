@@ -101,6 +101,18 @@ public interface AgentTool {
     }
 
     /**
+     * Returns whether this tool performs only read operations and never mutates state.
+     *
+     * <p>Read-only tools are automatically permitted in restricted execution modes such as
+     * Plan Mode, where write operations require explicit approval.
+     *
+     * @return {@code true} if the tool is read-only; {@code false} by default
+     */
+    default boolean isReadOnly() {
+        return false;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for

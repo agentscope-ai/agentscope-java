@@ -4,6 +4,22 @@
 
 按主题分为以下几组：
 
+## 模型提供商
+
+所有模型提供商已经迁移到独立模型扩展模块中，`agentscope-core` 只保留共享模型契约。完整模型创建方式、Spring Boot 配置、formatter、credential 和高级 registry 行为见 [模型文档](../docs/building-blocks/model.md)。
+
+| 提供商 | Maven artifact | `ModelRegistry` id | 标准环境变量 | 文档 |
+|--------|----------------|--------------------|--------------|------|
+| OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | [OpenAI](model/openai.md) |
+| DashScope | `agentscope-extensions-model-dashscope` | `dashscope:<model>` / `qwen*` | `DASHSCOPE_API_KEY` | [DashScope](model/dashscope.md) |
+| Gemini | `agentscope-extensions-model-gemini` | `gemini:<model>` | `GEMINI_API_KEY` | [Gemini](model/gemini.md) |
+| Anthropic | `agentscope-extensions-model-anthropic` | `anthropic:<model>` | `ANTHROPIC_API_KEY` | [Anthropic](model/anthropic.md) |
+| Ollama | `agentscope-extensions-model-ollama` | `ollama:<model>` | `OLLAMA_BASE_URL`（可选） | [Ollama](model/ollama.md) |
+
+```{note}
+`agentscope-extensions-model-e2e-tests` 是仓库测试模块，不是面向用户的模型集成依赖。
+```
+
 ## 分布式存储（Distributed Store）
 
 生产多副本部署所需的全链路分布式存储组件。通过 `DistributedStore` 一键配置 Agent 状态、工作区文件系统、沙箱快照与并发锁。
