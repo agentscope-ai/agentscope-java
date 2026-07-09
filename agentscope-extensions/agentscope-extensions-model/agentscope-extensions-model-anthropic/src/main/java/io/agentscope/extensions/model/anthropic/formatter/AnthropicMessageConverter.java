@@ -80,12 +80,15 @@ public class AnthropicMessageConverter {
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
             boolean isFirstMessage = (i == 0);
-            SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
 
-            if (shouldSplitParallelToolCalls(msg, splitResults)) {
-                result.addAll(convertParallelToolCalls(msg, splitResults));
-                i += splitResults.consumedMessages();
-                continue;
+            if (msg.getRole() == MsgRole.ASSISTANT
+                    && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
+                SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
+                if (shouldSplitParallelToolCalls(msg, splitResults)) {
+                    result.addAll(convertParallelToolCalls(msg, splitResults));
+                    i += splitResults.consumedMessages();
+                    continue;
+                }
             }
 
             // Special handling for tool results - they create separate user messages
