@@ -608,6 +608,17 @@ public class Toolkit {
     }
 
     /**
+     * Find all {@link SkillToolGroup} instances whose {@code activateOnSkill} matches the given
+     * skill name.
+     *
+     * @param skillName The skill name to match against
+     * @return List of matching group names (never null, may be empty)
+     */
+    public List<String> findSkillToolGroupsByActivateOnSkill(String skillName) {
+        return groupManager.findSkillToolGroupsByActivateOnSkill(skillName);
+    }
+
+    /**
      * Register a pre-built {@link ToolGroup} instance (including subclasses).
      *
      * <p>Use this method when you need full control over the ToolGroup construction,
