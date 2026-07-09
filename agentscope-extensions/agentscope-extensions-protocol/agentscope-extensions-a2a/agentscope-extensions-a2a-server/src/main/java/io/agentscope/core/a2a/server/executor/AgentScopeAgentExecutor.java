@@ -376,7 +376,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     null != resultMessageRef.get()
                             ? resultMessageRef.get()
                             : MessageConvertUtil.convertFromMsgToMessage(
-                                    accumulatedOutput, context.getTaskId(), context.getContextId());
+                                    MessageConvertUtil.compactStreamingChunks(accumulatedOutput),
+                                    context.getTaskId(),
+                                    context.getContextId());
             eventQueue.enqueueEvent(resultMessage);
         }
 
@@ -426,7 +428,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Message completeMessage =
                     executeProperties.isCompleteWithMessage()
                             ? MessageConvertUtil.convertFromMsgToMessage(
-                                    accumulatedOutput,
+                                    MessageConvertUtil.compactStreamingChunks(accumulatedOutput),
                                     taskUpdater.getTaskId(),
                                     taskUpdater.getContextId())
                             : null;
@@ -440,7 +442,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             }
             Msg outputMessage = output.getMessage();
             List<Part<?>> responseParts =
-                    MessageConvertUtil.convertFromContentBlocks(outputMessage);
+                    MessageConvertUtil.convertFromContentBlocks(outputMessage, !output.isLast());
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,

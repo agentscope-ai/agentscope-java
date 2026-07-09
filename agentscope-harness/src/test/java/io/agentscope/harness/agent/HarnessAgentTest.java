@@ -58,14 +58,17 @@ import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -79,6 +82,24 @@ import reactor.core.publisher.Mono;
 class HarnessAgentTest {
 
     @TempDir Path workspace;
+
+    @AfterEach
+    void cleanupTempDir() {
+        if (workspace != null && Files.exists(workspace)) {
+            try (var files = Files.walk(workspace)) {
+                files.sorted(Comparator.reverseOrder())
+                        .filter(p -> !p.equals(workspace))
+                        .forEach(
+                                p -> {
+                                    try {
+                                        Files.deleteIfExists(p);
+                                    } catch (IOException ignored) {
+                                    }
+                                });
+            } catch (IOException ignored) {
+            }
+        }
+    }
 
     @Test
     void workspaceAgentsMd_readableViaWorkspaceManager() throws Exception {

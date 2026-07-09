@@ -144,6 +144,31 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         return runtime;
     }
 
+    /**
+     * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
+     * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
+     * the staged content in the same call. Safe to call multiple times — staging is idempotent
+     * (content-hash guarded).
+     *
+     * @param ctx the per-call runtime context
+     */
+    public void prestageMarketplaceSkills(RuntimeContext ctx) {
+        if (stager == null) {
+            return;
+        }
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
+        Map<String, RepoBound> merged = mergeRepositories(ctx);
+        if (merged.isEmpty()) {
+            return;
+        }
+        List<RepoBound> visible = applyVisibility(merged.values(), ctx);
+        if (!visible.isEmpty()) {
+            stager.stage(visible, sourceNamespaces);
+        }
+    }
+
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         if (ctx == null) {

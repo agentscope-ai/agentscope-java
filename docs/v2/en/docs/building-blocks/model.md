@@ -23,6 +23,42 @@ A **Credential** carries a provider's API auth fields (`apiKey`, `baseUrl`, …)
 
 This layering matches the natural UX in a frontend — register the credential first, then pick a model under it — so the UI authenticates once and shows everything that provider supports.
 
+## Model extension modules
+
+Provider-specific model implementations have been moved out of `agentscope-core` into independent extension modules. Each provider module owns its chat model, credential, formatter, DTO, exception, and SDK/API client, etc.
+
+| Provider | Maven artifact | Main package |
+|----------|----------------|--------------|
+| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
+| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
+| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
+| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
+
+### Migration checklist
+
+1. Add the provider extension module dependency. For example, DashScope:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+</dependency>
+```
+
+Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
+
+2. Replace provider imports from `io.agentscope.core.model.*` with `io.agentscope.extensions.model.<provider>.*`.
+3. Replace provider formatter imports from `io.agentscope.core.formatter.<provider>.*` with `io.agentscope.extensions.model.<provider>.formatter.*`.
+4. For Spring Boot applications, replace the generic model creation path with the matching provider-specific starter and its `agentscope.<provider>.*` properties.
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+</dependency>
+```
+
 ## Choose a creation path
 
 ### String model id
@@ -76,42 +112,6 @@ agentscope:
     api-key: ${OPENAI_API_KEY}
     model-name: gpt-4.1-mini
     stream: true
-```
-
-## Model extension modules
-
-Provider-specific model implementations have been moved out of `agentscope-core` into independent extension modules. Each provider module owns its chat model, credential, formatter, DTO, exception, and SDK/API client, etc.
-
-| Provider | Maven artifact | Main package |
-|----------|----------------|--------------|
-| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
-| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
-| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
-| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
-| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
-
-### Migration checklist
-
-1. Add the provider extension module dependency. For example, DashScope:
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-dashscope</artifactId>
-</dependency>
-```
-
-Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
-
-2. Replace provider imports from `io.agentscope.core.model.*` with `io.agentscope.extensions.model.<provider>.*`.
-3. Replace provider formatter imports from `io.agentscope.core.formatter.<provider>.*` with `io.agentscope.extensions.model.<provider>.formatter.*`.
-4. For Spring Boot applications, replace the generic model creation path with the matching provider-specific starter and its `agentscope.<provider>.*` properties.
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
-</dependency>
 ```
 
 ## ModelRegistry and ModelCreationContext

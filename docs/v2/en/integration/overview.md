@@ -4,6 +4,22 @@ This section collects the AgentScope Java extensions that connect to third-party
 
 The extensions are grouped by topic:
 
+## Model Providers
+
+All model providers have moved to independent model extension modules, while `agentscope-core` keeps only the shared model contracts. See [Model](../docs/building-blocks/model.md) for the full creation paths, Spring Boot setup, formatters, credentials, and advanced registry behavior.
+
+| Provider | Maven artifact | `ModelRegistry` id | Standard environment variable | Docs |
+|----------|----------------|--------------------|-------------------------------|------|
+| OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | [OpenAI](model/openai.md) |
+| DashScope | `agentscope-extensions-model-dashscope` | `dashscope:<model>` / `qwen*` | `DASHSCOPE_API_KEY` | [DashScope](model/dashscope.md) |
+| Gemini | `agentscope-extensions-model-gemini` | `gemini:<model>` | `GEMINI_API_KEY` | [Gemini](model/gemini.md) |
+| Anthropic | `agentscope-extensions-model-anthropic` | `anthropic:<model>` | `ANTHROPIC_API_KEY` | [Anthropic](model/anthropic.md) |
+| Ollama | `agentscope-extensions-model-ollama` | `ollama:<model>` | `OLLAMA_BASE_URL` optional | [Ollama](model/ollama.md) |
+
+```{note}
+`agentscope-extensions-model-e2e-tests` is a repository test module, not a user-facing model integration dependency.
+```
+
 ## Distributed Storage (Distributed Store)
 
 Full-stack distributed storage components for multi-replica production deployments. Configure agent state, workspace filesystem, sandbox snapshots, and concurrency locks with a single `DistributedStore`.
