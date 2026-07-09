@@ -23,9 +23,8 @@ import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -60,13 +59,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
-            new AtomicReference<>();
     private volatile Consumer<RuntimeContext> beforeStartCallback;
     private final ConcurrentHashMap<String, SandboxAcquireResult> acquireResults =
             new ConcurrentHashMap<>();
-    // Per-session async serialization gate — ensures same-session acquire/release pairs
-    // do not overlap even when HarnessAgent.wrappedCall is subscribed concurrently.
     private final ConcurrentHashMap<String, Mono<Void>> sandboxGates = new ConcurrentHashMap<>();
 
     public SandboxLifecycleMiddleware(
@@ -86,9 +81,6 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     public void setBeforeStartCallback(Consumer<RuntimeContext> callback) {
         this.beforeStartCallback = callback;
     }
-
-
-    // ==================== Serialized call wrappers ====================
 
     /**
      * Wraps a {@code Mono<Msg>} call with serialized sandbox acquire/release.
@@ -172,9 +164,6 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 });
     }
 
-    // ==================== Direct acquire/release (for tests) ====================
-
-
     /**
      * Acquires the sandbox for the current call.
      *
@@ -206,8 +195,14 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         doRelease(ctx);
     }
 
-    // ==================== Internal ====================
-
+    /**
+     * Acquires a sandbox session: runs the optional {@link #beforeStartCallback},
+     * obtains a lease via {@link SandboxManager#acquire}, starts the sandbox, and
+     * binds it to the filesystem proxy under {@code sessionKey}.
+     *
+     * <p>On failure after acquire, the sandbox is released and the lease closed to
+     * prevent resource leaks.
+     */
     private void doAcquire(RuntimeContext ctx, SandboxContext sandboxContext, String sessionKey) {
         try {
             Consumer<RuntimeContext> cb = beforeStartCallback;
@@ -251,6 +246,14 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
+    /**
+     * Releases a previously acquired sandbox session: persists state, releases the
+     * sandbox via {@link SandboxManager#release}, closes the lease, and unbinds the
+     * filesystem proxy.
+     *
+     * <p>Failures during persist or release are logged but do not propagate, ensuring
+     * the agent call result is always delivered to the caller.
+     */
     private void doRelease(RuntimeContext ctx) {
         String sessionKey = ctx != null ? bindingKey(ctx) : null;
         SandboxAcquireResult result = sessionKey != null ? acquireResults.remove(sessionKey) : null;
@@ -272,6 +275,10 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         filesystemProxy.unbindSandbox(sessionKey);
     }
 
+    /**
+     * Computes the composite binding key for sandbox isolation: {@code "userId/sessionId"}.
+     * Returns {@code null} if sessionId is absent, signalling that no sandbox should be bound.
+     */
     static String bindingKey(RuntimeContext ctx) {
         String uid = ctx.getUserId();
         String sid = ctx.getSessionId();
