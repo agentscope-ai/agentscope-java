@@ -3467,7 +3467,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .content(TextBlock.builder().text(recoveryText).build())
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);
-                    return saveStateToSession(scope).thenReturn(recoveryMsg);
+                    return saveStateToSession(scope)
+                            .thenReturn(recoveryMsg)
+                            .onErrorResume(
+                                    e -> {
+                                        log.warn(
+                                                "Failed to save agent state after user interrupt",
+                                                e);
+                                        return Mono.just(recoveryMsg);
+                                    });
                 });
     }
 
@@ -4251,7 +4259,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
          *     should prefer {@link #skillRepository(AgentSkillRepository)}.
          */
-        @Deprecated(forRemoval = true, since = "2.0.0")
+        @Deprecated(since = "2.0.0")
         public Builder skillBox(SkillBox skillBox) {
             this.skillBox = skillBox;
             return this;
