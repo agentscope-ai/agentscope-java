@@ -27,12 +27,11 @@ import reactor.core.publisher.Mono;
  * An external tool implementation that only contains schema definition without execution logic.
  *
  * <p>This class is used for registering external tools that will be executed outside the framework.
- * When a model returns a call to a SchemaOnlyTool, the framework will catch the
- * {@link ToolSuspendException} thrown by {@link #callAsync(ToolCallParam)} and convert it to a
- * pending {@link ToolResultBlock}, then return a suspended message to the user.
+ * When a model returns a call to a SchemaOnlyTool, Toolkit surfaces the call as a pending
+ * {@link ToolResultBlock}, then the agent returns a suspended message to the user.
  *
- * <p>The {@link #callAsync(ToolCallParam)} method throws a {@link ToolSuspendException}
- * to signal that this tool requires external execution.
+ * <p>The {@link #callAsync(ToolCallParam)} method still throws a {@link ToolSuspendException}
+ * for direct invocations outside the Toolkit execution path.
  *
  * <p>Example usage:
  * <pre>{@code
@@ -124,9 +123,8 @@ public class SchemaOnlyTool extends ToolBase {
     /**
      * Throws a ToolSuspendException to signal that this tool requires external execution.
      *
-     * <p>The framework will catch this exception and convert it to a pending {@link ToolResultBlock}.
-     * The agent will then return a suspended message with {@code GenerateReason.TOOL_SUSPENDED}
-     * containing the tool use blocks that need external execution.
+     * <p>Toolkit execution short-circuits external tools before invoking this method. Direct
+     * invocations keep the same suspension signal.
      *
      * @param param The tool call parameters (ignored)
      * @return Never returns normally
