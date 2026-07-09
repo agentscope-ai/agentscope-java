@@ -38,10 +38,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Manages a collection of {@link AgentSkill} instances and exposes them as tools.
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
+ * Since 2.0.0, SkillBox is intended for internal use only; prefer skill repositories
+ * ({@code AgentSkillRepository}) for defining and loading skills.
  */
-@Deprecated(since = "2.0.0")
 public class SkillBox {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
     private static final String BASE64_PREFIX = "base64:";
@@ -169,14 +168,28 @@ public class SkillBox {
 
         // Dynamically update active/inactive tool groups based on skills' states
         for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) == null) {
-                continue; // Skip uncreated skill tools
+            // Name-convention path: skillId + "_skill_tools"
+            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) != null) {
+                if (!registeredSkill.isActive()) {
+                    inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
+                } else {
+                    activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
+                }
             }
-            if (!registeredSkill.isActive()) {
-                inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                continue; // Skip inactive skill's tools, its tools won't be included
+
+            // activateOnSkill path: scan SkillToolGroups bound to this skill's name
+            AgentSkill agentSkill = skillRegistry.getSkill(registeredSkill.getSkillId());
+            if (agentSkill != null) {
+                List<String> boundGroups =
+                        toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+                for (String group : boundGroups) {
+                    if (!registeredSkill.isActive()) {
+                        inactiveSkillToolGroups.add(group);
+                    } else {
+                        activeSkillToolGroups.add(group);
+                    }
+                }
             }
-            activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
         }
         toolkit.updateToolGroups(inactiveSkillToolGroups, false);
         toolkit.updateToolGroups(activeSkillToolGroups, true);
@@ -323,12 +336,22 @@ public class SkillBox {
 
         skillRegistry.setSkillActive(skillId, active);
 
-        // sync ToolGroup state
+        // sync ToolGroup state — name-convention path
         RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
         if (registeredSkill != null) {
             String toolGroupName = registeredSkill.getToolsGroupName();
             if (this.toolkit.getToolGroup(toolGroupName) != null) {
                 this.toolkit.updateToolGroups(List.of(toolGroupName), active);
+            }
+        }
+
+        // sync ToolGroup state — activateOnSkill path
+        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
+        if (agentSkill != null && this.toolkit != null) {
+            List<String> boundGroups =
+                    this.toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+            if (!boundGroups.isEmpty()) {
+                this.toolkit.updateToolGroups(boundGroups, active);
             }
         }
 

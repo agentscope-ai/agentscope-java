@@ -30,6 +30,8 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +77,66 @@ class SkillRuntimeTest {
     }
 
     // =========================================================================
+    //  ShellPathPolicy
+    // =========================================================================
+
+    @Nested
+    class ShellPathPolicyTests {
+
+        @Test
+        void escapeSpacesReplacesWithBackslashSpace() {
+            assertEquals("hello", ShellPathPolicy.escapeSpaces("hello"));
+            assertEquals("hello\\ world", ShellPathPolicy.escapeSpaces("hello world"));
+            assertEquals("V2Ray\\ 代理配置助手", ShellPathPolicy.escapeSpaces("V2Ray 代理配置助手"));
+            assertEquals("a\\ b\\ c", ShellPathPolicy.escapeSpaces("a b c"));
+        }
+
+        @Test
+        void sandboxResolveEscapesSpacesInSkillName() {
+            ShellPathPolicy policy = ShellPathPolicy.sandbox();
+            String result = policy.resolve("V2Ray 代理配置助手", new StageResult.WorkspaceNative());
+            assertEquals("/workspace/skills/V2Ray\\ 代理配置助手", result);
+        }
+
+        @Test
+        void sandboxResolveEscapesSpacesInCachedSkill() {
+            ShellPathPolicy policy = ShellPathPolicy.sandbox();
+            String result = policy.resolve("ignored", new StageResult.Cached("ns", "my skill"));
+            assertEquals("/workspace/.skills-cache/ns/my\\ skill", result);
+        }
+
+        @Test
+        void localWithShellResolveEscapesSpaces() {
+            ShellPathPolicy policy = ShellPathPolicy.localWithShell(Paths.get("/tmp/my workspace"));
+            String result = policy.resolve("my skill", new StageResult.WorkspaceNative());
+            String expected =
+                    Paths.get("/tmp/my workspace")
+                            .resolve("skills")
+                            .resolve("my skill")
+                            .toAbsolutePath()
+                            .toString()
+                            .replace(" ", "\\ ");
+            assertEquals(expected, result);
+        }
+
+        @Test
+        void noShellAlwaysReturnsNull() {
+            ShellPathPolicy policy = ShellPathPolicy.noShell();
+            assertNull(policy.resolve("any name", new StageResult.WorkspaceNative()));
+            assertNull(policy.resolve("any name", new StageResult.Cached("ns", "name")));
+            assertNull(policy.resolve("any name", StageResult.NONE));
+            assertNull(policy.resolve("any name", null));
+        }
+
+        @Test
+        void nullStageOrNoneReturnsNull() {
+            ShellPathPolicy policy = ShellPathPolicy.sandbox();
+            assertNull(policy.resolve("alpha", null));
+            assertNull(policy.resolve("alpha", StageResult.NONE));
+        }
+    }
+
+    // =========================================================================
     //  SkillPromptBuilder
     // =========================================================================
 
@@ -107,6 +169,17 @@ class SkillRuntimeTest {
             assertTrue(out.contains("<files-root>/workspace/skills/alpha</files-root>"));
             assertTrue(out.contains("## Code Execution"));
             assertTrue(out.contains("<files-root>"));
+        }
+
+        @Test
+        void rendersEscapedFilesRootWhenPathContainsSpaces() {
+            HarnessSkillEntry e =
+                    new HarnessSkillEntry(
+                            skill("V2Ray 代理配置助手", "wkspace"),
+                            null,
+                            "/workspace/skills/V2Ray\\ 代理配置助手");
+            String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
+            assertTrue(out.contains("<files-root>/workspace/skills/V2Ray\\ 代理配置助手</files-root>"));
         }
 
         @Test
