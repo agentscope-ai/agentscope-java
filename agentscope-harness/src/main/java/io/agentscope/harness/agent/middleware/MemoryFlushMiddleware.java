@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.middleware;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -156,10 +155,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
-        if (!(agent instanceof ReActAgent reActAgent)) {
-            return Mono.empty();
-        }
-        AgentState state = RuntimeContext.resolveAgentState(rc, reActAgent);
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
             return Mono.empty();
         }
@@ -216,7 +212,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
      * namespace (see {@link #timerKeyFor(RuntimeContext)}).
      *
      * <p>Package-private for unit testing of the trigger gate without standing up a full
-     * {@code ReActAgent}.
+     * {@code Agent}.
      */
     boolean shouldFlushNow(RuntimeContext rc) {
         switch (flushTrigger.mode()) {
