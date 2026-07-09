@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T04:12:58+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-07-09T05:46:43+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/task/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1165,6 +1165,12 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
 <td><p>消息格式化器（默认 <code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code>）</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+<td><p>是否启用原生 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 结构化输出，默认 <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools</span></code></p></td>
+<td><p>与工具同时使用时是否启用原生结构化输出，默认跟随 <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -1224,11 +1230,14 @@
 </div>
 <section id="id8">
 <h3>兼容 API<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
-<p>适用于 DeepSeek、vLLM 等兼容提供商：</p>
+<p>适用于 DeepSeek、vLLM 等兼容提供商。注意需要配置对应的 Formatter 和结构化输出能力：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;deepseek-chat&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DeepSeekFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutput</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutputWithTools</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1252,11 +1261,29 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
 <td><p>自定义 API 端点（可选）</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">endpointPath</span></code></p></td>
+<td><p>自定义请求路径（可选），如 <code class="docutils literal notranslate"><span class="pre">/v4/chat/completions</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
 <td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
 <td><p>默认生成选项（注意：OpenAI 使用 <code class="docutils literal notranslate"><span class="pre">.generateOptions()</span></code> 而非 <code class="docutils literal notranslate"><span class="pre">.defaultOptions()</span></code>）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
+<td><p>消息格式化器（默认 <code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code>），兼容提供商需使用对应 Formatter（如 <code class="docutils literal notranslate"><span class="pre">DeepSeekFormatter</span></code>、<code class="docutils literal notranslate"><span class="pre">GLMFormatter</span></code>）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+<td><p>是否启用原生 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 结构化输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code>。不支持的提供商（DeepSeek、vLLM 等）需设为 <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools</span></code></p></td>
+<td><p>与工具同时使用时是否启用原生结构化输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code>。部分提供商会优先 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 而跳过工具调用，需设为 <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">contextWindowSize</span></code></p></td>
+<td><p>覆盖上下文窗口大小（可选，默认按模型名称自动推断）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">proxy</span></code></p></td>
+<td><p>代理配置（可选），如 <code class="docutils literal notranslate"><span class="pre">ProxyConfig.http(&quot;localhost&quot;,</span> <span class="pre">8080)</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -1786,7 +1813,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-25</div>
+              Last updated on 2026-07-09</div>
           </div>
           <div class="right-details">
             <div class="icons">

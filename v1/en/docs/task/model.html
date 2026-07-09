@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T04:12:58+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-07-09T05:46:43+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/task/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1165,6 +1165,12 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
 <td><p>Message formatter (default <code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code>)</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+<td><p>Enable native <code class="docutils literal notranslate"><span class="pre">response_format</span></code> structured output, default <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools</span></code></p></td>
+<td><p>Enable native structured output when tools are present, defaults to <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -1225,11 +1231,14 @@
 </div>
 <section id="compatible-apis">
 <h3>Compatible APIs<a class="headerlink" href="#compatible-apis" title="Link to this heading">¶</a></h3>
-<p>For DeepSeek, vLLM, and other compatible providers:</p>
+<p>For DeepSeek, vLLM, and other compatible providers. Note that you need to configure the appropriate Formatter and structured output capabilities:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;deepseek-chat&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DeepSeekFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutput</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nativeStructuredOutputWithTools</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1253,11 +1262,29 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
 <td><p>Custom API endpoint (optional)</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">endpointPath</span></code></p></td>
+<td><p>Custom request path (optional), e.g., <code class="docutils literal notranslate"><span class="pre">/v4/chat/completions</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
 <td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
 <td><p>Default generation options (note: OpenAI uses <code class="docutils literal notranslate"><span class="pre">.generateOptions()</span></code> instead of <code class="docutils literal notranslate"><span class="pre">.defaultOptions()</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
+<td><p>Message formatter (default <code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code>). Compatible providers need their own Formatter (e.g., <code class="docutils literal notranslate"><span class="pre">DeepSeekFormatter</span></code>, <code class="docutils literal notranslate"><span class="pre">GLMFormatter</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code></p></td>
+<td><p>Enable native <code class="docutils literal notranslate"><span class="pre">response_format</span></code> structured output, default <code class="docutils literal notranslate"><span class="pre">true</span></code>. Unsupported providers (DeepSeek, vLLM, etc.) should set to <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools</span></code></p></td>
+<td><p>Enable native structured output when tools are present, default <code class="docutils literal notranslate"><span class="pre">true</span></code>. Some providers prioritize <code class="docutils literal notranslate"><span class="pre">response_format</span></code> over tool calls, should set to <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">contextWindowSize</span></code></p></td>
+<td><p>Override context window size (optional, auto-inferred from model name by default)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">proxy</span></code></p></td>
+<td><p>Proxy configuration (optional), e.g., <code class="docutils literal notranslate"><span class="pre">ProxyConfig.http(&quot;localhost&quot;,</span> <span class="pre">8080)</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -1788,7 +1815,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-25</div>
+              Last updated on 2026-07-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
