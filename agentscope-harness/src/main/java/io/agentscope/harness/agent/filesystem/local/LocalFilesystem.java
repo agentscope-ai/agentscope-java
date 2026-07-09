@@ -628,13 +628,20 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private Path resolveRooted(String effectiveKey) {
-        // In ROOTED mode, paths starting with "/" represent logical workspace-absolute paths
-        // (e.g. "/skills" means "<workspace>/skills"), not host-machine absolute paths.
-        // Strip the leading "/" and resolve relative to cwd, similar to resolveSandboxed().
-        // This is necessary because:
-        // - On Windows: Path.of("/skills").isAbsolute() returns false (no drive letter),
-        //   causing cwd.resolve("/skills") to resolve to <drive>:\skills which doesn't exist.
-        // - On Unix: Path.of("/skills").isAbsolute() returns true, triggering SecurityException.
+        Path target = Path.of(effectiveKey);
+        if (target.isAbsolute()) {
+            Path normalized = target.normalize();
+            if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
+                return normalized;
+            }
+            if (Files.exists(normalized)) {
+                throw rootAccessDenied(normalized);
+            }
+            if (!effectiveKey.startsWith("/")) {
+                throw rootAccessDenied(normalized);
+            }
+        }
+
         if (effectiveKey.startsWith("/")) {
             String stripped = effectiveKey.substring(1);
             if (stripped.isEmpty()) {
@@ -650,22 +657,17 @@ public class LocalFilesystem implements AbstractFilesystem {
             return full;
         }
 
-        Path target = Path.of(effectiveKey);
-        if (target.isAbsolute()) {
-            // True host absolute paths (Windows drive letters, UNC paths)
-            Path normalized = target.normalize();
-            if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
-                return normalized;
-            }
-            throw new SecurityException(
-                    "Absolute path "
-                            + normalized
-                            + " is not within an allowed root. Filesystem root: "
-                            + cwd
-                            + "; additional roots: "
-                            + pathPolicy.roots());
-        }
         return cwd.resolve(target).normalize();
+    }
+
+    private SecurityException rootAccessDenied(Path normalized) {
+        return new SecurityException(
+                "Absolute path "
+                        + normalized
+                        + " is not within an allowed root. Filesystem root: "
+                        + cwd
+                        + "; additional roots: "
+                        + pathPolicy.roots());
     }
 
     private Path resolveUnrestricted(String effectiveKey) {
