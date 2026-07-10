@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +52,8 @@ public class WaitAsyncResultsTool {
 
     private final MessageBus messageBus;
     private final TaskRepository taskRepository;
-    private final AtomicInteger consecutiveEmptyWaits = new AtomicInteger(0);
+    private final ConcurrentHashMap<String, AtomicInteger> consecutiveEmptyWaitsBySession =
+            new ConcurrentHashMap<>();
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
         this(messageBus, null);
@@ -89,13 +91,17 @@ public class WaitAsyncResultsTool {
             return "Cannot wait: no session context available.";
         }
 
-        if (consecutiveEmptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
+        AtomicInteger emptyWaits =
+                consecutiveEmptyWaitsBySession.computeIfAbsent(
+                        sessionId, k -> new AtomicInteger(0));
+
+        if (emptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
             log.info(
                     "wait_async_results: rejected — {} consecutive empty waits reached, session={}",
-                    consecutiveEmptyWaits.get(),
+                    emptyWaits.get(),
                     sessionId);
             return "Wait budget exhausted: you have already waited "
-                    + consecutiveEmptyWaits.get()
+                    + emptyWaits.get()
                     + " times without receiving results. "
                     + "Do NOT call wait_async_results again. Instead use task_list to check "
                     + "task status, or task_output(block=false) to poll for results without "
@@ -146,7 +152,7 @@ public class WaitAsyncResultsTool {
             Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
-                consecutiveEmptyWaits.set(0);
+                emptyWaits.set(0);
                 return "Async results have arrived. Continue reasoning — "
                         + "the results will be injected into your context automatically.";
             }
@@ -154,7 +160,7 @@ public class WaitAsyncResultsTool {
             Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
         }
 
-        int emptyCount = consecutiveEmptyWaits.incrementAndGet();
+        int emptyCount = emptyWaits.incrementAndGet();
         log.info(
                 "wait_async_results: timeout after {}s (consecutive empty waits: {}), session={}",
                 timeout,
