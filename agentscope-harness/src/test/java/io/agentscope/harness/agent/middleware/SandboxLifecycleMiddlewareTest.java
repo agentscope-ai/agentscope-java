@@ -16,27 +16,28 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.AssistantMessage;
-import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxBindingKey;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -65,58 +66,7 @@ class SandboxLifecycleMiddlewareTest {
     }
 
     @Test
-    void serializedCall_sameSession_secondWaitsForFirstToRelease() throws Exception {
-        AtomicInteger acquireCount = new AtomicInteger();
-        CountDownLatch firstAcquired = new CountDownLatch(1);
-        CountDownLatch allowFirstToComplete = new CountDownLatch(1);
-        AtomicBoolean secondAcquiredBeforeFirstReleased = new AtomicBoolean(false);
-
-        SandboxManager manager = mockManager(acquireCount);
-        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
-        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, fs);
-
-        RuntimeContext ctx1 = ctxWithSandbox("shared-session");
-        RuntimeContext ctx2 = ctxWithSandbox("shared-session");
-
-        Mono<Msg> call1 =
-                mw.serializedCall(
-                        ctx1,
-                        () ->
-                                Mono.fromCallable(
-                                        () -> {
-                                            firstAcquired.countDown();
-                                            allowFirstToComplete.await(5, TimeUnit.SECONDS);
-                                            return new AssistantMessage("r1");
-                                        }));
-
-        Mono<Msg> call2 =
-                mw.serializedCall(
-                        ctx2,
-                        () ->
-                                Mono.fromCallable(
-                                        () -> {
-                                            if (acquireCount.get() < 2) {
-                                                secondAcquiredBeforeFirstReleased.set(true);
-                                            }
-                                            return new AssistantMessage("r2");
-                                        }));
-
-        CountDownLatch done = new CountDownLatch(2);
-        call1.subscribeOn(Schedulers.boundedElastic()).doFinally(s -> done.countDown()).subscribe();
-        call2.subscribeOn(Schedulers.boundedElastic()).doFinally(s -> done.countDown()).subscribe();
-
-        assertTrue(firstAcquired.await(3, TimeUnit.SECONDS));
-        assertEquals(1, acquireCount.get());
-
-        allowFirstToComplete.countDown();
-        assertTrue(done.await(5, TimeUnit.SECONDS));
-
-        assertEquals(2, acquireCount.get());
-        assertFalse(secondAcquiredBeforeFirstReleased.get());
-    }
-
-    @Test
-    void serializedCall_differentSessions_runConcurrently() throws Exception {
+    void acquireForCall_differentSessions_runConcurrently() throws Exception {
         AtomicInteger acquireCount = new AtomicInteger();
         CountDownLatch bothAcquired = new CountDownLatch(2);
 
@@ -129,28 +79,36 @@ class SandboxLifecycleMiddlewareTest {
 
         CountDownLatch done = new CountDownLatch(2);
 
-        mw.serializedCall(
-                        ctxA,
-                        () ->
+        Mono.using(
+                        () -> {
+                            mw.acquireForCall(ctxA);
+                            return ctxA;
+                        },
+                        ctx ->
                                 Mono.fromCallable(
                                         () -> {
                                             bothAcquired.countDown();
                                             bothAcquired.await(3, TimeUnit.SECONDS);
                                             return new AssistantMessage("a");
-                                        }))
+                                        }),
+                        ctx -> mw.releaseForCall(ctx))
                 .subscribeOn(Schedulers.boundedElastic())
                 .doFinally(s -> done.countDown())
                 .subscribe();
 
-        mw.serializedCall(
-                        ctxB,
-                        () ->
+        Mono.using(
+                        () -> {
+                            mw.acquireForCall(ctxB);
+                            return ctxB;
+                        },
+                        ctx ->
                                 Mono.fromCallable(
                                         () -> {
                                             bothAcquired.countDown();
                                             bothAcquired.await(3, TimeUnit.SECONDS);
                                             return new AssistantMessage("b");
-                                        }))
+                                        }),
+                        ctx -> mw.releaseForCall(ctx))
                 .subscribeOn(Schedulers.boundedElastic())
                 .doFinally(s -> done.countDown())
                 .subscribe();
@@ -158,6 +116,26 @@ class SandboxLifecycleMiddlewareTest {
         assertTrue(bothAcquired.await(3, TimeUnit.SECONDS));
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertEquals(2, acquireCount.get());
+    }
+
+    @Test
+    void acquireForCall_releaseForCall_bindsAndUnbindsSandbox() throws Exception {
+        AtomicInteger acquireCount = new AtomicInteger();
+        SandboxManager manager = mockManager(acquireCount);
+        SandboxBackedFilesystem fs = new SandboxBackedFilesystem();
+        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, fs);
+
+        RuntimeContext ctx = ctxWithSandbox("solo-session");
+        String expectedKey = SandboxBindingKey.resolve(ctx);
+
+        mw.acquireForCall(ctx);
+        assertEquals(1, acquireCount.get());
+        assertNotNull(fs.getSandbox(expectedKey));
+
+        mw.releaseForCall(ctx);
+        verify(manager).release(any());
+        // sandbox is unbound after release
+        assertNull(fs.getSandbox(expectedKey));
     }
 
     private static class NoopSandbox implements Sandbox {

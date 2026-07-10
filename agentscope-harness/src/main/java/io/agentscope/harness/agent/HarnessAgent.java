@@ -791,9 +791,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private Mono<Msg> wrappedCall(
             List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
         Mono<Msg> base =
-                sandboxLifecycleMw != null
-                        ? sandboxLifecycleMw.serializedCall(effective, inner)
-                        : inner.get();
+                Mono.using(
+                        () -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.acquireForCall(effective);
+                            }
+                            return effective;
+                        },
+                        eff -> inner.get(),
+                        eff -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.releaseForCall(eff);
+                            }
+                        });
         if (compactionHook != null) {
             return base.onErrorResume(
                     e -> {
@@ -812,16 +822,36 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
-        return sandboxLifecycleMw != null
-                ? sandboxLifecycleMw.serializedFlux(effective, inner)
-                : inner.get();
+        return Flux.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
             RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
-        return sandboxLifecycleMw != null
-                ? sandboxLifecycleMw.serializedFlux(effective, inner)
-                : inner.get();
+        return Flux.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
     }
 
     /**

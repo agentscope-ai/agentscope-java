@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.sandbox.SandboxBindingKey;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -176,8 +177,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     private Sandbox requireSandbox(RuntimeContext rc) {
-        String key = rc != null ? bindingKey(rc) : null;
-        Sandbox s = key != null ? activeSandboxes.get(key) : null;
+        String key = rc != null ? SandboxBindingKey.resolve(rc) : null;
+        Sandbox s = key != null ? getSandbox(key) : null;
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
                     "No active sandbox for session '"
@@ -185,15 +186,6 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
                             + "' — sandbox filesystem used outside of a call context");
         }
         return s;
-    }
-
-    private static String bindingKey(RuntimeContext rc) {
-        String uid = rc.getUserId();
-        String sid = rc.getSessionId();
-        if (sid == null || sid.isBlank()) {
-            return null;
-        }
-        return (uid == null || uid.isBlank() ? "__anon__" : uid) + "/" + sid;
     }
 
     private String shellSingleQuote(String s) {
