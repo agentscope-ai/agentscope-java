@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Model" href="model.html">
+    <meta property="article:modified_time" content="2026-07-10T00:40:36+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Model" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1184,22 +1184,29 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 </section>
 <section id="hitl-integration">
 <h2>HITL integration<a class="headerlink" href="#hitl-integration" title="Link to this heading">¶</a></h2>
-<p>When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with <code class="docutils literal notranslate"><span class="pre">GenerateReason.PERMISSION_ASKING</span></code>. The caller inspects this, presents the pending operation to the user, and resumes the agent after collecting a decision.</p>
+<p>When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with <code class="docutils literal notranslate"><span class="pre">GenerateReason.PERMISSION_ASKING</span></code>. The returned <code class="docutils literal notranslate"><span class="pre">Msg</span></code> contains the <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>s in <code class="docutils literal notranslate"><span class="pre">ASKING</span></code> state. The caller extracts them, presents the pending operation to the user, and resumes the agent with <code class="docutils literal notranslate"><span class="pre">ConfirmResult</span></code> objects.</p>
 <section id="interaction-flow">
 <h3>Interaction flow<a class="headerlink" href="#interaction-flow" title="Link to this heading">¶</a></h3>
 <ol class="arabic simple">
 <li><p>Configure ASK rules for tools that require human confirmation</p></li>
 <li><p>Agent pauses on ASK tools, returning <code class="docutils literal notranslate"><span class="pre">PERMISSION_ASKING</span></code></p></li>
-<li><p>Caller checks <code class="docutils literal notranslate"><span class="pre">getGenerateReason()</span></code> and shows the pending tool calls to the user</p></li>
-<li><p>After user confirms, send a new message to resume the agent</p></li>
+<li><p>Extract <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>s (with <code class="docutils literal notranslate"><span class="pre">ASKING</span></code> state) from the returned <code class="docutils literal notranslate"><span class="pre">Msg</span></code> and show them to the user</p></li>
+<li><p>Build <code class="docutils literal notranslate"><span class="pre">ConfirmResult</span></code> objects and attach them to the resume message via metadata</p></li>
 </ol>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.GenerateReason</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.ConfirmResult</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.GenerateReason</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ToolCallState</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ToolUseBlock</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.UserMessage</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionBehavior</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionContextState</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionRule</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.HashMap</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 
 <span class="c1">// 1. Configure permissions: safe_read auto-allowed, dangerous_delete requires confirmation</span>
 <span class="n">PermissionContextState</span><span class="w"> </span><span class="n">permCtx</span><span class="w"> </span><span class="o">=</span>
@@ -1229,15 +1236,107 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 
 <span class="c1">// 3. Check whether user confirmation is needed</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getGenerateReason</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">GenerateReason</span><span class="p">.</span><span class="na">PERMISSION_ASKING</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// Show the pending tool calls to the user</span>
-<span class="w">    </span><span class="n">result</span><span class="p">.</span><span class="na">getContent</span><span class="p">().</span><span class="na">forEach</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Pending: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">block</span><span class="p">));</span>
+<span class="w">    </span><span class="c1">// Extract the ASKING ToolUseBlocks from the returned Msg</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">askingTools</span><span class="w"> </span><span class="o">=</span>
+<span class="w">            </span><span class="n">result</span><span class="p">.</span><span class="na">getContent</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">b</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">::</span><span class="n">cast</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getState</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ToolCallState</span><span class="p">.</span><span class="na">ASKING</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
 
-<span class="w">    </span><span class="c1">// 4. Collect the user&#39;s decision and resume the agent</span>
+<span class="w">    </span><span class="c1">// Show pending operations to the user</span>
+<span class="w">    </span><span class="n">askingTools</span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Pending: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
+
+<span class="w">    </span><span class="c1">// 4. Collect the user&#39;s decision, build ConfirmResult, and resume</span>
 <span class="w">    </span><span class="kt">boolean</span><span class="w"> </span><span class="n">approved</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">askUser</span><span class="p">();</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="n">resumeText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">approved</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;yes, proceed&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">&quot;no, cancel&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">finalResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="n">resumeText</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ConfirmResult</span><span class="o">&gt;</span><span class="w"> </span><span class="n">confirmResults</span><span class="w"> </span><span class="o">=</span>
+<span class="w">            </span><span class="n">askingTools</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ConfirmResult</span><span class="p">(</span><span class="n">approved</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">))</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
+
+<span class="w">    </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HashMap</span><span class="o">&lt;&gt;</span><span class="p">();</span>
+<span class="w">    </span><span class="n">meta</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">METADATA_CONFIRM_RESULTS</span><span class="p">,</span><span class="w"> </span><span class="n">confirmResults</span><span class="p">);</span>
+<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">resumeMsg</span><span class="w"> </span><span class="o">=</span>
+<span class="w">            </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="n">approved</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;approved&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">&quot;denied&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">finalResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">resumeMsg</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
+</div>
+</section>
+<section id="streaming-mode">
+<h3>Streaming mode<a class="headerlink" href="#streaming-mode" title="Link to this heading">¶</a></h3>
+<p>When using <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>, you don’t need to extract <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>s from the returned <code class="docutils literal notranslate"><span class="pre">Msg</span></code> — the event stream delivers a <code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code> that carries the pending tool calls directly:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.AgentEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.ConfirmResult</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.RequireUserConfirmEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ToolUseBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.HashMap</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
+
+<span class="c1">// Subscribe to the event stream</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Delete /tmp/important.txt&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">RequireUserConfirmEvent</span><span class="w"> </span><span class="n">confirmEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="c1">// Get pending ToolUseBlocks directly from the event</span>
+<span class="w">                </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">confirmEvent</span><span class="p">.</span><span class="na">getToolCalls</span><span class="p">();</span>
+<span class="w">                </span><span class="n">pending</span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">                        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Pending: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
+
+<span class="w">                </span><span class="c1">// Collect user decision, store pending list for the resume call</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
+
+<span class="c1">// Resume is the same as with the blocking API: build ConfirmResult in metadata</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">ConfirmResult</span><span class="o">&gt;</span><span class="w"> </span><span class="n">confirmResults</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">pendingTools</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ConfirmResult</span><span class="p">(</span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
+<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HashMap</span><span class="o">&lt;&gt;</span><span class="p">();</span>
+<span class="n">meta</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">METADATA_CONFIRM_RESULTS</span><span class="p">,</span><span class="w"> </span><span class="n">confirmResults</span><span class="p">);</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">resumeMsg</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;approved&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">resumeMsg</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Comparison of the two modes:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>Blocking <code class="docutils literal notranslate"><span class="pre">call()</span></code></p></th>
+<th class="head"><p>Streaming <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Getting pending tools</p></td>
+<td><p>Filter <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>s (state <code class="docutils literal notranslate"><span class="pre">ASKING</span></code>) from <code class="docutils literal notranslate"><span class="pre">Msg.getContent()</span></code></p></td>
+<td><p>Get directly from <code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent.getToolCalls()</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Resuming</p></td>
+<td><p>Same: build <code class="docutils literal notranslate"><span class="pre">ConfirmResult</span></code> in metadata and issue a new <code class="docutils literal notranslate"><span class="pre">call()</span></code></p></td>
+<td><p>Same</p></td>
+</tr>
+<tr class="row-even"><td><p>Use case</p></td>
+<td><p>REST APIs, simple synchronous services</p></td>
+<td><p>WebSocket, SSE, real-time UIs</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
 <section id="unattended-mode">
@@ -1386,7 +1485,7 @@ Block dangerous commands</label><div class="sd-tab-content docutils">
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1434,6 +1533,7 @@ Block dangerous commands</label><div class="sd-tab-content docutils">
 </li>
 <li><a class="reference internal" href="#hitl-integration">HITL integration</a><ul>
 <li><a class="reference internal" href="#interaction-flow">Interaction flow</a></li>
+<li><a class="reference internal" href="#streaming-mode">Streaming mode</a></li>
 <li><a class="reference internal" href="#unattended-mode">Unattended mode</a></li>
 </ul>
 </li>
