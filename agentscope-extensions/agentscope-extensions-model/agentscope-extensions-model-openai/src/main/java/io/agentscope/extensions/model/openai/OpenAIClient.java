@@ -398,7 +398,11 @@ public class OpenAIClient {
                             .build();
 
             return transport.stream(httpRequest)
-                    .filter(data -> !data.equals("[DONE]"))
+                    // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
+                    // rather than merely filtering it out, otherwise completion is deferred until
+                    // the underlying connection closes (keep-alive gateways may stall this for the
+                    // full idle timeout even though the model has finished responding).
+                    .takeWhile(data -> !data.equals("[DONE]"))
                     .<OpenAIResponse>handle(
                             (data, sink) -> {
                                 OpenAIResponse response = parseStreamData(data);
