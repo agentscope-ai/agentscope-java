@@ -173,6 +173,8 @@ A bare ReAct loop solves one reasoning turn. **HarnessAgent** layers engineering
 - **Auto context management** — structured compaction preserves goals / state / findings / next steps; oversized tool results offload to disk
 - **Plan Mode** — read-only planning state for long tasks, plan files persist and drive execution
 
+<img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
+
 ### 2 · Enterprise-grade distributed deployment
 
 Production agents must serve many tenants, run untrusted code safely, and survive rolling restarts. AgentScope 2.0 is built for stateless horizontal scaling:
@@ -201,32 +203,6 @@ on how to contribute.
 ## License
 
 AgentScope is released under Apache License 2.0.
-
-## Publications
-
-If you find our work helpful for your research or application, please cite our papers.
-
-- [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
-
-- [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
-
-```
-@article{agentscope_v1,
-    author  = {Dawei Gao, Zitao Li, Yuexiang Xie, Weirui Kuang, Liuyi Yao, Bingchen Qian, Zhijian Ma, Yue Cui, Haohao Luo, Shen Li, Lu Yi, Yi Yu, Shiqi He, Zhiling Luo, Wenmeng Zhou, Zhicheng Zhang, Xuguang He, Ziqian Chen, Weikai Liao, Farruh Isakulovich Kushnazarov, Yaliang Li, Bolin Ding, Jingren Zhou}
-    title   = {AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications},
-    journal = {CoRR},
-    volume  = {abs/2508.16279},
-    year    = {2025},
-}
-
-@article{agentscope,
-    author  = {Dawei Gao, Zitao Li, Xuchen Pan, Weirui Kuang, Zhijian Ma, Bingchen Qian, Fei Wei, Wenhao Zhang, Yuexiang Xie, Daoyuan Chen, Liuyi Yao, Hongyi Peng, Zeyu Zhang, Lin Zhu, Chen Cheng, Hongzhu Shi, Yaliang Li, Bolin Ding, Jingren Zhou}
-    title   = {AgentScope: A Flexible yet Robust Multi-Agent Platform},
-    journal = {CoRR},
-    volume  = {abs/2402.14034},
-    year    = {2024},
-}
-```
 
 ## Contributors
 
