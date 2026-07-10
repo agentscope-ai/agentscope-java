@@ -21,8 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -145,6 +151,50 @@ class WaitAsyncResultsToolTest {
         assertTrue(result.contains("task_output"), "should suggest task_output");
     }
 
+    @Test
+    @DisplayName("all tasks terminal + inbox empty → returns immediately without blocking")
+    void allTasksTerminalReturnsImmediately() throws Exception {
+        CompletableFuture<String> done = CompletableFuture.completedFuture("ok");
+        BackgroundTask completed = new BackgroundTask("t1", "agent-1", done);
+
+        CompletableFuture<String> failed = new CompletableFuture<>();
+        failed.completeExceptionally(new RuntimeException("boom"));
+        BackgroundTask failedTask = new BackgroundTask("t2", "agent-2", failed);
+
+        TaskRepository repo = new StubTaskRepository(List.of(completed, failedTask));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        long start = System.currentTimeMillis();
+        String result = tool.waitForResults(120, ctx());
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertTrue(
+                result.contains("All background tasks have completed"),
+                "should indicate all tasks done, got: " + result);
+        assertTrue(elapsed < 2_000, "should return immediately, took: " + elapsed + "ms");
+    }
+
+    @Test
+    @DisplayName("some tasks still running → proceeds to wait normally")
+    void nonTerminalTasksProcedsToWait() throws Exception {
+        CompletableFuture<String> running = new CompletableFuture<>();
+        BackgroundTask runningTask = new BackgroundTask("t1", "agent-1", running);
+
+        TaskRepository repo = new StubTaskRepository(List.of(runningTask));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        String result = tool.waitForResults(1, ctx());
+        assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
+    }
+
+    @Test
+    @DisplayName("no TaskRepository (null) → falls through to normal wait")
+    void nullTaskRepositoryFallsThrough() throws Exception {
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
+        String result = tool.waitForResults(1, ctx());
+        assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
+    }
+
     private static class StubMessageBus implements MessageBus {
 
         private final AtomicBoolean hasMessages;
@@ -200,6 +250,53 @@ class WaitAsyncResultsToolTest {
         @Override
         public Flux<Map<String, Object>> subscribe(String key) {
             return Flux.empty();
+        }
+    }
+
+    private static class StubTaskRepository implements TaskRepository {
+
+        private final List<BackgroundTask> tasks;
+
+        StubTaskRepository(List<BackgroundTask> tasks) {
+            this.tasks = tasks;
+        }
+
+        @Override
+        public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
+            return tasks.stream()
+                    .filter(t -> t.getTaskId().equals(taskId))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        @Override
+        public BackgroundTask putTask(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                TaskRunSpec spec) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void removeTask(RuntimeContext rc, String sessionId, String taskId) {}
+
+        @Override
+        public void clear() {}
+
+        @Override
+        public Collection<BackgroundTask> listTasks(
+                RuntimeContext rc, String sessionId, TaskStatus filter) {
+            if (filter == null) {
+                return tasks;
+            }
+            return tasks.stream().filter(t -> t.getTaskStatus() == filter).toList();
+        }
+
+        @Override
+        public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
+            return false;
         }
     }
 }

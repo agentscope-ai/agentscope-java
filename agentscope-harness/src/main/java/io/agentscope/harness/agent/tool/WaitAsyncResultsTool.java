@@ -19,6 +19,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,10 +50,16 @@ public class WaitAsyncResultsTool {
     private static final long POLL_INTERVAL_MS = 3000;
 
     private final MessageBus messageBus;
+    private final TaskRepository taskRepository;
     private final AtomicInteger consecutiveEmptyWaits = new AtomicInteger(0);
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
+        this(messageBus, null);
+    }
+
+    public WaitAsyncResultsTool(MessageBus messageBus, TaskRepository taskRepository) {
         this.messageBus = messageBus;
+        this.taskRepository = taskRepository;
     }
 
     @Tool(
@@ -91,6 +100,22 @@ public class WaitAsyncResultsTool {
                     + "Do NOT call wait_async_results again. Instead use task_list to check "
                     + "task status, or task_output(block=false) to poll for results without "
                     + "blocking.";
+        }
+
+        if (taskRepository != null) {
+            boolean hasNonTerminal = hasNonTerminalTasks(runtimeContext, sessionId);
+            if (!hasNonTerminal) {
+                Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+                if (!Boolean.TRUE.equals(hasMessages)) {
+                    log.info(
+                            "wait_async_results: all tasks terminal and inbox empty,"
+                                    + " returning immediately, session={}",
+                            sessionId);
+                    return "All background tasks have completed and no pending results in inbox."
+                            + " Use task_list to review results, or task_output(task_id) to read"
+                            + " a specific result.";
+                }
+            }
         }
 
         int raw =
@@ -144,5 +169,10 @@ public class WaitAsyncResultsTool {
                 + "). "
                 + "Use task_list to check task status, or task_output(block=false) to poll "
                 + "without blocking.";
+    }
+
+    private boolean hasNonTerminalTasks(RuntimeContext rc, String sessionId) {
+        Collection<BackgroundTask> tasks = taskRepository.listTasks(rc, sessionId, null);
+        return tasks.stream().anyMatch(t -> !t.getTaskStatus().isTerminal());
     }
 }
