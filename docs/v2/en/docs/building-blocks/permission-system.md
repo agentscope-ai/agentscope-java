@@ -306,6 +306,14 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 }
 ```
 
+### All tools denied
+
+When the user denies **all** tool calls from a reasoning step in the confirmation UI, the agent continues to the next reasoning iteration by default — the model only sees "Permission denied by user" tool results, which often leads to unhelpful reasoning.
+
+To stop the agent in this scenario, wire up an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`. After stopping, `Msg.getGenerateReason()` returns `ALL_TOOLS_DENIED`.
+
+See [Middleware — Stop agent when all tools are denied](./middleware.md#stop-agent-when-all-tools-are-denied) for the implementation.
+
 ### Unattended mode
 
 In CI or cron-job scenarios with no human operator, set the mode to `DONT_ASK` so that all ASK decisions degrade to DENY automatically:

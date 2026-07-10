@@ -306,6 +306,14 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 }
 ```
 
+### 全部工具被拒绝
+
+当用户在确认界面拒绝了本轮推理产出的**全部**工具调用时，agent 默认会继续下一轮推理 —— 此时模型只能看到 "Permission denied by user" 的工具结果，容易产生无效推理。
+
+如果需要在这种场景下停止 agent，可以装备一个 `onActing` middleware 观察 `AllToolsDeniedEvent` 并发出 `RequestStopEvent`。停止后 `Msg.getGenerateReason()` 返回 `ALL_TOOLS_DENIED`。
+
+具体实现参见 [Middleware — 全部工具被拒绝时停止 agent](./middleware.md#全部工具被拒绝时停止-agent)。
+
 ### 无人值守模式
 
 在 CI 或定时任务等无人值守场景下，把 mode 设为 `DONT_ASK`，所有 ASK 决策会自动降级为 DENY：
