@@ -541,18 +541,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected Msg seedSystemMsg(Object callExectution) {
+    protected Mono<Msg> seedSystemMsg(Object callExectution) {
         RuntimeContext rc =
                 callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
         String base = sysPrompt != null ? sysPrompt.trim() : "";
-        String prompt = applySystemPromptMiddlewares(base, rc);
-        if (prompt == null || prompt.isEmpty()) {
-            return null;
-        }
-        return SystemMessage.builder()
-                .name("system")
-                .content(TextBlock.builder().text(prompt).build())
-                .build();
+        return applySystemPromptMiddlewares(base, rc)
+                .filter(prompt -> !prompt.isEmpty())
+                .map(
+                        prompt ->
+                                SystemMessage.builder()
+                                        .name("system")
+                                        .content(TextBlock.builder().text(prompt).build())
+                                        .build());
     }
 
     @Override
@@ -560,13 +560,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    private String applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
+    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
         if (middlewares.isEmpty()) {
-            return prompt;
+            return Mono.just(prompt);
         }
-        // Only build a reactive chain if at least one middleware overrides onSystemPrompt
-        // (the default implementation is identity). This avoids an unnecessary block() call
-        // which would fail on non-blocking schedulers (e.g. Reactor parallel scheduler).
         boolean hasOverride = false;
         for (MiddlewareBase mw : middlewares) {
             try {
@@ -587,13 +584,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
         if (!hasOverride) {
-            return prompt;
+            return Mono.just(prompt);
         }
         Mono<String> result = Mono.just(prompt);
         for (MiddlewareBase mw : middlewares) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
-        return result.block();
+        return result;
     }
 
     @Override
@@ -2354,6 +2351,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // collected.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
+                                    if (rs.getGenerateReason()
+                                            == GenerateReason.PERMISSION_ASKING) {
+                                        Msg lastAssistant = findLastAssistantMsg();
+                                        if (lastAssistant != null) {
+                                            return Mono.just(
+                                                    lastAssistant.withGenerateReason(
+                                                            GenerateReason.PERMISSION_ASKING));
+                                        }
+                                    }
                                     Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
                                     return Mono.just(stopMsg);
                                 }
