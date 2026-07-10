@@ -51,7 +51,8 @@ public class ShellExecuteTool {
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Working directory (relative to workspace root, optional)",
+                                    "Optional relative path from workspace root. Must not start"
+                                            + " with /, ~, or ..(e.g., ., src).",
                             required = false)
                     String workingDirectory,
             @ToolParam(name = "timeout", description = "Timeout in seconds (default: 30)")
