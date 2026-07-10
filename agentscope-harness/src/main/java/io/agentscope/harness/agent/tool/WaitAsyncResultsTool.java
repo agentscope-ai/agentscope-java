@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.bus.MessageBus;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,14 +30,24 @@ import org.slf4j.LoggerFactory;
  *
  * <p>After this tool returns, the next reasoning step's {@code InboxMiddleware} will drain the
  * inbox and inject the results into context.
+ *
+ * <p>Guardrails prevent unbounded blocking:
+ * <ul>
+ *   <li>Timeout is clamped to {@value #MAX_TIMEOUT_SECONDS}s regardless of the LLM-supplied value.
+ *   <li>After {@value #MAX_CONSECUTIVE_EMPTY_WAITS} consecutive timeouts with no results, the tool
+ *       refuses further blocking waits and directs the LLM to use non-blocking alternatives.
+ * </ul>
  */
 public class WaitAsyncResultsTool {
 
     private static final Logger log = LoggerFactory.getLogger(WaitAsyncResultsTool.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
+    private static final int MAX_TIMEOUT_SECONDS = 120;
+    private static final int MAX_CONSECUTIVE_EMPTY_WAITS = 2;
     private static final long POLL_INTERVAL_MS = 3000;
 
     private final MessageBus messageBus;
+    private final AtomicInteger consecutiveEmptyWaits = new AtomicInteger(0);
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
         this.messageBus = messageBus;
@@ -49,23 +60,50 @@ public class WaitAsyncResultsTool {
                             + "Call this when you have launched async tasks and want to wait for "
                             + "their completion instead of returning to the user. After this tool "
                             + "returns successfully, continue reasoning — the results will be "
-                            + "automatically injected into your context.",
+                            + "automatically injected into your context. "
+                            + "Max timeout is 120 seconds. "
+                            + "If you have already waited without results, use task_list or "
+                            + "task_output(block=false) to check status instead of waiting again.",
             readOnly = true)
     public String waitForResults(
             @ToolParam(
                             name = "timeout_seconds",
-                            description = "Maximum seconds to wait. Default 60.")
+                            description =
+                                    "Maximum seconds to wait. Default 60, max 120. "
+                                            + "Values above 120 are clamped.")
                     Integer timeoutSeconds,
             RuntimeContext runtimeContext)
             throws InterruptedException {
-        int timeout =
+
+        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        if (sessionId == null) {
+            return "Cannot wait: no session context available.";
+        }
+
+        if (consecutiveEmptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
+            log.info(
+                    "wait_async_results: rejected — {} consecutive empty waits reached, session={}",
+                    consecutiveEmptyWaits.get(),
+                    sessionId);
+            return "Wait budget exhausted: you have already waited "
+                    + consecutiveEmptyWaits.get()
+                    + " times without receiving results. "
+                    + "Do NOT call wait_async_results again. Instead use task_list to check "
+                    + "task status, or task_output(block=false) to poll for results without "
+                    + "blocking.";
+        }
+
+        int raw =
                 timeoutSeconds != null && timeoutSeconds > 0
                         ? timeoutSeconds
                         : DEFAULT_TIMEOUT_SECONDS;
-        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-
-        if (sessionId == null) {
-            return "Cannot wait: no session context available.";
+        int timeout = Math.min(raw, MAX_TIMEOUT_SECONDS);
+        if (raw > MAX_TIMEOUT_SECONDS) {
+            log.info(
+                    "wait_async_results: clamped timeout from {}s to {}s, session={}",
+                    raw,
+                    timeout,
+                    sessionId);
         }
 
         log.info(
@@ -83,6 +121,7 @@ public class WaitAsyncResultsTool {
             Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
+                consecutiveEmptyWaits.set(0);
                 return "Async results have arrived. Continue reasoning — "
                         + "the results will be injected into your context automatically.";
             }
@@ -90,10 +129,20 @@ public class WaitAsyncResultsTool {
             Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
         }
 
-        log.info("wait_async_results: timeout after {}s, session={}", timeout, sessionId);
+        int emptyCount = consecutiveEmptyWaits.incrementAndGet();
+        log.info(
+                "wait_async_results: timeout after {}s (consecutive empty waits: {}), session={}",
+                timeout,
+                emptyCount,
+                sessionId);
         return "Timeout after "
                 + timeout
-                + "s. No async results yet. "
-                + "You may continue with other work or try waiting again.";
+                + "s. No async results yet (empty wait "
+                + emptyCount
+                + "/"
+                + MAX_CONSECUTIVE_EMPTY_WAITS
+                + "). "
+                + "Use task_list to check task status, or task_output(block=false) to poll "
+                + "without blocking.";
     }
 }
