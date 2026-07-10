@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-10T09:41:12+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-07-10T09:42:07+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1030,6 +1030,59 @@
 <span class="w">    </span><span class="nt">stream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
+<section id="builder-customizer">
+<h4>Builder customizer<a class="headerlink" href="#builder-customizer" title="Link to this heading">¶</a></h4>
+<p>各模型提供商的 Spring Boot starter 还提供了有序的 builder customizer bean。它适合用于
+<code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义
+formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Starter</p></th>
+<th class="head"><p>Customizer 类型</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-openai-spring-boot-starter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatModelBuilderCustomizer</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-dashscope-spring-boot-starter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DashScopeChatModelBuilderCustomizer</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-gemini-spring-boot-starter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatModelBuilderCustomizer</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatModelBuilderCustomizer</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>这些 customizer 会在 starter 属性绑定之后、调用 <code class="docutils literal notranslate"><span class="pre">builder.build()</span></code> 之前执行。可以注册多个
+customizer，并通过 Spring 的 <code class="docutils literal notranslate"><span class="pre">&#64;Order</span></code> 或 <code class="docutils literal notranslate"><span class="pre">Ordered</span></code> 控制执行顺序。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.spring.boot.openai.OpenAIChatModelBuilderCustomizer</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Bean</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Configuration</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.core.annotation.Order</span><span class="p">;</span>
+
+<span class="nd">@Configuration</span><span class="p">(</span><span class="n">proxyBeanMethods</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">)</span>
+<span class="kd">class</span> <span class="nc">ModelCustomizerConfiguration</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="nd">@Order</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="w">    </span><span class="n">OpenAIChatModelBuilderCustomizer</span><span class="w"> </span><span class="nf">openAIModelDefaults</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">builder</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">                </span><span class="n">builder</span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span>
+<span class="w">                        </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">parallelToolCalls</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 </section>
 </section>
 <section id="modelregistry-modelcreationcontext">
@@ -1681,7 +1734,10 @@ Reasoning</label><div class="sd-tab-content docutils">
 <li><a class="reference internal" href="#id4">选择模型创建方式</a><ul>
 <li><a class="reference internal" href="#model-id">字符串 model id</a></li>
 <li><a class="reference internal" href="#model-builder">显式 Model builder</a></li>
-<li><a class="reference internal" href="#spring-boot">Spring Boot 应用</a></li>
+<li><a class="reference internal" href="#spring-boot">Spring Boot 应用</a><ul>
+<li><a class="reference internal" href="#builder-customizer">Builder customizer</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#modelregistry-modelcreationcontext">ModelRegistry 与 ModelCreationContext</a><ul>

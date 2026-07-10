@@ -114,6 +114,47 @@ agentscope:
     stream: true
 ```
 
+#### Builder customizers
+
+Provider-specific starters also expose ordered Spring bean customizers for the
+auto-configured chat model builders. Use them when property binding covers the common
+settings but you still need to tune builder-only options such as custom formatters,
+default generation options, proxy/client settings, or provider-specific flags.
+
+| Starter | Customizer type |
+|---------|-----------------|
+| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
+| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
+| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+
+Customizer beans are applied after starter properties are bound and before
+`builder.build()` is called. Multiple customizers are supported and follow Spring's
+`@Order` / `Ordered` ordering.
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.spring.boot.openai.OpenAIChatModelBuilderCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+@Configuration(proxyBeanMethods = false)
+class ModelCustomizerConfiguration {
+
+    @Bean
+    @Order(0)
+    OpenAIChatModelBuilderCustomizer openAIModelDefaults() {
+        return builder ->
+                builder.defaultOptions(
+                        GenerateOptions.builder()
+                                .temperature(0.2)
+                                .parallelToolCalls(false)
+                                .build());
+    }
+}
+```
+
 ## ModelRegistry and ModelCreationContext
 
 `ModelRegistry` is a global registry for model instance creation and lookup, supporting multiple resolution strategies. During resolution, it tries in priority order: named model instances directly registered via `ModelRegistry.register(name, model)`, custom factories registered via `registerFactory(regex, factory)`, and `ModelProvider` implementations automatically discovered from extension modules through the Java SPI mechanism.
