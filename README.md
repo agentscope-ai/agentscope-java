@@ -62,6 +62,8 @@ AgentScope Java 2.0 is a production-ready framework for building distributed, en
 - [**Multi-Agent Orchestration** →](https://java.agentscope.io/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
 - [**Distributed Deployment** →](https://java.agentscope.io/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
 
+<img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
+
 ## News
 <!-- BEGIN NEWS -->
 - **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://java.agentscope.io/en/docs/others/release-notes.html)
@@ -172,8 +174,6 @@ A bare ReAct loop solves one reasoning turn. **HarnessAgent** layers engineering
 - **Sub-agents** — declare child agent specs in Markdown, `agent_spawn` / `agent_send` at runtime, sync or background delegation
 - **Auto context management** — structured compaction preserves goals / state / findings / next steps; oversized tool results offload to disk
 - **Plan Mode** — read-only planning state for long tasks, plan files persist and drive execution
-
-<img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ### 2 · Enterprise-grade distributed deployment
 
