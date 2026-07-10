@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -164,5 +165,33 @@ class AgentStateTest {
         assertEquals("", decoded.getSummary());
         assertEquals(0, decoded.getCurIter());
         assertNotNull(decoded.getReplyId());
+    }
+
+    @Test
+    void modelIdRoundTrip() throws Exception {
+        AgentState original = AgentState.builder().sessionId("s").modelId("deepseek:v4").build();
+        String json = mapper.writeValueAsString(original);
+        assertTrue(json.contains("\"model_id\":\"deepseek:v4\""), () -> json);
+        AgentState decoded = mapper.readValue(json, AgentState.class);
+        assertEquals("deepseek:v4", decoded.getModelId());
+    }
+
+    @Test
+    void modelIdOmittedInOldJsonFallsBackToNull() throws Exception {
+        AgentState decoded = mapper.readValue("{\"session_id\":\"only-id\"}", AgentState.class);
+        assertNull(decoded.getModelId());
+    }
+
+    @Test
+    void setModelIdNormalizesBlankToNull() {
+        AgentState s = AgentState.builder().build();
+        s.setModelId("deepseek:v4");
+        assertEquals("deepseek:v4", s.getModelId());
+        s.setModelId("");
+        assertNull(s.getModelId());
+        s.setModelId("   ");
+        assertNull(s.getModelId());
+        s.setModelId(null);
+        assertNull(s.getModelId());
     }
 }

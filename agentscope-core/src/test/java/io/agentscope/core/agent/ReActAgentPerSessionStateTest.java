@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,6 +33,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -67,6 +70,40 @@ class ReActAgentPerSessionStateTest {
                             .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
                             .build());
         }
+    }
+
+    private static final class NamedModel extends ChatModelBase {
+        private final String name;
+        private final AtomicInteger streamCount = new AtomicInteger();
+
+        private NamedModel(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getModelName() {
+            return name;
+        }
+
+        int streamCount() {
+            return streamCount.get();
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            streamCount.incrementAndGet();
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
+                            .build());
+        }
+    }
+
+    private RuntimeContext ctxWithState(ReActAgent agent, String uid, String sid) {
+        RuntimeContext ctx = RuntimeContext.builder().userId(uid).sessionId(sid).build();
+        ctx.setAgentState(agent.getAgentState(uid, sid));
+        return ctx;
     }
 
     private ReActAgent agent(InMemoryAgentStateStore store) {
@@ -305,6 +342,103 @@ class ReActAgentPerSessionStateTest {
             long ends = events.stream().filter(e -> e instanceof AgentEndEvent).count();
             assertEquals(1, starts, "each stream must be opened by exactly one AgentStartEvent");
             assertEquals(1, ends, "each stream must be closed by exactly one AgentEndEvent");
+        }
+    }
+
+    @Test
+    @DisplayName("setModel persists modelId per session and resolves via ModelRegistry")
+    void setModelPersistsAndResolves() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        ModelRegistry.register("test:model-a", new NamedModel("model-a"));
+        try {
+            agent.setModel("u1", "sessA", "test:model-a");
+            assertEquals("test:model-a", agent.getAgentState("u1", "sessA").getModelId());
+
+            assertEquals(
+                    "model-a", agent.getModel(ctxWithState(agent, "u1", "sessA")).getModelName());
+
+            // persisted across engines (cluster drift: fresh node loads from the same store)
+            ReActAgent reborn = agent(store);
+            assertEquals("test:model-a", reborn.getAgentState("u1", "sessA").getModelId());
+            assertEquals(
+                    "model-a", reborn.getModel(ctxWithState(reborn, "u1", "sessA")).getModelName());
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("clearModel reverts to the default model")
+    void clearModelRevertsToDefault() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        ModelRegistry.register("test:model-b", new NamedModel("model-b"));
+        try {
+            agent.setModel("u1", "sessA", "test:model-b");
+            assertEquals(
+                    "model-b", agent.getModel(ctxWithState(agent, "u1", "sessA")).getModelName());
+
+            agent.clearModel("u1", "sessA");
+            assertNull(agent.getAgentState("u1", "sessA").getModelId());
+            assertEquals("noop", agent.getModel(ctxWithState(agent, "u1", "sessA")).getModelName());
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("unresolvable session modelId falls back to default without throwing")
+    void unresolvableModelIdFallsBack() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        agent.setModel("u1", "sessA", "test:does-not-exist");
+        assertEquals("noop", agent.getModel(ctxWithState(agent, "u1", "sessA")).getModelName());
+    }
+
+    @Test
+    @DisplayName("per-session modelId is isolated across sessions")
+    void modelIdIsolatedPerSession() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        ModelRegistry.register("test:model-a", new NamedModel("model-a"));
+        ModelRegistry.register("test:model-b", new NamedModel("model-b"));
+        try {
+            agent.setModel("u1", "sessA", "test:model-a");
+            agent.setModel("u1", "sessB", "test:model-b");
+
+            assertEquals(
+                    "model-a", agent.getModel(ctxWithState(agent, "u1", "sessA")).getModelName());
+            assertEquals(
+                    "model-b", agent.getModel(ctxWithState(agent, "u1", "sessB")).getModelName());
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
+    @DisplayName("call() routes reasoning through the per-session model")
+    void callRoutesThroughPerSessionModel() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        NamedModel defaultModel = new NamedModel("default");
+        NamedModel sessionModel = new NamedModel("session");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(defaultModel)
+                        .stateStore(store)
+                        .build();
+        ModelRegistry.register("test:session-model", sessionModel);
+        try {
+            agent.setModel("u1", "sessA", "test:session-model");
+            RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+            agent.call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(10));
+
+            assertTrue(
+                    sessionModel.streamCount() > 0,
+                    "reasoning must route through the per-session model");
+            assertEquals(
+                    0, defaultModel.streamCount(), "default model must not be used after setModel");
+        } finally {
+            ModelRegistry.reset();
         }
     }
 }

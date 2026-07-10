@@ -372,6 +372,34 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getPermissionMode(userId, sessionId);
     }
 
+    /**
+     * Switches the model for the session identified by the given {@link RuntimeContext}, persisted
+     * in the session's {@link io.agentscope.core.state.AgentState}.
+     */
+    public void setModel(RuntimeContext ctx, String modelId) {
+        delegate.setModel(ctx, modelId);
+    }
+
+    /**
+     * Switches the model for the given {@code (userId, sessionId)} session at runtime by storing its
+     * id in the persisted session state.
+     */
+    public void setModel(String userId, String sessionId, String modelId) {
+        delegate.setModel(userId, sessionId, modelId);
+    }
+
+    /** @return the model effective for the session carried by {@code ctx}. */
+    public Model getModel(RuntimeContext ctx) {
+        return delegate.getModel(ctx);
+    }
+
+    /**
+     * Clears the session's model id so subsequent calls revert to the default model.
+     */
+    public void clearModel(String userId, String sessionId) {
+        delegate.clearModel(userId, sessionId);
+    }
+
     @Override
     public void close() {
         try {
@@ -2140,7 +2168,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new MemoryFlushMiddleware(
                                 wsManager,
-                                memoryModel,
+                                memoryConfig.model(),
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope));
@@ -2166,13 +2194,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
-                Model compactionModel =
-                        compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
-                if (compactionModel != null) {
-                    compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
-                    inner.middleware(compactionHook);
-                }
+                compactionHook = new CompactionMiddleware(wsManager, compactionConfig);
+                inner.middleware(compactionHook);
             }
             if (!disableToolResultEviction && toolResultEvictionConfig != null) {
                 inner.middleware(
