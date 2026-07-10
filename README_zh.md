@@ -77,9 +77,9 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 欢迎加入我们的社区
 
-| [Discord](https://discord.gg/eYMpfnkG8h)                     | 钉钉 | 微信                                                           |
-|--------------------------------------------------------------|----------|--------------------------------------------------------------|
-| <img src="./docs/imgs/discord.png" width="100" height="100"> | <img src="./docs/imgs/dingtalk_qr_code.jpg" width="100" height="100"> | <img src="./docs/imgs/wechat.jpeg" width="100" height="100"> |
+| [Discord](https://discord.gg/eYMpfnkG8h)                     | 钉钉                                                                    | 微信                                                           |
+|--------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------|
+| <img src="./docs/imgs/discord.png" width="100" height="100"> | <img src="./docs/imgs/dingtalk_qr_code.png" width="100" height="100"> | <img src="./docs/imgs/wechat.jpeg" width="100" height="100"> |
 
 ## 快速开始
 
