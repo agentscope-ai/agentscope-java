@@ -109,6 +109,31 @@ class WaitAsyncResultsToolTest {
     }
 
     @Test
+    @DisplayName("budget exhausted but inbox has results → returns success and resets counter")
+    void budgetExhaustedButResultsArrivedRecovers() throws Exception {
+        AtomicBoolean hasMessages = new AtomicBoolean(false);
+        MessageBus toggleBus = new StubMessageBus(hasMessages);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(toggleBus);
+
+        // Exhaust the budget with 2 empty waits
+        tool.waitForResults(1, ctx());
+        tool.waitForResults(1, ctx());
+
+        // Results arrive after budget exhausted
+        hasMessages.set(true);
+        String result = tool.waitForResults(1, ctx());
+        assertTrue(
+                result.contains("Async results have arrived"),
+                "should return success when inbox has messages, got: " + result);
+
+        // Counter should be reset — further empty waits allowed again
+        hasMessages.set(false);
+        String r4 = tool.waitForResults(1, ctx());
+        assertTrue(r4.contains("Timeout"), "should be allowed to wait again after reset");
+        assertTrue(r4.contains("1/2"), "counter should restart from 1");
+    }
+
+    @Test
     @DisplayName("counter resets when results arrive")
     void counterResetsOnSuccess() throws Exception {
         AtomicBoolean hasMessages = new AtomicBoolean(false);

@@ -96,6 +96,16 @@ public class WaitAsyncResultsTool {
                         sessionId, k -> new AtomicInteger(0));
 
         if (emptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
+            Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+            if (Boolean.TRUE.equals(hasMessages)) {
+                log.info(
+                        "wait_async_results: budget was exhausted but inbox now has messages,"
+                                + " resetting counter, session={}",
+                        sessionId);
+                emptyWaits.set(0);
+                return "Async results have arrived. Continue reasoning — "
+                        + "the results will be injected into your context automatically.";
+            }
             log.info(
                     "wait_async_results: rejected — {} consecutive empty waits reached, session={}",
                     emptyWaits.get(),
