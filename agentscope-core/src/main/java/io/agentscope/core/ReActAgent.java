@@ -15,6 +15,8 @@
  */
 package io.agentscope.core;
 
+import static io.agentscope.core.util.ToolUtils.resolveToolTitle;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
@@ -2052,6 +2054,37 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
                                 if (eventMsg != null) {
+                                    if (eventMsg.hasContentBlocks(ToolUseBlock.class)) {
+                                        List<ContentBlock> newContent =
+                                                eventMsg.getContent().stream()
+                                                        .map(
+                                                                block ->
+                                                                        block
+                                                                                        instanceof
+                                                                                        ToolUseBlock
+                                                                                                tub
+                                                                                ? tub.withTitle(
+                                                                                        resolveToolTitle(
+                                                                                                toolkit,
+                                                                                                tub
+                                                                                                        .getName()))
+                                                                                : block)
+                                                        .toList();
+                                        Msg newEventMsg =
+                                                Msg.builder()
+                                                        .id(eventMsg.getId())
+                                                        .name(eventMsg.getName())
+                                                        .role(eventMsg.getRole())
+                                                        .metadata(eventMsg.getMetadata())
+                                                        .generateReason(
+                                                                eventMsg.getGenerateReason())
+                                                        .timestamp(eventMsg.getTimestamp())
+                                                        .usage(eventMsg.getUsage())
+                                                        .content(newContent)
+                                                        .build();
+                                        eventMsg = newEventMsg;
+                                        event.setReasoningMessage(newEventMsg);
+                                    }
                                     state.contextMutable().add(eventMsg);
                                 }
 
@@ -2251,7 +2284,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 flushAllToolCalls(events);
                 boolean visibleTool = toolName != null && !toolName.startsWith("__");
                 if (visibleTool && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
-                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                    events.add(
+                            new ToolCallStartEvent(
+                                    replyId,
+                                    toolId,
+                                    toolName,
+                                    resolveToolTitle(toolkit, toolName)));
                 }
             }
 
@@ -2269,7 +2307,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             private void flushAllToolCalls(List<AgentEvent> events) {
                 for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
-                    events.add(new ToolCallEndEvent(replyId, tc.getKey(), tc.getValue()));
+                    events.add(
+                            new ToolCallEndEvent(
+                                    replyId,
+                                    tc.getKey(),
+                                    tc.getValue(),
+                                    resolveToolTitle(toolkit, tc.getValue())));
                 }
                 startedToolCalls.clear();
             }
@@ -2530,7 +2573,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         ToolUseBlock use = entry.getKey();
                                         return Flux.<AgentEvent>just(
                                                 new ToolResultStartEvent(
-                                                        replyId, use.getId(), use.getName()),
+                                                        replyId,
+                                                        use.getId(),
+                                                        use.getName(),
+                                                        resolveToolTitle(toolkit, use.getName())),
                                                 new ToolResultTextDeltaEvent(
                                                         replyId,
                                                         use.getId(),
@@ -2540,6 +2586,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
+                                                        resolveToolTitle(toolkit, use.getName()),
                                                         ToolResultState.DENIED));
                                     });
 
@@ -2564,7 +2611,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             new ToolResultStartEvent(
                                                                     replyId,
                                                                     tool.getId(),
-                                                                    tool.getName()));
+                                                                    tool.getName(),
+                                                                    resolveToolTitle(
+                                                                            toolkit,
+                                                                            tool.getName())));
                                                 }
 
                                                 Set<String> chunkedToolIds =
@@ -2993,6 +3043,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             ToolUseBlock toolUse = entry.getKey();
             ToolResultBlock result = entry.getValue();
 
+            ToolUseBlock newToolUse =
+                    toolUse.withTitle(resolveToolTitle(toolkit, toolUse.getName()));
+
             // FIX: determine the final state and update ToolResultBlock before
             // adding to contextMutable(), so that history queries via
             // agent.getAgentState(ctx).contextMutable() reflect the correct
@@ -3001,17 +3054,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             ToolResultBlock updatedResult = result.withState(finalState);
 
             Msg toolMsg =
-                    ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
+                    ToolResultMessageBuilder.buildToolResultMsg(
+                            updatedResult, newToolUse, getName());
 
             return hookDispatcher
                     .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
                                 if (soTool != null
-                                        && STRUCTURED_OUTPUT_TOOL_NAME.equals(toolUse.getName())
-                                        && result.getMetadata() != null
+                                        && STRUCTURED_OUTPUT_TOOL_NAME.equals(newToolUse.getName())
+                                        && updatedResult.getMetadata() != null
                                         && Boolean.TRUE.equals(
-                                                result.getMetadata().get("success"))) {
+                                                updatedResult.getMetadata().get("success"))) {
                                     soCompleted = true;
                                     soResultMsg = e.getToolResultMsg();
                                     e.stopAgent();

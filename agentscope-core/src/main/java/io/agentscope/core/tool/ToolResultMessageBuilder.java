@@ -39,14 +39,15 @@ public class ToolResultMessageBuilder {
      */
     public static Msg buildToolResultMsg(
             ToolResultBlock result, ToolUseBlock originalCall, String agentName) {
-        // Set id and name from original call
-        ToolResultBlock resultWithIdAndName =
-                result.withIdAndName(originalCall.getId(), originalCall.getName());
+        // Set id and name and title from original call
+        ToolResultBlock resultWithIdAndNameAndTitle =
+                result.withIdAndNameAndTitle(
+                        originalCall.getId(), originalCall.getName(), originalCall.getTitle());
 
         return Msg.builder()
                 .name(agentName)
                 .role(MsgRole.TOOL)
-                .content(resultWithIdAndName)
+                .content(resultWithIdAndNameAndTitle)
                 .build();
     }
 }

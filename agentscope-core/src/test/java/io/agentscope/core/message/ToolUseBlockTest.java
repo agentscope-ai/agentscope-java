@@ -18,11 +18,13 @@ package io.agentscope.core.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -285,12 +287,109 @@ class ToolUseBlockTest {
 
     @Test
     void testEmptyMapsForNullInputAndMetadata() {
-        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", null, null, null);
+        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", "null", null, null);
 
         assertNotNull(toolUseBlock.getInput());
         assertTrue(toolUseBlock.getInput().isEmpty());
         assertNotNull(toolUseBlock.getMetadata());
         assertTrue(toolUseBlock.getMetadata().isEmpty());
         assertEquals(null, toolUseBlock.getContent());
+    }
+
+    // --- Title-related tests ---
+
+    @Test
+    @DisplayName("Should include title in JSON serialization")
+    void testJsonSerializationWithTitle() throws JsonProcessingException {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("tool-title-1")
+                        .name("search_tool")
+                        .title("Search Engine")
+                        .input(Map.of("q", "hello"))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(block);
+        assertTrue(json.contains("\"title\":\"Search Engine\""));
+    }
+
+    @Test
+    @DisplayName("Should deserialize title from JSON")
+    void testJsonDeserializationWithTitle() throws JsonProcessingException {
+        String json =
+                """
+                {
+                    "type": "tool_use",
+                    "id": "tool-title-2",
+                    "name": "calculator",
+                    "title": "Advanced Calc",
+                    "input": {"x": 1, "y": 2}
+                }
+                """;
+
+        ToolUseBlock block = objectMapper.readValue(json, ToolUseBlock.class);
+        assertEquals("tool-title-2", block.getId());
+        assertEquals("calculator", block.getName());
+        assertEquals("Advanced Calc", block.getTitle());
+    }
+
+    @Test
+    @DisplayName("Should return null title when not set")
+    void testTitleNullByDefault() {
+        ToolUseBlock block =
+                ToolUseBlock.builder().id("tool-no-title").name("simple").input(Map.of()).build();
+
+        assertNull(block.getTitle());
+    }
+
+    @Test
+    @DisplayName("withTitle should return new block with updated title")
+    void testWithTitle() {
+        ToolUseBlock original =
+                new ToolUseBlock("tool-1", "weather", Map.of("city", "Paris"), null);
+
+        ToolUseBlock updated = original.withTitle("Weather API");
+
+        assertEquals("weather", updated.getName());
+        assertEquals("Weather API", updated.getTitle());
+        // original unchanged
+        assertNull(original.getTitle());
+    }
+
+    @Test
+    @DisplayName("Builder should set title correctly")
+    void testBuilderWithTitle() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("tool-builder-title")
+                        .name("data_fetch")
+                        .title("Data Fetcher")
+                        .input(Map.of("url", "https://example.com"))
+                        .build();
+
+        assertEquals("data_fetch", block.getName());
+        assertEquals("Data Fetcher", block.getTitle());
+    }
+
+    @Test
+    @DisplayName("Constructor should accept title parameter")
+    void testConstructorWithTitle() {
+        ToolUseBlock block =
+                new ToolUseBlock(
+                        "tool-3", "query_db", "Query Database", Map.of("sql", "SELECT 1"), null);
+
+        assertEquals("tool-3", block.getId());
+        assertEquals("query_db", block.getName());
+        assertEquals("Query Database", block.getTitle());
+        assertEquals("SELECT 1", block.getInput().get("sql"));
+    }
+
+    @Test
+    @DisplayName("Backward-compatible constructor should set null title")
+    void testBackwardCompatibleConstructor() {
+        ToolUseBlock block = new ToolUseBlock("tool-4", "legacy_tool", Map.of(), null);
+
+        assertEquals("legacy_tool", block.getName());
+        assertNull(block.getTitle());
     }
 }

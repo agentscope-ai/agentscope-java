@@ -192,4 +192,78 @@ class SchemaOnlyToolTest {
         // Verify that 3-arg constructor sets strict to null (unspecified)
         assertNull(tool.getStrict());
     }
+
+    // --- Title-related tests ---
+
+    @Test
+    @DisplayName("Should propagate title from ToolSchema to SchemaOnlyTool")
+    void testTitleFromToolSchema() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("query_database")
+                        .title("Query Database")
+                        .description("Query an external database")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("sql", Map.of("type", "string")),
+                                        "required",
+                                        List.of("sql")))
+                        .build();
+
+        SchemaOnlyTool tool = new SchemaOnlyTool(schema);
+        assertEquals("query_database", tool.getName());
+        assertEquals("Query Database", tool.getTitle());
+    }
+
+    @Test
+    @DisplayName("When schema has no title, getTitle() falls back to getName()")
+    void testNoTitleFromToolSchemaFallsBackToName() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("no_title_tool")
+                        .description("Tool without title")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        SchemaOnlyTool tool = new SchemaOnlyTool(schema);
+        assertEquals("no_title_tool", tool.getName());
+        assertEquals("no_title_tool", tool.getTitle());
+    }
+
+    @Test
+    @DisplayName(
+            "Should propagate title through 5-arg constructor (name, title, desc, params, strict)")
+    void testTitleFromFiveArgConstructor() {
+        Map<String, Object> params = Map.of("type", "object");
+        SchemaOnlyTool tool =
+                new SchemaOnlyTool("title_tool", "Title Tool", "A tool with title", params, null);
+
+        assertEquals("title_tool", tool.getName());
+        assertEquals("Title Tool", tool.getTitle());
+        assertEquals("A tool with title", tool.getDescription());
+    }
+
+    @Test
+    @DisplayName("4-arg constructor without title: getTitle() falls back to getName()")
+    void testTitleFromFourArgConstructor() {
+        Map<String, Object> params = Map.of("type", "object");
+        SchemaOnlyTool tool = new SchemaOnlyTool("simple_tool", "Simple tool", params, null);
+
+        assertEquals("simple_tool", tool.getName());
+        assertEquals("simple_tool", tool.getTitle());
+        assertEquals("Simple tool", tool.getDescription());
+    }
+
+    @Test
+    @DisplayName("3-arg constructor without title: getTitle() falls back to getName()")
+    void testNoTitleFromThreeArgConstructorFallsBackToName() {
+        Map<String, Object> params = Map.of("type", "object");
+        SchemaOnlyTool tool = new SchemaOnlyTool("simple_tool", "Simple tool", params);
+
+        assertEquals("simple_tool", tool.getName());
+        assertEquals("simple_tool", tool.getTitle());
+    }
 }

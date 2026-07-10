@@ -65,9 +65,10 @@ class AsyncToolMiddlewareTest {
 
         Flux<AgentEvent> downstream =
                 Flux.just(
-                        new ToolResultStartEvent("r1", "t1", "fast_tool"),
+                        new ToolResultStartEvent("r1", "t1", "fast_tool", "Fast Tool"),
                         new ToolResultTextDeltaEvent("r1", "t1", "fast_tool", "result text"),
-                        new ToolResultEndEvent("r1", "t1", "fast_tool", ToolResultState.SUCCESS));
+                        new ToolResultEndEvent(
+                                "r1", "t1", "fast_tool", "Fast Tool", ToolResultState.SUCCESS));
 
         List<AgentEvent> events =
                 middleware
@@ -95,7 +96,10 @@ class AsyncToolMiddlewareTest {
         ActingInput input = new ActingInput(List.of(tool));
 
         Flux<AgentEvent> slowDownstream =
-                Flux.just((AgentEvent) new ToolResultStartEvent("r1", "t1", "slow_tool"))
+                Flux.just(
+                                (AgentEvent)
+                                        new ToolResultStartEvent(
+                                                "r1", "t1", "slow_tool", "Slow Tool"))
                         .concatWith(
                                 Mono.delay(Duration.ofSeconds(2))
                                         .thenMany(
@@ -109,6 +113,7 @@ class AsyncToolMiddlewareTest {
                                                                 "r1",
                                                                 "t1",
                                                                 "slow_tool",
+                                                                "Slow Tool",
                                                                 ToolResultState.SUCCESS))));
 
         List<AgentEvent> events =

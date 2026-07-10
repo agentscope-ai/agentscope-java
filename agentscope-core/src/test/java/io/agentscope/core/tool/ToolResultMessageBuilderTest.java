@@ -16,10 +16,8 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -28,87 +26,99 @@ import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Unit tests for {@link ToolResultMessageBuilder}.
+ */
+@Tag("unit")
+@DisplayName("ToolResultMessageBuilder Unit Tests")
 class ToolResultMessageBuilderTest {
 
     @Test
-    @DisplayName("Should build tool result message with single text block")
-    void testBuildWithSingleThinkingBlock() {
-        // Arrange
+    @DisplayName("Should build tool result message with id, name, and title from original call")
+    void testBuildToolResultMsgWithTitle() {
         ToolUseBlock originalCall =
                 ToolUseBlock.builder()
-                        .id("tool_123")
-                        .name("test_tool")
-                        .input(Map.of("param", "value"))
+                        .id("call-1")
+                        .name("search_tool")
+                        .title("Search Tool")
+                        .input(Map.of("query", "hello"))
                         .build();
 
-        ToolResultBlock response =
-                ToolResultBlock.of(TextBlock.builder().text("Success result").build());
+        ToolResultBlock result =
+                ToolResultBlock.of(
+                        "result",
+                        "search_tool",
+                        TextBlock.builder().text("found 5 results").build());
 
-        // Act
-        Msg result =
-                ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "TestAgent");
+        Msg msg = ToolResultMessageBuilder.buildToolResultMsg(result, originalCall, "agent-1");
 
-        // Assert
-        assertNotNull(result);
-        assertEquals("TestAgent", result.getName());
-        assertEquals(MsgRole.TOOL, result.getRole());
+        assertEquals("agent-1", msg.getName());
+        assertEquals(MsgRole.TOOL, msg.getRole());
 
-        ContentBlock content = result.getFirstContentBlock();
-        assertTrue(content instanceof ToolResultBlock);
-
-        ToolResultBlock toolResult = (ToolResultBlock) content;
-        assertEquals("tool_123", toolResult.getId());
-        assertEquals("test_tool", toolResult.getName());
-
-        List<ContentBlock> outputs = toolResult.getOutput();
-        assertEquals(1, outputs.size());
-        assertTrue(outputs.get(0) instanceof TextBlock);
-        assertEquals("Success result", ((TextBlock) outputs.get(0)).getText());
+        ToolResultBlock toolResult = (ToolResultBlock) msg.getContent().get(0);
+        assertEquals("call-1", toolResult.getId());
+        assertEquals("search_tool", toolResult.getName());
+        assertEquals("Search Tool", toolResult.getTitle());
     }
 
     @Test
-    @DisplayName("Should handle null content list")
-    void testBuildWithNullContent() {
-        // Arrange
-        ToolUseBlock originalCall =
-                ToolUseBlock.builder().id("tool_000").name("null_tool").input(Map.of()).build();
+    @DisplayName("Should build tool result message with null title")
+    void testBuildToolResultMsgWithNullTitle() {
+        ToolUseBlock originalCall = new ToolUseBlock("call-2", "simple_tool", null, Map.of(), null);
 
-        ToolResultBlock response = ToolResultBlock.of((List<ContentBlock>) null);
+        ToolResultBlock result =
+                ToolResultBlock.of(null, "simple_tool", TextBlock.builder().text("done").build());
 
-        // Act
-        Msg result =
-                ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "TestAgent");
+        Msg msg = ToolResultMessageBuilder.buildToolResultMsg(result, originalCall, "agent-2");
 
-        // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
-        List<ContentBlock> outputs = toolResult.getOutput();
-        assertTrue(outputs.isEmpty());
+        ToolResultBlock toolResult = (ToolResultBlock) msg.getContent().get(0);
+        assertEquals("call-2", toolResult.getId());
+        assertEquals("simple_tool", toolResult.getName());
+        assertNull(toolResult.getTitle());
     }
 
     @Test
-    @DisplayName("Should preserve original tool call ID and name")
-    void testPreservesOriginalCallInfo() {
-        // Arrange
-        String toolId = "unique_tool_id_12345";
-        String toolName = "important_tool";
+    @DisplayName("Should preserve output blocks from result")
+    void testBuildPreservesOutputBlocks() {
+        ToolUseBlock originalCall =
+                new ToolUseBlock("call-3", "multi_output_tool", Map.of("x", 1), null);
 
+        ToolResultBlock result =
+                ToolResultBlock.of(
+                        null,
+                        "multi_output_tool",
+                        List.of(
+                                TextBlock.builder().text("result 1").build(),
+                                TextBlock.builder().text("result 2").build()));
+
+        Msg msg = ToolResultMessageBuilder.buildToolResultMsg(result, originalCall, "agent-3");
+
+        ToolResultBlock toolResult = (ToolResultBlock) msg.getContent().get(0);
+        assertEquals(2, toolResult.getOutput().size());
+        assertEquals("result 1", ((TextBlock) toolResult.getOutput().get(0)).getText());
+        assertEquals("result 2", ((TextBlock) toolResult.getOutput().get(1)).getText());
+    }
+
+    @Test
+    @DisplayName("Should propagate title from ToolUseBlock with custom title")
+    void testBuildWithCustomTitle() {
         ToolUseBlock originalCall =
                 ToolUseBlock.builder()
-                        .id(toolId)
-                        .name(toolName)
-                        .input(Map.of("key", "value"))
+                        .id("call-4")
+                        .name("query_db")
+                        .title("Query Database")
+                        .input(Map.of("sql", "SELECT *"))
                         .build();
 
-        ToolResultBlock response = ToolResultBlock.of(TextBlock.builder().text("Result").build());
+        ToolResultBlock result =
+                ToolResultBlock.of(null, "query_db", TextBlock.builder().text("rows: 10").build());
 
-        // Act
-        Msg result = ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "Agent");
+        Msg msg = ToolResultMessageBuilder.buildToolResultMsg(result, originalCall, "agent-4");
 
-        // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
-        assertEquals(toolId, toolResult.getId());
-        assertEquals(toolName, toolResult.getName());
+        ToolResultBlock toolResult = (ToolResultBlock) msg.getContent().get(0);
+        assertEquals("Query Database", toolResult.getTitle());
     }
 }

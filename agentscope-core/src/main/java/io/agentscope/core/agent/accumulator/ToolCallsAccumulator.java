@@ -52,6 +52,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     private static class ToolCallBuilder {
         String toolId;
         String name;
+        String title;
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
@@ -65,6 +66,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Update name (ignore placeholders)
             if (block.getName() != null && !isPlaceholder(block.getName())) {
                 this.name = block.getName();
+            }
+
+            if (block.getTitle() != null) {
+                this.title = block.getTitle();
             }
 
             // Merge parameters
@@ -116,6 +121,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
+                    .title(title)
                     .input(finalArgs)
                     .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
