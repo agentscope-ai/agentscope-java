@@ -7,6 +7,113 @@ description: "AgentScope Java 各版本变更记录"
 
 ---
 
+## 2.0.0 (GA)
+
+> 发布日期：2026-07-10
+
+AgentScope Java 2.0.0 正式发布（General Availability）。这是从 1.x 到 2.0 的首个正式版本，标志着 AgentScope Java 从"透明开发"迈向"系统工程"的里程碑。
+
+**快速链接：** [快速开始](../quickstart.md) | [V1 迁移指南](../change-log.md) | [上线指南](going-to-production.md)
+
+### 2.0 版本核心设计概要
+
+AgentScope Java 2.0 围绕"让智能体稳定完成任务"这一目标进行了系统性升级，核心设计如下：
+
+**双层 Agent 架构**
+
+- **ReActAgent**：无状态的推理核心，提供"推理 → 工具调用 → 回复"的 ReAct 循环。2.0 中 Agent 实例完全无状态，所有 per-call 可变状态通过 Reactor Context 透传，同一实例可安全并发服务多个 `(userId, sessionId)` 组合
+- **HarnessAgent**：在 ReActAgent 之上通过 Middleware 与 Toolkit 两个扩展通道，叠加工作区、记忆、沙箱、子 agent、技能与计划模式等工程化基础设施——核心推理循环原样保留，只叠加不替换
+
+**消息与事件流**
+
+统一的 ContentBlock 消息模型（TextBlock / DataBlock / ToolUseBlock / ToolResultBlock / HintBlock 等），配合 `streamEvents()` 返回的 28 种类型化 AgentEvent，让 Agent 的执行过程可展示、可交互、可干预。前端 UI 可实时跟随文本增量、工具调用、用户确认等全生命周期事件
+
+**权限系统**
+
+全新的 PermissionEngine 为工具调用建立"允许 / 用户审批 / 拒绝"三态决策机制。根据静态规则、工具类型和输入内容综合判断，敏感操作自动进入 HITL 审批流程
+
+**Middleware 扩展机制**
+
+五阶段洋葱 + 管道混合模型（`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt`），在保持核心框架稳定的同时，为日志追踪、安全检查、业务策略、上下文注入等提供灵活的扩展点
+
+**上下文工程**
+
+结构化压缩保留任务目标、当前状态、关键发现与下一步计划；超大工具结果自动落盘，上下文仅保留占位符；文件读写内置缓存并强制"先读后改"策略
+
+**Workspace 执行环境抽象**
+
+将"Agent 做什么"与"在哪里执行"解耦。本地文件系统、Docker 容器、Kubernetes、E2B 云沙箱等执行后端统一到同一套接口。内置预热池机制，适配 RL rollout 等并行场景
+
+**模型容错**
+
+统一的 Credential + ModelRegistry 抽象，覆盖 Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama 等主流模型。可配置最大重试与备用模型，主模型不可用时自动切换
+
+**企业级分布式部署**
+
+`DistributedBackend` 一键配置（Redis / OSS / MySQL / PostgreSQL / COS），`AgentStateStore` 按 `(userId, sessionId)` 自动分桶持久化。Session 跨副本恢复、沙箱状态快照、子 agent 跨副本路由
+
+**协议互通**
+
+内置 A2A（Agent-to-Agent）与 MCP（Model Context Protocol）协议支持，以及 AG-UI 协议适配，覆盖智能体间通信与前端展示的标准化需求
+
+**多智能体编排**
+
+声明式子 agent 规格定义（YAML / Markdown），运行时按需 `agent_spawn` / `agent_send`，支持同步阻塞与后台委派两种模式。子 agent 事件流可实时转发到父 agent 的 `streamEvents()`
+
+**技能系统**
+
+四层 Skill 合成（Classpath / FileSystem / Nacos / Marketplace）+ SkillFilter 细粒度过滤 + 自学习闭环（propose → curate → promote）
+
+---
+
+### 自 RC5 以来的变更
+
+以下为 2.0.0-RC5（2026-07-07）至 GA 版本之间的增量变更。
+
+#### 新增
+
+- 当 HITL 拒绝所有工具调用时触发 `AllToolsDeniedEvent` hook，方便应用层监听和处理全拒绝场景 ([#2083](https://github.com/agentscope-ai/agentscope-java/pull/2083))
+- `wait_async_results` 增加防护机制，防止反复长时间阻塞等待 ([#2093](https://github.com/agentscope-ai/agentscope-java/pull/2093))
+- 新增 `PostgresDistributedStore`，支持 PostgreSQL 作为 HarnessAgent 的分布式后端 ([#2054](https://github.com/agentscope-ai/agentscope-java/pull/2054))
+- Spring Boot Starter 新增 OpenAI、DashScope、Anthropic 模型的 builder customizer，简化自动配置 ([#2045](https://github.com/agentscope-ai/agentscope-java/pull/2045))
+
+#### 修复
+
+**核心 / Agent**
+
+- `seedSystemMsg` 改为 reactive 实现，避免在 NIO 线程上调用 `block()` ([#2086](https://github.com/agentscope-ai/agentscope-java/pull/2086))
+- PERMISSION_ASKING 状态的结果消息中正确包含 ASKING 状态的 ToolUseBlock ([#2082](https://github.com/agentscope-ai/agentscope-java/pull/2082))
+- 通过 `activateOnSkill` 字段正确激活 SkillToolGroup ([#2057](https://github.com/agentscope-ai/agentscope-java/pull/2057))
+- 用户中断时保存 agent 状态，防止会话丢失 ([#1970](https://github.com/agentscope-ai/agentscope-java/pull/1970))
+
+**模型提供商**
+
+- Anthropic：将并行 tool calls 拆分为交替排列的消息，符合 API 要求 ([#2090](https://github.com/agentscope-ai/agentscope-java/pull/2090))
+- OpenAI：`nativeStructuredOutput` 改为可配置 ([#2069](https://github.com/agentscope-ai/agentscope-java/pull/2069))
+
+**Harness / 工具 / 沙箱**
+
+- 外部工具执行现在正确产生 suspended 结果 ([#2071](https://github.com/agentscope-ai/agentscope-java/pull/2071))
+- Plan Mode 下允许 SkillLoadTool，通过将 `isReadOnly` 提升到 AgentTool 接口实现 ([#2067](https://github.com/agentscope-ai/agentscope-java/pull/2067))
+- 中断孤儿子 agent：当 AgentSpawnTool 的父订阅取消时正确中断子 agent ([#2064](https://github.com/agentscope-ai/agentscope-java/pull/2064))
+- MemoryFlushMiddleware 移除不必要的 ReActAgent 类型限制 ([#2078](https://github.com/agentscope-ai/agentscope-java/pull/2078))
+- ROOTED 模式下将以 `/` 开头的路径解析为相对于 workspace ([#2049](https://github.com/agentscope-ai/agentscope-java/pull/2049))
+- workspace projection 前预先部署 marketplace 技能 ([#2059](https://github.com/agentscope-ai/agentscope-java/pull/2059))
+- Kubernetes `hydrateWithArchive` 中 null exit code 视为成功 ([#1915](https://github.com/agentscope-ai/agentscope-java/pull/1915))
+- 恢复持久化状态时使用更新后的 WorkspaceSpec ([#1928](https://github.com/agentscope-ai/agentscope-java/pull/1928))
+- AgentRun MCP 响应支持嵌套 JSON 和 banner 前缀 ([#1930](https://github.com/agentscope-ai/agentscope-java/pull/1930))
+- Docker workspaceRoot 使用解析后的 workingDir ([#2033](https://github.com/agentscope-ai/agentscope-java/pull/2033))
+
+**Channel**
+
+- OutboundAddress 中包含 PeerKind，修复群组消息路由 ([#2060](https://github.com/agentscope-ai/agentscope-java/pull/2060))
+
+**A2A**
+
+- 合并流式文本 chunk，避免碎片化 ([#2058](https://github.com/agentscope-ai/agentscope-java/pull/2058))
+
+---
+
 ## 2.0.0-RC5
 
 > 发布日期：2026-07-07

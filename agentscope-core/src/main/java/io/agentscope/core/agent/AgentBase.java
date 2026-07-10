@@ -687,10 +687,10 @@ public abstract class AgentBase implements Agent {
      * @param callScope the per-call scope captured at call entry (may be {@code null}); lets
      *     subclasses resolve the call's {@link RuntimeContext} for system-prompt middlewares without
      *     reading a shared instance field
-     * @return the seed system message, or {@code null} if none
+     * @return the seed system message; empty Mono if none
      */
-    protected Msg seedSystemMsg(Object callScope) {
-        return null;
+    protected Mono<Msg> seedSystemMsg(Object callScope) {
+        return Mono.empty();
     }
 
     /**
@@ -752,9 +752,9 @@ public abstract class AgentBase implements Agent {
         }
 
         PreCallEvent event = new PreCallEvent(this, fullInput);
-        event.setSystemMessage(seedSystemMsg(callScope));
 
-        Mono<PreCallEvent> result = Mono.just(event);
+        Mono<PreCallEvent> result =
+                seedSystemMsg(callScope).doOnNext(event::setSystemMessage).thenReturn(event);
         for (Hook hook : getSortedHooks()) {
             result = result.flatMap(hook::onEvent);
         }
