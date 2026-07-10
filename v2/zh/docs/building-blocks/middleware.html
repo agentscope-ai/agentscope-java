@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-18T08:05:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
+    <meta property="article:modified_time" content="2026-07-10T01:07:59+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1311,6 +1311,53 @@
 <p>若只是简单的「主→备」回退，<code class="docutils literal notranslate"><span class="pre">ReActAgent.Builder</span></code> 直接暴露了 <code class="docutils literal notranslate"><span class="pre">fallbackModel(...)</span></code> 与 <code class="docutils literal notranslate"><span class="pre">maxRetries(...)</span></code>，无需自己写 middleware。</p>
 </div>
 </section>
+<section id="agent">
+<h3>全部工具被拒绝时停止 agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h3>
+<p>当用户通过 HITL 拒绝了一轮推理产出的全部工具调用时，agent 默认会继续下一轮推理（向后兼容）。如果希望在这种场景下停止 agent，可以编写一个 <code class="docutils literal notranslate"><span class="pre">onActing</span></code> middleware 观察 <code class="docutils literal notranslate"><span class="pre">AllToolsDeniedEvent</span></code> 并发出 <code class="docutils literal notranslate"><span class="pre">RequestStopEvent</span></code>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.Agent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.RuntimeContext</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.AgentEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.AllToolsDeniedEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.RequestStopEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.GenerateReason</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.middleware.ActingInput</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.middleware.MiddlewareBase</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.function.Function</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Flux</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">StopOnAllDeniedMiddleware</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">MiddlewareBase</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">AgentEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onActing</span><span class="p">(</span>
+<span class="w">            </span><span class="n">Agent</span><span class="w"> </span><span class="n">agent</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">ActingInput</span><span class="w"> </span><span class="n">input</span><span class="p">,</span>
+<span class="w">            </span><span class="n">Function</span><span class="o">&lt;</span><span class="n">ActingInput</span><span class="p">,</span><span class="w"> </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">AgentEvent</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">next</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">next</span><span class="p">.</span><span class="na">apply</span><span class="p">(</span><span class="n">input</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">flatMap</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">AllToolsDeniedEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="k">return</span><span class="w"> </span><span class="n">Flux</span><span class="p">.</span><span class="na">just</span><span class="p">(</span>
+<span class="w">                                </span><span class="n">event</span><span class="p">,</span>
+<span class="w">                                </span><span class="k">new</span><span class="w"> </span><span class="n">RequestStopEvent</span><span class="p">(</span>
+<span class="w">                                        </span><span class="s">&quot;All tools denied by user&quot;</span><span class="p">,</span>
+<span class="w">                                        </span><span class="n">GenerateReason</span><span class="p">.</span><span class="na">ALL_TOOLS_DENIED</span><span class="p">));</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="n">Flux</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">                </span><span class="p">});</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>装配后，agent 在所有工具被拒绝时会立即停止，返回 <code class="docutils literal notranslate"><span class="pre">GenerateReason.ALL_TOOLS_DENIED</span></code>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;guarded&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StopOnAllDeniedMiddleware</span><span class="p">()))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 </section>
 </section>
 
@@ -1367,7 +1414,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-18</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1420,6 +1467,7 @@
 <li><a class="reference internal" href="#id8">限速 middleware</a></li>
 <li><a class="reference internal" href="#system-prompt-middleware">动态 system prompt middleware</a></li>
 <li><a class="reference internal" href="#id9">模型回退 middleware</a></li>
+<li><a class="reference internal" href="#agent">全部工具被拒绝时停止 agent</a></li>
 </ul>
 </li>
 </ul>

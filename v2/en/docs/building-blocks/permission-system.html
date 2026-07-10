@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-10T00:40:36+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Model" href="model.html">
+    <meta property="article:modified_time" content="2026-07-10T01:07:59+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Model" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1269,6 +1269,12 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 </pre></div>
 </div>
 </section>
+<section id="all-tools-denied">
+<h3>All tools denied<a class="headerlink" href="#all-tools-denied" title="Link to this heading">¶</a></h3>
+<p>When the user denies <strong>all</strong> tool calls from a reasoning step in the confirmation UI, the agent continues to the next reasoning iteration by default — the model only sees “Permission denied by user” tool results, which often leads to unhelpful reasoning.</p>
+<p>To stop the agent in this scenario, wire up an <code class="docutils literal notranslate"><span class="pre">onActing</span></code> middleware that observes <code class="docutils literal notranslate"><span class="pre">AllToolsDeniedEvent</span></code> and emits a <code class="docutils literal notranslate"><span class="pre">RequestStopEvent</span></code>. After stopping, <code class="docutils literal notranslate"><span class="pre">Msg.getGenerateReason()</span></code> returns <code class="docutils literal notranslate"><span class="pre">ALL_TOOLS_DENIED</span></code>.</p>
+<p>See <a class="reference internal" href="middleware.html#stop-agent-when-all-tools-are-denied"><span class="std std-ref">Middleware — Stop agent when all tools are denied</span></a> for the implementation.</p>
+</section>
 <section id="streaming-mode">
 <h3>Streaming mode<a class="headerlink" href="#streaming-mode" title="Link to this heading">¶</a></h3>
 <p>When using <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>, you don’t need to extract <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>s from the returned <code class="docutils literal notranslate"><span class="pre">Msg</span></code> — the event stream delivers a <code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code> that carries the pending tool calls directly:</p>
@@ -1533,6 +1539,7 @@ Block dangerous commands</label><div class="sd-tab-content docutils">
 </li>
 <li><a class="reference internal" href="#hitl-integration">HITL integration</a><ul>
 <li><a class="reference internal" href="#interaction-flow">Interaction flow</a></li>
+<li><a class="reference internal" href="#all-tools-denied">All tools denied</a></li>
 <li><a class="reference internal" href="#streaming-mode">Streaming mode</a></li>
 <li><a class="reference internal" href="#unattended-mode">Unattended mode</a></li>
 </ul>
