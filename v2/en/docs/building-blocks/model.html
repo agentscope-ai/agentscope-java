@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-09T02:35:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-07-10T09:41:12+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -985,7 +985,7 @@
 <h2>Choose a creation path<a class="headerlink" href="#choose-a-creation-path" title="Link to this heading">¶</a></h2>
 <section id="string-model-id">
 <h3>String model id<a class="headerlink" href="#string-model-id" title="Link to this heading">¶</a></h3>
-<p>For simple non-Spring applications, use a <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> string id such as <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-plus</span></code> or <code class="docutils literal notranslate"><span class="pre">openai:gpt-4.1-mini</span></code>. Add the matching model extension module, set the provider’s <code class="docutils literal notranslate"><span class="pre">API_KEY</span></code> in the environment variable, and pass the id directly to the agent:</p>
+<p>For simple non-Spring applications, use a <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> string id such as <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-plus</span></code> or <code class="docutils literal notranslate"><span class="pre">openai:gpt-4.1-mini</span></code>. Add the matching model extension module, set the provider’s standard environment variable such as <code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code> or <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code>, and pass the id directly to the agent:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
@@ -1035,7 +1035,7 @@
 <section id="modelregistry-and-modelcreationcontext">
 <h2>ModelRegistry and ModelCreationContext<a class="headerlink" href="#modelregistry-and-modelcreationcontext" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> is a global registry for model instance creation and lookup, supporting multiple resolution strategies. During resolution, it tries in priority order: named model instances directly registered via <code class="docutils literal notranslate"><span class="pre">ModelRegistry.register(name,</span> <span class="pre">model)</span></code>, custom factories registered via <code class="docutils literal notranslate"><span class="pre">registerFactory(regex,</span> <span class="pre">factory)</span></code>, and <code class="docutils literal notranslate"><span class="pre">ModelProvider</span></code> implementations automatically discovered from extension modules through the Java SPI mechanism.</p>
-<p>For simple scenarios, prefer a string id in the <code class="docutils literal notranslate"><span class="pre">provider:model</span></code> format together with the <code class="docutils literal notranslate"><span class="pre">API_KEY</span></code> environment variable; for fine-grained control, use explicit model builders and <code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> for configuration.</p>
+<p>For simple scenarios, prefer a string id in the <code class="docutils literal notranslate"><span class="pre">provider:model</span></code> format together with the provider’s standard environment variable; for fine-grained control, use explicit model builders. <code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> is mainly for integration-layer code that must resolve models dynamically.</p>
 <section id="advanced-integration-context">
 <h3>Advanced integration context<a class="headerlink" href="#advanced-integration-context" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> is for integration layers that must create models dynamically without importing a concrete provider builder, such as multi-tenant gateways, plugin systems, or framework adapters. It can pass common values such as API key, base URL, endpoint path, stream mode, and extension-defined options/components to the SPI provider:</p>
@@ -1637,7 +1637,7 @@ Reasoning</label><div class="sd-tab-content docutils">
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-09</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">

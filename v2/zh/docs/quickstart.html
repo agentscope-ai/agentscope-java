@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="智能体" href="building-blocks/agent.html"><link rel="prev" title="AgentScope 2.0 是什么？" href="index.html">
+    <meta property="article:modified_time" content="2026-07-10T09:41:12+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="智能体" href="building-blocks/agent.html"><link rel="prev" title="AgentScope 2.0 是什么？" href="index.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/quickstart.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -922,8 +922,16 @@
 <p class="admonition-title">Note</p>
 <p>把 <code class="docutils literal notranslate"><span class="pre">${agentscope.version}</span></code> 替换为最新版本号即可，最新版本请参考 <a class="reference internal" href="others/release-notes.html"><span class="std std-doc">Release Notes</span></a>。</p>
 </div>
-<p>只想跑裸 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>（不需要工作区 / 持久化 / 子 agent / 沙箱），单独依赖 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 即可。两种用法的区别详见 <a class="reference internal" href="harness/architecture.html"><span class="std std-doc">Harness 架构</span></a>。</p>
-<p>DashScope / OpenAI / Anthropic / Gemini / Ollama 的 formatter 与 chat model 都在 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 里；MCP 集成需要官方 MCP SDK，参考 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/pom.xml</span></code>。</p>
+<p>如果只需要裸 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 的框架 API（不需要工作区 / 持久化 / 子 agent / 沙箱），<code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-*</span></code> 模型扩展模块中。<code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 与 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 的区别详见 <a class="reference internal" href="harness/architecture.html"><span class="std std-doc">Harness 架构</span></a>。</p>
+<p>下面的 quickstart 通过 <code class="docutils literal notranslate"><span class="pre">.model(&quot;dashscope:qwen-plus&quot;)</span></code> 使用 DashScope，因此还需要引入对应模型扩展：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-model-dashscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>MCP 集成需要官方 MCP SDK，参考 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/pom.xml</span></code>。</p>
 </section>
 </section>
 <section id="id3">
@@ -1005,7 +1013,7 @@
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>运行前在环境变量里设置 <code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code>。切换厂商只需改 <code class="docutils literal notranslate"><span class="pre">.model(...)</span></code> 的字符串并设置对应的 API key（<code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code>、<code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code>、<code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code>）。需要更精细地控制超时 / 自定义 endpoint 等参数时，仍可显式 <code class="docutils literal notranslate"><span class="pre">DashScopeChatModel.builder()...build()</span></code> 构造实例后传给 <code class="docutils literal notranslate"><span class="pre">.model(Model)</span></code>。</p>
+<p>运行前在环境变量里设置 <code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code>。切换模型提供商时，需要引入对应的 <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-*</span></code> 模型扩展模块，修改 <code class="docutils literal notranslate"><span class="pre">.model(...)</span></code> 的字符串，并设置对应的 API key（<code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code>、<code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code>、<code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code>）。需要更精细地控制超时 / 自定义 endpoint 等参数时，可使用对应模型提供商的 builder（例如 <code class="docutils literal notranslate"><span class="pre">DashScopeChatModel.builder()...build()</span></code>）构造实例后传给 <code class="docutils literal notranslate"><span class="pre">.model(Model)</span></code>。</p>
 </div>
 </section>
 <section id="id5">
@@ -1104,7 +1112,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">

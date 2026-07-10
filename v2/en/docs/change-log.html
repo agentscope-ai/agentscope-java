@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
+    <meta property="article:modified_time" content="2026-07-10T09:41:12+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/change-log.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -983,8 +983,78 @@
 </table>
 </div>
 </section>
-<section id="a-3-state-package-restructure-compile-error">
-<h4>A.3 <code class="docutils literal notranslate"><span class="pre">state</span></code> package restructure (compile error)<a class="headerlink" href="#a-3-state-package-restructure-compile-error" title="Link to this heading">¶</a></h4>
+<section id="a-3-model-providers-moved-out-of-core">
+<h4>A.3 Model providers moved out of core<a class="headerlink" href="#a-3-model-providers-moved-out-of-core" title="Link to this heading">¶</a></h4>
+<p>OpenAI, Gemini, Anthropic, DashScope, and Ollama chat model implementations are no longer packaged in <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code>. Core now keeps only shared model contracts such as <code class="docutils literal notranslate"><span class="pre">Model</span></code>, <code class="docutils literal notranslate"><span class="pre">ChatModelBase</span></code>, <code class="docutils literal notranslate"><span class="pre">Formatter</span></code>, <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code>, and the <code class="docutils literal notranslate"><span class="pre">ModelProvider</span></code> SPI.</p>
+<p>If your v1 code imported provider classes from core, replace them with the matching model extension module:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>v1 import / dependency</p></th>
+<th class="head"><p>v2 replacement</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.OpenAIChatModel</span></code></p></td>
+<td><p>Add <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code>; import <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai.OpenAIChatModel</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.GeminiChatModel</span></code></p></td>
+<td><p>Add <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-gemini</span></code>; import <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.gemini.GeminiChatModel</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.AnthropicChatModel</span></code></p></td>
+<td><p>Add <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-anthropic</span></code>; import <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.anthropic.AnthropicChatModel</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.DashScopeChatModel</span></code></p></td>
+<td><p>Add <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-dashscope</span></code>; import <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.OllamaChatModel</span></code></p></td>
+<td><p>Add <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-ollama</span></code>; import <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.ollama.OllamaChatModel</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.formatter.&lt;provider&gt;.*</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.&lt;provider&gt;.formatter.*</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.credential.&lt;Provider&gt;Credential</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.&lt;provider&gt;.credential.&lt;Provider&gt;Credential</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> string ids still work, but only when the matching extension module is on the classpath:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Spring Boot applications should use the provider-specific starters instead of relying on a generic core model path:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<th class="head"><p>Spring Boot starter</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>OpenAI</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-openai-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>DashScope</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-dashscope-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-gemini-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Ollama currently has no dedicated Spring Boot starter; use <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-ollama</span></code> with <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> or an explicit <code class="docutils literal notranslate"><span class="pre">OllamaChatModel.builder()</span></code>.</p>
+<p>Detail → <a class="reference internal" href="building-blocks/model.html"><span class="std std-doc">Model</span></a>, <a class="reference internal" href="../integration/overview.html"><span class="std std-doc">Model Providers</span></a></p>
+</section>
+<section id="a-4-state-package-restructure-compile-error">
+<h4>A.4 <code class="docutils literal notranslate"><span class="pre">state</span></code> package restructure (compile error)<a class="headerlink" href="#a-4-state-package-restructure-compile-error" title="Link to this heading">¶</a></h4>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1013,8 +1083,8 @@
 </div>
 <p>Any code that imports <code class="docutils literal notranslate"><span class="pre">AgentMetaState</span></code>, <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>, <code class="docutils literal notranslate"><span class="pre">StatePersistence</span></code>, or <code class="docutils literal notranslate"><span class="pre">ToolkitState</span></code> from <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.state</span></code> will fail to compile. Detail → <a class="reference internal" href="building-blocks/context.html"><span class="std std-doc">Context</span></a></p>
 </section>
-<section id="a-4-plannotebook-removed-use-harnessagent-enableplanmode">
-<h4>A.4 <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> removed — use <code class="docutils literal notranslate"><span class="pre">HarnessAgent.enablePlanMode()</span></code><a class="headerlink" href="#a-4-plannotebook-removed-use-harnessagent-enableplanmode" title="Link to this heading">¶</a></h4>
+<section id="a-5-plannotebook-removed-use-harnessagent-enableplanmode">
+<h4>A.5 <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> removed — use <code class="docutils literal notranslate"><span class="pre">HarnessAgent.enablePlanMode()</span></code><a class="headerlink" href="#a-5-plannotebook-removed-use-harnessagent-enableplanmode" title="Link to this heading">¶</a></h4>
 <p>The entire <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.plan</span></code> package (<code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code>, <code class="docutils literal notranslate"><span class="pre">Plan</span></code>, <code class="docutils literal notranslate"><span class="pre">SubTask</span></code>, <code class="docutils literal notranslate"><span class="pre">PlanStorage</span></code>, <code class="docutils literal notranslate"><span class="pre">PlanToHint</span></code>, and related classes) has been removed with no deprecated bridge.</p>
 <p><strong>What changed</strong>: <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> modeled plans as structured <code class="docutils literal notranslate"><span class="pre">Plan</span></code> + <code class="docutils literal notranslate"><span class="pre">SubTask</span></code> objects with a state machine (todo → in_progress → done → abandoned) and 8 tool functions. The v2 replacement is a fundamentally different design — plan mode is now a <strong>read-only investigation phase</strong> where the agent designs an approach in a plain markdown file before gaining write access.</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1048,8 +1118,8 @@
 </div>
 <p><strong>Subtask tracking</strong>: if your v1 code relied on <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code>’s subtask state tracking (breaking work into subtasks and checking them off during execution), the v2 equivalent is the <strong>task list</strong> — enable it with <code class="docutils literal notranslate"><span class="pre">.enableTaskList(true)</span></code> on the builder, which registers <code class="docutils literal notranslate"><span class="pre">TodoTools</span></code> and <code class="docutils literal notranslate"><span class="pre">TaskReminderMiddleware</span></code>.</p>
 </section>
-<section id="a-5-msg-content-validation-is-stricter-runtime-exception">
-<h4>A.5 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> content validation is stricter (runtime exception)<a class="headerlink" href="#a-5-msg-content-validation-is-stricter-runtime-exception" title="Link to this heading">¶</a></h4>
+<section id="a-6-msg-content-validation-is-stricter-runtime-exception">
+<h4>A.6 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> content validation is stricter (runtime exception)<a class="headerlink" href="#a-6-msg-content-validation-is-stricter-runtime-exception" title="Link to this heading">¶</a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">Msg</span></code> now validates <code class="docutils literal notranslate"><span class="pre">content</span></code> against <code class="docutils literal notranslate"><span class="pre">role</span></code> at construction time:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">USER</span></code> — only <code class="docutils literal notranslate"><span class="pre">TextBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">DataBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">ImageBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">AudioBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">VideoBlock</span></code></p></li>
@@ -1058,8 +1128,8 @@
 </ul>
 <p>Combinations that v1 tolerated (for example, a <code class="docutils literal notranslate"><span class="pre">USER</span></code> message carrying a <code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code>) now throw at construction. Use the role-pinned subclasses <code class="docutils literal notranslate"><span class="pre">UserMessage</span></code> / <code class="docutils literal notranslate"><span class="pre">AssistantMessage</span></code> / <code class="docutils literal notranslate"><span class="pre">SystemMessage</span></code> / <code class="docutils literal notranslate"><span class="pre">ToolResultMessage</span></code> to make role/content compatibility obvious at the call site. Detail → <a class="reference internal" href="building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a></p>
 </section>
-<section id="a-6-agent-is-fully-stateless-architecture-change">
-<h4>A.6 Agent is fully stateless (architecture change)<a class="headerlink" href="#a-6-agent-is-fully-stateless-architecture-change" title="Link to this heading">¶</a></h4>
+<section id="a-7-agent-is-fully-stateless-architecture-change">
+<h4>A.7 Agent is fully stateless (architecture change)<a class="headerlink" href="#a-7-agent-is-fully-stateless-architecture-change" title="Link to this heading">¶</a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> is now <strong>fully stateless</strong> — the instance itself holds no mutable “current session” state. All per-call mutable state (<code class="docutils literal notranslate"><span class="pre">AgentState</span></code>, <code class="docutils literal notranslate"><span class="pre">PermissionEngine</span></code>, event sink) is encapsulated in an internal <code class="docutils literal notranslate"><span class="pre">CallExecution</span></code> object and propagated through the call chain via Reactor Context. A single Agent instance can safely serve multiple <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> combinations concurrently without cross-session interference.</p>
 <p><strong>v1 → v2 impact</strong>:</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1238,8 +1308,8 @@
 <section id="model-fault-tolerance-and-credentials">
 <h3>Model fault tolerance and credentials<a class="headerlink" href="#model-fault-tolerance-and-credentials" title="Link to this heading">¶</a></h3>
 <ul class="simple">
-<li><p>New package <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.credential</span></code> — 8 provider credential classes + <code class="docutils literal notranslate"><span class="pre">ModelCard</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> resolves models from <code class="docutils literal notranslate"><span class="pre">&quot;provider:model&quot;</span></code> strings (e.g. <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-max</span></code>, <code class="docutils literal notranslate"><span class="pre">openai:gpt-5</span></code>)</p></li>
+<li><p>New package <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.credential</span></code> — shared credential contracts and <code class="docutils literal notranslate"><span class="pre">ModelCard</span></code>; provider-specific credentials live with the model extension modules</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> resolves models from <code class="docutils literal notranslate"><span class="pre">&quot;provider:model&quot;</span></code> strings when the matching model extension module is on the classpath (e.g. <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-max</span></code>, <code class="docutils literal notranslate"><span class="pre">openai:gpt-5</span></code>)</p></li>
 <li><p>Builder additions: <code class="docutils literal notranslate"><span class="pre">.model(String)</span></code>, <code class="docutils literal notranslate"><span class="pre">.maxRetries(int)</span></code>, <code class="docutils literal notranslate"><span class="pre">.fallbackModel(Model)</span></code> / <code class="docutils literal notranslate"><span class="pre">.fallbackModel(String)</span></code>, <code class="docutils literal notranslate"><span class="pre">.stopOnReject(boolean)</span></code> — primary-model failure auto-retries and falls back</p></li>
 </ul>
 <p>Detail → <a class="reference internal" href="building-blocks/model.html"><span class="std std-doc">Model</span></a></p>
@@ -1334,7 +1404,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-07</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1374,10 +1444,11 @@
 <li><a class="reference internal" href="#part-a-required-compile-errors-or-runtime-exceptions-if-you-don-t-migrate">Part A — Required (compile errors or runtime exceptions if you don’t migrate)</a><ul>
 <li><a class="reference internal" href="#a-1-removed-reactagent-builder-methods">A.1 Removed <code class="docutils literal notranslate"><span class="pre">ReActAgent.Builder</span></code> methods</a></li>
 <li><a class="reference internal" href="#a-2-removed-packages-and-classes">A.2 Removed packages and classes</a></li>
-<li><a class="reference internal" href="#a-3-state-package-restructure-compile-error">A.3 <code class="docutils literal notranslate"><span class="pre">state</span></code> package restructure (compile error)</a></li>
-<li><a class="reference internal" href="#a-4-plannotebook-removed-use-harnessagent-enableplanmode">A.4 <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> removed — use <code class="docutils literal notranslate"><span class="pre">HarnessAgent.enablePlanMode()</span></code></a></li>
-<li><a class="reference internal" href="#a-5-msg-content-validation-is-stricter-runtime-exception">A.5 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> content validation is stricter (runtime exception)</a></li>
-<li><a class="reference internal" href="#a-6-agent-is-fully-stateless-architecture-change">A.6 Agent is fully stateless (architecture change)</a></li>
+<li><a class="reference internal" href="#a-3-model-providers-moved-out-of-core">A.3 Model providers moved out of core</a></li>
+<li><a class="reference internal" href="#a-4-state-package-restructure-compile-error">A.4 <code class="docutils literal notranslate"><span class="pre">state</span></code> package restructure (compile error)</a></li>
+<li><a class="reference internal" href="#a-5-plannotebook-removed-use-harnessagent-enableplanmode">A.5 <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> removed — use <code class="docutils literal notranslate"><span class="pre">HarnessAgent.enablePlanMode()</span></code></a></li>
+<li><a class="reference internal" href="#a-6-msg-content-validation-is-stricter-runtime-exception">A.6 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> content validation is stricter (runtime exception)</a></li>
+<li><a class="reference internal" href="#a-7-agent-is-fully-stateless-architecture-change">A.7 Agent is fully stateless (architecture change)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#part-b-recommended-deprecated-forremoval-true-still-callable-today">Part B — Recommended (<code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code>, still callable today)</a><ul>

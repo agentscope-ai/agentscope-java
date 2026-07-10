@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-09T02:35:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-07-10T09:41:12+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -985,7 +985,7 @@
 <h2>选择模型创建方式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <section id="model-id">
 <h3>字符串 model id<a class="headerlink" href="#model-id" title="Link to this heading">¶</a></h3>
-<p>简单的非 Spring 应用可以使用 <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-plus</span></code>、<code class="docutils literal notranslate"><span class="pre">openai:gpt-4.1-mini</span></code> 这样的字符串 id。引入对应模型扩展模块，在环境变量中设置提供商的 <code class="docutils literal notranslate"><span class="pre">API_KEY</span></code>，然后直接把 id 传给 agent：</p>
+<p>简单的非 Spring 应用可以使用 <code class="docutils literal notranslate"><span class="pre">dashscope:qwen-plus</span></code>、<code class="docutils literal notranslate"><span class="pre">openai:gpt-4.1-mini</span></code> 这样的字符串 id。引入对应模型扩展模块，设置模型提供商的标准环境变量，例如 <code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code> 或 <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code>，然后直接把 id 传给 agent：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
@@ -1035,7 +1035,7 @@
 <section id="modelregistry-modelcreationcontext">
 <h2>ModelRegistry 与 ModelCreationContext<a class="headerlink" href="#modelregistry-modelcreationcontext" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code> 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。解析时按优先级依次尝试：通过 <code class="docutils literal notranslate"><span class="pre">ModelRegistry.register(name,</span> <span class="pre">model)</span></code> 直接注册的命名模型实例、通过 <code class="docutils literal notranslate"><span class="pre">registerFactory(regex,</span> <span class="pre">factory)</span></code> 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 <code class="docutils literal notranslate"><span class="pre">ModelProvider</span></code> 实现。</p>
-<p>简单场景推荐使用 <code class="docutils literal notranslate"><span class="pre">provider:model</span></code> 格式的 id 和环境变量中的 <code class="docutils literal notranslate"><span class="pre">API_KEY</span></code>；需要精细控制时，则使用显式的模型 Builder 及 <code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> 进行配置。</p>
+<p>简单场景推荐使用 <code class="docutils literal notranslate"><span class="pre">provider:model</span></code> 格式的 id 和模型提供商的标准环境变量；需要精细控制时，优先使用显式的模型 Builder。<code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> 主要面向需要动态解析模型的集成层代码。</p>
 <section id="id5">
 <h3>高级集成上下文<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> 面向需要动态创建模型、但不方便直接依赖具体提供商 builder 的集成层代码，例如多租户网关、插件系统或框架适配层。它可以把 API key、base URL、endpoint path、stream 模式，以及扩展模块定义的 options/components 传给 SPI 提供商实现：</p>
@@ -1312,12 +1312,12 @@ Reasoning</label><div class="sd-tab-content docutils">
 </div>
 <p>当 native 路径失败（如模型返回 400），框架会<strong>自动降级</strong>到 fallback 路径，无需用户干预。</p>
 </section>
-<section id="provider">
-<h4>各 Provider 默认行为<a class="headerlink" href="#provider" title="Link to this heading">¶</a></h4>
+<section id="id11">
+<h4>各模型提供商默认行为<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<tr class="row-odd"><th class="head"><p>模型提供商</p></th>
 <th class="head"><p><code class="docutils literal notranslate"><span class="pre">supportsNativeStructuredOutput</span></code></p></th>
 <th class="head"><p>说明</p></th>
 </tr>
@@ -1346,8 +1346,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 <div><p><strong>DashScope 用户注意</strong>：DashScope 的思考模式（<code class="docutils literal notranslate"><span class="pre">enableThinking(true)</span></code>）不支持结构化输出，框架会强制走 fallback 路径。</p>
 </div></blockquote>
 </section>
-<section id="id11">
-<h4>显式配置<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
+<section id="id12">
+<h4>显式配置<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h4>
 <p>如果确认你的模型/端点支持 <code class="docutils literal notranslate"><span class="pre">json_schema</span></code>，可以通过 builder 开启 native 路径：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
@@ -1357,8 +1357,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 </pre></div>
 </div>
 </section>
-<section id="id12">
-<h4>结构化输出与工具调用共存<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h4>
+<section id="id13">
+<h4>结构化输出与工具调用共存<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
 <p>当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 约束而跳过工具调用。设置 <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutputWithTools(false)</span></code> 可解决此问题：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
@@ -1404,11 +1404,11 @@ Reasoning</label><div class="sd-tab-content docutils">
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>各 provider 的 formatter 类现在随 provider extension module 一起提供：</p>
+<p>各模型提供商的 formatter 类现在随对应模型扩展模块一起提供：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<tr class="row-odd"><th class="head"><p>模型提供商</p></th>
 <th class="head"><p>Chat</p></th>
 <th class="head"><p>MultiAgent</p></th>
 </tr>
@@ -1439,9 +1439,9 @@ Reasoning</label><div class="sd-tab-content docutils">
 </div>
 <p>如果提供商的载荷格式不属于以上几种，开发者可以实现 <code class="docutils literal notranslate"><span class="pre">Formatter&lt;TReq,</span> <span class="pre">TResp,</span> <span class="pre">TParams&gt;</span></code> 接口（位于 <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.formatter</span></code>），并通过同一个 <code class="docutils literal notranslate"><span class="pre">formatter(...)</span></code> 字段传入。</p>
 </section>
-<section id="id13">
-<h3>自定义 Provider<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
-<p>接入自定义 provider 的最小路径是：实现一个 <code class="docutils literal notranslate"><span class="pre">CredentialBase</span></code> 子类与一个 <code class="docutils literal notranslate"><span class="pre">ChatModelBase</span></code> 子类。</p>
+<section id="id14">
+<h3>自定义模型提供商<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<p>接入自定义模型提供商的最小路径是：实现一个 <code class="docutils literal notranslate"><span class="pre">CredentialBase</span></code> 子类与一个 <code class="docutils literal notranslate"><span class="pre">ChatModelBase</span></code> 子类。</p>
 <section id="credential">
 <h4>步骤 1：定义 Credential<a class="headerlink" href="#credential" title="Link to this heading">¶</a></h4>
 <p>继承 <code class="docutils literal notranslate"><span class="pre">CredentialBase</span></code>，实现 <code class="docutils literal notranslate"><span class="pre">getChatModelClass()</span></code>：</p>
@@ -1475,8 +1475,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 </pre></div>
 </div>
 </section>
-<section id="id14">
-<h4>步骤 2：实现 Chat Model<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h4>
+<section id="id15">
+<h4>步骤 2：实现 Chat Model<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h4>
 <p>继承 <code class="docutils literal notranslate"><span class="pre">ChatModelBase</span></code>，实现 <code class="docutils literal notranslate"><span class="pre">doStream</span></code>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ChatModelBase</span><span class="p">;</span>
@@ -1524,8 +1524,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 </section>
 </section>
 </section>
-<section id="id15">
-<h2>前端集成<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h2>
+<section id="id16">
+<h2>前端集成<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
 <section id="modelcard">
 <h3>什么是 ModelCard<a class="headerlink" href="#modelcard" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">ModelCard</span></code>（<code class="docutils literal notranslate"><span class="pre">credential/ModelCard.java</span></code>）是对模型能力与约束的声明式描述，用于驱动前端 —— 模型选择器、参数表单、能力开关都可以基于它动态渲染，无需在前端硬编码任何提供商相关的逻辑。</p>
@@ -1559,8 +1559,8 @@ Reasoning</label><div class="sd-tab-content docutils">
 <p>ModelCard 字段当前最小化；能力标记（输入/输出 MIME 类型）与参数 schema 将随模型发现基础设施完善而扩展。</p>
 </div>
 </section>
-<section id="id16">
-<h3>获取 ModelCard<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
+<section id="id17">
+<h3>获取 ModelCard<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
 <p>通过 <code class="docutils literal notranslate"><span class="pre">CredentialBase#listModels()</span></code> 获取 Model Card，返回 <code class="docutils literal notranslate"><span class="pre">Mono&lt;List&lt;ModelCard&gt;&gt;</span></code>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.credential.ModelCard</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.anthropic.credential.AnthropicCredential</span><span class="p">;</span>
@@ -1579,7 +1579,7 @@ Reasoning</label><div class="sd-tab-content docutils">
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Class</span><span class="o">&lt;?</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">io</span><span class="p">.</span><span class="na">agentscope</span><span class="p">.</span><span class="na">core</span><span class="p">.</span><span class="na">model</span><span class="p">.</span><span class="na">ChatModelBase</span><span class="o">&gt;</span><span class="w"> </span><span class="n">modelCls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cred</span><span class="p">.</span><span class="na">getChatModelClass</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>这种设计让前端只需一个 credential，就能发现该 provider 下的可用模型 —— 无需任何硬编码的提供商逻辑。</p>
+<p>这种设计让前端只需一个 credential，就能发现该模型提供商下的可用模型 —— 无需任何硬编码的提供商逻辑。</p>
 </section>
 </section>
 </section>
@@ -1637,7 +1637,7 @@ Reasoning</label><div class="sd-tab-content docutils">
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-09</div>
+              Last updated on 2026-07-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1695,23 +1695,23 @@ Reasoning</label><div class="sd-tab-content docutils">
 <li><a class="reference internal" href="#id8">调用 Chat Model</a></li>
 <li><a class="reference internal" href="#id9">生成结构化输出</a><ul>
 <li><a class="reference internal" href="#id10">结构化输出路径选择</a></li>
-<li><a class="reference internal" href="#provider">各 Provider 默认行为</a></li>
-<li><a class="reference internal" href="#id11">显式配置</a></li>
-<li><a class="reference internal" href="#id12">结构化输出与工具调用共存</a></li>
+<li><a class="reference internal" href="#id11">各模型提供商默认行为</a></li>
+<li><a class="reference internal" href="#id12">显式配置</a></li>
+<li><a class="reference internal" href="#id13">结构化输出与工具调用共存</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#formatter">Formatter</a></li>
-<li><a class="reference internal" href="#id13">自定义 Provider</a><ul>
+<li><a class="reference internal" href="#id14">自定义模型提供商</a><ul>
 <li><a class="reference internal" href="#credential">步骤 1：定义 Credential</a></li>
-<li><a class="reference internal" href="#id14">步骤 2：实现 Chat Model</a></li>
+<li><a class="reference internal" href="#id15">步骤 2：实现 Chat Model</a></li>
 <li><a class="reference internal" href="#modelregistry">步骤 3：注册到 ModelRegistry（可选）</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id15">前端集成</a><ul>
+<li><a class="reference internal" href="#id16">前端集成</a><ul>
 <li><a class="reference internal" href="#modelcard">什么是 ModelCard</a></li>
-<li><a class="reference internal" href="#id16">获取 ModelCard</a></li>
+<li><a class="reference internal" href="#id17">获取 ModelCard</a></li>
 </ul>
 </li>
 </ul>
