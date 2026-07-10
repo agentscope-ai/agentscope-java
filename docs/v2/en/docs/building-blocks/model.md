@@ -63,7 +63,7 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 
 ### String model id
 
-For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus` or `openai:gpt-4.1-mini`. Add the matching model extension module, set the provider's `API_KEY` in the environment variable, and pass the id directly to the agent:
+For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus` or `openai:gpt-4.1-mini`. Add the matching model extension module, set the provider's standard environment variable such as `DASHSCOPE_API_KEY` or `OPENAI_API_KEY`, and pass the id directly to the agent:
 
 ```java
 ReActAgent agent =
@@ -118,7 +118,7 @@ agentscope:
 
 `ModelRegistry` is a global registry for model instance creation and lookup, supporting multiple resolution strategies. During resolution, it tries in priority order: named model instances directly registered via `ModelRegistry.register(name, model)`, custom factories registered via `registerFactory(regex, factory)`, and `ModelProvider` implementations automatically discovered from extension modules through the Java SPI mechanism.
 
-For simple scenarios, prefer a string id in the `provider:model` format together with the `API_KEY` environment variable; for fine-grained control, use explicit model builders and `ModelCreationContext` for configuration.
+For simple scenarios, prefer a string id in the `provider:model` format together with the provider's standard environment variable; for fine-grained control, use explicit model builders. `ModelCreationContext` is mainly for integration-layer code that must resolve models dynamically.
 
 ### Advanced integration context
 
