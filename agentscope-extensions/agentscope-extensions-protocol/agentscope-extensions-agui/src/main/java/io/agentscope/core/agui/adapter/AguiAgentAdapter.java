@@ -108,6 +108,21 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
+        return run(input, null);
+    }
+
+    /**
+     * Run the agent with AG-UI protocol input and a custom runtime context.
+     *
+     * <p>If {@code runtimeContext} is {@code null}, a default context is built from the
+     * input via {@link #buildRuntimeContext(RunAgentInput)}. Otherwise the supplied
+     * context is passed directly to the agent.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext The runtime context to use, or {@code null} to use the default
+     * @return A Flux of AG-UI events
+     */
+    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
         return Flux.defer(
                 () -> {
                     String threadId = input.getThreadId();
@@ -125,12 +140,13 @@ public class AguiAgentAdapter {
 
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
-                    RuntimeContext runtimeContext = buildRuntimeContext(input);
+                    RuntimeContext effectiveRuntimeContext =
+                            runtimeContext != null ? runtimeContext : buildRuntimeContext(input);
                     ToolInjection toolInjection = ToolInjection.empty();
                     Flux<Event> agentEvents;
                     try {
                         toolInjection = injectFrontendTools(input);
-                        agentEvents = agent.stream(msgs, options, runtimeContext);
+                        agentEvents = agent.stream(msgs, options, effectiveRuntimeContext);
                         if (agentEvents == null) {
                             agentEvents = agent.stream(msgs, options);
                         }
@@ -159,7 +175,17 @@ public class AguiAgentAdapter {
                 });
     }
 
-    private RuntimeContext buildRuntimeContext(RunAgentInput input) {
+    /**
+     * Build the default runtime context for an AG-UI run.
+     *
+     * <p>Subclasses may override this method to customize the context that is passed to
+     * the agent when no explicit context is supplied to {@link #run(RunAgentInput,
+     * RuntimeContext)}.
+     *
+     * @param input The AG-UI run input
+     * @return The runtime context for the agent run
+     */
+    protected RuntimeContext buildRuntimeContext(RunAgentInput input) {
         return RuntimeContext.builder()
                 .sessionId(input.getThreadId())
                 .put(RunAgentInput.class, input)

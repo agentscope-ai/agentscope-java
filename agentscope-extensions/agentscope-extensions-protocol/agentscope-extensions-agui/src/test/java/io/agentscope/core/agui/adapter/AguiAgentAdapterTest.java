@@ -103,6 +103,78 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testRunWithCustomRuntimeContext() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RuntimeContext customContext = RuntimeContext.builder().sessionId("custom-session").build();
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        adapter.run(input, customContext).collectList().block();
+
+        RuntimeContext captured = contextCaptor.getValue();
+        assertSame(customContext, captured);
+        assertEquals("custom-session", captured.getSessionId());
+    }
+
+    @Test
+    void testRunWithNullRuntimeContextFallsBackToBuiltContext() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-null-ctx")
+                        .runId("run-null-ctx")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        adapter.run(input, null).collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("thread-null-ctx", context.getSessionId());
+        assertSame(input, context.get(RunAgentInput.class));
+    }
+
+    @Test
+    void testBuildRuntimeContextCanBeOverriddenBySubclass() {
+        RuntimeContext customContext =
+                RuntimeContext.builder().sessionId("subclass-session").build();
+        AguiAgentAdapter subclassAdapter =
+                new AguiAgentAdapter(mockAgent, AguiAdapterConfig.defaultConfig()) {
+                    @Override
+                    protected RuntimeContext buildRuntimeContext(RunAgentInput input) {
+                        return customContext;
+                    }
+                };
+
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        subclassAdapter.run(input).collectList().block();
+
+        assertSame(customContext, contextCaptor.getValue());
+    }
+
+    @Test
     void testRunRegistersFrontendToolsForRunAndCleansUp() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
