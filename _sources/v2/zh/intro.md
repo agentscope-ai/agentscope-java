@@ -13,7 +13,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">构建<span class="hs-hero__accent">分布式、企业级</span>智能体！</h1>
-    <p class="hs-hero__desc">AgentScope Java 是面向 JVM 的开源 Agent 框架。提供 ReAct 推理、Harness 工程化基础设施、多智能体编排与 MCP/A2A 协议支持，覆盖从本地原型到企业级分布式部署全链路。</p>
+    <p class="hs-hero__desc">AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框架，提供与模型能力相匹配的核心 Harness 抽象，可支持长期、稳定、安全可控的智能体任务执行。</p>
     <div class="hs-hero__actions">
       <a href="docs/quickstart.html" class="hs-btn hs-btn--primary">快速开始 →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
