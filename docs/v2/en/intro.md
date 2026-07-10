@@ -13,7 +13,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">Build <span class="hs-hero__accent">distributed, enterprise-grade</span> agents.</h1>
-    <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A protocol support — from local prototype to enterprise-scale deployment.</p>
+    <p class="hs-hero__desc">AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.</p>
     <div class="hs-hero__actions">
       <a href="docs/quickstart.html" class="hs-btn hs-btn--primary">Get started →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
