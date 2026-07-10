@@ -2349,6 +2349,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // collected.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
+                                    if (rs.getGenerateReason()
+                                            == GenerateReason.PERMISSION_ASKING) {
+                                        Msg lastAssistant = findLastAssistantMsg();
+                                        if (lastAssistant != null) {
+                                            return Mono.just(
+                                                    lastAssistant.withGenerateReason(
+                                                            GenerateReason.PERMISSION_ASKING));
+                                        }
+                                    }
                                     Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
                                     return Mono.just(stopMsg);
                                 }
