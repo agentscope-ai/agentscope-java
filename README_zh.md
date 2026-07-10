@@ -97,15 +97,19 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 </dependency>
 ```
 
-只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 沙箱），单独依赖 `agentscope-core` 即可。
+2.0 中模型提供商已拆分为独立扩展模块，需额外引入所需的模型依赖。例如使用 DashScope：
 
-#### 从源码构建
-
-```bash
-git clone -b main https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-mvn clean install -DskipTests
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>2.0.0</version>
+</dependency>
 ```
+
+其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
+
+只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 沙箱），单独依赖 `agentscope-core` 即可。
 
 ## Hello AgentScope!
 
@@ -127,7 +131,7 @@ public class FirstAgent {
                 // 示例："openai:gpt-4.1"、"openai:o3"、
                 // "deepseek:deepseek-chat"、"dashscope:qwen-plus"、
                 // "anthropic:claude-sonnet-4-5"、"ollama:llama3"
-                .model("openai:gpt-4.1")
+                .model("dashscope:qwen-plus")
                 // 也可以直接传入 ChatModel 对象：
                 // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
                 .workspace(Paths.get(".agentscope/workspace"))

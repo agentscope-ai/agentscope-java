@@ -53,18 +53,14 @@
 
 ## What is AgentScope Java 2.0?
 
-AgentScope Java 2.0 is a production-ready agent framework for the JVM, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
+AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
 
 - [**Event System** →](https://java.agentscope.io/en/docs/building-blocks/message-and-event.html) A unified event stream with 28 typed events for real-time frontend rendering and human-in-the-loop.
-- [**Permission System** →](https://java.agentscope.io/en/docs/building-blocks/permission-system.html) Three-state tool-call gating: allow / require user approval / deny.
-- [**Middleware** →](https://java.agentscope.io/en/docs/building-blocks/middleware.html) Five-stage onion + pipeline hooks to customize the reasoning-acting loop.
-- [**Workspace & Sandbox** →](https://java.agentscope.io/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or E2B cloud sandbox.
-- [**Multi-Agent Orchestration** →](https://java.agentscope.io/en/docs/harness/subagent.html) Declarative subagent specs with `agent_spawn` / `agent_send` and real-time event forwarding.
-- [**Distributed Deployment** →](https://java.agentscope.io/en/docs/others/going-to-production.html) One-line `DistributedBackend` setup (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
-
-We design for increasingly agentic LLMs.
-Our approach leverages the models' reasoning and tool use abilities
-rather than constraining them with strict prompts and opinionated orchestrations.
+- [**Permission System** →](https://java.agentscope.io/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
+- [**Middleware** →](https://java.agentscope.io/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
+- [**Workspace & Sandbox** →](https://java.agentscope.io/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
+- [**Multi-Agent Orchestration** →](https://java.agentscope.io/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
+- [**Distributed Deployment** →](https://java.agentscope.io/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
 
 ## News
 <!-- BEGIN NEWS -->
@@ -101,15 +97,19 @@ Welcome to join our community on
 </dependency>
 ```
 
-If you only need a bare `ReActAgent` without workspace / persistence / sandbox, depend on `agentscope-core` alone.
+Model providers are shipped as separate extension modules in 2.0. Add the one you need — for example, DashScope:
 
-#### From source
-
-```bash
-git clone -b main https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-mvn clean install -DskipTests
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>2.0.0</version>
+</dependency>
 ```
+
+Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/en/docs/building-blocks/model.html) for details.
+
+If you only need a bare `ReActAgent` without workspace / persistence / sandbox, depend on `agentscope-core` alone.
 
 ## Hello AgentScope!
 
@@ -130,8 +130,8 @@ public class FirstAgent {
                 // API-key env var (e.g. OPENAI_API_KEY) automatically.
                 // Examples: "openai:gpt-4.1", "openai:o3",
                 // "deepseek:deepseek-chat", "dashscope:qwen-plus",
-                // "anthropic:claude-sonnet-4-5", "ollama:llama3"
-                .model("openai:gpt-4.1")
+                // "anthropic:claude-sonnet-4-7", "ollama:llama3"
+                .model("dashscope:qwen-plus")
                 // Or pass a ChatModel object directly:
                 // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
                 .workspace(Paths.get(".agentscope/workspace"))
