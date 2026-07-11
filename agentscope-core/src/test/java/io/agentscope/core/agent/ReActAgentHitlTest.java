@@ -180,6 +180,16 @@ class ReActAgentHitlTest {
         return ReActAgent.builder().name("asst").model(model).toolkit(toolkit).build();
     }
 
+    private static ReActAgent buildAgentWithPendingToolRecovery(
+            ChatModelBase model, Toolkit toolkit) {
+        return ReActAgent.builder()
+                .name("asst")
+                .model(model)
+                .toolkit(toolkit)
+                .enablePendingToolRecovery(true)
+                .build();
+    }
+
     private static int indexOf(List<AgentEvent> events, Class<?> type) {
         for (int i = 0; i < events.size(); i++) {
             if (type.isInstance(events.get(i))) {
@@ -318,6 +328,80 @@ class ReActAgentHitlTest {
                                         "tc1".equals(tr.getId())
                                                 && tr.getState() == ToolResultState.DENIED);
         assertTrue(foundDenied, "expected a DENIED ToolResultBlock for the rejected tool");
+    }
+
+    @Test
+    void pendingToolRecoveryDoesNotConsumeConfirmedAskingTool() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                buildAgentWithPendingToolRecovery(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        ToolUseBlock asking = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        agent.call(List.of(confirmMsg(true, asking))).block();
+
+        boolean foundExecutedResult =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .flatMap(tr -> tr.getOutput().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(text -> "executed:ping".equals(text.getText()));
+        assertTrue(foundExecutedResult, "confirmed ASKING tool should execute normally");
+    }
+
+    @Test
+    void pendingToolRecoveryDoesNotConsumeDeniedAskingTool() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                buildAgentWithPendingToolRecovery(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        ToolUseBlock asking = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        agent.call(List.of(confirmMsg(false, asking))).block();
+
+        boolean foundDenied =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(
+                                tr ->
+                                        "tc1".equals(tr.getId())
+                                                && tr.getState() == ToolResultState.DENIED);
+        assertTrue(foundDenied, "denied ASKING tool should produce a DENIED result");
+    }
+
+    @Test
+    void pendingToolRecoveryDoesNotSilentlySkipAskingToolForRegularPrompt() {
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ask", "ping"))));
+        ReActAgent agent =
+                buildAgentWithPendingToolRecovery(model, toolkitWith(new AskingTool("ask")));
+
+        agent.call(List.of()).block();
+
+        assertThrows(
+                Throwable.class,
+                () ->
+                        agent.call(
+                                        List.of(
+                                                Msg.builder()
+                                                        .name("user")
+                                                        .role(MsgRole.USER)
+                                                        .textContent("new prompt")
+                                                        .build()))
+                                .block(),
+                "regular input must not bypass an ASKING tool call");
     }
 
     @Test
