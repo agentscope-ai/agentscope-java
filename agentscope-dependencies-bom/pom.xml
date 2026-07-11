@@ -87,7 +87,7 @@
         <elasticsearch.version>9.3.3</elasticsearch.version>
         <postgresql.version>42.7.11</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
-        <pdfbox.version>3.0.7</pdfbox.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <tika.version>3.3.0</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
