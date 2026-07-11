@@ -314,4 +314,53 @@ class OpenAITextEmbeddingEmbedTest {
                     .verify();
         }
     }
+
+    @Test
+    @DisplayName("Should successfully embed without dimensions parameter (open-source models)")
+    void testEmbedWithoutDimensions() {
+        // Create model without setting dimensions - simulates open-source model usage
+        OpenAITextEmbedding modelWithoutDimensions =
+                OpenAITextEmbedding.builder()
+                        .apiKey("mock_api_key")
+                        .modelName("BAAI/bge-large-zh-v1.5")
+                        .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
+                        .build();
+
+        // Prepare mock response
+        Embedding mockEmbedding = mock(Embedding.class);
+        when(mockEmbedding.embedding()).thenReturn(Arrays.asList(0.5f, 0.6f, 0.7f, 0.8f));
+
+        CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
+        when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
+
+        try (MockedStatic<OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(OpenAIOkHttpClient.class)) {
+
+            OpenAIOkHttpClient.Builder mockBuilder = mock(OpenAIOkHttpClient.Builder.class);
+            OpenAIClient mockOpenAIClient = mock(OpenAIClient.class);
+            EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
+
+            when(mockBuilder.build()).thenReturn(mockOpenAIClient);
+            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
+
+            mockedClient.when(OpenAIOkHttpClient::builder).thenReturn(mockBuilder);
+
+            when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
+            when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
+
+            TextBlock textBlock = TextBlock.builder().text("Test open-source model").build();
+
+            StepVerifier.create(modelWithoutDimensions.embed(textBlock))
+                    .assertNext(
+                            embedding -> {
+                                assertNotNull(embedding);
+                                assertEquals(4, embedding.length);
+                                assertEquals(0.5, embedding[0], 0.001);
+                                assertEquals(0.8, embedding[3], 0.001);
+                            })
+                    .verifyComplete();
+        }
+    }
 }

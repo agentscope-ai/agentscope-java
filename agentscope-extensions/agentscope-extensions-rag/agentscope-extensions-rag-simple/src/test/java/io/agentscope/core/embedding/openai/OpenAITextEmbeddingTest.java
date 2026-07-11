@@ -178,6 +178,34 @@ class OpenAITextEmbeddingTest {
     }
 
     @Test
+    @DisplayName("Should build successfully without dimensions for open-source models")
+    void testBuilderWithoutDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName("BAAI/bge-large-zh-v1.5")
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("BAAI/bge-large-zh-v1.5", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should return default dimensions (1024) when not explicitly set")
+    void testGetDimensionsReturnsDefaultWhenNotSet() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertEquals(
+                1024,
+                model.getDimensions(),
+                "getDimensions() should return default 1024 per EmbeddingModel interface");
+    }
+
+    @Test
     @DisplayName("Should apply timeout configuration")
     void testTimeoutConfiguration() {
         ExecutionConfig executionConfig =
@@ -259,5 +287,41 @@ class OpenAITextEmbeddingTest {
                                 .modelName(TEST_MODEL_NAME)
                                 .dimensions(-1)
                                 .build());
+
+        // Building without calling dimensions() should NOT throw
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should throw exception when constructed directly with non-positive dimensions")
+    void testDirectConstructorRejectsNonPositiveDimensions() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new OpenAITextEmbedding(
+                                TEST_API_KEY, TEST_MODEL_NAME, Integer.valueOf(0), null, null));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new OpenAITextEmbedding(
+                                TEST_API_KEY, TEST_MODEL_NAME, Integer.valueOf(-1), null, null));
+    }
+
+    @Test
+    @DisplayName(
+            "Should support the deprecated int-dimensions constructor for binary compatibility")
+    void testDeprecatedIntConstructor() {
+        OpenAITextEmbedding model =
+                new OpenAITextEmbedding(TEST_API_KEY, TEST_MODEL_NAME, TEST_DIMENSIONS, null, null);
+
+        assertNotNull(model);
+        assertEquals(TEST_MODEL_NAME, model.getModelName());
+        assertEquals(TEST_DIMENSIONS, model.getDimensions());
     }
 }

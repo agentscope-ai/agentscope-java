@@ -47,15 +47,21 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAITextEmbedding.class);
 
+    /** Default dimension when not explicitly configured, per EmbeddingModel interface contract. */
+    private static final int DEFAULT_DIMENSIONS = 1024;
+
     private final String apiKey;
     private final String modelName;
-    private final int dimensions;
+    private final Integer dimensions;
     private final ExecutionConfig defaultExecutionConfig;
 
     private final String baseUrl;
 
     /**
      * Creates a new OpenAI text embedding model instance.
+     *
+     * <p>This constructor is kept for binary compatibility with existing compiled code.
+     * It delegates to {@link #OpenAITextEmbedding(String, String, Integer, ExecutionConfig, String)}.
      *
      * @param apiKey the API key for OpenAI authentication
      * @param modelName the model name (e.g., "text-embedding-3-small")
@@ -69,6 +75,32 @@ public class OpenAITextEmbedding implements EmbeddingModel {
             int dimensions,
             ExecutionConfig defaultExecutionConfig,
             String baseUrl) {
+        this(apiKey, modelName, Integer.valueOf(dimensions), defaultExecutionConfig, baseUrl);
+    }
+
+    /**
+     * Creates a new OpenAI text embedding model instance with optional dimensions.
+     *
+     * <p>When {@code dimensions} is null, the dimensions parameter will not be sent
+     * to the API, allowing open-source models that don't support matryoshka
+     * representation (e.g., BAAI/bge-large-zh-v1.5) to work correctly.
+     *
+     * @param apiKey the API key for OpenAI authentication
+     * @param modelName the model name (e.g., "text-embedding-3-small")
+     * @param dimensions the dimension of embedding vectors (null to omit from API request)
+     * @param defaultExecutionConfig default execution configuration for timeout and retry
+     * @param baseUrl custom base URL for OpenAI API (null for default)
+     * @throws IllegalArgumentException if dimensions is non-null and not positive
+     */
+    public OpenAITextEmbedding(
+            String apiKey,
+            String modelName,
+            Integer dimensions,
+            ExecutionConfig defaultExecutionConfig,
+            String baseUrl) {
+        if (dimensions != null && dimensions <= 0) {
+            throw new IllegalArgumentException("dimensions must be positive, got: " + dimensions);
+        }
         this.apiKey = apiKey;
         this.modelName = modelName;
         this.dimensions = dimensions;
@@ -132,15 +164,19 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
                                         OpenAIClient client = clientBuilder.build();
 
-                                        EmbeddingCreateParams createParams =
+                                        EmbeddingCreateParams.Builder paramsBuilder =
                                                 EmbeddingCreateParams.builder()
                                                         .model(modelName)
-                                                        .dimensions(dimensions)
                                                         .encodingFormat(
                                                                 EmbeddingCreateParams.EncodingFormat
                                                                         .FLOAT)
-                                                        .inputOfArrayOfStrings(List.of(text))
-                                                        .build();
+                                                        .inputOfArrayOfStrings(List.of(text));
+
+                                        if (dimensions != null) {
+                                            paramsBuilder.dimensions(dimensions);
+                                        }
+
+                                        EmbeddingCreateParams createParams = paramsBuilder.build();
 
                                         log.debug(
                                                 "OpenAI embedding call: model={},"
@@ -181,8 +217,9 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                 EmbeddingUtils.convertFloatListToDoubleArray(
                                                         embeddingValues);
 
-                                        // Validate dimension
-                                        if (embeddingArray.length != dimensions) {
+                                        // Validate dimension only when explicitly configured
+                                        if (dimensions != null
+                                                && embeddingArray.length != dimensions) {
                                             log.warn(
                                                     "Embedding dimension mismatch: expected={},"
                                                             + " actual={}",
@@ -225,7 +262,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     @Override
     public int getDimensions() {
-        return dimensions;
+        return dimensions != null ? dimensions : DEFAULT_DIMENSIONS;
     }
 
     /**
@@ -234,7 +271,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private int dimensions = 1536;
+        private Integer dimensions;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 
@@ -261,7 +298,15 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         }
 
         /**
-         * Sets the dimension of embedding vectors.
+         * Sets the dimension of embedding vectors. This parameter is optional.
+         *
+         * <p>When set, the dimensions parameter will be included in the API request.
+         * This is only supported by OpenAI official embedding models (e.g.,
+         * text-embedding-3-small, text-embedding-3-large) that support matryoshka
+         * representation.
+         *
+         * <p>For open-source models (e.g., BAAI/bge-large-zh-v1.5), do NOT set this
+         * parameter as those models do not support it and will return a 400 error.
          *
          * @param dimensions the dimension
          * @return this builder instance
@@ -311,7 +356,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                 throw new IllegalStateException(
                         "modelName is required and cannot be null or empty");
             }
-            if (dimensions <= 0) {
+            if (dimensions != null && dimensions <= 0) {
                 throw new IllegalStateException("dimensions must be positive, got: " + dimensions);
             }
 
