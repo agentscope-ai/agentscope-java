@@ -210,10 +210,12 @@ class ReActAgentHitlTest {
     }
 
     private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall) {
+        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall, null)));
+    }
+
+    private static Msg confirmMsg(List<ConfirmResult> confirmResults) {
         Map<String, Object> meta = new HashMap<>();
-        meta.put(
-                Msg.METADATA_CONFIRM_RESULTS,
-                List.of(new ConfirmResult(confirmed, toolCall, null)));
+        meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
         return Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
@@ -379,6 +381,103 @@ class ReActAgentHitlTest {
                                         "tc1".equals(tr.getId())
                                                 && tr.getState() == ToolResultState.DENIED);
         assertTrue(foundDenied, "denied ASKING tool should produce a DENIED result");
+    }
+
+    @Test
+    void pendingToolRecoveryPreservesModifiedArgumentsFromConfirmation() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "original")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                buildAgentWithPendingToolRecovery(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        ToolUseBlock asking = first.getContentBlocks(ToolUseBlock.class).get(0);
+        ToolUseBlock modified =
+                ToolUseBlock.builder()
+                        .id(asking.getId())
+                        .name(asking.getName())
+                        .input(Map.of("query", "modified"))
+                        .content(asking.getContent())
+                        .metadata(asking.getMetadata())
+                        .state(asking.getState())
+                        .build();
+
+        agent.call(List.of(confirmMsg(true, modified))).block();
+
+        boolean foundModifiedResult =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .flatMap(tr -> tr.getOutput().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(text -> "executed:modified".equals(text.getText()));
+        assertTrue(foundModifiedResult, "confirmed tool should execute with modified arguments");
+    }
+
+    @Test
+    void pendingToolRecoveryReasksForUnconfirmedAskingTools() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                ChatResponse.builder()
+                                                        .content(
+                                                                List.<ContentBlock>of(
+                                                                        ToolUseBlock.builder()
+                                                                                .id("tc1")
+                                                                                .name("ask")
+                                                                                .input(
+                                                                                        Map.of(
+                                                                                                "query",
+                                                                                                "first"))
+                                                                                .build(),
+                                                                        ToolUseBlock.builder()
+                                                                                .id("tc2")
+                                                                                .name("ask")
+                                                                                .input(
+                                                                                        Map.of(
+                                                                                                "query",
+                                                                                                "second"))
+                                                                                .build()))
+                                                        .build())));
+        ReActAgent agent =
+                buildAgentWithPendingToolRecovery(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        List<ToolUseBlock> asking =
+                first.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .toList();
+        assertEquals(2, asking.size());
+
+        Msg resumed =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true, asking.get(0), null)))))
+                        .block();
+
+        assertEquals(GenerateReason.PERMISSION_ASKING, resumed.getGenerateReason());
+        List<ToolUseBlock> remaining =
+                resumed.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .toList();
+        assertEquals(1, remaining.size());
+        assertEquals("tc2", remaining.get(0).getId());
+
+        long remainingResults =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc2".equals(tr.getId()))
+                        .count();
+        assertEquals(0, remainingResults, "unconfirmed ASKING tool must not be auto-patched");
     }
 
     @Test
