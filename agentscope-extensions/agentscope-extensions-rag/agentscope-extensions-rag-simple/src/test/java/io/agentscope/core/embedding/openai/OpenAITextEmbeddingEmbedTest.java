@@ -363,4 +363,50 @@ class OpenAITextEmbeddingEmbedTest {
                     .verifyComplete();
         }
     }
+
+    @Test
+    @DisplayName("Should not warn when returned embedding length matches configured dimensions")
+    void testEmbedWithMatchingDimensions() {
+        OpenAITextEmbedding modelWithMatchingDimensions =
+                OpenAITextEmbedding.builder()
+                        .apiKey("mock_api_key")
+                        .modelName(TEST_MODEL_NAME)
+                        .dimensions(3)
+                        .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
+                        .build();
+
+        Embedding mockEmbedding = mock(Embedding.class);
+        when(mockEmbedding.embedding()).thenReturn(Arrays.asList(0.1f, 0.2f, 0.3f));
+
+        CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
+        when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
+
+        try (MockedStatic<OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(OpenAIOkHttpClient.class)) {
+
+            OpenAIOkHttpClient.Builder mockBuilder = mock(OpenAIOkHttpClient.Builder.class);
+            OpenAIClient mockOpenAIClient = mock(OpenAIClient.class);
+            EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
+
+            when(mockBuilder.build()).thenReturn(mockOpenAIClient);
+            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
+
+            mockedClient.when(OpenAIOkHttpClient::builder).thenReturn(mockBuilder);
+
+            when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
+            when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
+
+            TextBlock textBlock = TextBlock.builder().text("Matching dimensions").build();
+
+            StepVerifier.create(modelWithMatchingDimensions.embed(textBlock))
+                    .assertNext(
+                            embedding -> {
+                                assertNotNull(embedding);
+                                assertEquals(3, embedding.length);
+                            })
+                    .verifyComplete();
+        }
+    }
 }
