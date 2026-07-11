@@ -1501,9 +1501,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 msgs = List.of();
             }
 
+            List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
+            boolean hasConfirmResultInput =
+                    msgs != null
+                            && msgs.stream()
+                                    .anyMatch(
+                                            msg ->
+                                                    msg.getMetadata()
+                                                            .containsKey(
+                                                                    Msg.METADATA_CONFIRM_RESULTS));
+
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
-            // error results so the agent can continue instead of crashing.
-            if (enablePendingToolRecovery) {
+            // error results so the agent can continue instead of crashing. Confirmation input
+            // must be handled by the permission HITL flow below instead of recovery.
+            if (enablePendingToolRecovery && !hasConfirmResultInput) {
                 maybePatchPendingToolCalls(msgs);
             }
 
@@ -1519,7 +1530,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
                 if (confirmResults.isEmpty()) {
                     String pendingSummary =
                             asking.stream()
@@ -1702,10 +1712,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (userProvidedResults) {
                 return;
             }
-            log.warn(
-                    "Pending tool calls detected without results, auto-generating error results."
-                            + " Pending IDs: {}",
-                    pendingIds);
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null) {
                 return;
@@ -1713,7 +1719,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> pendingToolCalls =
                     lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
                             .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                            .filter(toolUse -> toolUse.getState() != ToolCallState.ASKING)
                             .toList();
+            if (pendingToolCalls.isEmpty()) {
+                return;
+            }
+            log.warn(
+                    "Pending tool calls detected without results, auto-generating error results."
+                            + " Pending IDs: {}",
+                    pendingToolCalls.stream().map(ToolUseBlock::getId).toList());
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
                         buildErrorToolResult(
