@@ -81,7 +81,7 @@
         <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <qdrant.version>1.17.0</qdrant.version>
+        <qdrant.version>1.18.3</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
         <httpclient5.version>5.6.1</httpclient5.version>
         <elasticsearch.version>9.3.3</elasticsearch.version>
