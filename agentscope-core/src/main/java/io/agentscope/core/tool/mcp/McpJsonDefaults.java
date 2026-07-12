@@ -61,6 +61,10 @@ final class McpJsonDefaults {
         if (classLoader == null) {
             return Optional.empty();
         }
-        return ServiceLoader.load(serviceType, classLoader).findFirst();
+        try {
+            return ServiceLoader.load(serviceType, classLoader).findFirst();
+        } catch (java.util.ServiceConfigurationError | LinkageError e) {
+            return Optional.empty();
+        }
     }
 }
