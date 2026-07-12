@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -82,6 +83,14 @@ public class BuilderSandboxConfig {
     @Value("${builder.sandbox.memory-bytes:0}")
     private long memoryBytes;
 
+    /**
+     * Creates the default Docker-backed sandbox filesystem specification.
+     *
+     * <p>Applications can provide their own {@link SandboxFilesystemSpec} bean to override this
+     * default implementation.
+     *
+     * @return the sandbox filesystem specification used when sandbox mode is enabled
+     */
     @Bean
     @ConditionalOnMissingBean(SandboxFilesystemSpec.class)
     public SandboxFilesystemSpec sandboxFilesystemSpec() {
@@ -119,7 +128,7 @@ public class BuilderSandboxConfig {
     private static IsolationScope parseScope(String raw) {
         if (raw == null || raw.isBlank()) return IsolationScope.SESSION;
         try {
-            return IsolationScope.valueOf(raw.trim().toUpperCase());
+            return IsolationScope.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "Unknown builder.sandbox.isolation value '"
