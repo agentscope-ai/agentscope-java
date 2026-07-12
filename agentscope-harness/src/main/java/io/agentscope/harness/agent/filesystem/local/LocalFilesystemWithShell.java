@@ -21,14 +21,25 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -332,32 +343,47 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             }
 
             Process proc = pb.start();
-
-            boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
-
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
-            if (!finished) {
-                proc.destroyForcibly();
-                String msg;
-                if (timeoutSeconds != null) {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds (custom timeout). The command may be stuck or"
-                                    + " require more time.";
-                } else {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds. For long-running commands, re-run using the"
-                                    + " timeout parameter.";
+            ExecutorService drainers =
+                    Executors.newFixedThreadPool(
+                            2,
+                            runnable -> {
+                                Thread thread = new Thread(runnable, "local-shell-output-drainer");
+                                thread.setDaemon(true);
+                                return thread;
+                            });
+            Future<CapturedOutput> stdoutFuture =
+                    drainers.submit(() -> drain(proc.getInputStream(), maxOutputBytes));
+            Future<CapturedOutput> stderrFuture =
+                    drainers.submit(() -> drain(proc.getErrorStream(), maxOutputBytes));
+            long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(effectiveTimeout);
+            Set<ProcessHandle> descendants = new HashSet<>();
+            CapturedOutput stdoutCapture;
+            CapturedOutput stderrCapture;
+            try {
+                boolean finished = waitForProcess(proc, deadlineNanos, descendants);
+                if (!finished) {
+                    terminateProcessTree(proc, descendants);
+                    closeProcessStreams(proc);
+                    return timeoutResponse(effectiveTimeout, timeoutSeconds != null);
                 }
-                return new ExecuteResponse(msg, 124, false);
+                try {
+                    stdoutCapture = awaitCapture(stdoutFuture, deadlineNanos);
+                    stderrCapture = awaitCapture(stderrFuture, deadlineNanos);
+                } catch (TimeoutException e) {
+                    terminateProcessTree(proc, descendants);
+                    closeProcessStreams(proc);
+                    return timeoutResponse(effectiveTimeout, timeoutSeconds != null);
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                terminateProcessTree(proc, descendants);
+                closeProcessStreams(proc);
+                throw e;
+            } finally {
+                drainers.shutdownNow();
             }
+
+            String stdout = stdoutCapture.text();
+            String stderr = stderrCapture.text();
 
             StringBuilder output = new StringBuilder();
             if (stdout != null && !stdout.isEmpty()) {
@@ -375,13 +401,12 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             String outputStr = output.isEmpty() ? "<no output>" : output.toString();
 
-            boolean truncated = false;
-            if (outputStr.length() > maxOutputBytes) {
-                outputStr =
-                        outputStr.substring(0, maxOutputBytes)
-                                + "\n\n... Output truncated at "
-                                + maxOutputBytes
-                                + " bytes.";
+            boolean truncated = stdoutCapture.truncated() || stderrCapture.truncated();
+            if (truncated || outputStr.length() > maxOutputBytes) {
+                if (outputStr.length() > maxOutputBytes) {
+                    outputStr = outputStr.substring(0, maxOutputBytes);
+                }
+                outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
                 truncated = true;
             }
 
@@ -392,7 +417,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             return new ExecuteResponse(outputStr, exitCode, truncated);
 
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | ExecutionException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -406,6 +431,106 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                     false);
         }
     }
+
+    private static CapturedOutput drain(InputStream stream, int maxBytes) throws IOException {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
+        byte[] buffer = new byte[8192];
+        boolean truncated = false;
+        int read;
+        while ((read = stream.read(buffer)) != -1) {
+            int remaining = maxBytes - captured.size();
+            if (remaining > 0) {
+                captured.write(buffer, 0, Math.min(remaining, read));
+            }
+            if (read > remaining) {
+                truncated = true;
+            }
+        }
+        return new CapturedOutput(captured.toString(StandardCharsets.UTF_8), truncated);
+    }
+
+    private static boolean waitForProcess(
+            Process process, long deadlineNanos, Set<ProcessHandle> descendants)
+            throws InterruptedException {
+        while (true) {
+            process.toHandle().descendants().forEach(descendants::add);
+            if (!process.isAlive()) {
+                return true;
+            }
+            long remaining = deadlineNanos - System.nanoTime();
+            if (remaining <= 0) {
+                return false;
+            }
+            if (process.waitFor(
+                    Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(50)), TimeUnit.NANOSECONDS)) {
+                process.toHandle().descendants().forEach(descendants::add);
+                return true;
+            }
+        }
+    }
+
+    private static CapturedOutput awaitCapture(Future<CapturedOutput> future, long deadlineNanos)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        long remaining = deadlineNanos - System.nanoTime();
+        if (remaining <= 0) {
+            throw new TimeoutException("shell output drain exceeded command deadline");
+        }
+        return future.get(remaining, TimeUnit.NANOSECONDS);
+    }
+
+    private static void terminateProcessTree(
+            Process process, Set<ProcessHandle> observedDescendants) {
+        List<ProcessHandle> handles = new ArrayList<>(observedDescendants);
+        process.toHandle().descendants().forEach(handles::add);
+        handles.stream()
+                .distinct()
+                .sorted(Comparator.comparingLong(ProcessHandle::pid).reversed())
+                .filter(ProcessHandle::isAlive)
+                .forEach(ProcessHandle::destroy);
+        if (process.isAlive()) {
+            process.destroy();
+        }
+        try {
+            process.waitFor(250, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        handles.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
+        if (process.isAlive()) {
+            process.destroyForcibly();
+        }
+    }
+
+    private static void closeProcessStreams(Process process) {
+        try {
+            process.getInputStream().close();
+        } catch (IOException ignored) {
+            // Best effort during timeout cleanup.
+        }
+        try {
+            process.getErrorStream().close();
+        } catch (IOException ignored) {
+            // Best effort during timeout cleanup.
+        }
+        try {
+            process.getOutputStream().close();
+        } catch (IOException ignored) {
+            // Best effort during timeout cleanup.
+        }
+    }
+
+    private static ExecuteResponse timeoutResponse(int timeoutSeconds, boolean customTimeout) {
+        String suffix =
+                customTimeout
+                        ? " seconds (custom timeout). The command may be stuck or require more"
+                                + " time."
+                        : " seconds. For long-running commands, re-run using the timeout"
+                                + " parameter.";
+        return new ExecuteResponse(
+                "Error: Command timed out after " + timeoutSeconds + suffix, 124, false);
+    }
+
+    private record CapturedOutput(String text, boolean truncated) {}
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
         if (shellCwd != null) {
