@@ -1505,11 +1505,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             boolean hasConfirmResultInput =
                     msgs != null
                             && msgs.stream()
+                                    .map(Msg::getMetadata)
+                                    .filter(Objects::nonNull)
                                     .anyMatch(
-                                            msg ->
-                                                    msg.getMetadata()
-                                                            .containsKey(
-                                                                    Msg.METADATA_CONFIRM_RESULTS));
+                                            metadata ->
+                                                    metadata.containsKey(
+                                                            Msg.METADATA_CONFIRM_RESULTS));
 
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
             // error results so the agent can continue instead of crashing. Confirmation input
