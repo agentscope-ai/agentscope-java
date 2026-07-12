@@ -111,7 +111,7 @@ public class BuilderConfig {
     @Value("${builder.workspace:${claw.workspace:}}")
     private String workspaceDir;
 
-    @Value("${builder.workspace-store.fs-spec:" + "${claw.workspace-store.fs-spec:auto}}")
+    @Value("${builder.workspace-store.fs-spec:${claw.workspace-store.fs-spec:auto}}")
     private String workspaceFilesystemMode;
 
     // -----------------------------------------------------------------
