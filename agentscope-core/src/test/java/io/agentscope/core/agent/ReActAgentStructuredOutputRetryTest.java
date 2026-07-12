@@ -213,6 +213,16 @@ class ReActAgentStructuredOutputRetryTest {
                 mockModel.getLastMessages().stream()
                         .anyMatch(ReActAgentStructuredOutputRetryTest::isReminder),
                 "Give-up path should strip reminder messages from the persisted context");
+        assertEquals(
+                1,
+                mockModel.getLastMessages().stream()
+                        .filter(m -> m.getRole() == MsgRole.ASSISTANT)
+                        .filter(
+                                m ->
+                                        "I refuse to call tools and just chat."
+                                                .equals(m.getTextContent()))
+                        .count(),
+                "Give-up path should retain only the final plain-text assistant result");
     }
 
     @Test
