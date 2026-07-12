@@ -1167,13 +1167,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             scope.state
                                                     .contextMutable()
                                                     .removeIf(
-                                                            m ->
-                                                                    m.getMetadata() != null
-                                                                            && Boolean.TRUE.equals(
-                                                                                    m.getMetadata()
-                                                                                            .get(
-                                                                                                    MessageMetadataKeys
-                                                                                                            .STRUCTURED_OUTPUT_REMINDER)));
+                                                            scope
+                                                                    ::isFailedStructuredOutputRetryArtifact);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
@@ -1490,6 +1485,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Reminder retries performed after rounds that ended without a tool call. */
         int soRetryCount;
+
+        /** Assistant responses that triggered a fallback structured-output retry. */
+        final List<Msg> soRetryAttemptMsgs = new ArrayList<>();
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
@@ -2130,6 +2128,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 STRUCTURED_OUTPUT_TOOL_NAME,
                                                 soRetryCount,
                                                 STRUCTURED_OUTPUT_MAX_RETRIES);
+                                        soRetryAttemptMsgs.add(eventMsg);
                                         state.contextMutable()
                                                 .add(createStructuredOutputReminder());
                                         return reasoning(iter + 1, true);
@@ -3444,6 +3443,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
                                     StructuredOutputReminder.TOOL_CHOICE.toString()))
                     .build();
+        }
+
+        private boolean isFailedStructuredOutputRetryArtifact(Msg msg) {
+            Map<String, Object> metadata = msg.getMetadata();
+            boolean isReminder =
+                    metadata != null
+                            && Boolean.TRUE.equals(
+                                    metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
+            boolean isIntermediateAttempt =
+                    soRetryAttemptMsgs.stream().anyMatch(attempt -> attempt == msg);
+            return isReminder || isIntermediateAttempt;
         }
 
         /**
