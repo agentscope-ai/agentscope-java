@@ -100,6 +100,7 @@ class ToolsConfigLoaderTest {
                       "command": "npx",
                       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/srv"],
                       "env": { "LOG_LEVEL": "info" },
+                      "cwd": ".",
                       "enableTools": ["read_file"],
                       "timeout": "PT30S",
                       "initializationTimeout": "PT15S"
@@ -127,6 +128,7 @@ class ToolsConfigLoaderTest {
         assertEquals("npx", fs.getCommand());
         assertEquals(3, fs.getArgs().size());
         assertEquals("info", fs.getEnv().get("LOG_LEVEL"));
+        assertEquals(".", fs.getCwd());
         assertEquals(Duration.ofSeconds(30), fs.getTimeout());
         assertEquals(Duration.ofSeconds(15), fs.getInitializationTimeout());
 

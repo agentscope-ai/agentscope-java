@@ -2297,7 +2297,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
             }
             if (resolvedToolsConfig != null) {
-                McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
+                McpServerRegistrar.register(
+                        agentToolkit, resolvedToolsConfig.getMcpServers(), wsManager);
             }
 
             // ---- Skills ----
