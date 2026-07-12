@@ -318,11 +318,12 @@ class OpenAITextEmbeddingEmbedTest {
     @Test
     @DisplayName("Should successfully embed without dimensions parameter (open-source models)")
     void testEmbedWithoutDimensions() {
-        // Create model without setting dimensions - simulates open-source model usage
+        // Explicitly omit dimensions - simulates open-source model usage
         OpenAITextEmbedding modelWithoutDimensions =
                 OpenAITextEmbedding.builder()
                         .apiKey("mock_api_key")
                         .modelName("BAAI/bge-large-zh-v1.5")
+                        .dimensions(null)
                         .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
                         .build();
 

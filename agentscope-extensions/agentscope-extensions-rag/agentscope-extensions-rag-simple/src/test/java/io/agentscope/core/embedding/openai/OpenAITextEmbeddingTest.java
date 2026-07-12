@@ -178,12 +178,14 @@ class OpenAITextEmbeddingTest {
     }
 
     @Test
-    @DisplayName("Should build successfully without dimensions for open-source models")
+    @DisplayName(
+            "Should build successfully with dimensions explicitly omitted for open-source models")
     void testBuilderWithoutDimensions() {
         OpenAITextEmbedding model =
                 OpenAITextEmbedding.builder()
                         .apiKey(TEST_API_KEY)
                         .modelName("BAAI/bge-large-zh-v1.5")
+                        .dimensions(null)
                         .build();
 
         assertNotNull(model);
@@ -191,12 +193,28 @@ class OpenAITextEmbeddingTest {
     }
 
     @Test
-    @DisplayName("Should return default dimensions (1024) when not explicitly set")
-    void testGetDimensionsReturnsDefaultWhenNotSet() {
+    @DisplayName("Should default dimensions to 1536 when not explicitly set")
+    void testBuilderDefaultsDimensionsTo1536() {
         OpenAITextEmbedding model =
                 OpenAITextEmbedding.builder()
                         .apiKey(TEST_API_KEY)
                         .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertEquals(
+                1536,
+                model.getDimensions(),
+                "Builder should default dimensions to 1536 for backward compatibility");
+    }
+
+    @Test
+    @DisplayName("Should return fallback dimensions (1024) when explicitly set to null")
+    void testGetDimensionsReturnsDefaultWhenExplicitlyNull() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .dimensions(null)
                         .build();
 
         assertEquals(

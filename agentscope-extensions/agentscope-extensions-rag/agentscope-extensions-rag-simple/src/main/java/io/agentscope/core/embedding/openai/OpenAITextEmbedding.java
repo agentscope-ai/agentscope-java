@@ -260,6 +260,17 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         return modelName;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Returns the explicitly configured dimensions, or {@value #DEFAULT_DIMENSIONS} if {@code
+     * dimensions} was never configured (per the {@link EmbeddingModel#getDimensions()} contract,
+     * which documents 1024 as the default when unspecified). This fallback is a placeholder only:
+     * for open-source models where dimensions is intentionally left unset, the true embedding
+     * vector length returned by {@link #embed} may differ from this value. Callers needing the
+     * exact size should inspect the length of the array returned by {@link #embed}, not this
+     * getter.
+     */
     @Override
     public int getDimensions() {
         return dimensions != null ? dimensions : DEFAULT_DIMENSIONS;
@@ -271,7 +282,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private Integer dimensions;
+        private Integer dimensions = 1536;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 
@@ -298,20 +309,21 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         }
 
         /**
-         * Sets the dimension of embedding vectors. This parameter is optional.
+         * Sets the dimension of embedding vectors. Defaults to 1536.
          *
-         * <p>When set, the dimensions parameter will be included in the API request.
-         * This is only supported by OpenAI official embedding models (e.g.,
+         * <p>When set to a positive value, the dimensions parameter will be included in the API
+         * request. This is only supported by OpenAI official embedding models (e.g.,
          * text-embedding-3-small, text-embedding-3-large) that support matryoshka
          * representation.
          *
-         * <p>For open-source models (e.g., BAAI/bge-large-zh-v1.5), do NOT set this
-         * parameter as those models do not support it and will return a 400 error.
+         * <p>For open-source models (e.g., BAAI/bge-large-zh-v1.5) that do not support this
+         * parameter and will return a 400 error if it is sent, pass {@code null} to omit the
+         * parameter from the request entirely.
          *
-         * @param dimensions the dimension
+         * @param dimensions the dimension, or null to omit the parameter from the API request
          * @return this builder instance
          */
-        public Builder dimensions(int dimensions) {
+        public Builder dimensions(Integer dimensions) {
             this.dimensions = dimensions;
             return this;
         }
