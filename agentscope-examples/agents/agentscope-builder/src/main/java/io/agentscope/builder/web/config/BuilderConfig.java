@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
@@ -60,15 +61,12 @@ import org.springframework.context.annotation.Configuration;
  *
  * <h2>Filesystem topology</h2>
  *
- * <p>Builder is a multi-tenant distributed deployable, so every {@link
- * io.agentscope.harness.agent.HarnessAgent} (the global main agent and every user-custom agent)
- * runs with a {@link RemoteFilesystemSpec} composite filesystem: the per-pod
- * {@code LocalFilesystem} only carries shared/read-only template content, while the {@code
- * memory/}, {@code MEMORY.md}, {@code sessions/}, {@code tasks/}, {@code skills/} and {@code
- * subagents/} routes are persisted through a {@link BaseStore}-backed {@code RemoteFilesystem}
- * shared across pods. The {@link BaseStore} bean is therefore <em>required</em> — operators must
- * provide one (e.g. SQLite/JDBC/Redis-backed); a missing bean fails context refresh fast with a
- * clear message.
+ * <p>The {@code builder.workspace-store.fs-spec} property selects the filesystem used by every
+ * {@link io.agentscope.harness.agent.HarnessAgent}: {@code local}, {@code sandbox}, or {@code
+ * remote}. The default {@code auto} mode preserves the topology inferred from the configured
+ * {@link AgentStateStore}: local state stores use {@link LocalFilesystemSpec}, while distributed
+ * stores use a {@link RemoteFilesystemSpec} backed by {@link BaseStore}. Sandbox mode uses the
+ * optional {@link SandboxFilesystemSpec} contributed when {@code builder.sandbox.enabled=true}.
  *
  * <h2>Model wiring (priority order)</h2>
  *
@@ -112,6 +110,9 @@ public class BuilderConfig {
 
     @Value("${builder.workspace:${claw.workspace:}}")
     private String workspaceDir;
+
+    @Value("${builder.workspace-store.fs-spec:" + "${claw.workspace-store.fs-spec:auto}}")
+    private String workspaceFilesystemMode;
 
     // -----------------------------------------------------------------
     //  Model bean — only created when an api-key is set AND no other
@@ -168,21 +169,23 @@ public class BuilderConfig {
      * Assembles the {@link BuilderBootstrap}, loading agent config from {@code agentscope.json} and
      * starting the {@link ChatUiChannel} for per-user isolated sessions.
      *
-     * <p>Every agent built by the bootstrap is wired with a {@link RemoteFilesystemSpec} (per-user
-     * isolation scope) backed by the shared {@link BaseStore}, so memory/sessions/tasks/skills/
-     * subagents files persist across pods.
+     * <p>Every agent built by the bootstrap receives the filesystem selected by {@code
+     * builder.workspace-store.fs-spec}. The default {@code auto} mode uses a local filesystem for
+     * in-process state stores and a remote filesystem for distributed state stores.
      *
      * @param modelOpt the {@link Model} to use, or empty if none is configured
      * @param toolEventBus the shared tool-event bus for real-time SSE streaming of tool calls
-     * @param baseStore the shared {@link BaseStore} that backs every agent's {@code
-     *     RemoteFilesystem} routes; <em>required</em> — operators must provide a bean.
+     * @param baseStore the shared {@link BaseStore} used when remote filesystem mode is selected
+     * @param sessionOpt an optional state store; defaults to {@link InMemoryAgentStateStore}
+     * @param sandboxFilesystemSpecOpt the sandbox filesystem created when sandbox support is enabled
      */
     @Bean
     public BuilderBootstrap builderBootstrap(
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             BaseStore baseStore,
-            Optional<AgentStateStore> sessionOpt)
+            Optional<AgentStateStore> sessionOpt,
+            Optional<SandboxFilesystemSpec> sandboxFilesystemSpecOpt)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -208,32 +211,27 @@ public class BuilderConfig {
                     AgentStateStore.class.getName());
         }
 
-        // RemoteFilesystemSpec requires a distributed AgentStateStore; when the effective store is
-        // local (InMemory/JsonFile), use LocalFilesystemSpec instead so the harness won't reject
-        // the topology at build time.
-        boolean localStore = isLocalStateStore(stateStore);
-        if (localStore) {
-            log.info(
-                    "Effective AgentStateStore is local ({}); using LocalFilesystemSpec.",
-                    stateStore.getClass().getSimpleName());
-        } else {
-            log.info(
-                    "Effective AgentStateStore is distributed ({}); using RemoteFilesystemSpec.",
-                    stateStore.getClass().getSimpleName());
-        }
+        FilesystemMode filesystemMode = resolveFilesystemMode(workspaceFilesystemMode, stateStore);
+        SandboxFilesystemSpec sandboxFilesystemSpec =
+                filesystemMode == FilesystemMode.SANDBOX
+                        ? sandboxFilesystemSpecOpt.orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "builder.workspace-store.fs-spec=sandbox requires "
+                                                        + "builder.sandbox.enabled=true or a "
+                                                        + "SandboxFilesystemSpec bean"))
+                        : null;
+
+        log.info(
+                "Using {} filesystem mode with AgentStateStore {}.",
+                filesystemMode.configValue(),
+                stateStore.getClass().getSimpleName());
 
         builder.configureAllAgents(
                 b -> {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.stateStore(stateStore);
-                    if (localStore) {
-                        b.filesystem(new LocalFilesystemSpec().isolationScope(IsolationScope.USER));
-                    } else {
-                        b.filesystem(
-                                new RemoteFilesystemSpec(baseStore)
-                                        .isolationScope(IsolationScope.USER)
-                                        .addSharedPrefix("activity/"));
-                    }
+                    configureFilesystem(b, filesystemMode, baseStore, sandboxFilesystemSpec);
                 });
 
         BuilderBootstrap bootstrap = builder.build();
@@ -293,6 +291,65 @@ public class BuilderConfig {
      */
     private static boolean isLocalStateStore(AgentStateStore store) {
         return store instanceof InMemoryAgentStateStore || store instanceof JsonFileAgentStateStore;
+    }
+
+    static FilesystemMode resolveFilesystemMode(String configuredMode, AgentStateStore stateStore) {
+        FilesystemMode mode = FilesystemMode.parse(configuredMode);
+        if (mode == FilesystemMode.AUTO) {
+            return isLocalStateStore(stateStore) ? FilesystemMode.LOCAL : FilesystemMode.REMOTE;
+        }
+        if (mode == FilesystemMode.REMOTE && isLocalStateStore(stateStore)) {
+            throw new IllegalStateException(
+                    "builder.workspace-store.fs-spec=remote requires a distributed "
+                            + "AgentStateStore; found "
+                            + stateStore.getClass().getSimpleName());
+        }
+        return mode;
+    }
+
+    static void configureFilesystem(
+            io.agentscope.harness.agent.HarnessAgent.Builder builder,
+            FilesystemMode mode,
+            BaseStore baseStore,
+            SandboxFilesystemSpec sandboxFilesystemSpec) {
+        switch (mode) {
+            case LOCAL ->
+                    builder.filesystem(
+                            new LocalFilesystemSpec().isolationScope(IsolationScope.USER));
+            case SANDBOX -> builder.filesystem(sandboxFilesystemSpec);
+            case REMOTE ->
+                    builder.filesystem(
+                            new RemoteFilesystemSpec(baseStore)
+                                    .isolationScope(IsolationScope.USER)
+                                    .addSharedPrefix("activity/"));
+            case AUTO ->
+                    throw new IllegalStateException(
+                            "AUTO filesystem mode must be resolved before configuring agents");
+        }
+    }
+
+    enum FilesystemMode {
+        AUTO,
+        LOCAL,
+        SANDBOX,
+        REMOTE;
+
+        static FilesystemMode parse(String raw) {
+            String value = raw == null || raw.isBlank() ? "auto" : raw.trim();
+            try {
+                return valueOf(value.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Unknown builder.workspace-store.fs-spec value '"
+                                + raw
+                                + "'. Expected one of auto, local, sandbox, remote.",
+                        e);
+            }
+        }
+
+        String configValue() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
     }
 
     private Path resolveCwd() {

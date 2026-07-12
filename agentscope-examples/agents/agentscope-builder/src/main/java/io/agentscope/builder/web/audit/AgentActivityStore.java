@@ -48,11 +48,11 @@ import org.springframework.stereotype.Service;
  *   activity/activity-{timestampMs}.jsonl # rotated chunks (most recent first by name)
  * </pre>
  *
- * <p>All paths live under the {@code activity/} prefix because the harness composite filesystem
- * (see {@link io.agentscope.builder.web.config.BuilderConfig}) registers {@code activity/} as an
- * additional shared prefix via {@code RemoteFilesystemSpec.addSharedPrefix("activity/")}. Writes
- * therefore land on the shared {@link BaseStore} (visible across
- * pods) rather than on per-pod local disk — critical for a multi-tenant deployment.
+ * <p>All paths live under the {@code activity/} prefix. In remote mode, the harness composite
+ * filesystem (see {@link io.agentscope.builder.web.config.BuilderConfig}) registers that path via
+ * {@code RemoteFilesystemSpec.addSharedPrefix("activity/")}, so writes land on the shared {@link
+ * BaseStore} and remain visible across pods. Local and sandbox modes keep the activity log in their
+ * selected workspace backend.
  *
  * <p>Writes go through the per-agent {@link HarnessAgent#workspaceFor(String, String)} view, which
  * runs in the owner's namespace ({@code IsolationScope.USER}) so the audit trail is keyed to the
