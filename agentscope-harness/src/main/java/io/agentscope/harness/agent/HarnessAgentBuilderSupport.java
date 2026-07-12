@@ -162,7 +162,7 @@ final class HarnessAgentBuilderSupport {
         if (b.localFilesystemSpec != null) {
             return b.localFilesystemSpec.toFilesystem(workspace, nsFactory);
         }
-        // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
+        // Default: route through LocalFilesystemSpec so the default project (= workspace)
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
     }
@@ -474,7 +474,7 @@ final class HarnessAgentBuilderSupport {
         final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         // Snapshot of main agent's Local filesystem configuration. ISOLATED subagents get a
         // fresh spec carrying the same project / additionalRoots / mode so PathPolicy stays in
-        // sync; without this, every isolated subagent would default to project=${user.dir} and
+        // sync; without this, every isolated subagent would default to project=workspace and
         // lose any --add-dir style allow-list configured at the main level.
         final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
