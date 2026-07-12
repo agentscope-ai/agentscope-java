@@ -16,7 +16,11 @@
 package io.agentscope.harness.agent.memory.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -26,6 +30,10 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -200,11 +208,43 @@ class SessionTreeMirrorTest {
                 "local log file must exist immediately after flush()");
     }
 
+    @Test
+    void awaitPendingMirrors_blocksUntilInFlightUploadCompletes() throws Exception {
+        AbstractFilesystem fs = mock(AbstractFilesystem.class);
+        CountDownLatch uploadStarted = new CountDownLatch(1);
+        CountDownLatch releaseUpload = new CountDownLatch(1);
+        doAnswer(
+                        invocation -> {
+                            uploadStarted.countDown();
+                            releaseUpload.await();
+                            return null;
+                        })
+                .when(fs)
+                .uploadFiles(any(), any());
+        Path context = workspace.resolve("agents/agent-a/sessions/blocking.jsonl");
+        SessionTree tree = new SessionTree(context, workspace, fs);
+        tree.append(new SessionEntry.MessageEntry(null, null, null, "USER", "hi", null));
+        tree.flush();
+        assertTrue(uploadStarted.await(5, TimeUnit.SECONDS));
+
+        ExecutorService closer = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> barrier = closer.submit(SessionTree::awaitPendingMirrors);
+            assertFalse(barrier.isDone(), "barrier must wait for the in-flight upload");
+
+            releaseUpload.countDown();
+            barrier.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseUpload.countDown();
+            closer.shutdownNow();
+        }
+    }
+
     // -----------------------------------------------------------------------
     //  Helper
     // -----------------------------------------------------------------------
 
-    private static void awaitMirror() throws InterruptedException {
-        TimeUnit.MILLISECONDS.sleep(300);
+    private static void awaitMirror() {
+        SessionTree.awaitPendingMirrors();
     }
 }
