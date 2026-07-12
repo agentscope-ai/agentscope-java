@@ -3820,8 +3820,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     public void close() {
-        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
-        // additional resources here.
+        toolkit.close();
     }
 
     // ==================== Builder ====================
@@ -4589,51 +4588,54 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         public ReActAgent build() {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
-
-            // Rebind externally-constructed middleware that holds a reference to the
-            // original (pre-copy) toolkit so it uses the agent's actual instance.
-            for (MiddlewareBase mw : middlewares) {
-                if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
-                    aware.rebindToolkit(agentToolkit);
+            try {
+                // Rebind externally-constructed middleware that holds a reference to the
+                // original (pre-copy) toolkit so it uses the agent's actual instance.
+                for (MiddlewareBase mw : middlewares) {
+                    if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
+                        aware.rebindToolkit(agentToolkit);
+                    }
                 }
-            }
 
-            registerToolsFromHooks(agentToolkit);
+                registerToolsFromHooks(agentToolkit);
 
-            if (enableMetaTool) {
-                agentToolkit.registerMetaTool();
-            }
+                if (enableMetaTool) {
+                    agentToolkit.registerMetaTool();
+                }
 
-            // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
-            // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
-            AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
+                // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
+                // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
+                AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
 
-            if (longTermMemory != null) {
-                configureLongTermMemory(agentToolkit, selfRef);
-            }
-            if (!knowledgeBases.isEmpty()) {
-                configureRAG(agentToolkit);
-            }
-            if (taskListEnabled) {
-                configureTodoTools(agentToolkit);
-            }
-            if (skillBox != null) {
-                configureSkillBox(agentToolkit);
-            }
-            if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
-                middlewares.add(
-                        new DynamicSkillMiddleware(
-                                List.copyOf(skillRepositories),
-                                agentToolkit,
-                                skillFilter != null ? skillFilter : SkillFilter.all(),
-                                skillCodeExecutionEnabled,
-                                skillWorkDir));
-            }
+                if (longTermMemory != null) {
+                    configureLongTermMemory(agentToolkit, selfRef);
+                }
+                if (!knowledgeBases.isEmpty()) {
+                    configureRAG(agentToolkit);
+                }
+                if (taskListEnabled) {
+                    configureTodoTools(agentToolkit);
+                }
+                if (skillBox != null) {
+                    configureSkillBox(agentToolkit);
+                }
+                if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
+                    middlewares.add(
+                            new DynamicSkillMiddleware(
+                                    List.copyOf(skillRepositories),
+                                    agentToolkit,
+                                    skillFilter != null ? skillFilter : SkillFilter.all(),
+                                    skillCodeExecutionEnabled,
+                                    skillWorkDir));
+                }
 
-            ReActAgent agent = new ReActAgent(this, agentToolkit);
-            selfRef.set(agent);
-
-            return agent;
+                ReActAgent agent = new ReActAgent(this, agentToolkit);
+                selfRef.set(agent);
+                return agent;
+            } catch (RuntimeException | Error e) {
+                agentToolkit.close();
+                throw e;
+            }
         }
 
         /**

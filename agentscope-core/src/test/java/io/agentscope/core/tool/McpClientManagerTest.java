@@ -19,8 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +37,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -412,5 +416,58 @@ class McpClientManagerTest {
         assertEquals("mcp-group", registeredGroupName[0]);
         assertEquals("test-client", registeredClientName[0]);
         assertEquals(toolPresetParams, registeredPresetParams[0]);
+    }
+
+    @Test
+    void toolkitCopiesShareMcpTransportUntilLastOwnerCloses() {
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("shared-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of()));
+
+        Toolkit source = new Toolkit();
+        source.registerMcpClient(wrapper).block();
+        Toolkit copy = source.copy();
+
+        source.close();
+        verify(wrapper, never()).close();
+        assertEquals(Set.of("shared-client"), copy.getMcpClientNames());
+
+        copy.close();
+        copy.close();
+        verify(wrapper, times(1)).close();
+    }
+
+    @Test
+    void removeMcpClientReleasesOnlyCurrentToolkitOwnership() {
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("removable-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of()));
+
+        Toolkit source = new Toolkit();
+        source.registerMcpClient(wrapper).block();
+        Toolkit copy = source.copy();
+
+        copy.removeMcpClient("removable-client").block();
+        verify(wrapper, never()).close();
+        assertTrue(copy.getMcpClientNames().isEmpty());
+        assertEquals(Set.of("removable-client"), source.getMcpClientNames());
+
+        source.close();
+        verify(wrapper, times(1)).close();
+    }
+
+    @Test
+    void failedRegistrationClosesTransportAndLeavesNoOwnership() {
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("failed-client");
+        when(wrapper.initialize()).thenReturn(Mono.error(new IllegalStateException("boom")));
+
+        Toolkit toolkit = new Toolkit();
+        assertThrows(IllegalStateException.class, () -> toolkit.registerMcpClient(wrapper).block());
+
+        assertTrue(toolkit.getMcpClientNames().isEmpty());
+        verify(wrapper, times(1)).close();
     }
 }

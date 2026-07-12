@@ -37,7 +37,8 @@ class McpClientManager {
 
     private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
 
-    private final Map<String, McpClientWrapper> mcpClients = new ConcurrentHashMap<>();
+    private final Set<String> ownedClients = ConcurrentHashMap.newKeySet();
+    private final McpClientLifecycleOwner lifecycleOwner;
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolRegistrationCallback registrationCallback;
@@ -57,10 +58,19 @@ class McpClientManager {
     McpClientManager(
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
-            ToolRegistrationCallback registrationCallback) {
+            ToolRegistrationCallback registrationCallback,
+            McpClientLifecycleOwner lifecycleOwner) {
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;
         this.registrationCallback = registrationCallback;
+        this.lifecycleOwner = lifecycleOwner;
+    }
+
+    McpClientManager(
+            ToolRegistry toolRegistry,
+            ToolGroupManager groupManager,
+            ToolRegistrationCallback registrationCallback) {
+        this(toolRegistry, groupManager, registrationCallback, new McpClientLifecycleOwner());
     }
 
     /**
@@ -204,17 +214,26 @@ class McpClientManager {
                 .then()
                 .doOnSuccess(
                         v -> {
-                            mcpClients.put(mcpClientWrapper.getName(), mcpClientWrapper);
+                            lifecycleOwner.register(mcpClientWrapper.getName(), mcpClientWrapper);
+                            ownedClients.add(mcpClientWrapper.getName());
                             logger.info(
                                     "MCP client '{}' registered successfully",
                                     mcpClientWrapper.getName());
                         })
-                .doOnError(
-                        e ->
-                                logger.error(
-                                        "Failed to register MCP client: {}",
-                                        mcpClientWrapper.getName(),
-                                        e));
+                .onErrorResume(
+                        e -> {
+                            removeClientTools(mcpClientWrapper.getName());
+                            if (ownedClients.remove(mcpClientWrapper.getName())) {
+                                lifecycleOwner.release(mcpClientWrapper.getName());
+                            } else {
+                                mcpClientWrapper.close();
+                            }
+                            logger.error(
+                                    "Failed to register MCP client: {}",
+                                    mcpClientWrapper.getName(),
+                                    e);
+                            return Mono.error(e);
+                        });
     }
 
     /**
@@ -224,8 +243,7 @@ class McpClientManager {
      * @return Mono that completes when removal is finished
      */
     Mono<Void> removeMcpClient(String mcpClientName) {
-        McpClientWrapper wrapper = mcpClients.remove(mcpClientName);
-        if (wrapper == null) {
+        if (!ownedClients.remove(mcpClientName)) {
             logger.warn("MCP client not found: {}", mcpClientName);
             return Mono.empty();
         }
@@ -233,6 +251,15 @@ class McpClientManager {
         logger.info("Removing MCP client: {}", mcpClientName);
 
         // Remove all tools from this MCP client
+        removeClientTools(mcpClientName);
+
+        return Mono.fromRunnable(() -> lifecycleOwner.release(mcpClientName))
+                .then()
+                .doOnSuccess(
+                        v -> logger.info("MCP client '{}' removed successfully", mcpClientName));
+    }
+
+    private void removeClientTools(String mcpClientName) {
         List<String> toolsToRemove =
                 toolRegistry.getAllRegisteredTools().values().stream()
                         .filter(reg -> mcpClientName.equals(reg.getMcpClientName()))
@@ -244,11 +271,24 @@ class McpClientManager {
                     toolRegistry.removeTool(toolName);
                     logger.debug("Removed MCP tool: {}", toolName);
                 });
+    }
 
-        return Mono.fromRunnable(wrapper::close)
-                .then()
-                .doOnSuccess(
-                        v -> logger.info("MCP client '{}' removed successfully", mcpClientName));
+    void copyOwnershipTo(McpClientManager target) {
+        for (String name : ownedClients) {
+            lifecycleOwner.acquire(name);
+            if (!target.ownedClients.add(name)) {
+                lifecycleOwner.release(name);
+            }
+        }
+    }
+
+    void closeAll() {
+        for (String name : new HashSet<>(ownedClients)) {
+            if (ownedClients.remove(name)) {
+                removeClientTools(name);
+                lifecycleOwner.release(name);
+            }
+        }
     }
 
     /**
@@ -257,7 +297,7 @@ class McpClientManager {
      * @return set of MCP client names, never null but may be empty
      */
     Set<String> getMcpClientNames() {
-        return new HashSet<>(mcpClients.keySet());
+        return new HashSet<>(ownedClients);
     }
 
     /**
@@ -267,7 +307,7 @@ class McpClientManager {
      * @return the MCP client wrapper, or null if not found
      */
     McpClientWrapper getMcpClient(String name) {
-        return mcpClients.get(name);
+        return ownedClients.contains(name) ? lifecycleOwner.get(name) : null;
     }
 
     /**
