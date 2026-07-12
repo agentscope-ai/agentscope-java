@@ -15,15 +15,32 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.modelcontextprotocol.json.McpJsonMapperSupplier;
 import io.modelcontextprotocol.json.schema.JsonSchemaValidatorSupplier;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ServiceLoader;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class McpJsonDefaultsTest {
+
+    @Test
+    void shouldResolveProvidersFromContextClassLoader() {
+        assertNotNull(McpJsonDefaults.jsonMapper());
+        assertNotNull(McpJsonDefaults.jsonSchemaValidator());
+    }
 
     @Test
     void shouldFallbackWhenContextClassLoaderCannotSeeMcpProviders() {
@@ -52,4 +69,68 @@ class McpJsonDefaultsTest {
             Thread.currentThread().setContextClassLoader(originalClassLoader);
         }
     }
+
+    @Test
+    void shouldFallbackWhenContextClassLoaderIsNull() {
+        ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(null);
+
+            assertNotNull(McpJsonDefaults.jsonMapper());
+            assertNotNull(McpJsonDefaults.jsonSchemaValidator());
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalClassLoader);
+        }
+    }
+
+    @Test
+    void shouldFallbackWhenContextClassLoaderHasBrokenServiceDeclaration(@TempDir Path tempDir)
+            throws Exception {
+        writeServiceFile(tempDir, McpJsonMapperSupplier.class.getName(), "missing.DoesNotExist");
+
+        ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader brokenClassLoader =
+                new URLClassLoader(new URL[] {tempDir.toUri().toURL()}, null)) {
+            Thread.currentThread().setContextClassLoader(brokenClassLoader);
+
+            assertNotNull(McpJsonDefaults.jsonMapper());
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalClassLoader);
+        }
+    }
+
+    @Test
+    void shouldThrowWhenNoDefaultSupplierIsAvailable() throws Exception {
+        Method loadSupplier =
+                McpJsonDefaults.class.getDeclaredMethod("loadSupplier", Class.class, String.class);
+        loadSupplier.setAccessible(true);
+
+        ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(McpJsonDefaults.class.getClassLoader());
+
+            InvocationTargetException exception =
+                    assertThrows(
+                            InvocationTargetException.class,
+                            () ->
+                                    loadSupplier.invoke(
+                                            null, MissingSupplier.class, "MissingSupplier"));
+
+            IllegalStateException cause =
+                    assertInstanceOf(IllegalStateException.class, exception.getCause());
+            assertEquals("No default MissingSupplier implementation found", cause.getMessage());
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalClassLoader);
+        }
+    }
+
+    private static void writeServiceFile(Path root, String serviceName, String providerName)
+            throws Exception {
+        Path serviceDirectory = root.resolve("META-INF/services");
+        Files.createDirectories(serviceDirectory);
+        Files.writeString(
+                serviceDirectory.resolve(serviceName), providerName + System.lineSeparator());
+    }
+
+    private interface MissingSupplier extends Supplier<Object> {}
 }
