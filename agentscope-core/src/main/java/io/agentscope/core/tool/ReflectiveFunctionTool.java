@@ -159,7 +159,8 @@ final class ReflectiveFunctionTool extends ToolBase {
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         if (isExternalTool()) {
-            return Mono.error(new ToolSuspendException());
+            return Mono.just(
+                    ToolResultBlock.suspended(param.getToolUseBlock(), new ToolSuspendException()));
         }
         return methodInvoker.invokeAsync(toolObject, method, param, customConverter);
     }
