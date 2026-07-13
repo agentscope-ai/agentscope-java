@@ -33,21 +33,27 @@ import redis.clients.jedis.UnifiedJedis;
  * <p>For each item with namespace {@code [a, b, c]} and key {@code k}, two Redis keys are used:
  *
  * <ul>
- *   <li><b>Item hash</b> {@code <prefix>item:<ns>\0<k>} — a Redis hash with fields {@code value}
+ *   <li><b>Item hash</b> {@code <prefix>item:{<ns>}\0<k>} — a Redis hash with fields {@code value}
  *       (JSON-encoded {@code Map<String,Object>}) and {@code version} (a stringified long).
- *   <li><b>Namespace index</b> {@code <prefix>idx:<ns>} — a sorted set (all scores {@code 0})
+ *   <li><b>Namespace index</b> {@code <prefix>idx:{<ns>}} — a sorted set (all scores {@code 0})
  *       holding every {@code k} written under that exact namespace, enabling lexicographic
  *       {@link #search} via {@code ZRANGEBYLEX} without scanning the keyspace.
  * </ul>
  *
  * <p>{@code <ns>} is the namespace components joined with {@code "\0"}.
  *
+ * <p>The namespace path is wrapped in Redis hash tags ({@code {…}}) so that the item hash and the
+ * namespace index always map to the same hash slot, making Lua scripts compatible with Redis
+ * Cluster. Namespace segments must not contain {@code '{'} or {@code '}'}.
+ *
  * <h2>Concurrency</h2>
  *
  * <p>{@link #put} and {@link #putIfVersion} both run as a single Lua {@code EVAL}, making the
  * version read + hash write + index update one atomic Redis operation. This makes
  * {@link #putIfVersion} safe to use as a distributed compare-and-swap primitive across multiple
- * processes sharing the same Redis instance.
+ * processes sharing the same Redis instance. Both keys referenced by each Lua script share the same
+ * hash tag, ensuring they reside on the same cluster slot and making the design compatible with
+ * Redis Cluster.
  *
  * <p>{@link #search} is <em>not</em> in the same transaction as {@link #put}: index members may
  * temporarily refer to an item whose hash has not yet been written (window between {@code ZADD}
@@ -232,11 +238,13 @@ public class RedisStore implements BaseStore {
     }
 
     private String itemKey(List<String> namespace, String key) {
-        return keyPrefix + "item:" + namespacePath(namespace) + NS_SEPARATOR + key;
+        String ns = namespacePath(namespace);
+        return keyPrefix + "item:{" + ns + "}" + NS_SEPARATOR + key;
     }
 
     private String indexKey(List<String> namespace) {
-        return keyPrefix + "idx:" + namespacePath(namespace);
+        String ns = namespacePath(namespace);
+        return keyPrefix + "idx:{" + ns + "}";
     }
 
     private static String namespacePath(List<String> namespace) {
@@ -246,6 +254,15 @@ public class RedisStore implements BaseStore {
             String segment = namespace.get(i);
             if (segment == null) {
                 throw new IllegalArgumentException("namespace segment must not be null");
+            }
+            if (segment.indexOf('{') >= 0 || segment.indexOf('}') >= 0) {
+                throw new IllegalArgumentException(
+                        "namespace segment must not contain '{' or '}'"
+                                + " (incompatible with Redis Cluster hash tags)");
+            }
+            if (segment.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException(
+                        "namespace segment must not contain the NUL character");
             }
             if (i > 0) {
                 sb.append(NS_SEPARATOR);
