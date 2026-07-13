@@ -28,6 +28,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.CompactionDecision;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -106,44 +107,51 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     CompactionConfig effectiveConfig = resolveEffectiveConfig();
                     final Msg sys = systemMsg;
 
-                    final int estimatedTokens = TokenCounterUtil.calculateToken(conversation);
-                    final int threshold = effectiveConfig.getTriggerTokens();
-
-                    if (!needsCompaction(conversation, estimatedTokens, effectiveConfig)) {
-                        return next.apply(input);
-                    }
-
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
                             new ConversationCompactor(model, flushManager);
 
+                    CompactionDecision decision = compactor.probe(conversation, effectiveConfig);
+                    if (!(decision instanceof CompactionDecision.Proceed proceed)) {
+                        return next.apply(input);
+                    }
+
                     CompactionStartEvent startEvent =
-                            new CompactionStartEvent(estimatedTokens, threshold);
+                            new CompactionStartEvent(
+                                    proceed.triggerReason(),
+                                    proceed.thresholdValue(),
+                                    proceed.estimatedTokens(),
+                                    proceed.messageCount());
+                    final int originalMessageCount = proceed.messageCount();
+                    final int beforeTokens = proceed.estimatedTokens();
 
                     return Flux.concat(
                             Flux.just(startEvent),
                             compactor
-                                    .compactIfNeeded(
-                                            rc, conversation, effectiveConfig, agentId, sessionId)
+                                    .execute(rc, proceed, effectiveConfig, agentId, sessionId)
+                                    .map(Optional::of)
                                     .onErrorResume(
                                             e -> {
                                                 log.warn(
                                                         "Compaction failed, continuing without"
                                                                 + " compaction: {}",
                                                         e.getMessage());
-                                                return Mono.just(Optional.empty());
+                                                return Mono.just(Optional.<List<Msg>>empty());
                                             })
                                     .flatMapMany(
                                             optResult -> {
                                                 if (optResult.isEmpty()) {
-                                                    CompactionEndEvent cancelEvent =
+                                                    CompactionEndEvent failedEvent =
                                                             new CompactionEndEvent(
-                                                                    conversation.size(),
-                                                                    conversation.size(),
-                                                                    0);
+                                                                    CompactionEndEvent.Outcome
+                                                                            .FAILED,
+                                                                    originalMessageCount,
+                                                                    originalMessageCount,
+                                                                    beforeTokens,
+                                                                    beforeTokens);
                                                     return Flux.concat(
-                                                            Flux.just(cancelEvent),
+                                                            Flux.just(failedEvent),
                                                             next.apply(input));
                                                 }
 
@@ -153,14 +161,16 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                                 rc, reActAgent),
                                                         compacted);
 
+                                                int afterTokens =
+                                                        TokenCounterUtil.calculateToken(compacted);
                                                 CompactionEndEvent endEvent =
                                                         new CompactionEndEvent(
-                                                                conversation.size(),
+                                                                CompactionEndEvent.Outcome
+                                                                        .COMPACTED,
+                                                                originalMessageCount,
                                                                 compacted.size(),
-                                                                estimatedTokens
-                                                                        - TokenCounterUtil
-                                                                                .calculateToken(
-                                                                                        compacted));
+                                                                beforeTokens,
+                                                                afterTokens);
 
                                                 List<Msg> newMessages = new ArrayList<>();
                                                 if (sys != null) {
@@ -245,14 +255,6 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         }
 
         return config.withEffective(effectiveTrigger, effectiveKeep);
-    }
-
-    private static boolean needsCompaction(
-            List<Msg> messages, int totalTokens, CompactionConfig config) {
-        if (config.getTriggerMessages() > 0 && messages.size() >= config.getTriggerMessages()) {
-            return true;
-        }
-        return config.getTriggerTokens() > 0 && totalTokens >= config.getTriggerTokens();
     }
 
     private static void applyToContext(AgentState state, List<Msg> compacted) {

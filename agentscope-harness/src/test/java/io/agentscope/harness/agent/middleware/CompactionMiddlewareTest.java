@@ -57,7 +57,7 @@ class CompactionMiddlewareTest {
 
     @Test
     void noCompaction_passesThroughWithoutEvents() {
-        // conversation is small — compactIfNeeded returns empty Optional
+        // conversation is small — probe() returns Skip, so no compaction events at all.
         CompactionMiddleware middleware = new CompactionMiddleware(workspaceManager, model, config);
         ReActAgent agent = mock(ReActAgent.class);
         List<Msg> messages = List.of(userMsg("hi"));
@@ -75,6 +75,9 @@ class CompactionMiddlewareTest {
         assertFalse(
                 events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_START),
                 "COMPACTION_START must not appear when threshold is not reached");
+        assertFalse(
+                events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_END),
+                "COMPACTION_END must not appear when threshold is not reached");
     }
 
     @Test
@@ -114,7 +117,7 @@ class CompactionMiddlewareTest {
         boolean hasEnd =
                 events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_END);
 
-        // If one appears, both must appear
+        // START and END are always paired under the probe/execute split
         assertEquals(hasStart, hasEnd, "COMPACTION_START and COMPACTION_END must be paired");
 
         if (hasStart) {
@@ -126,10 +129,15 @@ class CompactionMiddlewareTest {
 
             CompactionStartEvent start = (CompactionStartEvent) events.get(startIdx);
             CompactionEndEvent end = (CompactionEndEvent) events.get(endIdx);
+            assertEquals(
+                    CompactionStartEvent.TriggerReason.TOKEN_THRESHOLD, start.getTriggerReason());
             assertTrue(start.getEstimatedTokens() >= 0);
-            assertTrue(start.getTriggerThreshold() > 0);
+            assertTrue(start.getThresholdValue() > 0);
+            assertTrue(start.getMessageCount() >= 0);
             assertTrue(end.getOriginalMessageCount() >= 0);
             assertTrue(end.getCompactedMessageCount() >= 0);
+            assertTrue(end.getBeforeTokens() >= 0);
+            assertTrue(end.getAfterTokens() >= 0);
         }
     }
 
@@ -182,9 +190,15 @@ class CompactionMiddlewareTest {
         boolean hasEnd =
                 events.stream().anyMatch(e -> e.getType() == AgentEventType.COMPACTION_END);
 
-        // START is emitted before the error; END must still appear to close the pair
+        // START is emitted before the error; END must still appear with FAILED outcome
         if (hasStart) {
             assertTrue(hasEnd, "COMPACTION_END must appear when START was emitted (error path)");
+            CompactionEndEvent end =
+                    (CompactionEndEvent)
+                            events.get(indexOfType(events, AgentEventType.COMPACTION_END));
+            assertEquals(CompactionEndEvent.Outcome.FAILED, end.getOutcome());
+            assertEquals(end.getOriginalMessageCount(), end.getCompactedMessageCount());
+            assertEquals(end.getBeforeTokens(), end.getAfterTokens());
         }
     }
 

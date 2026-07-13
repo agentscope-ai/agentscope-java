@@ -15,31 +15,82 @@
  */
 package io.agentscope.core.event;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Emitted when context compaction is triggered.
+ * Emitted when context compaction is about to run.
+ *
+ * <p>This event is guaranteed to be followed by a matching {@link CompactionEndEvent}. It is
+ * only emitted when compaction work will actually execute — i.e., after cheap non-LLM pruning
+ * has been evaluated and a safe cutoff has been found. See
+ * {@code CompactionMiddleware.onReasoning}.
+ *
+ * <p>Two threshold dimensions can trigger compaction, described by {@link #getTriggerReason()}:
+ * <ul>
+ *   <li>{@link TriggerReason#TOKEN_THRESHOLD} — estimated token count reached
+ *       {@code triggerTokens}. {@link #getThresholdValue()} is the token limit.</li>
+ *   <li>{@link TriggerReason#MESSAGE_THRESHOLD} — conversation length reached
+ *       {@code triggerMessages}. {@link #getThresholdValue()} is the message-count limit.</li>
+ * </ul>
  */
 public class CompactionStartEvent extends AgentEvent {
 
+    /** Which threshold dimension fired the compaction trigger. */
+    public enum TriggerReason {
+        TOKEN_THRESHOLD,
+        MESSAGE_THRESHOLD
+    }
+
+    private final TriggerReason triggerReason;
+    private final int thresholdValue;
     private final int estimatedTokens;
-    private final int triggerThreshold;
+    private final int messageCount;
 
     @JsonCreator
     public CompactionStartEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
+            @JsonProperty("triggerReason") TriggerReason triggerReason,
+            @JsonProperty("thresholdValue") @JsonAlias("triggerThreshold") int thresholdValue,
             @JsonProperty("estimatedTokens") int estimatedTokens,
-            @JsonProperty("triggerThreshold") int triggerThreshold) {
+            @JsonProperty("messageCount") int messageCount) {
         super(id, createdAt);
+        this.triggerReason = triggerReason != null ? triggerReason : TriggerReason.TOKEN_THRESHOLD;
+        this.thresholdValue = thresholdValue;
         this.estimatedTokens = estimatedTokens;
-        this.triggerThreshold = triggerThreshold;
+        this.messageCount = messageCount;
     }
 
-    public CompactionStartEvent(int estimatedTokens, int triggerThreshold) {
+    /**
+     * Constructs a compaction-start event with full trigger context.
+     *
+     * @param triggerReason   which dimension crossed its threshold
+     * @param thresholdValue  the configured limit for that dimension (tokens or messages)
+     * @param estimatedTokens estimated token count of the conversation at trigger time
+     * @param messageCount    number of conversation messages at trigger time
+     */
+    public CompactionStartEvent(
+            TriggerReason triggerReason,
+            int thresholdValue,
+            int estimatedTokens,
+            int messageCount) {
+        this.triggerReason = triggerReason != null ? triggerReason : TriggerReason.TOKEN_THRESHOLD;
+        this.thresholdValue = thresholdValue;
         this.estimatedTokens = estimatedTokens;
-        this.triggerThreshold = triggerThreshold;
+        this.messageCount = messageCount;
+    }
+
+    /**
+     * Legacy two-arg constructor kept for source compatibility. Assumes a token-threshold trigger
+     * and leaves {@code messageCount} at 0. New code should use the four-arg form.
+     *
+     * @deprecated use {@link #CompactionStartEvent(TriggerReason, int, int, int)}
+     */
+    @Deprecated
+    public CompactionStartEvent(int estimatedTokens, int triggerThreshold) {
+        this(TriggerReason.TOKEN_THRESHOLD, triggerThreshold, estimatedTokens, 0);
     }
 
     @Override
@@ -47,11 +98,37 @@ public class CompactionStartEvent extends AgentEvent {
         return AgentEventType.COMPACTION_START;
     }
 
+    /** Which threshold dimension caused compaction to fire. */
+    public TriggerReason getTriggerReason() {
+        return triggerReason;
+    }
+
+    /**
+     * The configured limit for the fired dimension: a token count when
+     * {@link #getTriggerReason()} is {@link TriggerReason#TOKEN_THRESHOLD}, a message count
+     * when it is {@link TriggerReason#MESSAGE_THRESHOLD}.
+     */
+    public int getThresholdValue() {
+        return thresholdValue;
+    }
+
+    /** Estimated token count of the conversation at trigger time. */
     public int getEstimatedTokens() {
         return estimatedTokens;
     }
 
+    /** Number of conversation messages (non-SYSTEM) at trigger time. */
+    public int getMessageCount() {
+        return messageCount;
+    }
+
+    /**
+     * Legacy accessor returning {@link #getThresholdValue()}.
+     *
+     * @deprecated use {@link #getThresholdValue()} together with {@link #getTriggerReason()}
+     */
+    @Deprecated
     public int getTriggerThreshold() {
-        return triggerThreshold;
+        return thresholdValue;
     }
 }
