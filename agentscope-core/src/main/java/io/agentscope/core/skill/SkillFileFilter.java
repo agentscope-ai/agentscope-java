@@ -19,11 +19,8 @@ package io.agentscope.core.skill;
 /**
  * Filter for deciding whether a skill resource should be uploaded.
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
 @FunctionalInterface
-@Deprecated(since = "2.0.0")
 public interface SkillFileFilter {
 
     /**

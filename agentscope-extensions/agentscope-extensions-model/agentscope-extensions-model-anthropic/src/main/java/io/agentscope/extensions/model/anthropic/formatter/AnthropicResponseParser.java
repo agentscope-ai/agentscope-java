@@ -140,6 +140,16 @@ public class AnthropicResponseParser {
                                     contentBlocks.add(
                                             TextBlock.builder().text(textDelta.text()).build()));
 
+            deltaEvent
+                    .delta()
+                    .thinking()
+                    .ifPresent(
+                            thinkingDelta ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .thinking(thinkingDelta.thinking())
+                                                    .build()));
+
             // Input JSON delta (tool calling)
             deltaEvent
                     .delta()

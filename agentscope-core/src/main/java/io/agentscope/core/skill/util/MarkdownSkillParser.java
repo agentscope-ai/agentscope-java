@@ -64,10 +64,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * String markdown = MarkdownSkillParser.generate(metadata, content);
  * }</pre>
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
-@Deprecated(since = "2.0.0")
 public class MarkdownSkillParser {
 
     private static final int FRONTMATTER_CODE_POINT_LIMIT = 16_384;
@@ -77,6 +74,9 @@ public class MarkdownSkillParser {
     private static final Pattern FRONTMATTER_PATTERN =
             Pattern.compile(
                     "^---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)", Pattern.DOTALL);
+
+    private static final Pattern SIMPLE_KV_PATTERN =
+            Pattern.compile("^([A-Za-z][A-Za-z0-9_-]*)\\s*:\\s*(.*)$");
 
     private static final LoaderOptions LOADER_OPTIONS = createLoaderOptions();
 
@@ -158,8 +158,8 @@ public class MarkdownSkillParser {
         try {
             loaded = createParserYaml().load(yamlContent);
         } catch (RuntimeException e) {
-            logger.debug("Failed to parse YAML frontmatter, returning empty metadata", e);
-            return Map.of();
+            logger.debug("Full YAML parse failed, falling back to simple key-value extraction", e);
+            return fallbackParseSimpleKeyValues(yamlContent);
         }
 
         if (loaded == null) {
@@ -205,6 +205,74 @@ public class MarkdownSkillParser {
 
     private static Yaml createParserYaml() {
         return new Yaml(new SafeConstructor(LOADER_OPTIONS));
+    }
+
+    /**
+     * Fallback line-by-line parser that extracts simple {@code key: value} pairs from YAML content
+     * when the full SnakeYAML parser fails. Gracefully skips lines it cannot handle (lists, nested
+     * objects, block scalars) while still extracting scalar key-value pairs like {@code name} and
+     * {@code description}.
+     */
+    private static Map<String, Object> fallbackParseSimpleKeyValues(String yamlContent) {
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        String[] lines = yamlContent.split("\\r?\\n");
+
+        for (String line : lines) {
+            if (line.isBlank()) {
+                continue;
+            }
+
+            // Indented lines belong to a previous block scalar or complex structure — skip them
+            if (line.startsWith(" ") || line.startsWith("\t")) {
+                continue;
+            }
+
+            // Skip list items at the top level
+            if (line.trim().startsWith("-")) {
+                continue;
+            }
+
+            Matcher matcher = SIMPLE_KV_PATTERN.matcher(line);
+            if (!matcher.matches()) {
+                logger.debug("Fallback parser skipping unsupported line: {}", line);
+                continue;
+            }
+
+            String key = matcher.group(1);
+            String rawValue = matcher.group(2).trim();
+
+            // Skip block scalar modifiers — their content spans subsequent indented lines
+            if (rawValue.startsWith("|") || rawValue.startsWith(">")) {
+                logger.debug("Fallback parser skipping block scalar key: {}", key);
+                continue;
+            }
+
+            // Skip keys whose value is empty (likely followed by nested content)
+            if (rawValue.isEmpty()) {
+                continue;
+            }
+
+            result.put(key, unquote(rawValue));
+        }
+
+        if (result.isEmpty()) {
+            logger.debug("Fallback parser extracted no metadata");
+        } else {
+            logger.debug(
+                    "Fallback parser extracted {} entries: {}", result.size(), result.keySet());
+        }
+        return result;
+    }
+
+    private static String unquote(String value) {
+        if (value.length() >= 2) {
+            char first = value.charAt(0);
+            char last = value.charAt(value.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return value.substring(1, value.length() - 1);
+            }
+        }
+        return value;
     }
 
     private static Yaml createDumperYaml() {

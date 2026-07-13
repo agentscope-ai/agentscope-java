@@ -20,6 +20,7 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.UrlImageSource;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
@@ -73,6 +74,64 @@ public class AnthropicMediaConverter {
                                     .mediaType(
                                             Base64ImageSource.MediaType.of(
                                                     mediaType != null ? mediaType : "image/png"))
+                                    .build())
+                    .build();
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
+    }
+
+    /**
+     * Convert DataBlock to Anthropic ImageBlockParam by resolving MIME type and routing to image.
+     *
+     * <p>Anthropic currently supports image modality only via this SDK type. Audio and video
+     * DataBlocks will throw {@link IllegalArgumentException} since the Anthropic API does not
+     * expose a generic binary content block param yet.
+     *
+     * <p>MIME type resolution order:
+     * <ol>
+     *   <li>{@code Base64Source.mediaType} — always explicit</li>
+     *   <li>{@code URLSource.mimeType} — caller-supplied hint for extension-less URLs</li>
+     *   <li>{@code MediaUtils.determineMediaType(url)} — extension-based inference</li>
+     * </ol>
+     *
+     * @param dataBlock The data block to convert
+     * @return ImageBlockParam for Anthropic API
+     * @throws Exception If conversion fails or MIME type resolves to a non-image category
+     */
+    public ImageBlockParam convertDataBlock(DataBlock dataBlock) throws Exception {
+        Source source = dataBlock.getSource();
+        String mimeType = MediaUtils.resolveMimeType(source);
+
+        if (!mimeType.startsWith("image/")) {
+            throw new IllegalArgumentException(
+                    "Anthropic API only supports image DataBlocks; got MIME type: " + mimeType);
+        }
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            if (MediaUtils.isLocalFile(url)) {
+                String base64Data = MediaUtils.fileToBase64(url);
+                return ImageBlockParam.builder()
+                        .source(
+                                Base64ImageSource.builder()
+                                        .data(base64Data)
+                                        .mediaType(Base64ImageSource.MediaType.of(mimeType))
+                                        .build())
+                        .build();
+            } else {
+                // mimeType already verified to be image/* above; skip extension check
+                // so that extension-less CDN URLs with an explicit mimeType hint work
+                return ImageBlockParam.builder()
+                        .source(UrlImageSource.builder().url(url).build())
+                        .build();
+            }
+        } else if (source instanceof Base64Source base64Source) {
+            return ImageBlockParam.builder()
+                    .source(
+                            Base64ImageSource.builder()
+                                    .data(base64Source.getData())
+                                    .mediaType(Base64ImageSource.MediaType.of(mimeType))
                                     .build())
                     .build();
         } else {

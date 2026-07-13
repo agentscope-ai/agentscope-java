@@ -217,7 +217,7 @@ public final class ChannelRouter {
     // -----------------------------------------------------------------
 
     private OutboundAddress buildOutboundAddress(InboundMessage msg) {
-        String to = msg.channelId() + ":" + msg.peer().id();
+        String to = msg.channelId() + ":" + msg.peer().kind().name() + ":" + msg.peer().id();
         String threadId = msg.peer().kind().isThread() ? msg.peer().id() : null;
         return new OutboundAddress(msg.channelId(), msg.accountId(), to, threadId);
     }

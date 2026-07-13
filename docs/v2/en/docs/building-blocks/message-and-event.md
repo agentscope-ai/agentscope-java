@@ -31,7 +31,7 @@ The core fields on `Msg` (via getters):
 | `getMetadata()` | `Map<String, Object>` | Arbitrary key/value metadata |
 | `getTimestamp()` | `String` | Creation time (`yyyy-MM-dd HH:mm:ss.SSS`) |
 | `getUsage()` | `ChatUsage` | Token usage (assistant messages only) |
-| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `INTERRUPTED` / `MAX_ITERATIONS` |
+| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### Content blocks
 
@@ -128,7 +128,7 @@ Events are the streaming counterpart of messages. While the agent runs, it emits
 
 ### Event lifecycle
 
-Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` identifies the content block the event belongs to. Events follow a **start → delta → end** pattern:
+Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` acts as a correlation key for events that belong to the same content-block lifecycle. Events follow a **start → delta → end** pattern:
 
 ```{mermaid}
 sequenceDiagram
@@ -175,7 +175,7 @@ sequenceDiagram
     Agent->>Client: AgentEndEvent
 ```
 
-All events in one reply share the same `replyId`. Within a reply, `blockId` ties text/thinking/data block events together; `toolCallId` ties tool calls and tool results.
+All events in one reply share the same `replyId`. Within a reply, `blockId` ties text/thinking/data block events together; `toolCallId` ties tool calls and tool results. A `blockId` is scoped to its `replyId` and does not have to be a globally unique generated ID. When a block type can have at most one lifecycle within a reply, an implementation may use a stable type key, such as a fixed key for the text block.
 
 ### Event types
 
@@ -221,14 +221,14 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
 
     **TextBlockDeltaEvent** — incremental text content arrives.
 
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
     | `getDelta()` | `String` | Incremental text content |
 
     **TextBlockEndEvent** — text block completes.
@@ -236,11 +236,11 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
-    | `getBlockId()` | `String` | Unique text block ID |
+    | `getBlockId()` | `String` | Text-block correlation key within the current reply |
 :::
 
   :::{dropdown} Thinking streaming events
-**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought.
+**ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought. Its `blockId` has the same reply-scoped correlation-key semantics.
 :::
 
   :::{dropdown} Data streaming events
@@ -299,6 +299,12 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     **UserConfirmResultEvent** — user provides confirmation results (input event); carries `List<ConfirmResult>`.
 
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
+
+    **AllToolsDeniedEvent** — the user denied all tool calls from the most recent reasoning step via HITL confirmation. This event is emitted through the `onActing` middleware chain, allowing middlewares to emit a `RequestStopEvent` to stop the agent. If no middleware handles it, the agent continues to the next reasoning iteration (backward compatible).
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getDeniedToolCalls()` | `List<ToolUseBlock>` | The denied tool calls |
 :::
 
   :::{dropdown} Subagent events

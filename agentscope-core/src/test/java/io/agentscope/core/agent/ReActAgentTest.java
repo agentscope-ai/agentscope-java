@@ -553,6 +553,32 @@ class ReActAgentTest {
     }
 
     @Test
+    @DisplayName("Should switch to fallback model when primary fails")
+    void testFallbackModel() {
+        String errorMessage = "Primary model unavailable";
+        MockModel primaryModel = new MockModel("").withError(errorMessage);
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
+        assertEquals(1, primaryModel.getCallCount(), "Primary model should be tried once");
+        assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
+    }
+
+    @Test
     @DisplayName("Should support streaming responses")
     void testStreaming() {
         // Setup model with multiple response chunks
