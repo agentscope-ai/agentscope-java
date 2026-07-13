@@ -126,7 +126,6 @@ class InboundMessageBusinessContextTest {
 
     @Test
     void businessContext_thenPutBusinessParam_works() {
-        // businessContext(Map) followed by putBusinessParam — the Map.of result is not a HashMap
         InboundMessage msg =
                 InboundMessage.builder(CHANNEL, Peer.direct(PEER_ID), MSGS)
                         .businessContext(Map.of("a", "1"))
@@ -135,6 +134,32 @@ class InboundMessageBusinessContextTest {
         assertEquals("1", msg.businessContext().get("a"));
         assertEquals("2", msg.businessContext().get("b"));
         assertEquals(2, msg.businessContext().size());
+    }
+
+    @Test
+    void builder_businessContext_defensivelyCopiesInputMap() {
+        java.util.HashMap<String, Object> mutable = new java.util.HashMap<>();
+        mutable.put("tenantId", "tenant-original");
+        InboundMessage.Builder builder =
+                InboundMessage.builder(CHANNEL, Peer.direct(PEER_ID), MSGS)
+                        .businessContext(mutable);
+        mutable.put("tenantId", "tenant-mutated");
+        mutable.put("extraKey", "extraValue");
+        InboundMessage msg = builder.build();
+        assertEquals("tenant-original", msg.businessContext().get("tenantId"));
+        assertFalse(msg.businessContext().containsKey("extraKey"));
+    }
+
+    @Test
+    void builder_putBusinessParam_doesNotMutateEarlierProvidedMap() {
+        java.util.HashMap<String, Object> mutable = new java.util.HashMap<>();
+        mutable.put("tenantId", "tenant-123");
+        InboundMessage.builder(CHANNEL, Peer.direct(PEER_ID), MSGS)
+                .businessContext(mutable)
+                .putBusinessParam("modelConfigId", "gpt-4")
+                .build();
+        assertEquals(1, mutable.size());
+        assertFalse(mutable.containsKey("modelConfigId"));
     }
 
     @Test

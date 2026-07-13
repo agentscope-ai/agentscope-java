@@ -198,7 +198,7 @@ public record InboundMessage(
         private String team;
         private Set<String> roles = Set.of();
         private String preferredAgentId;
-        private Map<String, Object> businessContext = Map.of();
+        private final HashMap<String, Object> businessContext = new HashMap<>();
 
         private Builder(String channelId, Peer peer, List<Msg> messages) {
             this.channelId = channelId;
@@ -241,22 +241,31 @@ public record InboundMessage(
             return this;
         }
 
+        /**
+         * Replaces any previously set business context with a defensive copy of {@code
+         * businessContext}. Subsequent mutations of the passed-in map do not affect the builder or
+         * the built {@link InboundMessage}. Passing {@code null} clears the business context.
+         */
         public Builder businessContext(Map<String, Object> businessContext) {
-            this.businessContext = businessContext != null ? businessContext : Map.of();
+            this.businessContext.clear();
+            if (businessContext != null) {
+                this.businessContext.putAll(businessContext);
+            }
             return this;
         }
 
+        /**
+         * Adds or replaces a single business context entry. {@code null} keys are ignored;
+         * {@code null} values remove the entry.
+         */
         public Builder putBusinessParam(String key, Object value) {
             if (key == null) {
                 return this;
             }
-            if (!(this.businessContext instanceof HashMap)) {
-                this.businessContext = new HashMap<>(this.businessContext);
-            }
             if (value == null) {
-                ((HashMap<String, Object>) this.businessContext).remove(key);
+                this.businessContext.remove(key);
             } else {
-                ((HashMap<String, Object>) this.businessContext).put(key, value);
+                this.businessContext.put(key, value);
             }
             return this;
         }
