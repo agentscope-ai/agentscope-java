@@ -62,6 +62,12 @@ class OllamaAutoConfigurationTest {
                         "agentscope.ollama.base-url=http://ollama.example.com:11434")
                 .run(
                         context -> {
+                            OllamaProperties properties = context.getBean(OllamaProperties.class);
+                            assertThat(properties.isEnabled()).isTrue();
+                            assertThat(properties.getModelName()).isEqualTo("llama3.2");
+                            assertThat(properties.getBaseUrl())
+                                    .isEqualTo("http://ollama.example.com:11434");
+
                             OllamaChatModel model = context.getBean(OllamaChatModel.class);
                             assertThat(model.getModelName()).isEqualTo("llama3.2");
                         });
@@ -89,13 +95,15 @@ class OllamaAutoConfigurationTest {
                         "agentscope.ollama.model-name=llama3")
                 .run(
                         context -> {
+                            assertThat(context.getBean(OllamaProperties.class).isEnabled())
+                                    .isFalse();
                             assertThat(context).doesNotHaveBean(Model.class);
                             assertThat(context).doesNotHaveBean(OllamaChatModel.class);
                         });
     }
 
     @Test
-    void shouldFailClearlyWhenModelNameMissing() {
+    void shouldFailClearlyWhenModelNameBlank() {
         contextRunner
                 .withPropertyValues(
                         "agentscope.model.provider=ollama", "agentscope.ollama.model-name= ")
