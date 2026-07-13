@@ -1751,6 +1751,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return ToolResultBlock.builder()
                     .id(toolId)
                     .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                    .state(ToolResultState.ERROR)
                     .build();
         }
 
@@ -2793,9 +2794,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     b ->
                                             b instanceof TextBlock tb
                                                     && tb.getText() != null
-                                                    && (tb.getText().startsWith("[ERROR]")
-                                                            || tb.getText()
-                                                                    .startsWith("Error:")))) {
+                                                    && tb.getText().startsWith("[ERROR]"))) {
                 return ToolResultState.ERROR;
             }
             return ToolResultState.SUCCESS;
