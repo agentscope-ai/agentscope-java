@@ -180,12 +180,47 @@ class GeminiAutoConfigurationTest {
                         });
     }
 
+    @Test
+    void shouldApplyGeminiChatModelBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(CustomBuilderConfiguration.class)
+                .withPropertyValues(
+                        "agentscope.model.provider=gemini",
+                        "agentscope.gemini.api-key=test-gemini-key",
+                        "agentscope.gemini.model-name=gemini-2.0-flash")
+                .run(
+                        context -> {
+                            GeminiChatModel model = context.getBean(GeminiChatModel.class);
+                            assertThat(model.getModelName()).isEqualTo("customized-model-name");
+                        });
+    }
+
+    @Test
+    void shouldDelegateAcceptToCustomizeOnGeminiChatModelBuilderCustomizer() {
+        GeminiChatModel.Builder builder =
+                GeminiChatModel.builder().apiKey("test-key").modelName("original");
+        GeminiChatModelBuilderCustomizer customizer = b -> b.modelName("customized");
+
+        customizer.accept(builder);
+
+        assertThat(builder.build().getModelName()).isEqualTo("customized");
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
         @Bean
         Model customModel() {
             return new TestModel();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomBuilderConfiguration {
+
+        @Bean
+        GeminiChatModelBuilderCustomizer testGeminiChatModelBuilderCustomizer() {
+            return builder -> builder.modelName("customized-model-name");
         }
     }
 

@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -249,6 +251,46 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Video - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DataBlock db) {
+                try {
+                    Source source = db.getSource();
+                    if (source == null) {
+                        log.warn("DataBlock has null source, skipping");
+                        continue;
+                    }
+                    String mimeType = MediaUtils.resolveMimeType(source);
+                    if (mimeType.startsWith("image/")) {
+                        contentParts.add(
+                                OpenAIContentPart.imageUrl(convertImageSourceToUrl(source)));
+                    } else if (mimeType.startsWith("video/")) {
+                        contentParts.add(
+                                OpenAIContentPart.videoUrl(convertVideoSourceToUrl(source)));
+                    } else if (mimeType.startsWith("audio/")) {
+                        if (source instanceof Base64Source b64) {
+                            String format = detectAudioFormat(b64.getMediaType());
+                            contentParts.add(OpenAIContentPart.inputAudio(b64.getData(), format));
+                        } else {
+                            log.warn(
+                                    "URL-based audio DataBlock not supported by OpenAI input_audio;"
+                                            + " using text reference");
+                            contentParts.add(
+                                    OpenAIContentPart.text(
+                                            "[Audio URL: " + ((URLSource) source).getUrl() + "]"));
+                        }
+                    } else {
+                        log.warn("DataBlock has unroutable MIME type '{}', skipping", mimeType);
+                        contentParts.add(
+                                OpenAIContentPart.text(
+                                        "[Media - unsupported MIME type: " + mimeType + "]"));
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process DataBlock: {}", errorMsg);
+                    contentParts.add(
+                            OpenAIContentPart.text(
+                                    "[Media - processing failed: " + errorMsg + "]"));
+                }
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -432,7 +474,8 @@ public class OpenAIMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }

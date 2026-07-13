@@ -185,6 +185,46 @@ class SkillToolGroupTest {
         assertTrue(manager.getMetaGroupNames().contains("skill_tools"));
     }
 
+    @Test
+    void testFindSkillToolGroupsByActivateOnSkill() {
+        ToolGroupManager manager = new ToolGroupManager();
+        manager.createSkillToolGroup("analysis-tools", "Analysis tools", false, "data-analysis");
+        manager.createSkillToolGroup("viz-tools", "Visualization tools", false, "data-analysis");
+        manager.createSkillToolGroup("code-tools", "Code tools", false, "coding");
+
+        var matched = manager.findSkillToolGroupsByActivateOnSkill("data-analysis");
+        assertEquals(2, matched.size());
+        assertTrue(matched.contains("analysis-tools"));
+        assertTrue(matched.contains("viz-tools"));
+
+        var codingMatched = manager.findSkillToolGroupsByActivateOnSkill("coding");
+        assertEquals(1, codingMatched.size());
+        assertTrue(codingMatched.contains("code-tools"));
+
+        var noMatch = manager.findSkillToolGroupsByActivateOnSkill("unknown-skill");
+        assertTrue(noMatch.isEmpty());
+    }
+
+    @Test
+    void testFindSkillToolGroupsByActivateOnSkillIgnoresRegularGroups() {
+        ToolGroupManager manager = new ToolGroupManager();
+        manager.createToolGroup("regular-group", "A regular group", true);
+        manager.createSkillToolGroup("skill-group", "Skill group", false, "my-skill");
+
+        var matched = manager.findSkillToolGroupsByActivateOnSkill("my-skill");
+        assertEquals(1, matched.size());
+        assertEquals("skill-group", matched.get(0));
+    }
+
+    @Test
+    void testFindSkillToolGroupsByActivateOnSkillNullSafe() {
+        ToolGroupManager manager = new ToolGroupManager();
+        manager.createSkillToolGroup("group", "desc", false, "skill");
+
+        var result = manager.findSkillToolGroupsByActivateOnSkill(null);
+        assertTrue(result.isEmpty());
+    }
+
     private static int countOccurrences(String text, String substring) {
         int count = 0;
         int idx = 0;
