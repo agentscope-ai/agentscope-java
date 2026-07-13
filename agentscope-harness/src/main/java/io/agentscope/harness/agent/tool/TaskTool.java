@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.TaskCancellation;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.ZoneOffset;
@@ -161,8 +162,19 @@ public class TaskTool {
                     + "\nnote: Task already in terminal state, cannot cancel.";
         }
 
-        taskRepository.cancelTask(runtimeContext, sessionId, taskId);
-        return "task_id: " + taskId + "\nstatus: cancelled\nCancellation requested successfully.";
+        TaskCancellation cancellation =
+                taskRepository.cancelTaskWithAcknowledgement(runtimeContext, sessionId, taskId);
+        TaskCancellation.Termination termination =
+                cancellation.terminationSignal().toCompletableFuture().getNow(null);
+        String stopStatus =
+                termination != null ? termination.status().name().toLowerCase() : "pending";
+        return "task_id: "
+                + taskId
+                + "\nstatus: cancelled"
+                + "\nrequest_status: "
+                + cancellation.requestStatus().name().toLowerCase()
+                + "\nstop_status: "
+                + stopStatus;
     }
 
     @Tool(
