@@ -453,6 +453,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
+    @Override
+    public Optional<TaskSuspension> getTaskSuspension(
+            RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effectiveRc = rc != null ? rc : RuntimeContext.empty();
+        return workspaceManager
+                .readTaskRecord(effectiveRc, parentAgentId, sessionId, taskId)
+                .filter(record -> record.getStatus() == TaskStatus.WAITING_FOR_APPROVAL)
+                .map(TaskRecord::getSuspension);
+    }
+
     private String runLocalSupplier(
             RuntimeContext rc,
             String sessionId,

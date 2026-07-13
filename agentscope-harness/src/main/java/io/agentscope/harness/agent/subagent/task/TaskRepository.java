@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.subagent.task;
 import io.agentscope.core.agent.RuntimeContext;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -104,6 +105,12 @@ public interface TaskRepository {
             String taskId,
             Supplier<TaskRunOutcome> continuation) {
         return false;
+    }
+
+    /** Read the durable permission suspension for one waiting task. */
+    default Optional<TaskSuspension> getTaskSuspension(
+            RuntimeContext rc, String sessionId, String taskId) {
+        return Optional.empty();
     }
 
     // ------------------------------------------------------------------------

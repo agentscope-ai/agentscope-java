@@ -18,8 +18,10 @@ package io.agentscope.harness.agent.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -142,6 +144,18 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     public TaskRepository getTaskRepository() {
         return taskRepository;
+    }
+
+    /** Resume a native {@link AgentSpawnTool} task suspended for permission approval. */
+    public boolean resumeSubagentTask(
+            RuntimeContext parentContext,
+            AgentState parentState,
+            String taskId,
+            String replyId,
+            List<ConfirmResult> confirmResults) {
+        return subagentTool instanceof AgentSpawnTool spawnTool
+                && spawnTool.resumeSuspendedTask(
+                        parentContext, parentState, taskId, replyId, confirmResults);
     }
 
     @Override

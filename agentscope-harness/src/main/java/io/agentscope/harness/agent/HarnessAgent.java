@@ -24,6 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -445,6 +446,30 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return dm.getAgentManager();
         }
         return null;
+    }
+
+    /**
+     * Resumes a background subagent task suspended for permission approval through the native
+     * Harness task lifecycle.
+     */
+    public boolean resumeSubagentTask(
+            RuntimeContext parentContext,
+            String taskId,
+            String replyId,
+            List<ConfirmResult> confirmResults) {
+        if (parentContext == null) {
+            return false;
+        }
+        AgentState parentState = delegate.getAgentState(parentContext);
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.resumeSubagentTask(
+                    parentContext, parentState, taskId, replyId, confirmResults);
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            return dm.resumeSubagentTask(
+                    parentContext, parentState, taskId, replyId, confirmResults);
+        }
+        return false;
     }
 
     /** @see ReActAgent#getDefaultSessionId() */
