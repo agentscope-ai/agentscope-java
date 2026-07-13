@@ -115,6 +115,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -470,6 +471,38 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     parentContext, parentState, taskId, replyId, confirmResults);
         }
         return false;
+    }
+
+    /**
+     * Resolves and resumes a waiting subagent task from the child-session approval context.
+     * Repository lookup remains user-scoped and owns the task-to-parent lineage.
+     */
+    public boolean resumeSubagentTask(
+            RuntimeContext childContext,
+            String childSessionId,
+            List<ConfirmResult> confirmResults) {
+        if (childContext == null || childSessionId == null || childSessionId.isBlank()) {
+            return false;
+        }
+        TaskRepository repository = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            repository = sm.getTaskRepository();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            repository = dm.getTaskRepository();
+        }
+        if (repository == null) {
+            return false;
+        }
+        Optional<TaskRepository.SuspendedTaskRef> suspended =
+                repository.findSuspendedTaskByChildSession(childContext, childSessionId);
+        if (suspended.isEmpty()) {
+            return false;
+        }
+        TaskRepository.SuspendedTaskRef ref = suspended.get();
+        RuntimeContext parentContext =
+                RuntimeContext.builder(childContext).sessionId(ref.parentSessionId()).build();
+        return resumeSubagentTask(
+                parentContext, ref.taskId(), ref.suspension().replyId(), confirmResults);
     }
 
     /** @see ReActAgent#getDefaultSessionId() */
@@ -2214,7 +2247,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsMiddleware dynMw =
                             HarnessAgentBuilderSupport.buildDynamicSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this, wsManager, resolvedWorkspace, filesystem);
                     if (dynMw != null) {
                         if (messageBus != null) {
                             wireTaskRepositoryMessageBus(
@@ -2229,7 +2262,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else {
                     SubagentsMiddleware subagentsMw =
                             HarnessAgentBuilderSupport.buildSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this, wsManager, resolvedWorkspace, filesystem);
                     if (subagentsMw != null) {
                         if (messageBus != null) {
                             subagentsMw.wireMessageBus(messageBus, agentId);

@@ -71,6 +71,44 @@ class SuspensibleTaskRunSpecTest {
     }
 
     @Test
+    void waitingTaskLookupByChildSessionIsUserScopedAndReturnsParentLineage() throws Exception {
+        submitWaiting("task-child-lookup");
+        awaitStatus("task-child-lookup", TaskStatus.WAITING_FOR_APPROVAL);
+
+        TaskRepository.SuspendedTaskRef found =
+                repo.findSuspendedTaskByChildSession(
+                                RuntimeContext.builder()
+                                        .userId("user-a")
+                                        .sessionId("child-session")
+                                        .build(),
+                                "child-session")
+                        .orElseThrow();
+        assertEquals("task-child-lookup", found.taskId());
+        assertEquals("parent-session", found.parentSessionId());
+        assertEquals(suspension(), found.suspension());
+        assertTrue(
+                repo.findSuspendedTaskByChildSession(
+                                RuntimeContext.builder()
+                                        .userId("user-b")
+                                        .sessionId("child-session")
+                                        .build(),
+                                "child-session")
+                        .isEmpty());
+
+        submitWaiting("task-child-lookup-duplicate");
+        awaitStatus("task-child-lookup-duplicate", TaskStatus.WAITING_FOR_APPROVAL);
+        assertTrue(
+                repo.findSuspendedTaskByChildSession(
+                                RuntimeContext.builder()
+                                        .userId("user-a")
+                                        .sessionId("child-session")
+                                        .build(),
+                                "child-session")
+                        .isEmpty(),
+                "ambiguous waiting tasks for one child must fail closed");
+    }
+
+    @Test
     void repositoryOwnsResumeExecutionAndCompletesExactlyOnce() throws Exception {
         submitWaiting("task-resume");
         awaitStatus("task-resume", TaskStatus.WAITING_FOR_APPROVAL);

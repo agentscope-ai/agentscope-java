@@ -463,6 +463,41 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 .map(TaskRecord::getSuspension);
     }
 
+    @Override
+    public Optional<SuspendedTaskRef> findSuspendedTaskByChildSession(
+            RuntimeContext childContext, String childSessionId) {
+        if (childContext == null
+                || childContext.getUserId() == null
+                || childContext.getUserId().isBlank()
+                || childSessionId == null
+                || childSessionId.isBlank()) {
+            return Optional.empty();
+        }
+        List<SuspendedTaskRef> matches =
+                workspaceManager
+                        .listAllTaskRecords(childContext, parentAgentId, Duration.ofDays(36_500))
+                        .stream()
+                        .filter(record -> record.getStatus() == TaskStatus.WAITING_FOR_APPROVAL)
+                        .filter(record -> record.getSuspension() != null)
+                        .filter(
+                                record ->
+                                        childContext
+                                                .getUserId()
+                                                .equals(record.getSuspension().userId()))
+                        .filter(
+                                record ->
+                                        childSessionId.equals(
+                                                record.getSuspension().subSessionId()))
+                        .map(
+                                record ->
+                                        new SuspendedTaskRef(
+                                                record.getTaskId(),
+                                                record.getParentSessionId(),
+                                                record.getSuspension()))
+                        .toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+    }
+
     private String runLocalSupplier(
             RuntimeContext rc,
             String sessionId,

@@ -113,6 +113,14 @@ public interface TaskRepository {
         return Optional.empty();
     }
 
+    /** Identifies one waiting task by its exact owning user and child session. */
+    default Optional<SuspendedTaskRef> findSuspendedTaskByChildSession(
+            RuntimeContext childContext, String childSessionId) {
+        return Optional.empty();
+    }
+
+    record SuspendedTaskRef(String taskId, String parentSessionId, TaskSuspension suspension) {}
+
     // ------------------------------------------------------------------------
     // Phase B-3 — push delivery API.
     //

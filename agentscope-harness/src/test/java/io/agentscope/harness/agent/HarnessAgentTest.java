@@ -49,6 +49,7 @@ import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
@@ -864,6 +865,43 @@ class HarnessAgentTest {
                 workspace.normalize(),
                 child.getWorkspaceManager().getWorkspace().normalize(),
                 "shared+no-path: runtime workspace must be mainWorkspace");
+    }
+
+    @Test
+    void sharedDeclarationUsesParentsResolvedLocalFilesystemSpec() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("shared-native")
+                        .description("shared native filesystem")
+                        .workspaceMode(WorkspaceMode.SHARED)
+                        .inlineAgentsBody("Use the parent workspace.")
+                        .build();
+
+        try (HarnessAgent parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new LocalFilesystemSpec().project(workspace))
+                        .subagent(declaration)
+                        .build()) {
+            Agent materialized =
+                    parent.getSubagentAgentManager()
+                            .createAgentIfPresent(
+                                    "shared-native",
+                                    RuntimeContext.builder()
+                                            .userId("user-a")
+                                            .sessionId("parent-a")
+                                            .build())
+                            .orElseThrow();
+            try (HarnessAgent child = (HarnessAgent) materialized) {
+                assertSame(
+                        parent.getWorkspaceManager().getFilesystem(),
+                        child.getWorkspaceManager().getFilesystem(),
+                        "shared child must reuse the resolved parent filesystem owner");
+            }
+        }
     }
 
     /** Row 5 (built-in general-purpose): runtime root = mainWorkspace. */

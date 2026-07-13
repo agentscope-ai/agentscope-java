@@ -32,7 +32,6 @@ import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
-import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
@@ -186,7 +185,7 @@ final class HarnessAgentBuilderSupport {
      * {@code workspace/subagents/*.md}, and custom factories.
      */
     static List<SubagentEntry> buildSubagentEntries(
-            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b, Path resolvedWorkspace, AbstractFilesystem sharedFilesystem) {
         List<SubagentDeclaration> allDeclarations = new ArrayList<>(b.subagentDeclarations);
 
         Path subagentsDir = resolvedWorkspace.resolve("subagents");
@@ -202,7 +201,7 @@ final class HarnessAgentBuilderSupport {
                         "general-purpose",
                         "General-purpose subagent with same capabilities as the main agent."
                                 + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                        buildGeneralPurposeFactory(b, resolvedWorkspace, sharedFilesystem),
                         null));
 
         for (SubagentDeclaration decl : allDeclarations) {
@@ -210,7 +209,7 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             decl.getName(),
                             decl.getDescription(),
-                            buildDeclaredFactory(b, decl, resolvedWorkspace, sandboxFs),
+                            buildDeclaredFactory(b, decl, resolvedWorkspace, sharedFilesystem),
                             decl));
         }
 
@@ -231,13 +230,13 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Like {@link #buildSubagentEntries(HarnessAgent.Builder, Path, SandboxBackedFilesystem)} but
+     * Like {@link #buildSubagentEntries(HarnessAgent.Builder, Path, AbstractFilesystem)} but
      * omits the local-disk {@code subagents/} scan. The {@code DynamicSubagentsMiddleware} performs that
      * scan itself on every reasoning step (Layer 2), so feeding the same entries in here would
      * register them twice.
      */
     static List<SubagentEntry> buildStaticSubagentEntries(
-            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b, Path resolvedWorkspace, AbstractFilesystem sharedFilesystem) {
         List<SubagentEntry> entries = new ArrayList<>();
 
         entries.add(
@@ -245,7 +244,7 @@ final class HarnessAgentBuilderSupport {
                         "general-purpose",
                         "General-purpose subagent with same capabilities as the main agent."
                                 + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                        buildGeneralPurposeFactory(b, resolvedWorkspace, sharedFilesystem),
                         null));
 
         for (SubagentDeclaration decl : b.subagentDeclarations) {
@@ -253,7 +252,7 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             decl.getName(),
                             decl.getDescription(),
-                            buildDeclaredFactory(b, decl, resolvedWorkspace, sandboxFs),
+                            buildDeclaredFactory(b, decl, resolvedWorkspace, sharedFilesystem),
                             decl));
         }
 
@@ -277,11 +276,11 @@ final class HarnessAgentBuilderSupport {
      * Builds a factory for the built-in general-purpose subagent.
      */
     static SubagentFactory buildGeneralPurposeFactory(
-            HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b, Path workspace, AbstractFilesystem sharedFilesystem) {
         final Model capturedModel = b.model;
         final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
         final AbstractFilesystem capturedBackend =
-                sandboxFs != null ? sandboxFs : b.abstractFilesystem;
+                sharedFilesystem != null ? sharedFilesystem : b.abstractFilesystem;
         final int capturedMaxIters = b.maxIters;
         final ExecutionConfig capturedModelExec = b.modelExecutionConfig;
         final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
@@ -374,13 +373,13 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b,
             SubagentDeclaration decl,
             Path mainWorkspace,
-            SandboxBackedFilesystem sandboxFs) {
+            AbstractFilesystem sharedFilesystem) {
         final Model capturedModel = b.model;
         final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
-                sandboxFs != null ? sandboxFs : b.abstractFilesystem;
+                sharedFilesystem != null ? sharedFilesystem : b.abstractFilesystem;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -658,8 +657,8 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
-            SandboxBackedFilesystem sandboxFs) {
-        List<SubagentEntry> entries = buildSubagentEntries(b, workspace, sandboxFs);
+            AbstractFilesystem sharedFilesystem) {
+        List<SubagentEntry> entries = buildSubagentEntries(b, workspace, sharedFilesystem);
         TaskRepository repo = resolveTaskRepository(b, wsManager);
 
         if (b.externalSubagentTool != null) {
@@ -668,7 +667,7 @@ final class HarnessAgentBuilderSupport {
 
         AbstractFilesystem fs = wsManager.getFilesystem();
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
-                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
+                decl -> buildDeclaredFactory(b, decl, workspace, sharedFilesystem);
         return new SubagentsMiddleware(entries, repo, wsManager, fs, workspace, factoryFn);
     }
 
@@ -676,13 +675,14 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
-            SandboxBackedFilesystem sandboxFs) {
-        List<SubagentEntry> staticEntries = buildStaticSubagentEntries(b, workspace, sandboxFs);
+            AbstractFilesystem sharedFilesystem) {
+        List<SubagentEntry> staticEntries =
+                buildStaticSubagentEntries(b, workspace, sharedFilesystem);
         TaskRepository repo = resolveTaskRepository(b, wsManager);
 
         AbstractFilesystem fs = wsManager.getFilesystem();
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
-                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
+                decl -> buildDeclaredFactory(b, decl, workspace, sharedFilesystem);
         DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
         return new DynamicSubagentsMiddleware(
                 staticEntries, fs, workspace, factoryFn, manager, b.externalSubagentTool, repo);
