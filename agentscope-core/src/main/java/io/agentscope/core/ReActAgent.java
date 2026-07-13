@@ -1978,10 +1978,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         new ReasoningInput(
                                                                 modelInput, tools, options));
                                 // Track any RequestStopEvent emitted by middlewares while still
-                                // exhausting the stream (publishEvent already fires on each event).
+                                // exhausting the stream. Publish at the outer reasoning boundary
+                                // so events added by onReasoning middlewares are forwarded too.
                                 AtomicReference<RequestStopEvent> stopRequested =
                                         new AtomicReference<>();
-                                return stream.doOnNext(
+                                return stream.doOnNext(this::publishEvent)
+                                        .doOnNext(
                                                 ev -> {
                                                     if (ev instanceof RequestStopEvent rs) {
                                                         stopRequested.compareAndSet(null, rs);
@@ -2118,8 +2120,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
-                    .doOnNext(this::publishEvent);
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
         }
 
         private Flux<AgentEvent> modelCallStream(
