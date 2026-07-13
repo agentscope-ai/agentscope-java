@@ -494,17 +494,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         if (childContext == null || childSessionId == null || childSessionId.isBlank()) {
             return false;
         }
-        TaskRepository repository = null;
-        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
-            repository = sm.getTaskRepository();
-        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
-            repository = dm.getTaskRepository();
-        }
-        if (repository == null) {
-            return false;
-        }
         Optional<TaskRepository.SuspendedTaskRef> suspended =
-                repository.findSuspendedTaskByChildSession(childContext, childSessionId);
+                findSuspendedSubagentTask(childContext, childSessionId);
         if (suspended.isEmpty()) {
             return false;
         }
@@ -513,6 +504,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 RuntimeContext.builder(childContext).sessionId(ref.parentSessionId()).build();
         return resumeSubagentTask(
                 parentContext, ref.taskId(), ref.suspension().replyId(), confirmResults);
+    }
+
+    /** Finds one waiting task by exact user and child-session lineage. */
+    public Optional<TaskRepository.SuspendedTaskRef> findSuspendedSubagentTask(
+            RuntimeContext childContext, String childSessionId) {
+        if (childContext == null || childSessionId == null || childSessionId.isBlank()) {
+            return Optional.empty();
+        }
+        TaskRepository repository = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            repository = sm.getTaskRepository();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            repository = dm.getTaskRepository();
+        }
+        if (repository == null) {
+            return Optional.empty();
+        }
+        return repository.findSuspendedTaskByChildSession(childContext, childSessionId);
     }
 
     /** @see ReActAgent#getDefaultSessionId() */
