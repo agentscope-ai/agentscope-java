@@ -1181,6 +1181,53 @@ class HarnessAgentTest {
                 "body should be inline agents body when no workspace.path");
     }
 
+    @Test
+    void interruptWithContext_delegatesToInnerReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        agent.interrupt(ctx);
+
+        assertTrue(
+                agent.getDelegate().getAgentState("u1", "sessA").interruptControl().isInterrupted(),
+                "HarnessAgent.interrupt(ctx) must reach the inner ReActAgent's matching slot");
+        assertFalse(
+                agent.getDelegate().getAgentState("u1", "sessB").interruptControl().isInterrupted(),
+                "unrelated slot must not observe the signal");
+    }
+
+    @Test
+    void interruptWithContextAndMsg_forwardsMessageThroughDelegate() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+        Msg attached =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("please stop").build())
+                        .build();
+
+        agent.interrupt(ctx, attached);
+
+        var control = agent.getDelegate().getAgentState("u1", "sessA").interruptControl();
+        assertTrue(control.isInterrupted());
+        assertSame(attached, control.getUserMessage());
+    }
+
     private static Model stubModel(String assistantText) {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub-model");
