@@ -89,6 +89,7 @@ public class OpenAIMultiModalTool {
      *
      * @param apiKey the OpenAI API key
      */
+    @Deprecated
     public OpenAIMultiModalTool(String apiKey) {
         this(apiKey, null, "gpt-4o");
     }
@@ -99,6 +100,7 @@ public class OpenAIMultiModalTool {
      * @param apiKey the OpenAI API key
      * @param baseUrl the base URL (null for default https://api.openai.com)
      */
+    @Deprecated
     public OpenAIMultiModalTool(String apiKey, String baseUrl) {
         this(apiKey, baseUrl, "gpt-4o");
     }
@@ -111,6 +113,7 @@ public class OpenAIMultiModalTool {
      * @param defaultVisionModel the default vision model name used when the caller omits the model
      *     parameter (e.g., "gpt-4o" for OpenAI, or your backend's vision model name)
      */
+    @Deprecated
     public OpenAIMultiModalTool(String apiKey, String baseUrl, String defaultVisionModel) {
         this(
                 apiKey,
@@ -148,6 +151,7 @@ public class OpenAIMultiModalTool {
      *
      * @param client the OpenAI client
      */
+    @Deprecated
     protected OpenAIMultiModalTool(OpenAIClient client) {
         this(client, "gpt-4o");
     }
@@ -158,6 +162,7 @@ public class OpenAIMultiModalTool {
      * @param client the OpenAI client
      * @param defaultVisionModel the default vision model name
      */
+    @Deprecated
     protected OpenAIMultiModalTool(OpenAIClient client, String defaultVisionModel) {
         if (defaultVisionModel == null || defaultVisionModel.trim().isEmpty()) {
             throw new IllegalArgumentException("defaultVisionModel cannot be empty.");
