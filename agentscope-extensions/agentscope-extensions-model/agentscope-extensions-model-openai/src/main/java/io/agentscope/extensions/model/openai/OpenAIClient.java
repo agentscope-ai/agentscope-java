@@ -65,6 +65,9 @@ public class OpenAIClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
 
+    /** SSE sentinel emitted by the OpenAI streaming API to signal end of stream. */
+    private static final String SSE_DONE_MARKER = "[DONE]";
+
     /** Default base URL for OpenAI API. */
     public static final String DEFAULT_BASE_URL = "https://api.openai.com";
 
@@ -402,7 +405,7 @@ public class OpenAIClient {
                     // rather than merely filtering it out, otherwise completion is deferred until
                     // the underlying connection closes (keep-alive gateways may stall this for the
                     // full idle timeout even though the model has finished responding).
-                    .takeWhile(data -> !data.equals("[DONE]"))
+                    .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
                     .<OpenAIResponse>handle(
                             (data, sink) -> {
                                 OpenAIResponse response = parseStreamData(data);
