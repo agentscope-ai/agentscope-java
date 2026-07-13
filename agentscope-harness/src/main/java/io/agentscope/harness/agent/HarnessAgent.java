@@ -449,6 +449,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return null;
     }
 
+    /** Installs a customization applied after each native child materialization. */
+    public void setSubagentMaterializationCustomizer(
+            java.util.function.Consumer<Agent> customizer) {
+        io.agentscope.harness.agent.subagent.DefaultAgentManager manager =
+                getSubagentAgentManager();
+        if (manager != null) {
+            manager.setMaterializationCustomizer(customizer);
+        }
+    }
+
     /**
      * Resumes a background subagent task suspended for permission approval through the native
      * Harness task lifecycle.

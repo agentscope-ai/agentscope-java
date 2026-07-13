@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -55,6 +56,7 @@ public final class DefaultAgentManager {
     private volatile Map<String, SubagentFactory> agentFactories;
     private volatile Map<String, SubagentDeclaration> declarations;
     private final WorkspaceManager workspaceManager;
+    private volatile Consumer<Agent> materializationCustomizer = ignored -> {};
 
     /**
      * Builds a manager from subagent entries (factories plus optional {@link SubagentDeclaration}
@@ -127,7 +129,7 @@ public final class DefaultAgentManager {
         if (decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY) {
             return Optional.empty();
         }
-        return Optional.of(factory.create(parentRc != null ? parentRc : RuntimeContext.empty()));
+        return Optional.of(customize(factory.create(effectiveContext(parentRc))));
     }
 
     /**
@@ -167,7 +169,21 @@ public final class DefaultAgentManager {
         if (factory == null) {
             throw new IllegalArgumentException("Unknown agent_id: " + agentId);
         }
-        return factory.create(parentRc != null ? parentRc : RuntimeContext.empty());
+        return customize(factory.create(effectiveContext(parentRc)));
+    }
+
+    /** Applies a host customization after every native child materialization. */
+    public void setMaterializationCustomizer(Consumer<Agent> customizer) {
+        materializationCustomizer = customizer != null ? customizer : ignored -> {};
+    }
+
+    private Agent customize(Agent agent) {
+        materializationCustomizer.accept(agent);
+        return agent;
+    }
+
+    private static RuntimeContext effectiveContext(RuntimeContext context) {
+        return context != null ? context : RuntimeContext.empty();
     }
 
     /**
