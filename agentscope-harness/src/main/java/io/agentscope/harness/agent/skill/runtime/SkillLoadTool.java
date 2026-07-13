@@ -68,6 +68,11 @@ public final class SkillLoadTool implements AgentTool {
     }
 
     @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
     public String getName() {
         return TOOL_NAME;
     }

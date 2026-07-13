@@ -69,6 +69,7 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = HintBlockEvent.class, name = "HINT_BLOCK"),
     @JsonSubTypes.Type(value = CompactionStartEvent.class, name = "COMPACTION_START"),
     @JsonSubTypes.Type(value = CompactionEndEvent.class, name = "COMPACTION_END"),
+    @JsonSubTypes.Type(value = AllToolsDeniedEvent.class, name = "ALL_TOOLS_DENIED"),
     @JsonSubTypes.Type(value = CustomEvent.class, name = "CUSTOM")
 })
 public abstract class AgentEvent {

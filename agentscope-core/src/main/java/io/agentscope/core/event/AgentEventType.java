@@ -90,6 +90,8 @@ public enum AgentEventType {
     COMPACTION_START("COMPACTION_START"),
     COMPACTION_END("COMPACTION_END"),
 
+    ALL_TOOLS_DENIED("ALL_TOOLS_DENIED"),
+
     CUSTOM("CUSTOM");
 
     private final String value;

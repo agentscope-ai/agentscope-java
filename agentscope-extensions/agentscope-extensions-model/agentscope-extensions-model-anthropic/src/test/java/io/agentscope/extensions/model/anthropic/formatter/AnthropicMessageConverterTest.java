@@ -323,6 +323,100 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertParallelToolCallsToAlternatingMessages() {
+        Msg userMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Check Beijing and Hangzhou weather in parallel.")
+                                        .build())
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("I will check both cities at the same time.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Hangzhou"))
+                                                .build()))
+                        .build();
+        Msg toolResultsMsg1 =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .output(
+                                                        TextBlock.builder()
+                                                                .text("Beijing: sunny, 28 C")
+                                                                .build())
+                                                .build()))
+                        .build();
+        Msg toolResultsMsg2 =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .output(
+                                                        TextBlock.builder()
+                                                                .text("Hangzhou: cloudy, 30 C")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result =
+                converter.convert(List.of(userMsg, assistantMsg, toolResultsMsg1, toolResultsMsg2));
+
+        assertEquals(5, result.size());
+        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        assertEquals(
+                "Check Beijing and Hangzhou weather in parallel.",
+                result.get(0).content().asBlockParams().get(0).asText().text());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
+        assertEquals(2, result.get(1).content().asBlockParams().size());
+        assertTrue(result.get(1).content().asBlockParams().get(0).isText());
+        assertEquals(
+                "I will check both cities at the same time.",
+                result.get(1).content().asBlockParams().get(0).asText().text());
+        assertTrue(result.get(1).content().asBlockParams().get(1).isToolUse());
+        assertEquals("call_1", result.get(1).content().asBlockParams().get(1).asToolUse().id());
+        assertEquals(MessageParam.Role.USER, result.get(2).role());
+        assertTrue(result.get(2).content().asBlockParams().get(0).isToolResult());
+        assertEquals(
+                "call_1",
+                result.get(2).content().asBlockParams().get(0).asToolResult().toolUseId());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(3).role());
+        assertEquals(1, result.get(3).content().asBlockParams().size());
+        assertTrue(result.get(3).content().asBlockParams().get(0).isToolUse());
+        assertEquals("call_2", result.get(3).content().asBlockParams().get(0).asToolUse().id());
+        assertEquals(MessageParam.Role.USER, result.get(4).role());
+        assertTrue(result.get(4).content().asBlockParams().get(0).isToolResult());
+        assertEquals(
+                "call_2",
+                result.get(4).content().asBlockParams().get(0).asToolResult().toolUseId());
+    }
+
+    @Test
     void testConvertToolResultBlockNullOutput() {
         // Builder without output() call will have null output, which becomes empty list
         Msg msg =
