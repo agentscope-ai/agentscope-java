@@ -29,7 +29,6 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
-import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -43,8 +42,6 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -240,20 +237,6 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
-
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
-        if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
-                return Mono.just(
-                        "Error: agent_id '"
-                                + agentId
-                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
-            }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
-            return Mono.just("Error: Unknown agent_id: " + agentId);
-        }
-        log.debug("agent_spawn resolved: agentId={}", agentId);
-        Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = agentManager.getDeclaration(agentId);
@@ -268,6 +251,8 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                inheritParentPermissionContext(
+                        parentState, existing.agent(), currentUserId, sessionId, declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -280,6 +265,20 @@ public class AgentSpawnTool {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
             sessionId = "sub-" + UUID.randomUUID();
         }
+
+        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        if (agentOpt.isEmpty()) {
+            if (agentManager.isPrimaryOnly(agentId)) {
+                return Mono.just(
+                        "Error: agent_id '"
+                                + agentId
+                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
+            }
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            return Mono.just("Error: Unknown agent_id: " + agentId);
+        }
+        log.debug("agent_spawn resolved: agentId={}", agentId);
+        Agent agent = agentOpt.get();
 
         // Label uniqueness check — skipped above for persist=true reuse path (already returned).
         if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
@@ -301,11 +300,7 @@ public class AgentSpawnTool {
             ha.enterPlanMode(currentUserId, sessionId);
         }
 
-        // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        inheritParentPermissionContext(parentState, agent, currentUserId, sessionId, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -1203,25 +1198,34 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
-    /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
-     */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
+    private static void inheritParentPermissionContext(
+            AgentState parentState,
+            Agent childAgent,
+            String userId,
+            String childSessionId,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
             return;
         }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
+        ReActAgent child = reactAgent(childAgent);
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (child == null || parentPermissions == null) {
             return;
         }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState inherited = childPermissions.inheritFrom(parentPermissions);
+        if (!inherited.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, inherited);
         }
+    }
+
+    private static ReActAgent reactAgent(Agent agent) {
+        if (agent instanceof HarnessAgent harnessAgent) {
+            return harnessAgent.getDelegate();
+        }
+        return agent instanceof ReActAgent reactAgent ? reactAgent : null;
     }
 }
