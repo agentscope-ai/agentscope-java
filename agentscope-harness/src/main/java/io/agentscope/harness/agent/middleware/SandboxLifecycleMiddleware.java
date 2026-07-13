@@ -136,7 +136,21 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             try {
                 sandbox.start();
                 filesystemProxy.bindSandbox(sessionKey, sandbox);
-                acquireResults.put(sessionKey, result);
+                SandboxAcquireResult previous = acquireResults.putIfAbsent(sessionKey, result);
+                if (previous != null) {
+                    // Same-session serialization is enforced above this middleware (ReActAgent
+                    // slot lock + optional SandboxExecutionGuard). A pre-existing entry here
+                    // means that invariant was violated. Log loudly so the leak is diagnosable;
+                    // we deliberately do not attempt recovery, since the previous binding was
+                    // already overwritten by bindSandbox above and any rollback would be
+                    // best-effort at best.
+                    log.warn(
+                            "[sandbox-mw] Overwriting sandbox binding for sessionKey {}:"
+                                    + " previous acquire result was never released. Same-session"
+                                    + " serialization pre-condition violated; the previous sandbox"
+                                    + " will leak.",
+                            sessionKey);
+                }
                 log.debug(
                         "[sandbox-mw] Acquired sandbox {} for session {}",
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?",
