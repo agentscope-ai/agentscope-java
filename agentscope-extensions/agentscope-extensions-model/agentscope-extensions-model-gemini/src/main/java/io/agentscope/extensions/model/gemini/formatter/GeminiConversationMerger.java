@@ -19,6 +19,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -135,6 +136,15 @@ public class GeminiConversationMerger {
                     }
                     // Add video as separate Part
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
+
+                } else if (block instanceof DataBlock db) {
+                    // Flush accumulated text as a Part
+                    if (!accumulatedText.isEmpty()) {
+                        parts.add(Part.builder().text(String.join("\n", accumulatedText)).build());
+                        accumulatedText.clear();
+                    }
+                    // Add data block as separate Part
+                    parts.add(mediaConverter.convertToInlineDataPart(db));
                 }
             }
         }
