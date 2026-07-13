@@ -155,6 +155,28 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
+    /**
+     * Plan-control tools automatically allowed (no ASK) under {@link
+     * io.agentscope.core.permission.PermissionMode#DEFAULT} when plan mode is enabled. These are
+     * pure plan-authoring tools whose only effect is writing the plan file or the todo list.
+     *
+     * <p>This is a deliberate subset of {@code PlanModeMiddleware.ALWAYS_ALLOWED}:
+     *
+     * <ul>
+     *   <li>{@code plan_exit} is excluded — leaving plan mode is a human-in-the-loop hand-off. Its
+     *       tool-level ASK self-check plus the absence of an ALLOW rule together guarantee the user
+     *       approves the plan before execution begins.
+     *   <li>The subagent / task tools ({@code agent_spawn}, {@code agent_send}, {@code agent_list},
+     *       {@code task_output}, {@code task_list}) are excluded — they have side effects and
+     *       remain ASK-gated in DEFAULT mode.
+     * </ul>
+     *
+     * <p>Keep this in sync with {@code PlanModeMiddleware.ALWAYS_ALLOWED} whenever a new
+     * plan-authoring tool is added; tools that should stay HITL-gated are intentionally left out.
+     */
+    private static final List<String> PLAN_CONTROL_AUTO_ALLOW_TOOLS =
+            List.of(PlanModeTools.PLAN_ENTER, PlanModeTools.PLAN_WRITE, "todo_write");
+
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
     private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
@@ -2304,8 +2326,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         .forEach((t, rules) -> rules.forEach(r -> pb.addAllowRule(t, r)));
                 base.getDenyRules().forEach((t, rules) -> rules.forEach(r -> pb.addDenyRule(t, r)));
                 base.getAskRules().forEach((t, rules) -> rules.forEach(r -> pb.addAskRule(t, r)));
-                for (String toolName :
-                        List.of(PlanModeTools.PLAN_ENTER, PlanModeTools.PLAN_WRITE, "todo_write")) {
+                for (String toolName : PLAN_CONTROL_AUTO_ALLOW_TOOLS) {
                     pb.addAllowRule(
                             toolName,
                             new PermissionRule(

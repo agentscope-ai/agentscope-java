@@ -105,6 +105,44 @@ public final class PermissionEngine {
         }
     }
 
+    /**
+     * Re-inserts any rules present in {@code source} that are missing from this engine, so that
+     * builder-time invariant permissions (e.g. plan-control ALLOW rules) survive session restore
+     * when the persisted {@link PermissionContextState} has drifted from the builder-time one.
+     *
+     * <p>All three rule tables (allow/deny/ask) are synced symmetrically. The merge is idempotent:
+     * a rule already present — compared by value equality, since {@link PermissionRule} is a
+     * record — is not duplicated. This is a no-op when {@code source} is the very context instance
+     * this engine was constructed from, because the engine already reflects it exactly.
+     *
+     * <p>Partitioning follows {@link PermissionContextState}'s own tables (the same convention used
+     * at construction), so a rule is compared against and added to the table it lives in under
+     * {@code source}, regardless of its {@link PermissionRule#behavior()} field.
+     *
+     * @param source the context whose rules must be present in this engine; {@code null} is a no-op
+     */
+    public void ensureRulesFrom(PermissionContextState source) {
+        if (source == null || this.context == source) {
+            return;
+        }
+        reinsertMissing(source.getAllowRules(), allowRules);
+        reinsertMissing(source.getDenyRules(), denyRules);
+        reinsertMissing(source.getAskRules(), askRules);
+    }
+
+    private static void reinsertMissing(
+            Map<String, List<PermissionRule>> source, Map<String, List<PermissionRule>> target) {
+        source.forEach(
+                (tool, rules) -> {
+                    List<PermissionRule> existing = target.getOrDefault(tool, List.of());
+                    for (PermissionRule rule : rules) {
+                        if (!existing.contains(rule)) {
+                            target.computeIfAbsent(tool, k -> new ArrayList<>()).add(rule);
+                        }
+                    }
+                });
+    }
+
     /** Read-only view of the engine's current allow-rule table. */
     public Map<String, List<PermissionRule>> getAllowRules() {
         return unmodifiableSnapshot(allowRules);

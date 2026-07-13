@@ -408,28 +408,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return asb.build();
     }
 
-    // Injects builder-time allow rules into a PermissionEngine loaded from persisted state,
-    // ensuring invariant permissions (e.g. plan-control tools) survive session restore.
-    private static void ensureInitialAllowRules(
-            PermissionEngine engine, PermissionContextState initialCtx) {
-        if (initialCtx == null || initialCtx.getAllowRules().isEmpty()) {
-            return;
-        }
-        if (engine.getContext() == initialCtx) {
-            return;
-        }
-        Map<String, List<PermissionRule>> engineAllow = engine.getAllowRules();
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                initialCtx.getAllowRules().entrySet()) {
-            List<PermissionRule> existing = engineAllow.getOrDefault(entry.getKey(), List.of());
-            for (PermissionRule rule : entry.getValue()) {
-                if (!existing.contains(rule)) {
-                    engine.addRule(rule);
-                }
-            }
-        }
-    }
-
     /**
      * Persist the current {@link AgentState} via the configured {@link AgentStateStore}, or {@code
      * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
@@ -490,7 +468,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         PermissionEngine loadedEngine;
         if (stateStore != null) {
             loadedEngine = new PermissionEngine(loaded.getPermissionContext());
-            ensureInitialAllowRules(loadedEngine, initialPermissionContext);
+            loadedEngine.ensureRulesFrom(initialPermissionContext);
             permissionEngineCache.put(slot, loadedEngine);
         } else {
             loadedEngine =
@@ -499,7 +477,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             k -> {
                                 PermissionEngine pe =
                                         new PermissionEngine(loaded.getPermissionContext());
-                                ensureInitialAllowRules(pe, initialPermissionContext);
+                                pe.ensureRulesFrom(initialPermissionContext);
                                 return pe;
                             });
         }

@@ -26,9 +26,13 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import java.nio.file.Path;
@@ -72,6 +76,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode(true)
                         .build();
 
@@ -95,6 +100,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode(true)
                         .build();
 
@@ -118,6 +124,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode(true)
                         .build();
 
@@ -141,6 +148,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode(true)
                         .build();
 
@@ -163,6 +171,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode(true)
                         .permissionContext(
                                 PermissionContextState.builder()
@@ -186,6 +195,7 @@ class HarnessAgentPlanModePermissionTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
                         .build();
 
         PermissionContextState perm = agent.getDelegate().getPermissionContext();
@@ -193,5 +203,67 @@ class HarnessAgentPlanModePermissionTest {
                 0,
                 perm.getAllowRules().size(),
                 "no allow rules should be injected when plan mode is disabled");
+    }
+
+    @Test
+    void enablePlanMode_userDenyAndAskRulesArePreserved() throws Exception {
+        java.nio.file.Files.createDirectories(workspace);
+        PermissionRule denyRule =
+                new PermissionRule("dangerous", null, PermissionBehavior.DENY, "user");
+        PermissionRule askRule = new PermissionRule("risky", null, PermissionBehavior.ASK, "user");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
+                        .enablePlanMode(true)
+                        .permissionContext(
+                                PermissionContextState.builder()
+                                        .mode(PermissionMode.DEFAULT)
+                                        .addDenyRule("dangerous", denyRule)
+                                        .addAskRule("risky", askRule)
+                                        .build())
+                        .build();
+
+        PermissionContextState perm = agent.getDelegate().getPermissionContext();
+        List<PermissionRule> denyRules = perm.getDenyRules().get("dangerous");
+        List<PermissionRule> askRules = perm.getAskRules().get("risky");
+        assertEquals(
+                1, denyRules == null ? 0 : denyRules.size(), "user deny rule must be preserved");
+        assertEquals(1, askRules == null ? 0 : askRules.size(), "user ask rule must be preserved");
+    }
+
+    @Test
+    void enablePlanMode_engineAllowsPlanWriteAndAsksPlanExit() throws Exception {
+        java.nio.file.Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .stateStore(new InMemoryAgentStateStore())
+                        .enablePlanMode(true)
+                        .build();
+
+        // Drive the real plan tools through the injected context + engine, proving the issue-1910
+        // symptom is fixed at the permission layer (plan_write auto-allowed, plan_exit HITL).
+        PermissionEngine engine = new PermissionEngine(agent.getDelegate().getPermissionContext());
+        Toolkit tk = agent.getToolkit();
+        ToolBase planWrite = (ToolBase) tk.getTool(PlanModeTools.PLAN_WRITE);
+        ToolBase planExit = (ToolBase) tk.getTool(PlanModeTools.PLAN_EXIT);
+
+        PermissionDecision writeDecision = engine.checkPermission(planWrite, Map.of()).block();
+        assertEquals(
+                PermissionBehavior.ALLOW,
+                writeDecision.getBehavior(),
+                "plan_write must be auto-allowed (no ASK) under DEFAULT with plan mode enabled");
+        PermissionDecision exitDecision = engine.checkPermission(planExit, Map.of()).block();
+        assertEquals(
+                PermissionBehavior.ASK,
+                exitDecision.getBehavior(),
+                "plan_exit must remain ASK (HITL) even with plan mode enabled");
     }
 }
