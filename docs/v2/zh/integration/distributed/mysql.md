@@ -24,10 +24,13 @@ DistributedStore store = MysqlDistributedStore.create(dataSource);
 
 HarnessAgent agent = HarnessAgent.builder()
     .distributedStore(store)
+    .maxPersistedContextMessages(200)  // 可选：限制会话状态增长
     .filesystem(new RemoteFilesystemSpec()
             .isolationScope(IsolationScope.USER))
     .build();
 ```
+
+`agent_state` 会序列化完整的会话上下文，因此长期运行的会话会持续增长。请参阅 [Agent 状态存储](../session/overview.md)，了解持久化消息上限和由接入系统主动删除会话的方式。
 
 ## 提供的组件
 

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -117,6 +118,81 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("persisted context keeps only the configured number of recent messages")
+    void persistedContextIsBoundedWithoutMutatingLiveState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .stateStore(store)
+                        .maxPersistedContextMessages(2)
+                        .build();
+        AgentState live = agent.getAgentState("u1", "sessA");
+        live.contextMutable()
+                .addAll(List.of(userMsg("one"), userMsg("two"), userMsg("three"), userMsg("four")));
+
+        agent.saveAgentState("u1", "sessA");
+
+        assertEquals(4, live.getContext().size(), "saving must not trim the live state");
+        AgentState persisted =
+                store.get("u1", "sessA", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(List.of("three", "four"), allText(persisted));
+    }
+
+    @Test
+    @DisplayName("automatic call persistence applies the configured context limit")
+    void automaticCallPersistenceIsBounded() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .stateStore(store)
+                        .maxPersistedContextMessages(3)
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        agent.call(List.of(userMsg("first")), ctx).block(Duration.ofSeconds(5));
+        agent.call(List.of(userMsg("second")), ctx).block(Duration.ofSeconds(5));
+
+        AgentState persisted =
+                store.get("u1", "sessA", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(3, persisted.getContext().size());
+        assertEquals(List.of("ok", "second", "ok"), allText(persisted));
+    }
+
+    @Test
+    @DisplayName("deleteSessionState removes persisted state and evicts local caches")
+    void deleteSessionStateRemovesStoreAndCache() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        AgentState original = agent.getAgentState("u1", "sessA");
+        original.setSummary("stale");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.deleteSessionState("u1", "sessA");
+
+        assertFalse(store.exists("u1", "sessA"));
+        AgentState fresh = agent.getAgentState("u1", "sessA");
+        assertNotSame(original, fresh);
+        assertEquals("", fresh.getSummary());
+    }
+
+    @Test
+    @DisplayName("negative persisted context limit is rejected")
+    void negativePersistedContextLimitIsRejected() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ReActAgent.builder().maxPersistedContextMessages(-1));
+
+        assertTrue(error.getMessage().contains("must be >= 0"));
     }
 
     @Test
