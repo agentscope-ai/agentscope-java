@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -156,6 +157,54 @@ public final class PermissionContextState {
         copyInto(denyRules, b::addDenyRule);
         copyInto(askRules, b::addAskRule);
         return b.build();
+    }
+
+    /**
+     * Returns an immutable child permission context that also carries the supplied parent scope
+     * and rules.
+     *
+     * <p>The child mode and child entries take precedence. Parent working directories are added
+     * only when the child does not already define the same key. Rule tables retain child-first
+     * insertion order and de-duplicate equal rules before appending parent rules. Permission
+     * evaluation still applies the engine's deny/ask/tool-check/allow ordering, so inherited deny
+     * and ask rules cannot be bypassed by an inherited allow rule.
+     *
+     * @param parent the parent context to inherit
+     * @return a new merged context; neither source context is mutated
+     */
+    public PermissionContextState inheritFrom(PermissionContextState parent) {
+        Objects.requireNonNull(parent, "parent must not be null");
+        Builder b = builder().mode(mode);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        parent.workingDirectories.forEach(
+                (key, directory) -> {
+                    if (!workingDirectories.containsKey(key)) {
+                        b.addWorkingDirectory(key, directory);
+                    }
+                });
+        copyMergedRules(allowRules, parent.allowRules, b::addAllowRule);
+        copyMergedRules(denyRules, parent.denyRules, b::addDenyRule);
+        copyMergedRules(askRules, parent.askRules, b::addAskRule);
+        return b.build();
+    }
+
+    private static void copyMergedRules(
+            Map<String, List<PermissionRule>> child,
+            Map<String, List<PermissionRule>> parent,
+            RuleAdder adder) {
+        Map<String, LinkedHashSet<PermissionRule>> merged = new LinkedHashMap<>();
+        collectDistinctRules(merged, child);
+        collectDistinctRules(merged, parent);
+        merged.forEach((tool, rules) -> rules.forEach(rule -> adder.add(tool, rule)));
+    }
+
+    private static void collectDistinctRules(
+            Map<String, LinkedHashSet<PermissionRule>> target,
+            Map<String, List<PermissionRule>> source) {
+        source.forEach(
+                (tool, rules) ->
+                        target.computeIfAbsent(tool, ignored -> new LinkedHashSet<>())
+                                .addAll(rules));
     }
 
     @Override
