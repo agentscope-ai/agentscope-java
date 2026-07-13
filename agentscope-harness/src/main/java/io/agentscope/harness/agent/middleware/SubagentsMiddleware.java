@@ -508,6 +508,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                     sb.append("\n</task_error>\n");
                 }
                 case CANCELLED -> sb.append("Task was cancelled before producing a result.\n");
+                case DENIED -> {
+                    sb.append("<task_denied>\n");
+                    sb.append(
+                            d.result() != null ? d.result() : "User denied the pending operation.");
+                    sb.append("\n</task_denied>\n");
+                }
                 default ->
                         sb.append("Task ended in non-terminal state ")
                                 .append(d.status())

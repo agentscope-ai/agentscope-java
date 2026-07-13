@@ -22,15 +22,17 @@ package io.agentscope.harness.agent.subagent.task;
 public enum TaskStatus {
     PENDING,
     RUNNING,
+    WAITING_FOR_APPROVAL,
     COMPLETED,
     FAILED,
-    CANCELLED;
+    CANCELLED,
+    DENIED;
 
     /**
      * Whether this status represents a final state that will never change. Useful for skipping
      * redundant status polling on tasks that are already done.
      */
     public boolean isTerminal() {
-        return this == COMPLETED || this == FAILED || this == CANCELLED;
+        return this == COMPLETED || this == FAILED || this == CANCELLED || this == DENIED;
     }
 }
