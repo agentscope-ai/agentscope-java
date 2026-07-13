@@ -556,8 +556,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         gw.bindMainAgent(this);
 
         SubagentGatewayBridge bridge =
-                (agentId, sessionId, agent, replyTo) -> {
-                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
+                (agentId, sessionId, agent, replyTo, userId, parentSessionId) -> {
+                    String subagentId =
+                            gw.exposeSubagent(
+                                    agentId, sessionId, agent, replyTo, userId, parentSessionId);
                     return new SubagentGatewayBridge.ExposeResult(subagentId);
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;

@@ -322,7 +322,8 @@ public class AgentSpawnTool {
                             ? runtimeContext.get("outboundAddress", OutboundAddress.class)
                             : null;
             SubagentGatewayBridge.ExposeResult er =
-                    gatewayBridge.expose(agentId, sessionId, agent, replyTo);
+                    gatewayBridge.expose(
+                            agentId, sessionId, agent, replyTo, currentUserId, parentSessionId);
             subagentId = er.subagentId();
         }
 

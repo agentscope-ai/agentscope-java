@@ -56,6 +56,10 @@ public interface SubagentRegistry {
      */
     Optional<SubagentRecord> find(String subagentId);
 
+    /** Resolves an exposed child only when the complete owning lineage matches. */
+    Optional<SubagentRecord> findByLineage(
+            String userId, String parentSessionId, String childSessionId);
+
     /** Removes a single exposure record. No-op when the id is unknown. */
     void revoke(String subagentId);
 

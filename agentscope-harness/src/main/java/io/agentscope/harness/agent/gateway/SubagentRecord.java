@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.gateway;
 
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +36,7 @@ import java.util.Map;
  * @param sessionId the subagent's own session id (used to load its conversational state)
  * @param userId the originating user id, or {@code null} when unknown
  * @param parentSessionId the parent session that exposed this subagent, or {@code null}
+ * @param replyTo the durable outbound delivery address, or {@code null}
  * @param createdAt when the subagent was exposed
  * @param expiresAt optional expiry instant; {@code null} means no TTL
  */
@@ -44,8 +46,22 @@ public record SubagentRecord(
         String sessionId,
         String userId,
         String parentSessionId,
+        OutboundAddress replyTo,
         Instant createdAt,
         Instant expiresAt) {
+
+    public static final String RUNTIME_PARENT_SESSION_ID = "agentscope.subagent.parent_session_id";
+
+    public SubagentRecord(
+            String subagentId,
+            String agentId,
+            String sessionId,
+            String userId,
+            String parentSessionId,
+            Instant createdAt,
+            Instant expiresAt) {
+        this(subagentId, agentId, sessionId, userId, parentSessionId, null, createdAt, expiresAt);
+    }
 
     /** Whether this record has a TTL that has already elapsed relative to {@code now}. */
     public boolean isExpired(Instant now) {
@@ -63,6 +79,16 @@ public record SubagentRecord(
         }
         if (parentSessionId != null) {
             m.put("parentSessionId", parentSessionId);
+        }
+        if (replyTo != null) {
+            m.put("replyChannelId", replyTo.channelId());
+            m.put("replyTo", replyTo.to());
+            if (replyTo.accountId() != null) {
+                m.put("replyAccountId", replyTo.accountId());
+            }
+            if (replyTo.threadId() != null) {
+                m.put("replyThreadId", replyTo.threadId());
+            }
         }
         if (createdAt != null) {
             m.put("createdAt", createdAt.toEpochMilli());
@@ -84,8 +110,19 @@ public record SubagentRecord(
                 asString(m.get("sessionId")),
                 asString(m.get("userId")),
                 asString(m.get("parentSessionId")),
+                asOutboundAddress(m),
                 asInstant(m.get("createdAt")),
                 asInstant(m.get("expiresAt")));
+    }
+
+    private static OutboundAddress asOutboundAddress(Map<String, Object> m) {
+        String channelId = asString(m.get("replyChannelId"));
+        String to = asString(m.get("replyTo"));
+        if (channelId == null || to == null) {
+            return null;
+        }
+        return new OutboundAddress(
+                channelId, asString(m.get("replyAccountId")), to, asString(m.get("replyThreadId")));
     }
 
     private static String asString(Object v) {

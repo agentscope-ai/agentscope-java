@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -31,6 +32,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -110,6 +112,7 @@ class SubagentRegistryRecoveryIntegrationTest {
         // preventing background WorkspaceTaskRepository threads from writing to @TempDir after
         // JUnit begins cleanup.
         List<HarnessAgent> createdAgents = new ArrayList<>();
+        List<RuntimeContext> materializationContexts = new ArrayList<>();
         Supplier<HarnessAgent> subFactory =
                 () -> {
                     HarnessAgent a = buildEchoSubagent(sharedState);
@@ -121,11 +124,23 @@ class SubagentRegistryRecoveryIntegrationTest {
             // ---- Node A: expose a live subagent and run the first turn. ----
             HarnessGateway nodeA = HarnessGateway.create();
             nodeA.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
-            nodeA.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+            nodeA.setSubagentMaterializer(
+                    (agentId, rc) -> {
+                        materializationContexts.add(rc);
+                        return Optional.of(subFactory.get());
+                    });
 
             HarnessAgent liveSub = subFactory.get();
-            String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, liveSub, null);
+            OutboundAddress replyTo =
+                    new OutboundAddress("chatui", "account-1", "chatui:DM:user-1", "thread-1");
+            String subagentId =
+                    nodeA.exposeSubagent(
+                            "echo", SUB_SESSION, liveSub, replyTo, "user-1", "parent-1");
             assertNotNull(subagentId);
+            SubagentRecord exposed =
+                    nodeA.findExposedSubagent("user-1", "parent-1", SUB_SESSION).orElseThrow();
+            assertEquals("echo", exposed.agentId());
+            assertEquals(replyTo, exposed.replyTo());
 
             Msg firstReply = nodeA.runSubagent(subagentId, List.of(ping())).block();
             assertEquals("turns=1", text(firstReply), "node A sees exactly its own turn");
@@ -133,7 +148,11 @@ class SubagentRegistryRecoveryIntegrationTest {
             // ---- Node B: a fresh gateway with an EMPTY live cache, sharing only the store. ----
             HarnessGateway nodeB = HarnessGateway.create();
             nodeB.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
-            nodeB.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
+            nodeB.setSubagentMaterializer(
+                    (agentId, rc) -> {
+                        materializationContexts.add(rc);
+                        return Optional.of(subFactory.get());
+                    });
 
             Msg secondReply = nodeB.runSubagent(subagentId, List.of(ping())).block();
             // turns=2 proves: (1) the subagentId was resolved from the shared registry on a node
@@ -141,6 +160,13 @@ class SubagentRegistryRecoveryIntegrationTest {
             // turn was loaded from the shared state store by sessionId.
             assertEquals(
                     "turns=2", text(secondReply), "node B recovered and continued the session");
+            RuntimeContext recoveredContext =
+                    materializationContexts.get(materializationContexts.size() - 1);
+            assertEquals("user-1", recoveredContext.getUserId());
+            assertEquals(SUB_SESSION, recoveredContext.getSessionId());
+            assertEquals(
+                    "parent-1",
+                    recoveredContext.get(SubagentRecord.RUNTIME_PARENT_SESSION_ID, String.class));
         } finally {
             for (HarnessAgent agent : createdAgents) {
                 try {
@@ -221,5 +247,39 @@ class SubagentRegistryRecoveryIntegrationTest {
                         Instant.now().minusSeconds(120),
                         Instant.now().minusSeconds(60)));
         assertTrue(reader.find("sub-expired").isEmpty(), "expired record must not resolve");
+    }
+
+    @Test
+    void lineageLookupFailsClosedOnAnyTenantOrParentMismatch() {
+        BaseStore sharedBase = new InMemoryStore();
+        SubagentRegistry writer = new StoreBackedSubagentRegistry(sharedBase);
+        SubagentRegistry reader = new StoreBackedSubagentRegistry(sharedBase);
+        SubagentRecord record =
+                new SubagentRecord(
+                        "sub-lineage",
+                        "echo",
+                        SUB_SESSION,
+                        "user-1",
+                        "parent-1",
+                        OutboundAddress.direct("chatui", "chatui:DM:user-1"),
+                        Instant.now(),
+                        null);
+        writer.register(record);
+
+        SubagentRecord found =
+                reader.findByLineage("user-1", "parent-1", SUB_SESSION).orElseThrow();
+        assertEquals(record.subagentId(), found.subagentId());
+        assertEquals(record.agentId(), found.agentId());
+        assertEquals(record.userId(), found.userId());
+        assertEquals(record.parentSessionId(), found.parentSessionId());
+        assertEquals(record.sessionId(), found.sessionId());
+        assertEquals(record.replyTo(), found.replyTo());
+        assertTrue(reader.findByLineage("user-2", "parent-1", SUB_SESSION).isEmpty());
+        assertTrue(reader.findByLineage("user-1", "parent-2", SUB_SESSION).isEmpty());
+        assertTrue(reader.findByLineage("user-1", "parent-1", "other-child").isEmpty());
+        assertTrue(reader.findByLineage(null, "parent-1", SUB_SESSION).isEmpty());
+
+        SubagentRecord roundTrip = reader.find("sub-lineage").orElseThrow();
+        assertEquals(record.replyTo(), roundTrip.replyTo());
     }
 }

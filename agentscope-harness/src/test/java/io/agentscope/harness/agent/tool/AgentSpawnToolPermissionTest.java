@@ -31,6 +31,7 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -136,6 +137,33 @@ class AgentSpawnToolPermissionTest {
                 "persistent reuse must revoke rules removed from the parent context");
         assertEquals(
                 1, factoryCalls.get(), "persistent reuse must not materialize a throwaway child");
+    }
+
+    @Test
+    void exposedChildCarriesOwningUserAndParentSessionToGateway() {
+        AtomicReference<Agent> childRef = new AtomicReference<>();
+        AgentSpawnTool tool =
+                tool(childPermissions(), declaration(true), childRef, new AtomicInteger(), false);
+        AtomicReference<List<String>> lineage = new AtomicReference<>();
+        tool.setGatewayBridge(
+                (agentId, sessionId, agent, replyTo, userId, parentSessionId) -> {
+                    lineage.set(List.of(agentId, sessionId, userId, parentSessionId));
+                    return new SubagentGatewayBridge.ExposeResult("sub-visible");
+                });
+
+        tool.agentSpawn(
+                        parentContext("user-a", "parent-a"),
+                        parentState(parentPermissions("parent-v1")),
+                        "worker",
+                        null,
+                        "review",
+                        null,
+                        true)
+                .block();
+
+        assertEquals(
+                List.of("worker", childSessionId("parent-a", "review"), "user-a", "parent-a"),
+                lineage.get());
     }
 
     private AgentSpawnTool tool(

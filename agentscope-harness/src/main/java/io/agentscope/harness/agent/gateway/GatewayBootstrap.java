@@ -131,8 +131,10 @@ public final class GatewayBootstrap {
      * the {@code expose_to_user} parameter on {@code agent_spawn}.
      */
     public SubagentGatewayBridge gatewayBridge() {
-        return (agentId, sessionId, agent, replyTo) -> {
-            String subagentId = gateway.exposeSubagent(agentId, sessionId, agent, replyTo);
+        return (agentId, sessionId, agent, replyTo, userId, parentSessionId) -> {
+            String subagentId =
+                    gateway.exposeSubagent(
+                            agentId, sessionId, agent, replyTo, userId, parentSessionId);
             return new SubagentGatewayBridge.ExposeResult(subagentId);
         };
     }
