@@ -191,4 +191,102 @@ class LocalFilesystemModeTest {
         assertTrue(r.isSuccess(), () -> "relative path should be namespaced, got: " + r.error());
         assertEquals("hello", r.fileData().content());
     }
+
+    // ==================== ROOTED mode with leading "/" paths ====================
+
+    @Test
+    void rooted_leadingSlashResolvesRelativeToWorkspace(@TempDir Path workspace)
+            throws IOException {
+        // Create a "skills" subdirectory in the workspace
+        Path skillsDir = workspace.resolve("skills");
+        Files.createDirectories(skillsDir);
+        Files.writeString(skillsDir.resolve("tool.md"), "skill content", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        // "/skills" should resolve to <workspace>/skills, not host absolute path
+        ReadResult r = fs.read(RuntimeContext.empty(), "/skills/tool.md", 0, 0);
+        assertTrue(
+                r.isSuccess(),
+                () -> "leading '/' should resolve relative to workspace, got: " + r.error());
+        assertEquals("skill content", r.fileData().content());
+    }
+
+    @Test
+    void rooted_leadingSlashLsWorks(@TempDir Path workspace) throws IOException {
+        // Create a "skills" subdirectory with files
+        Path skillsDir = workspace.resolve("skills");
+        Files.createDirectories(skillsDir);
+        Files.writeString(skillsDir.resolve("tool1.md"), "content1", StandardCharsets.UTF_8);
+        Files.writeString(skillsDir.resolve("tool2.md"), "content2", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        // "/skills" should list files in <workspace>/skills
+        LsResult r = fs.ls(RuntimeContext.empty(), "/skills");
+        assertTrue(r.isSuccess(), () -> "ls with leading '/' should work, got: " + r.error());
+        assertFalse(r.entries().isEmpty(), "ls should find files in the skills directory");
+        assertEquals(2, r.entries().size());
+    }
+
+    @Test
+    void rooted_leadingSlashAloneResolvesToWorkspace(@TempDir Path workspace) throws IOException {
+        Files.writeString(workspace.resolve("root.txt"), "root content", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        // "/" should resolve to workspace root
+        ReadResult r = fs.read(RuntimeContext.empty(), "/root.txt", 0, 0);
+        assertTrue(r.isSuccess(), () -> "'/' should resolve to workspace root, got: " + r.error());
+        assertEquals("root content", r.fileData().content());
+    }
+
+    @Test
+    void rooted_leadingSlashWithNamespace(@TempDir Path workspace) throws IOException {
+        // With namespace, "/skills" should still resolve to <workspace>/skills (not namespaced)
+        Path skillsDir = workspace.resolve("skills");
+        Files.createDirectories(skillsDir);
+        Files.writeString(skillsDir.resolve("tool.md"), "global skill", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        // Absolute paths (starting with "/") should NOT be namespace-scoped
+        ReadResult r = fs.read(rc, "/skills/tool.md", 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "absolute path should not be namespaced, got: " + r.error());
+        assertEquals("global skill", r.fileData().content());
+    }
+
+    @Test
+    void rooted_leadingSlashAllowsLiteralDotDotInPathName(@TempDir Path workspace)
+            throws IOException {
+        Path dir = workspace.resolve("some..dir");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("note.txt"), "literal name", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), "/some..dir/note.txt", 0, 0);
+        assertTrue(
+                r.isSuccess(),
+                () -> "literal '..' inside a path segment should be allowed, got: " + r.error());
+        assertEquals("literal name", r.fileData().content());
+    }
+
+    @Test
+    void rooted_leadingSlashPathTraversalRejected(@TempDir Path workspace) {
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        // Path traversal with leading "/" should be rejected
+        org.junit.jupiter.api.Assertions.assertThrows(
+                SecurityException.class,
+                () -> fs.read(RuntimeContext.empty(), "/../etc/passwd", 0, 0));
+    }
 }

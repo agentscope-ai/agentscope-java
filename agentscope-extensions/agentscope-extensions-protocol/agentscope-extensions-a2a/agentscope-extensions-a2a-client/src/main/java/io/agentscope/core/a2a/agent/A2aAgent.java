@@ -46,6 +46,7 @@ import io.agentscope.core.message.TextBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -198,18 +199,44 @@ public class A2aAgent extends AgentBase {
     private Mono<Msg> doExecute(Message message) {
         return Mono.create(
                 sink -> {
-                    clientEventContext.setSink(sink);
+                    String requestId = currentRequestId;
+                    ClientEventContext eventContext = clientEventContext;
+                    eventContext.setSink(sink);
                     BiConsumer<ClientEvent, AgentCard> a2aEventConsumer =
                             (event, agentCard) -> {
                                 LoggerUtil.trace(
                                         log,
                                         "[{}] A2aAgent receive event {}: ",
-                                        currentRequestId,
+                                        requestId,
                                         event.getClass().getSimpleName());
                                 LoggerUtil.logA2aClientEventDetail(log, event);
-                                clientEventHandlerRouter.handle(event, clientEventContext);
+                                clientEventHandlerRouter.handle(event, eventContext);
                             };
-                    a2aClient.sendMessage(message, List.of(a2aEventConsumer), sink::error);
+                    a2aClient.sendMessage(
+                            message,
+                            List.of(a2aEventConsumer),
+                            err -> {
+                                if (err == null) {
+                                    if (eventContext.isTerminalDelivered()) {
+                                        return;
+                                    }
+                                    LoggerUtil.warn(
+                                            log,
+                                            "[{}] A2aAgent stream completed before final response.",
+                                            requestId);
+                                    eventContext.completeExceptionally(
+                                            new IllegalStateException(
+                                                    "A2A stream completed before final response."));
+                                    return;
+                                }
+                                if (err instanceof CancellationException) {
+                                    LoggerUtil.warn(
+                                            log, "[{}] A2aAgent sendMessage cancelled.", requestId);
+                                    eventContext.completeExceptionally(err);
+                                    return;
+                                }
+                                eventContext.completeExceptionally(err);
+                            });
                 });
     }
 

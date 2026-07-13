@@ -182,7 +182,7 @@ class Fabric8KubernetesPodRuntimeTest {
     }
 
     @Test
-    void tarWorkspaceIn_uploadExitNull_throwsException() {
+    void tarWorkspaceIn_uploadExitNull_isTreatedAsSuccess() throws Exception {
         ContainerResource container = mock(ContainerResource.class);
         doReturn(container).when(podResource).inContainer(anyString());
 
@@ -203,11 +203,9 @@ class Fabric8KubernetesPodRuntimeTest {
         doReturn(execWatch).when(writingErrExec).exec(anyString(), anyString(), anyString());
         doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
 
-        assertThrows(
-                SandboxException.SandboxRuntimeException.class,
-                () ->
-                        runtime.tarWorkspaceIn(
-                                createK8sState(), new ByteArrayInputStream("data".getBytes())));
+        // Null exit code is expected when Websocket closes before stream 3 status arrives.
+        // The upload itself completed successfully — null should be treated as success.
+        runtime.tarWorkspaceIn(createK8sState(), new ByteArrayInputStream("data".getBytes()));
     }
 
     @Test

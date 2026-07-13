@@ -39,7 +39,6 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -2232,8 +2231,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new AsyncToolMiddleware(messageBus, asyncToolTimeout, asyncToolRegistry));
             }
             if (messageBus != null) {
+                TaskRepository waitTaskRepo = null;
+                if (capturedSubagentMw instanceof SubagentsMiddleware sm) {
+                    waitTaskRepo = sm.getTaskRepository();
+                } else if (capturedSubagentMw instanceof DynamicSubagentsMiddleware dsm) {
+                    waitTaskRepo = dsm.getTaskRepository();
+                }
                 agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(messageBus));
+                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(
+                                messageBus, waitTaskRepo));
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
@@ -2286,7 +2292,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 planModeManager,
                                 toolName -> {
                                     AgentTool t = roToolkit.getTool(toolName);
-                                    return t instanceof ToolBase tb && tb.isReadOnly();
+                                    return t != null && t.isReadOnly();
                                 },
                                 planExtraAllowed));
             }
@@ -2441,14 +2447,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 }
 
-                inner.middleware(
+                HarnessSkillMiddleware skillMiddleware =
                         new HarnessSkillMiddleware(
                                 orderedSkillRepos,
                                 agentToolkit,
                                 skillFilter,
                                 visibilityFilter,
                                 stager,
-                                shellPolicy));
+                                shellPolicy);
+                inner.middleware(skillMiddleware);
+
+                // Wire pre-start staging so sandbox projection picks up .skills-cache content
+                // that MarketplaceStager materialises from database-backed repositories.
+                if (sandboxLifecycleMw != null && stager != null) {
+                    sandboxLifecycleMw.setBeforeStartCallback(
+                            skillMiddleware::prestageMarketplaceSkills);
+                }
             } else if (disableDynamicSkills) {
                 // Suppress core's auto-install so the static SkillBox fallback (constructed
                 // below by staticSkillBoxFromRepos) remains the only skill source.
