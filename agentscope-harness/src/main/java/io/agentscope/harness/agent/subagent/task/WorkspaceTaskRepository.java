@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -473,10 +474,31 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 || childSessionId.isBlank()) {
             return Optional.empty();
         }
+        Map<String, TaskRecord> candidates = new LinkedHashMap<>();
+        for (Map.Entry<String, BackgroundTask> entry : localTasks.entrySet()) {
+            String key = entry.getKey();
+            RuntimeContext taskContext = localTaskContexts.get(key);
+            String parentSessionId = localTaskSessionIds.get(key);
+            if (taskContext == null
+                    || !Objects.equals(childContext.getUserId(), taskContext.getUserId())
+                    || parentSessionId == null) {
+                continue;
+            }
+            workspaceManager
+                    .readTaskRecord(
+                            taskContext,
+                            parentAgentId,
+                            parentSessionId,
+                            entry.getValue().getTaskId())
+                    .ifPresent(record -> candidates.put(record.getTaskId(), record));
+        }
+        for (TaskRecord record :
+                workspaceManager.listAllTaskRecords(
+                        childContext, parentAgentId, Duration.ofDays(36_500))) {
+            candidates.putIfAbsent(record.getTaskId(), record);
+        }
         List<SuspendedTaskRef> matches =
-                workspaceManager
-                        .listAllTaskRecords(childContext, parentAgentId, Duration.ofDays(36_500))
-                        .stream()
+                candidates.values().stream()
                         .filter(record -> record.getStatus() == TaskStatus.WAITING_FOR_APPROVAL)
                         .filter(record -> record.getSuspension() != null)
                         .filter(
