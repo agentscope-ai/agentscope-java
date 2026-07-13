@@ -118,6 +118,7 @@ class PermissionContextStateTest {
         String json = mapper.writeValueAsString(original);
         PermissionContextState decoded = mapper.readValue(json, PermissionContextState.class);
         assertEquals(original, decoded);
+        assertTrue(!json.contains("inherited_"));
     }
 
     @Test
@@ -168,5 +169,57 @@ class PermissionContextStateTest {
         PermissionContextState child = PermissionContextState.builder().build();
 
         assertThrows(NullPointerException.class, () -> child.inheritFrom(null));
+    }
+
+    @Test
+    void reinheritFromReplacesOnlyPreviouslyInheritedEntries() throws Exception {
+        PermissionRule childRule =
+                new PermissionRule("Read", "child/**", PermissionBehavior.ALLOW, "child");
+        PermissionRule duplicateChildRule =
+                new PermissionRule("Bash", "git status", PermissionBehavior.ALLOW, "shared");
+        PermissionRule parentV1Rule =
+                new PermissionRule("Read", "parent-v1/**", PermissionBehavior.ALLOW, "parent-v1");
+        PermissionRule parentV2Rule =
+                new PermissionRule("Read", "parent-v2/**", PermissionBehavior.ALLOW, "parent-v2");
+        PermissionContextState child =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "child", new AdditionalWorkingDirectory("/child", "child"))
+                        .addAllowRule("Read", childRule)
+                        .addAllowRule("Bash", duplicateChildRule)
+                        .build();
+        PermissionContextState parentV1 =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "parent-v1",
+                                new AdditionalWorkingDirectory("/parent-v1", "parent-v1"))
+                        .addAllowRule("Read", parentV1Rule)
+                        .addAllowRule("Bash", duplicateChildRule)
+                        .build();
+        PermissionContextState persisted =
+                mapper.readValue(
+                        mapper.writeValueAsString(child.inheritFrom(parentV1)),
+                        PermissionContextState.class);
+        PermissionContextState parentV2 =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "parent-v2",
+                                new AdditionalWorkingDirectory("/parent-v2", "parent-v2"))
+                        .addAllowRule("Read", parentV2Rule)
+                        .build();
+
+        PermissionContextState reinherited = persisted.inheritFrom(parentV2);
+
+        assertEquals(
+                java.util.List.of(childRule, parentV2Rule),
+                reinherited.getAllowRules().get("Read"));
+        assertEquals(
+                java.util.List.of(duplicateChildRule), reinherited.getAllowRules().get("Bash"));
+        assertTrue(reinherited.getWorkingDirectories().containsKey("child"));
+        assertTrue(reinherited.getWorkingDirectories().containsKey("parent-v2"));
+        assertTrue(!reinherited.getWorkingDirectories().containsKey("parent-v1"));
+        assertEquals(
+                java.util.List.of(parentV2Rule), reinherited.getInheritedAllowRules().get("Read"));
+        assertTrue(!reinherited.getInheritedAllowRules().containsKey("Bash"));
     }
 }

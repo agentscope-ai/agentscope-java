@@ -17,6 +17,7 @@ package io.agentscope.core.permission;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.ArrayList;
@@ -34,7 +35,17 @@ import java.util.Objects;
  * that tool. The engine evaluates {@code denyRules} first, then {@code askRules}, then tool
  * self-check, then {@code allowRules}; see the {@code PermissionEngine} javadoc for full ordering.
  */
-@JsonPropertyOrder({"mode", "working_directories", "allow_rules", "deny_rules", "ask_rules"})
+@JsonPropertyOrder({
+    "mode",
+    "working_directories",
+    "allow_rules",
+    "deny_rules",
+    "ask_rules",
+    "inherited_working_directories",
+    "inherited_allow_rules",
+    "inherited_deny_rules",
+    "inherited_ask_rules"
+})
 public final class PermissionContextState {
 
     private final PermissionMode mode;
@@ -42,6 +53,10 @@ public final class PermissionContextState {
     private final Map<String, List<PermissionRule>> allowRules;
     private final Map<String, List<PermissionRule>> denyRules;
     private final Map<String, List<PermissionRule>> askRules;
+    private final Map<String, AdditionalWorkingDirectory> inheritedWorkingDirectories;
+    private final Map<String, List<PermissionRule>> inheritedAllowRules;
+    private final Map<String, List<PermissionRule>> inheritedDenyRules;
+    private final Map<String, List<PermissionRule>> inheritedAskRules;
 
     private PermissionContextState(Builder builder) {
         this.mode = builder.mode == null ? PermissionMode.DEFAULT : builder.mode;
@@ -50,6 +65,12 @@ public final class PermissionContextState {
         this.allowRules = freeze(builder.allowRules);
         this.denyRules = freeze(builder.denyRules);
         this.askRules = freeze(builder.askRules);
+        this.inheritedWorkingDirectories =
+                Collections.unmodifiableMap(
+                        new LinkedHashMap<>(builder.inheritedWorkingDirectories));
+        this.inheritedAllowRules = freeze(builder.inheritedAllowRules);
+        this.inheritedDenyRules = freeze(builder.inheritedDenyRules);
+        this.inheritedAskRules = freeze(builder.inheritedAskRules);
     }
 
     @JsonCreator
@@ -59,7 +80,15 @@ public final class PermissionContextState {
                     Map<String, AdditionalWorkingDirectory> workingDirectories,
             @JsonProperty("allow_rules") Map<String, List<PermissionRule>> allowRules,
             @JsonProperty("deny_rules") Map<String, List<PermissionRule>> denyRules,
-            @JsonProperty("ask_rules") Map<String, List<PermissionRule>> askRules) {
+            @JsonProperty("ask_rules") Map<String, List<PermissionRule>> askRules,
+            @JsonProperty("inherited_working_directories")
+                    Map<String, AdditionalWorkingDirectory> inheritedWorkingDirectories,
+            @JsonProperty("inherited_allow_rules")
+                    Map<String, List<PermissionRule>> inheritedAllowRules,
+            @JsonProperty("inherited_deny_rules")
+                    Map<String, List<PermissionRule>> inheritedDenyRules,
+            @JsonProperty("inherited_ask_rules")
+                    Map<String, List<PermissionRule>> inheritedAskRules) {
         Builder b = builder();
         if (mode != null) {
             b.mode(mode);
@@ -70,6 +99,12 @@ public final class PermissionContextState {
         copyInto(allowRules, b::addAllowRule);
         copyInto(denyRules, b::addDenyRule);
         copyInto(askRules, b::addAskRule);
+        if (inheritedWorkingDirectories != null) {
+            inheritedWorkingDirectories.forEach(b::markInheritedWorkingDirectory);
+        }
+        copyInto(inheritedAllowRules, b::markInheritedAllowRule);
+        copyInto(inheritedDenyRules, b::markInheritedDenyRule);
+        copyInto(inheritedAskRules, b::markInheritedAskRule);
         return b.build();
     }
 
@@ -133,6 +168,30 @@ public final class PermissionContextState {
         return askRules;
     }
 
+    @JsonProperty("inherited_working_directories")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, AdditionalWorkingDirectory> getInheritedWorkingDirectories() {
+        return inheritedWorkingDirectories;
+    }
+
+    @JsonProperty("inherited_allow_rules")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, List<PermissionRule>> getInheritedAllowRules() {
+        return inheritedAllowRules;
+    }
+
+    @JsonProperty("inherited_deny_rules")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, List<PermissionRule>> getInheritedDenyRules() {
+        return inheritedDenyRules;
+    }
+
+    @JsonProperty("inherited_ask_rules")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, List<PermissionRule>> getInheritedAskRules() {
+        return inheritedAskRules;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -156,6 +215,10 @@ public final class PermissionContextState {
         copyInto(allowRules, b::addAllowRule);
         copyInto(denyRules, b::addDenyRule);
         copyInto(askRules, b::addAskRule);
+        inheritedWorkingDirectories.forEach(b::markInheritedWorkingDirectory);
+        copyInto(inheritedAllowRules, b::markInheritedAllowRule);
+        copyInto(inheritedDenyRules, b::markInheritedDenyRule);
+        copyInto(inheritedAskRules, b::markInheritedAskRule);
         return b.build();
     }
 
@@ -175,27 +238,73 @@ public final class PermissionContextState {
     public PermissionContextState inheritFrom(PermissionContextState parent) {
         Objects.requireNonNull(parent, "parent must not be null");
         Builder b = builder().mode(mode);
-        workingDirectories.forEach(b::addWorkingDirectory);
+        Map<String, AdditionalWorkingDirectory> localWorkingDirectories =
+                withoutInheritedWorkingDirectories();
+        localWorkingDirectories.forEach(b::addWorkingDirectory);
         parent.workingDirectories.forEach(
                 (key, directory) -> {
-                    if (!workingDirectories.containsKey(key)) {
+                    if (!localWorkingDirectories.containsKey(key)) {
                         b.addWorkingDirectory(key, directory);
+                        b.markInheritedWorkingDirectory(key, directory);
                     }
                 });
-        copyMergedRules(allowRules, parent.allowRules, b::addAllowRule);
-        copyMergedRules(denyRules, parent.denyRules, b::addDenyRule);
-        copyMergedRules(askRules, parent.askRules, b::addAskRule);
+        copyRebasedRules(
+                allowRules,
+                inheritedAllowRules,
+                parent.allowRules,
+                b::addAllowRule,
+                b::markInheritedAllowRule);
+        copyRebasedRules(
+                denyRules,
+                inheritedDenyRules,
+                parent.denyRules,
+                b::addDenyRule,
+                b::markInheritedDenyRule);
+        copyRebasedRules(
+                askRules,
+                inheritedAskRules,
+                parent.askRules,
+                b::addAskRule,
+                b::markInheritedAskRule);
         return b.build();
     }
 
-    private static void copyMergedRules(
-            Map<String, List<PermissionRule>> child,
+    private Map<String, AdditionalWorkingDirectory> withoutInheritedWorkingDirectories() {
+        Map<String, AdditionalWorkingDirectory> local = new LinkedHashMap<>(workingDirectories);
+        inheritedWorkingDirectories.forEach((key, directory) -> local.remove(key, directory));
+        return local;
+    }
+
+    private static void copyRebasedRules(
+            Map<String, List<PermissionRule>> effectiveChild,
+            Map<String, List<PermissionRule>> inheritedChild,
             Map<String, List<PermissionRule>> parent,
-            RuleAdder adder) {
-        Map<String, LinkedHashSet<PermissionRule>> merged = new LinkedHashMap<>();
-        collectDistinctRules(merged, child);
-        collectDistinctRules(merged, parent);
-        merged.forEach((tool, rules) -> rules.forEach(rule -> adder.add(tool, rule)));
+            RuleAdder effectiveAdder,
+            RuleAdder inheritedAdder) {
+        Map<String, LinkedHashSet<PermissionRule>> local = new LinkedHashMap<>();
+        collectDistinctRules(local, effectiveChild);
+        inheritedChild.forEach(
+                (tool, rules) -> {
+                    LinkedHashSet<PermissionRule> localRules = local.get(tool);
+                    if (localRules != null) {
+                        localRules.removeAll(rules);
+                        if (localRules.isEmpty()) {
+                            local.remove(tool);
+                        }
+                    }
+                });
+        local.forEach((tool, rules) -> rules.forEach(rule -> effectiveAdder.add(tool, rule)));
+        parent.forEach(
+                (tool, rules) -> {
+                    LinkedHashSet<PermissionRule> mergedRules =
+                            local.computeIfAbsent(tool, ignored -> new LinkedHashSet<>());
+                    for (PermissionRule rule : rules) {
+                        if (mergedRules.add(rule)) {
+                            effectiveAdder.add(tool, rule);
+                            inheritedAdder.add(tool, rule);
+                        }
+                    }
+                });
     }
 
     private static void collectDistinctRules(
@@ -219,12 +328,25 @@ public final class PermissionContextState {
                 && Objects.equals(workingDirectories, other.workingDirectories)
                 && Objects.equals(allowRules, other.allowRules)
                 && Objects.equals(denyRules, other.denyRules)
-                && Objects.equals(askRules, other.askRules);
+                && Objects.equals(askRules, other.askRules)
+                && Objects.equals(inheritedWorkingDirectories, other.inheritedWorkingDirectories)
+                && Objects.equals(inheritedAllowRules, other.inheritedAllowRules)
+                && Objects.equals(inheritedDenyRules, other.inheritedDenyRules)
+                && Objects.equals(inheritedAskRules, other.inheritedAskRules);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mode, workingDirectories, allowRules, denyRules, askRules);
+        return Objects.hash(
+                mode,
+                workingDirectories,
+                allowRules,
+                denyRules,
+                askRules,
+                inheritedWorkingDirectories,
+                inheritedAllowRules,
+                inheritedDenyRules,
+                inheritedAskRules);
     }
 
     @Override
@@ -254,6 +376,11 @@ public final class PermissionContextState {
         private final Map<String, List<PermissionRule>> allowRules = new LinkedHashMap<>();
         private final Map<String, List<PermissionRule>> denyRules = new LinkedHashMap<>();
         private final Map<String, List<PermissionRule>> askRules = new LinkedHashMap<>();
+        private final Map<String, AdditionalWorkingDirectory> inheritedWorkingDirectories =
+                new LinkedHashMap<>();
+        private final Map<String, List<PermissionRule>> inheritedAllowRules = new LinkedHashMap<>();
+        private final Map<String, List<PermissionRule>> inheritedDenyRules = new LinkedHashMap<>();
+        private final Map<String, List<PermissionRule>> inheritedAskRules = new LinkedHashMap<>();
 
         private Builder() {}
 
@@ -282,6 +409,23 @@ public final class PermissionContextState {
         public Builder addAskRule(String toolName, PermissionRule rule) {
             appendRule(askRules, toolName, rule);
             return this;
+        }
+
+        private void markInheritedWorkingDirectory(
+                String key, AdditionalWorkingDirectory directory) {
+            inheritedWorkingDirectories.put(key, directory);
+        }
+
+        private void markInheritedAllowRule(String toolName, PermissionRule rule) {
+            appendRule(inheritedAllowRules, toolName, rule);
+        }
+
+        private void markInheritedDenyRule(String toolName, PermissionRule rule) {
+            appendRule(inheritedDenyRules, toolName, rule);
+        }
+
+        private void markInheritedAskRule(String toolName, PermissionRule rule) {
+            appendRule(inheritedAskRules, toolName, rule);
         }
 
         private static void appendRule(
