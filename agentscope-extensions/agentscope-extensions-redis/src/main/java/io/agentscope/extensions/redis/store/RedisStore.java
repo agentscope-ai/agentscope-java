@@ -59,6 +59,14 @@ import redis.clients.jedis.UnifiedJedis;
  * temporarily refer to an item whose hash has not yet been written (window between {@code ZADD}
  * and {@code HSET}, which is closed by the Lua atomicity above) or to an item that was
  * concurrently deleted. The implementation tolerates the latter by skipping missing items.
+ *
+ * <h2>Migration from pre-hash-tag format</h2>
+ *
+ * <p>Versions prior to the Redis Cluster fix used key patterns {@code <prefix>item:<ns>\0<k>} and
+ * {@code <prefix>idx:<ns>} (no hash tags). This version uses {@code <prefix>item:{<ns>}\0<k>} and
+ * {@code <prefix>idx:{<ns>}}. Existing data stored under the old format will not be visible to the
+ * new code. Use {@link #migrateFromLegacyFormat(UnifiedJedis, String)} to rename old keys to the
+ * new format before deploying this version.
  */
 public class RedisStore implements BaseStore {
 
@@ -128,6 +136,11 @@ public class RedisStore implements BaseStore {
     public RedisStore(UnifiedJedis jedis, String keyPrefix, ObjectMapper objectMapper) {
         this.jedis = Objects.requireNonNull(jedis, "jedis must not be null");
         this.keyPrefix = normalizePrefix(keyPrefix);
+        if (this.keyPrefix.indexOf('{') >= 0 || this.keyPrefix.indexOf('}') >= 0) {
+            throw new IllegalArgumentException(
+                    "keyPrefix must not contain '{' or '}'"
+                            + " (incompatible with Redis Cluster hash tags)");
+        }
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     }
 
@@ -289,6 +302,164 @@ public class RedisStore implements BaseStore {
             return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
         return eval.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    //  Migration
+    // -------------------------------------------------------------------------
+
+    /**
+     * Migrates keys from the pre-hash-tag format to the current hash-tag format.
+     *
+     * <p>Before this version, keys were stored as {@code <prefix>item:<ns>\0<k>} and {@code
+     * <prefix>idx:<ns>}. The current format wraps the namespace in Redis hash tags: {@code
+     * <prefix>item:{<ns>}\0<k>} and {@code <prefix>idx:{<ns>}}. This method scans for old-format
+     * keys and renames them using the Redis {@code RENAME} command.
+     *
+     * <p><b>Important:</b> this method must be called <em>before</em> any {@link RedisStore}
+     * instance using the same prefix starts writing data, to avoid conflicts. It is the caller's
+     * responsibility to ensure no concurrent writes are happening during migration.
+     *
+     * <p>In a Redis Cluster deployment, each {@code RENAME} only works when both the old and new
+     * key happen to be on the same slot. Since the old keys had no hash tags, they may reside on
+     * different slots than the new keys. This method handles this by falling back to a copy-then-
+     * delete strategy when {@code RENAME} fails with a cross-slot error.
+     *
+     * @param jedis initialized Jedis client; must not be {@code null}
+     * @param keyPrefix the key prefix used by the store; if blank, {@link #DEFAULT_KEY_PREFIX} is
+     *     used
+     * @return the number of keys migrated
+     */
+    public static long migrateFromLegacyFormat(UnifiedJedis jedis, String keyPrefix) {
+        Objects.requireNonNull(jedis, "jedis must not be null");
+        String prefix = normalizePrefix(keyPrefix);
+        if (prefix.indexOf('{') >= 0 || prefix.indexOf('}') >= 0) {
+            throw new IllegalArgumentException(
+                    "keyPrefix must not contain '{' or '}'"
+                            + " (incompatible with Redis Cluster hash tags)");
+        }
+
+        String itemPattern = prefix + "item:*";
+        String idxPattern = prefix + "idx:*";
+
+        long migrated = 0;
+        migrated += migrateKeysByPattern(jedis, itemPattern, prefix, "item:");
+        migrated += migrateKeysByPattern(jedis, idxPattern, prefix, "idx:");
+        return migrated;
+    }
+
+    /**
+     * Scans keys matching the given glob pattern and renames them from the old format (no hash
+     * tags) to the new format (with hash tags around the namespace portion).
+     *
+     * <p>For an item key like {@code prefix:item:ns1\0ns2\0mykey}, the namespace portion is
+     * {@code ns1\0ns2} and the key suffix is {@code \0mykey}. The renamed key becomes {@code
+     * prefix:item:{ns1\0ns2}\0mykey}.
+     *
+     * <p>For an index key like {@code prefix:idx:ns1\0ns2}, the namespace portion is {@code
+     * ns1\0ns2} with no suffix. The renamed key becomes {@code prefix:idx:{ns1\0ns2}}.
+     *
+     * <p>Keys that already contain a hash tag (i.e. contain {@code '{'}) are skipped, as they are
+     * assumed to already be in the new format.
+     */
+    private static long migrateKeysByPattern(
+            UnifiedJedis jedis, String pattern, String prefix, String typeTag) {
+        long migrated = 0;
+        String cursor = "0";
+        do {
+            var scanResult =
+                    jedis.scan(cursor, new redis.clients.jedis.params.ScanParams().match(pattern));
+            cursor = scanResult.getCursor();
+            for (String oldKey : scanResult.getResult()) {
+                if (oldKey == null || oldKey.indexOf('{') >= 0) {
+                    // Already in new format or invalid — skip
+                    continue;
+                }
+                String newKey = computeNewKey(oldKey, prefix, typeTag);
+                if (newKey == null || newKey.equals(oldKey)) {
+                    continue;
+                }
+                try {
+                    jedis.rename(oldKey, newKey);
+                } catch (redis.clients.jedis.exceptions.JedisDataException e) {
+                    // Cross-slot RENAME in cluster — fall back to copy + delete
+                    if (isCrossSlotError(e)) {
+                        copyAndDelete(jedis, oldKey, newKey);
+                    } else {
+                        throw e;
+                    }
+                }
+                migrated++;
+            }
+        } while (!"0".equals(cursor));
+        return migrated;
+    }
+
+    /**
+     * Computes the new-format key from an old-format key.
+     *
+     * <p>For item keys ({@code typeTag = "item:"}): the old format is {@code
+     * <prefix>item:<ns>\0<k>}, where {@code <ns>} may itself contain {@code \0} as a namespace
+     * segment separator. The <em>last</em> {@code \0} separates the namespace from the key suffix.
+     *
+     * <p>For index keys ({@code typeTag = "idx:"}): the old format is {@code <prefix>idx:<ns>},
+     * where the entire portion after the type tag is the namespace path (no key suffix).
+     */
+    static String computeNewKey(String oldKey, String prefix, String typeTag) {
+        String afterPrefix = oldKey.substring(prefix.length() + typeTag.length());
+        if (afterPrefix.isEmpty()) {
+            return null;
+        }
+        String ns;
+        String suffix;
+        if ("idx:".equals(typeTag)) {
+            // Index keys: the entire afterPrefix is the namespace, no key suffix
+            ns = afterPrefix;
+            suffix = "";
+        } else {
+            // Item keys: the last \0 separates namespace from key suffix
+            int lastNul = afterPrefix.lastIndexOf('\0');
+            if (lastNul >= 0) {
+                ns = afterPrefix.substring(0, lastNul);
+                suffix = afterPrefix.substring(lastNul); // includes the \0
+            } else {
+                // Edge case: item key with no NUL — treat entire string as namespace
+                ns = afterPrefix;
+                suffix = "";
+            }
+        }
+        return prefix + typeTag + "{" + ns + "}" + suffix;
+    }
+
+    private static boolean isCrossSlotError(Exception e) {
+        String msg = e.getMessage();
+        return msg != null && msg.contains("CROSSSLOT");
+    }
+
+    /**
+     * Copies data from oldKey to newKey and deletes oldKey. Handles both hash and zset types since
+     * item keys are hashes and index keys are sorted sets.
+     */
+    private static void copyAndDelete(UnifiedJedis jedis, String oldKey, String newKey) {
+        String type = jedis.type(oldKey);
+        if ("hash".equalsIgnoreCase(type)) {
+            Map<String, String> data = jedis.hgetAll(oldKey);
+            if (data != null && !data.isEmpty()) {
+                jedis.hset(newKey, data);
+                jedis.del(oldKey);
+            }
+        } else if ("zset".equalsIgnoreCase(type)) {
+            var members = jedis.zrangeWithScores(oldKey, 0, -1);
+            if (members != null && !members.isEmpty()) {
+                for (var tuple : members) {
+                    jedis.zadd(newKey, tuple.getScore(), tuple.getElement());
+                }
+                jedis.del(oldKey);
+            }
+        } else {
+            // Unknown type or empty — just delete the old key
+            jedis.del(oldKey);
+        }
     }
 
     private static String normalizePrefix(String prefix) {

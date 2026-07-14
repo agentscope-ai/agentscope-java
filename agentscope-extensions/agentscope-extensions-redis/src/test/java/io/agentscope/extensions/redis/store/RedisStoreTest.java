@@ -21,10 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -557,6 +560,243 @@ class RedisStoreTest {
 
         assertEquals(Boolean.TRUE, item.value().get("custom"));
         assertEquals(7L, item.version());
+    }
+
+    // -------------------------------------------------------------------------
+    //  Prefix validation tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    void constructorRejectsPrefixWithOpenBrace() {
+        assertThrows(IllegalArgumentException.class, () -> new RedisStore(jedis, "my{app"));
+    }
+
+    @Test
+    void constructorRejectsPrefixWithCloseBrace() {
+        assertThrows(IllegalArgumentException.class, () -> new RedisStore(jedis, "my}app"));
+    }
+
+    @Test
+    void constructorRejectsPrefixWithBothBraces() {
+        assertThrows(IllegalArgumentException.class, () -> new RedisStore(jedis, "my{app}:"));
+    }
+
+    @Test
+    void constructorRejectsPrefixWithBracesAfterColon() {
+        assertThrows(
+                IllegalArgumentException.class, () -> new RedisStore(jedis, "myprefix:{shard}"));
+    }
+
+    @Test
+    void constructorAcceptsPrefixWithoutBraces() {
+        RedisStore store = new RedisStore(jedis, "clean-prefix:");
+        assertNotNull(store);
+    }
+
+    // -------------------------------------------------------------------------
+    //  Migration tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    void migrateRejectsNullJedis() {
+        assertThrows(
+                NullPointerException.class,
+                () -> RedisStore.migrateFromLegacyFormat(null, "prefix"));
+    }
+
+    @Test
+    void migrateRejectsPrefixWithBraces() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RedisStore.migrateFromLegacyFormat(jedis, "my{app}"));
+    }
+
+    @Test
+    void computeNewKeyItemKeyWithSingleNamespace() {
+        String result =
+                RedisStore.computeNewKey(
+                        "agentscope:store:item:ns\0mykey", "agentscope:store:", "item:");
+        assertEquals("agentscope:store:item:{ns}\0mykey", result);
+    }
+
+    @Test
+    void computeNewKeyItemKeyWithMultiNamespace() {
+        String result =
+                RedisStore.computeNewKey(
+                        "agentscope:store:item:a\0b\0c\0mykey", "agentscope:store:", "item:");
+        assertEquals("agentscope:store:item:{a\0b\0c}\0mykey", result);
+    }
+
+    @Test
+    void computeNewKeyIndexKey() {
+        String result =
+                RedisStore.computeNewKey("agentscope:store:idx:a\0b", "agentscope:store:", "idx:");
+        assertEquals("agentscope:store:idx:{a\0b}", result);
+    }
+
+    @Test
+    void computeNewKeyIndexKeySingleNamespace() {
+        String result =
+                RedisStore.computeNewKey("agentscope:store:idx:myns", "agentscope:store:", "idx:");
+        assertEquals("agentscope:store:idx:{myns}", result);
+    }
+
+    @Test
+    void computeNewKeyReturnsNullForEmptyNamespace() {
+        // Edge case: key like "prefix:item:" with nothing after "item:"
+        String result =
+                RedisStore.computeNewKey("agentscope:store:item:", "agentscope:store:", "item:");
+        assertNull(result);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migrateSkipsKeysAlreadyWithHashTags() {
+        var scanResult = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResult.getCursor()).thenReturn("0");
+        when(scanResult.getResult()).thenReturn(List.of("agentscope:store:item:{ns}\0key"));
+        when(jedis.scan(anyString(), any())).thenReturn(scanResult);
+
+        long count = RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:");
+
+        assertEquals(0, count);
+        verify(jedis, never()).rename(anyString(), anyString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migrateRenamesOldFormatItemKey() {
+        var scanResultItem = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultItem.getCursor()).thenReturn("0");
+        when(scanResultItem.getResult()).thenReturn(List.of("agentscope:store:item:ns\0mykey"));
+
+        var scanResultIdx = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultIdx.getCursor()).thenReturn("0");
+        when(scanResultIdx.getResult()).thenReturn(List.of());
+
+        when(jedis.scan(anyString(), any()))
+                .thenReturn(scanResultItem) // first scan for item:*
+                .thenReturn(scanResultIdx); // second scan for idx:*
+        when(jedis.rename("agentscope:store:item:ns\0mykey", "agentscope:store:item:{ns}\0mykey"))
+                .thenReturn("OK");
+
+        long count = RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:");
+
+        assertEquals(1, count);
+        verify(jedis)
+                .rename("agentscope:store:item:ns\0mykey", "agentscope:store:item:{ns}\0mykey");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migrateRenamesOldFormatIndexKey() {
+        var scanResultItem = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultItem.getCursor()).thenReturn("0");
+        when(scanResultItem.getResult()).thenReturn(List.of());
+
+        var scanResultIdx = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultIdx.getCursor()).thenReturn("0");
+        when(scanResultIdx.getResult()).thenReturn(List.of("agentscope:store:idx:a\0b"));
+
+        when(jedis.scan(anyString(), any()))
+                .thenReturn(scanResultItem) // first scan for item:*
+                .thenReturn(scanResultIdx); // second scan for idx:*
+        when(jedis.rename("agentscope:store:idx:a\0b", "agentscope:store:idx:{a\0b}"))
+                .thenReturn("OK");
+
+        long count = RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:");
+
+        assertEquals(1, count);
+        verify(jedis).rename("agentscope:store:idx:a\0b", "agentscope:store:idx:{a\0b}");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migrateFallsBackToCopyAndDeleteOnCrossSlotError() {
+        var scanResultItem = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultItem.getCursor()).thenReturn("0");
+        when(scanResultItem.getResult()).thenReturn(List.of("agentscope:store:item:ns\0k"));
+
+        var scanResultIdx = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultIdx.getCursor()).thenReturn("0");
+        when(scanResultIdx.getResult()).thenReturn(List.of());
+
+        when(jedis.scan(anyString(), any())).thenReturn(scanResultItem).thenReturn(scanResultIdx);
+        when(jedis.rename("agentscope:store:item:ns\0k", "agentscope:store:item:{ns}\0k"))
+                .thenThrow(
+                        new redis.clients.jedis.exceptions.JedisDataException(
+                                "CROSSSLOT Keys in request don't hash to the same slot"));
+        when(jedis.type("agentscope:store:item:ns\0k")).thenReturn("hash");
+        when(jedis.hgetAll("agentscope:store:item:ns\0k"))
+                .thenReturn(Map.of("value", "{\"x\":1}", "version", "3"));
+        when(jedis.hset(
+                        "agentscope:store:item:{ns}\0k",
+                        Map.of("value", "{\"x\":1}", "version", "3")))
+                .thenReturn(1L);
+        when(jedis.del("agentscope:store:item:ns\0k")).thenReturn(1L);
+
+        long count = RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:");
+
+        assertEquals(1, count);
+        verify(jedis)
+                .hset(
+                        "agentscope:store:item:{ns}\0k",
+                        Map.of("value", "{\"x\":1}", "version", "3"));
+        verify(jedis).del("agentscope:store:item:ns\0k");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migrateFallsBackToCopyAndDeleteForZset() {
+        var scanResultItem = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultItem.getCursor()).thenReturn("0");
+        when(scanResultItem.getResult()).thenReturn(List.of());
+
+        var scanResultIdx = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultIdx.getCursor()).thenReturn("0");
+        when(scanResultIdx.getResult()).thenReturn(List.of("agentscope:store:idx:ns"));
+
+        when(jedis.scan(anyString(), any())).thenReturn(scanResultItem).thenReturn(scanResultIdx);
+        when(jedis.rename("agentscope:store:idx:ns", "agentscope:store:idx:{ns}"))
+                .thenThrow(
+                        new redis.clients.jedis.exceptions.JedisDataException(
+                                "CROSSSLOT Keys in request don't hash to the same slot"));
+        when(jedis.type("agentscope:store:idx:ns")).thenReturn("zset");
+        when(jedis.zrangeWithScores("agentscope:store:idx:ns", 0, -1))
+                .thenReturn(
+                        List.of(
+                                new redis.clients.jedis.resps.Tuple("k1", 0.0),
+                                new redis.clients.jedis.resps.Tuple("k2", 0.0)));
+        when(jedis.del("agentscope:store:idx:ns")).thenReturn(1L);
+
+        long count = RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:");
+
+        assertEquals(1, count);
+        verify(jedis).zadd(eq("agentscope:store:idx:{ns}"), eq(0.0), eq("k1"));
+        verify(jedis).zadd(eq("agentscope:store:idx:{ns}"), eq(0.0), eq("k2"));
+        verify(jedis).del("agentscope:store:idx:ns");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void migratePropagatesNonCrossSlotErrors() {
+        var scanResultItem = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultItem.getCursor()).thenReturn("0");
+        when(scanResultItem.getResult()).thenReturn(List.of("agentscope:store:item:ns\0k"));
+
+        var scanResultIdx = mock(redis.clients.jedis.resps.ScanResult.class);
+        when(scanResultIdx.getCursor()).thenReturn("0");
+        when(scanResultIdx.getResult()).thenReturn(List.of());
+
+        when(jedis.scan(anyString(), any())).thenReturn(scanResultItem).thenReturn(scanResultIdx);
+        when(jedis.rename(anyString(), anyString()))
+                .thenThrow(
+                        new redis.clients.jedis.exceptions.JedisDataException(
+                                "ERR some other error"));
+
+        assertThrows(
+                redis.clients.jedis.exceptions.JedisDataException.class,
+                () -> RedisStore.migrateFromLegacyFormat(jedis, "agentscope:store:"));
     }
 
     /**
