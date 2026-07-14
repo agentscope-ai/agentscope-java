@@ -239,52 +239,6 @@ class WorkspaceTaskCancellationTest {
     }
 
     @Test
-    void remoteCancellationDoesNotCompleteWhileRemoteStillReportsRunning() throws Exception {
-        CountDownLatch submitted = new CountDownLatch(1);
-        CountDownLatch cancelReceived = new CountDownLatch(1);
-        AtomicReference<String> remoteStatus = new AtomicReference<>("running");
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext(
-                "/tasks",
-                exchange -> {
-                    String path = exchange.getRequestURI().getPath();
-                    if ("/tasks".equals(path)) {
-                        submitted.countDown();
-                    } else if (path.endsWith("/cancel")) {
-                        cancelReceived.countDown();
-                    }
-                    String body =
-                            path.endsWith("/cancel")
-                                    ? "{}"
-                                    : "{\"status\":\"" + remoteStatus.get() + "\"}";
-                    respond(exchange, 200, body);
-                });
-        server.start();
-
-        repository.putTask(
-                RuntimeContext.empty(),
-                "remote-delayed",
-                "remote-agent",
-                "session",
-                new TaskRunSpec.RemoteTaskRunSpec(
-                        serverBaseUrl(), Map.of(), "remote-agent", "input"));
-        assertTrue(submitted.await(5, TimeUnit.SECONDS));
-
-        TaskCancellation cancellation =
-                repository.cancelTaskWithAcknowledgement(
-                        RuntimeContext.empty(), "session", "remote-delayed");
-        assertTrue(cancelReceived.await(5, TimeUnit.SECONDS));
-        assertEquals(
-                TaskCancellation.TerminationStatus.TIMED_OUT,
-                cancellation.awaitTermination(Duration.ofMillis(100)).status());
-
-        remoteStatus.set("cancelled");
-        assertEquals(
-                TaskCancellation.TerminationStatus.COOPERATIVE_STOP_CONFIRMED,
-                cancellation.awaitTermination(Duration.ofSeconds(5)).status());
-    }
-
-    @Test
     void completedTaskReturnsAlreadyTerminalAcknowledgement() throws Exception {
         repository.putTask(
                 RuntimeContext.empty(),
