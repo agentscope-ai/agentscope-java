@@ -1721,8 +1721,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Enables the post-conversation {@link SuggestionMiddleware}, which emits
-         * {@code SuggestionStart / SuggestionDelta / SuggestionEnd} events between
+         * Enables the post-conversation {@link SuggestionMiddleware}, which emits a single
+         * {@link io.agentscope.core.event.SuggestionResultEvent} between
          * {@link io.agentscope.core.event.AgentResultEvent} and
          * {@link io.agentscope.core.event.AgentEndEvent} so that front-ends can render follow-up
          * suggestions after each assistant reply. Default is {@code false}.

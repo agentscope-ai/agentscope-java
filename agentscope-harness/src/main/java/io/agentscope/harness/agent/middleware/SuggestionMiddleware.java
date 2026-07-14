@@ -31,6 +31,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -94,6 +95,13 @@ public class SuggestionMiddleware implements HarnessRuntimeMiddleware {
     private static final int DEFAULT_MAX_ITEMS = 4;
     private static final String TRUNCATE_MARKER = "... [truncated]";
     private static final String NO_USER_INTENT = "(none)";
+
+    /**
+     * Hard cap on the LLM call for suggestion generation. If the model hangs we abort and let
+     * {@link AgentEndEvent} pass through unchanged — a stuck side channel must never block the
+     * main conversation from terminating.
+     */
+    private static final Duration SUGGESTION_TIMEOUT = Duration.ofSeconds(15);
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
@@ -234,9 +242,15 @@ public class SuggestionMiddleware implements HarnessRuntimeMiddleware {
         String userIntent = lastUserText(input);
         String replyAnchor = truncate(replyText, MAX_REPLY_ANCHOR_CHARS);
         return buildSuggestionMono(end.getReplyId(), userIntent, replyAnchor)
+                .timeout(SUGGESTION_TIMEOUT)
                 .onErrorResume(
                         e -> {
-                            log.debug("SuggestionMiddleware suppressed error: {}", e.toString());
+                            // Log at WARN so operators actually see failures in production (default
+                            // log level is INFO). This is a strictly additive side channel — the
+                            // exception is swallowed and the original AgentEndEvent still passes
+                            // through, but a silent DEBUG-only trace hides real regressions
+                            // (model timeouts, credential errors, parser regressions).
+                            log.warn("SuggestionMiddleware suppressed error", e);
                             return Mono.empty();
                         })
                 .flux()
