@@ -23,7 +23,6 @@ public class KubernetesSandboxState extends SandboxState {
     private String namespace;
     private String podName;
     private String containerName = "workspace";
-    private String workspaceRoot = "/workspace";
     private boolean podOwned = true;
     private String image = "ubuntu:22.04";
 
@@ -49,14 +48,6 @@ public class KubernetesSandboxState extends SandboxState {
 
     public void setContainerName(String containerName) {
         this.containerName = containerName;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     public boolean isPodOwned() {

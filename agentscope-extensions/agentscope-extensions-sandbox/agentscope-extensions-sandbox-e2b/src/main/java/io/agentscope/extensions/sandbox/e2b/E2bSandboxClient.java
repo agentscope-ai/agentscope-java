@@ -63,7 +63,6 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
         state.setTemplateId(merged.getTemplateId());
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
         state.setPersistenceMode(merged.getPersistenceMode());
@@ -141,9 +140,6 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getTemplateId() != null) {
             o.setTemplateId(call.getTemplateId());
         }
-        if (call.getWorkspaceRoot() != null) {
-            o.setWorkspaceRoot(call.getWorkspaceRoot());
-        }
         if (call.getHttpClient() != null) {
             o.setHttpClient(call.getHttpClient());
         }
@@ -159,7 +155,6 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setApiBaseUrl(src.getApiBaseUrl());
         o.setDomain(src.getDomain());
         o.setTemplateId(src.getTemplateId());
-        o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setSandboxTimeoutSeconds(src.getSandboxTimeoutSeconds());
         o.setRunUser(src.getRunUser());
         o.setPersistenceMode(src.getPersistenceMode());

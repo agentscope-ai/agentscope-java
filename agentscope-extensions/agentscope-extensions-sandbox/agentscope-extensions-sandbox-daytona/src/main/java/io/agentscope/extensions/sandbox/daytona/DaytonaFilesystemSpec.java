@@ -28,7 +28,12 @@ public class DaytonaFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final DaytonaSandboxClientOptions options = new DaytonaSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec =
+            new WorkspaceSpec() {
+                {
+                    setRoot(DaytonaSandboxState.DEFAULT_WORKSPACE_ROOT);
+                }
+            };
 
     public DaytonaFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -76,7 +81,7 @@ public class DaytonaFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public DaytonaFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
         return this;
     }
 

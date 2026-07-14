@@ -23,7 +23,6 @@ public class DaytonaSandboxState extends SandboxState {
     public static final String DEFAULT_WORKSPACE_ROOT = "/home/daytona/workspace";
 
     private String sandboxId;
-    private String workspaceRoot = DEFAULT_WORKSPACE_ROOT;
     private boolean sandboxOwned = true;
     private String image = "ubuntu:22.04";
     private String snapshotId;
@@ -34,14 +33,6 @@ public class DaytonaSandboxState extends SandboxState {
 
     public void setSandboxId(String sandboxId) {
         this.sandboxId = sandboxId;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot != null ? workspaceRoot : DEFAULT_WORKSPACE_ROOT;
     }
 
     public boolean isSandboxOwned() {

@@ -24,7 +24,6 @@ public class AgentRunSandboxState extends SandboxState {
     public static final String DEFAULT_WORKSPACE_ROOT = "/home/agentscope/workspace";
 
     private String sandboxId;
-    private String workspaceRoot = DEFAULT_WORKSPACE_ROOT;
     private String templateName;
     private String accountId;
     private String region;
@@ -38,14 +37,6 @@ public class AgentRunSandboxState extends SandboxState {
 
     public void setSandboxId(String sandboxId) {
         this.sandboxId = sandboxId;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot != null ? workspaceRoot : DEFAULT_WORKSPACE_ROOT;
     }
 
     public String getTemplateName() {

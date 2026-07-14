@@ -53,7 +53,7 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public KubernetesFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
         return this;
     }
 

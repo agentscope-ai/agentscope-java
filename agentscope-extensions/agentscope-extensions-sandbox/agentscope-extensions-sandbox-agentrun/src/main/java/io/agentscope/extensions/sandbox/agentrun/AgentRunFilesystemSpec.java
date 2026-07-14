@@ -28,7 +28,12 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final AgentRunSandboxClientOptions options = new AgentRunSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec =
+            new WorkspaceSpec() {
+                {
+                    setRoot(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT);
+                }
+            };
 
     public AgentRunFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -86,7 +91,7 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public AgentRunFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.setWorkspaceRoot(workspaceRoot);
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
         return this;
     }
 
