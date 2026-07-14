@@ -199,15 +199,19 @@ public final class ToolResultBlock extends ContentBlock {
     /**
      * Create an error result (for tool method return values).
      *
+     * <p>The result carries {@link ToolResultState#ERROR} so that failures are
+     * recognized by state, independent of the output text prefix.
+     *
      * @param errorMessage Error message
-     * @return ToolResultBlock with error output
+     * @return ToolResultBlock with error output and {@code state = ERROR}
      */
     public static ToolResultBlock error(String errorMessage) {
         return new ToolResultBlock(
                 null,
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
-                null);
+                null,
+                ToolResultState.ERROR);
     }
 
     /**

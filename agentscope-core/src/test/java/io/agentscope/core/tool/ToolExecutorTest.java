@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -124,6 +125,20 @@ class ToolExecutorTest {
                 "Error: Tool execution failed: Tool error: test failure",
                 content,
                 "Error message should be wrapped by executor");
+        assertEquals(
+                ToolResultState.ERROR,
+                responses.get(0).getState(),
+                "A failed tool call must be reported with state=ERROR, not SUCCESS");
+    }
+
+    @Test
+    @DisplayName("ToolResultBlock.error() carries state=ERROR (issue #2157)")
+    void errorResultCarriesErrorState() {
+        // Regression guard: previously error() left state=null (defaulting to
+        // RUNNING) and relied on an "[ERROR]" text prefix it never produced, so
+        // determineToolResultState() misclassified failures as SUCCESS.
+        ToolResultBlock result = ToolResultBlock.error("boom");
+        assertEquals(ToolResultState.ERROR, result.getState());
     }
 
     @Test
