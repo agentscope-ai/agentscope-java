@@ -35,7 +35,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory#开启压缩)文档里有详细列表,这里不重复。
+默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory.md#开启压缩)文档里有详细列表,这里不重复。
 
 ### 2. 大工具结果卸载 (`ToolResultEvictionMiddleware`)
 
@@ -49,7 +49,7 @@ HarnessAgent.builder()
 
 默认排除 `read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search`——这些工具要么自带分页、要么返回值很小。**Shell `execute` 默认不排除**,因为命令输出可能非常大。
 
-详情见[记忆 - 大工具结果卸载](./memory#大工具结果卸载)。
+详情见[记忆 - 大工具结果卸载](./memory.md#大工具结果卸载)。
 
 ### 3. 上下文溢出兜底
 
@@ -86,8 +86,8 @@ CompactionConfig.builder()
 `ConversationCompactor` 只处理 `AgentState.contextMutable()` 里的**对话消息列表**。下面这些活在 `AgentState` 其他字段里,**完全不会被摘要压缩波及**:
 
 - **Plan Mode 状态**(`AgentState.getPlanModeContext()`):是否在 plan 阶段、当前计划文件路径。计划文件本身在工作区 `plans/` 下,生命周期由 Plan Mode 自己管理。详见 [Plan Mode](./plan-mode.md)。
-- **子 agent 后台任务**(`task_id`、状态、结果):住在 `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json` 里,由 `TaskRepository` 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,**不进入对话消息流**,所以摘要也无从压缩。详见 [子 Agent - 异步任务的存储位置](./subagent#异步任务的存储位置)。
-- **`todo_write` 任务清单**(`AgentState.getTasksContext()`):独立字段,跟着 `AgentState` 一起持久化,但不参与对话压缩。详见 [Plan Mode - 与 `todo_write` 的协作](./plan-mode#与-todo_write-的协作)。
+- **子 agent 后台任务**(`task_id`、状态、结果):住在 `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json` 里,由 `TaskRepository` 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,**不进入对话消息流**,所以摘要也无从压缩。详见 [子 Agent - 异步任务的存储位置](./subagent.md#异步任务的存储位置)。
+- **`todo_write` 任务清单**(`AgentState.getTasksContext()`):独立字段,跟着 `AgentState` 一起持久化,但不参与对话压缩。详见 [Plan Mode - 与 `todo_write` 的协作](./plan-mode.md#与-todo_write-的协作)。
 - **权限规则**(`getPermissionContext()`):独立字段,自带持久化。
 
 这些组件各有自己的状态机和恢复机制,压缩通路对它们是透明的——你可以放心开启 `.compaction(...)` 而不用担心丢 plan / 丢未完成的后台 task。

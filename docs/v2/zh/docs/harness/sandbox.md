@@ -202,5 +202,5 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 ## 相关文档
 
 - [文件系统](./filesystem.md) — 三种声明式模式对比
-- [工作区](./workspace) — `workspace/` 下哪些文件会同步进沙箱
+- [工作区](./workspace.md) — `workspace/` 下哪些文件会同步进沙箱
 - [架构](./architecture.md) — 沙箱 acquire / release 在 call() 时序中的位置
