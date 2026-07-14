@@ -426,9 +426,9 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 
 ## 相关文档
 
-- [Channel](./channel) — `expose_to_user`、`SendOptions`、用户直接与子 agent 交互
+- [Channel](./channel.md) — `expose_to_user`、`SendOptions`、用户直接与子 agent 交互
 - [工作区](./workspace) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
 - [计划模式](./plan-mode) — plan 阶段对子 agent 的限制
-- [架构](./architecture) — 主/子 agent 怎么协作
+- [架构](./architecture.md) — 主/子 agent 怎么协作
 - [消息与事件](../building-blocks/message-and-event.md) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
 - [V1 迁移指南 B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线

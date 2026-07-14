@@ -170,7 +170,7 @@ workspace/
 
 前提是调用时 `RuntimeContext.userId` 传了"alice"。
 
-这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](./filesystem)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
+这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](./filesystem.md)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
 
 - **本机 + shell** —— 就是宿主磁盘上的 `workspace/alice/skills/...`；
 - **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一轮推理即可生效；
@@ -414,5 +414,5 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 ## 相关文档
 
 - [工作区](./workspace) — `skills/` 目录的整体布局
-- [文件系统](./filesystem) — 多租户隔离与按用户切目录
-- [架构](./architecture) — skill 集合是怎么每轮重新合成的
+- [文件系统](./filesystem.md) — 多租户隔离与按用户切目录
+- [架构](./architecture.md) — skill 集合是怎么每轮重新合成的

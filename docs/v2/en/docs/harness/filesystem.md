@@ -510,9 +510,9 @@ Usually not needed — the three modes cover ~95% of use cases.
 
 ## Related Pages
 
-- [Sandbox](./sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
-- [Workspace](./workspace) — directory layout, loading mechanics, the "lower layer" of two-layer reads
-- [Context](./context) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
-- [Skills](./skill) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Tools](../building-blocks/tool) — `read_file` / `write_file` / `execute` parameters
-- [Architecture](./architecture) — how filesystem and runtime context cooperate
+- [Sandbox](./sandbox.md) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
+- [Workspace](./workspace.md) — directory layout, loading mechanics, the "lower layer" of two-layer reads
+- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
+- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Tools](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` parameters
+- [Architecture](./architecture.md) — how filesystem and runtime context cooperate
