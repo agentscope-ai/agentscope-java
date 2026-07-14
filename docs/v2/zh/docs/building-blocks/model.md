@@ -63,7 +63,7 @@ CredentialBase/
 
 ### 字符串 model id
 
-简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini` 这样的字符串 id。引入对应模型扩展模块，在环境变量中设置提供商的 `API_KEY`，然后直接把 id 传给 agent：
+简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini` 这样的字符串 id。引入对应模型扩展模块，设置模型提供商的标准环境变量，例如 `DASHSCOPE_API_KEY` 或 `OPENAI_API_KEY`，然后直接把 id 传给 agent：
 
 ```java
 ReActAgent agent =
@@ -114,11 +114,50 @@ agentscope:
     stream: true
 ```
 
+#### Builder customizer
+
+各模型提供商的 Spring Boot starter 还提供了有序的 builder customizer bean。它适合用于
+`application.yml` 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义
+formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。
+
+| Starter | Customizer 类型 |
+|---------|-----------------|
+| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
+| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
+| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+
+这些 customizer 会在 starter 属性绑定之后、调用 `builder.build()` 之前执行。可以注册多个
+customizer，并通过 Spring 的 `@Order` 或 `Ordered` 控制执行顺序。
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.spring.boot.openai.OpenAIChatModelBuilderCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+@Configuration(proxyBeanMethods = false)
+class ModelCustomizerConfiguration {
+
+    @Bean
+    @Order(0)
+    OpenAIChatModelBuilderCustomizer openAIModelDefaults() {
+        return builder ->
+                builder.defaultOptions(
+                        GenerateOptions.builder()
+                                .temperature(0.2)
+                                .parallelToolCalls(false)
+                                .build());
+    }
+}
+```
+
 ## ModelRegistry 与 ModelCreationContext
 
 `ModelRegistry` 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。解析时按优先级依次尝试：通过 `ModelRegistry.register(name, model)` 直接注册的命名模型实例、通过 `registerFactory(regex, factory)` 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 `ModelProvider` 实现。
 
-简单场景推荐使用 `provider:model` 格式的 id 和环境变量中的 `API_KEY`；需要精细控制时，则使用显式的模型 Builder 及 `ModelCreationContext` 进行配置。
+简单场景推荐使用 `provider:model` 格式的 id 和模型提供商的标准环境变量；需要精细控制时，优先使用显式的模型 Builder。`ModelCreationContext` 主要面向需要动态解析模型的集成层代码。
 
 ### 高级集成上下文
 
@@ -322,9 +361,9 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 当 native 路径失败（如模型返回 400），框架会**自动降级**到 fallback 路径，无需用户干预。
 
-#### 各 Provider 默认行为
+#### 各模型提供商默认行为
 
-| Provider | `supportsNativeStructuredOutput` | 说明 |
+| 模型提供商 | `supportsNativeStructuredOutput` | 说明 |
 |----------|----------------------------------|------|
 | OpenAI (GPT-4o 等) | `true` | 原生支持 `json_schema` |
 | OpenAI (DeepSeek/GLM formatter) | `false` | 不支持，自动走 fallback |
@@ -384,9 +423,9 @@ DashScopeChatModel model =
                 .build();
 ```
 
-各 provider 的 formatter 类现在随 provider extension module 一起提供：
+各模型提供商的 formatter 类现在随对应模型扩展模块一起提供：
 
-| Provider | Chat | MultiAgent |
+| 模型提供商 | Chat | MultiAgent |
 |---|---|---|
 | DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
@@ -396,9 +435,9 @@ DashScopeChatModel model =
 
 如果提供商的载荷格式不属于以上几种，开发者可以实现 `Formatter<TReq, TResp, TParams>` 接口（位于 `io.agentscope.core.formatter`），并通过同一个 `formatter(...)` 字段传入。
 
-### 自定义 Provider
+### 自定义模型提供商
 
-接入自定义 provider 的最小路径是：实现一个 `CredentialBase` 子类与一个 `ChatModelBase` 子类。
+接入自定义模型提供商的最小路径是：实现一个 `CredentialBase` 子类与一个 `ChatModelBase` 子类。
 
 #### 步骤 1：定义 Credential
 
@@ -525,4 +564,4 @@ for (ModelCard card : cards) {
 Class<? extends io.agentscope.core.model.ChatModelBase> modelCls = cred.getChatModelClass();
 ```
 
-这种设计让前端只需一个 credential，就能发现该 provider 下的可用模型 —— 无需任何硬编码的提供商逻辑。
+这种设计让前端只需一个 credential，就能发现该模型提供商下的可用模型 —— 无需任何硬编码的提供商逻辑。
