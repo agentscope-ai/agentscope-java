@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import io.agentscope.core.agent.RuntimeContext;
+import java.util.Objects;
 
 /**
  * Immutable snapshot delivered to {@link WorkspaceTaskRepository.TaskCompletionCallback} when a
@@ -29,7 +30,7 @@ import io.agentscope.core.agent.RuntimeContext;
  * @param taskId        task identifier
  * @param subAgentId    which subagent type executed this task
  * @param sessionId     parent session scope
- * @param status        terminal status — one of COMPLETED / FAILED / CANCELLED
+ * @param status        terminal status — one of COMPLETED / FAILED / CANCELLED; never {@code null}
  * @param result        completion payload; {@code null} for FAILED / CANCELLED
  * @param errorMessage  failure reason; {@code null} for COMPLETED / CANCELLED
  */
@@ -40,4 +41,9 @@ public record TaskCompletionEvent(
         String sessionId,
         TaskStatus status,
         String result,
-        String errorMessage) {}
+        String errorMessage) {
+
+    public TaskCompletionEvent {
+        Objects.requireNonNull(status, "status must not be null");
+    }
+}

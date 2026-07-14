@@ -734,6 +734,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         sid,
                         staleSecs);
                 updateStatus(updateRc, sid, tid, TaskStatus.FAILED, null, orphanMsg);
+                fireCompletionCallback(
+                        updateRc,
+                        tid,
+                        record.getSubAgentId(),
+                        sid,
+                        TaskStatus.FAILED,
+                        null,
+                        orphanMsg);
             }
         } catch (Exception e) {
             log.warn("Orphan sweeper encountered an error: {}", e.getMessage());

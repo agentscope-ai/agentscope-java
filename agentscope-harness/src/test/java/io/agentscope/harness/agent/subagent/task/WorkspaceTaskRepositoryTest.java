@@ -1005,6 +1005,142 @@ class WorkspaceTaskRepositoryTest {
         assertEquals(TaskStatus.COMPLETED, t.getTaskStatus());
     }
 
+    @Test
+    @DisplayName("sweepOrphanedTasks fires completion callback for orphaned task")
+    void sweepOrphanedTasks_firesCompletionCallback() throws Exception {
+        String session = "sess-sweep-cb";
+        String taskId = "task-stale-cb";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        // Write a RUNNING record with a lastUpdatedAt far in the past
+        TaskRecord stale = new TaskRecord(taskId, "agent-stale-cb", "test-agent", session, null);
+        stale.setStatus(TaskStatus.RUNNING);
+        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.FAILED;
+                });
+
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                e ->
+                                        e.status() == TaskStatus.FAILED
+                                                && taskId.equals(e.taskId())
+                                                && "agent-stale-cb".equals(e.subAgentId())
+                                                && e.errorMessage() != null
+                                                && e.errorMessage().contains("executor lost")),
+                "Orphan sweeper must fire completion callback with FAILED status and error");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks does not fire callback for live local tasks")
+    void sweepOrphanedTasks_doesNotFireCallbackForLiveTasks() throws Exception {
+        String session = "sess-sweep-live-cb";
+        String taskId = "task-live-cb";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-live-cb",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            try {
+                                release.await();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "live";
+                        }));
+
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord(
+                                        RuntimeContext.empty(), "test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
+                                .orElse(false));
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        assertTrue(
+                events.isEmpty(),
+                "Sweeper must not fire callback for tasks with a live local future");
+
+        release.countDown();
+    }
+
+    // ------------------------------------------------------------------
+    //  Sweep marker JSON format
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sweep marker writes JSON format with ts field")
+    void sweepMarker_writesJsonFormat() throws Exception {
+        repo.sweepOrphanedTasksDefault_forTest();
+
+        Path markerPath = tempDir.resolve("agents/test-agent/tasks/_sweep.marker");
+        assertTrue(Files.exists(markerPath), "Sweep marker file should exist");
+        String content = Files.readString(markerPath).strip();
+        assertTrue(content.startsWith("{"), "Sweep marker should be JSON, got: " + content);
+        assertTrue(
+                content.contains("\"ts\""),
+                "Sweep marker JSON should contain 'ts' field, got: " + content);
+
+        // Verify readSweepMarker still parses correctly
+        Optional<Instant> parsed =
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
+        assertTrue(parsed.isPresent(), "readSweepMarker must parse the JSON format");
+        assertTrue(
+                parsed.get().isAfter(Instant.now().minusSeconds(5)),
+                "Parsed sweep timestamp should be very recent");
+    }
+
+    @Test
+    @DisplayName("readSweepMarker parses legacy plain ISO-8601 format")
+    void sweepMarker_parsesLegacyFormat() throws Exception {
+        // Write a legacy plain ISO-8601 string (no JSON wrapper)
+        Path markerPath = tempDir.resolve("agents/test-agent/tasks/_sweep.marker");
+        markerPath.getParent().toFile().mkdirs();
+        Files.writeString(markerPath, Instant.now().toString());
+
+        Optional<Instant> parsed =
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
+        assertTrue(parsed.isPresent(), "readSweepMarker must parse legacy ISO-8601 format");
+        assertTrue(
+                parsed.get().isAfter(Instant.now().minusSeconds(5)),
+                "Parsed legacy timestamp should be very recent");
+    }
+
+    // ------------------------------------------------------------------
+    //  TaskCompletionEvent null status guard
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TaskCompletionEvent rejects null status")
+    void taskCompletionEvent_rejectsNullStatus() {
+        try {
+            new TaskCompletionEvent(null, null, null, null, null, null, null);
+            throw new AssertionError("Should have thrown NullPointerException");
+        } catch (NullPointerException e) {
+            assertTrue(e.getMessage().contains("status"), "NPE message should mention 'status'");
+        }
+    }
+
     // ------------------------------------------------------------------
     //  RemoteFilesystemSpec tasks route
     // ------------------------------------------------------------------
