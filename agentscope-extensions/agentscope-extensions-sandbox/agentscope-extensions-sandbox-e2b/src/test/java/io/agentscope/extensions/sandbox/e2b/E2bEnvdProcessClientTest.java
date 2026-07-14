@@ -17,13 +17,17 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
@@ -171,6 +175,133 @@ class E2bEnvdProcessClientTest {
                 .build();
     }
 
+    // Connect protocol: final envelope (flags bit 1) is EndStreamMessage JSON.
+    // Python SDK ServerStreamParser: if "error" in data → raise make_error(data["error"])
+    // https://connectrpc.com/docs/protocol/#error-end-stream
+    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b_connect/client.py#L230-L238
+    @Test
+    void endStreamResponseWithErrorThrows() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        String errorJson = "{\"error\":{\"code\":\"internal\",\"message\":\"process crash\"}}";
+        byte[] frame = endStreamFrame(errorJson);
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        frame,
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+        assertEquals(SandboxErrorCode.WORKSPACE_START_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("internal"));
+        assertTrue(ex.getMessage().contains("process crash"));
+    }
+
+    // Connect protocol: successful EndStreamResponse is "{}" (no error, no metadata).
+    // Python SDK: end_stream without "error" → return (stop iteration).
+    @Test
+    void endStreamResponseWithoutErrorBreaksCleanly() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        connectFrame(responseJson(base64("hello"), null, null)),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(Integer.MIN_VALUE, exit);
+        assertEquals("hello", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    // Proto3: sint32 exit_code defaults to 0, omitted from JSON when 0.
+    // getField() returns proto3 default (0) when absent — hasField() returns false.
+    // Python SDK reads event.event.end.exit_code directly (always returns 0 by default).
+    // https://protobuf.dev/programming-guides/proto3/#default
+    @Test
+    void exitCodeZeroDefaultWhenOmitted() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = concatFrames(connectFrame(endEventJson(null, null)), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(0, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void exitCodeNonZero() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = concatFrames(connectFrame(endEventJson(42, null)), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(42, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    // EndEvent.error — populated when cmd.Wait() returns ExitError
+    // (non-zero exit code or signal). Go handler: Error = errMsg.
+    // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+    // Python SDK: CommandResult(error=event.event.end.error)
+    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+    @Test
+    void endEventErrorWrittenToStderr() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(connectFrame(endEventJson(null, "signal: 9")), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(0, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertTrue(stderr.toString(StandardCharsets.UTF_8).contains("signal: 9"));
+    }
+
+    // Connect protocol: flags bit 0 = compressed (not supported by this client).
+    // https://connectrpc.com/docs/protocol/#streaming-rpcs
+    @Test
+    void compressedFrameThrowsIOException() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = envelope(0x01, "{}".getBytes(StandardCharsets.UTF_8));
+
+        IOException ex =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        frame,
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+        assertTrue(ex.getMessage().contains("Compressed"));
+    }
+
+    // Connect protocol: flags bits 2-7 reserved — implementations must skip unless understood.
+    // https://connectrpc.com/docs/protocol/#streaming-rpcs
+    @Test
+    void reservedFlagsFrameIsSkipped() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        envelope(0x04, "ignored".getBytes(StandardCharsets.UTF_8)),
+                        connectFrame(endEventJson(3, null)),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(3, exit);
+    }
+
     private static int drainStartStream(
             E2bEnvdProcessClient client,
             byte[] connectFrame,
@@ -184,11 +315,40 @@ class E2bEnvdProcessClientTest {
                         ByteArrayOutputStream.class,
                         ByteArrayOutputStream.class);
         method.setAccessible(true);
-        return (int) method.invoke(client, new ByteArrayInputStream(connectFrame), stdout, stderr);
+        try {
+            return (int)
+                    method.invoke(client, new ByteArrayInputStream(connectFrame), stdout, stderr);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw e;
+        }
+    }
+
+    private static byte[] envelope(int flags, byte[] payload) {
+        byte[] out = new byte[5 + payload.length];
+        out[0] = (byte) flags;
+        ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(payload.length);
+        System.arraycopy(payload, 0, out, 5, payload.length);
+        return out;
     }
 
     private static byte[] connectFrame(String json) {
-        return E2bEnvdProcessClient.encodeUnaryEnvelope(json.getBytes(StandardCharsets.UTF_8));
+        return envelope(0x00, json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] endStreamFrame(String json) {
+        return envelope(0x02, json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] concatFrames(byte[]... frames) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (byte[] frame : frames) {
+            out.writeBytes(frame);
+        }
+        return out.toByteArray();
     }
 
     private static byte[] connectFrames(String... jsons) {
@@ -226,6 +386,23 @@ class E2bEnvdProcessClientTest {
             json.append("\"end\":{\"exitCode\":").append(exitCode).append('}');
         }
         json.append("}}");
+        return json.toString();
+    }
+
+    private static String endEventJson(Integer exitCode, String error) {
+        StringBuilder json = new StringBuilder("{\"event\":{\"end\":{");
+        boolean needComma = false;
+        if (exitCode != null) {
+            json.append("\"exitCode\":").append(exitCode);
+            needComma = true;
+        }
+        if (error != null) {
+            if (needComma) {
+                json.append(',');
+            }
+            json.append("\"error\":\"").append(error).append("\"");
+        }
+        json.append("}}}");
         return json.toString();
     }
 
