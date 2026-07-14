@@ -238,6 +238,85 @@ class WorkspaceTaskCancellationTest {
                 cancellation.awaitTermination(Duration.ofSeconds(5)).status());
     }
 
+    @Test
+    void remoteCancellationDoesNotCompleteWhileRemoteStillReportsRunning() throws Exception {
+        CountDownLatch submitted = new CountDownLatch(1);
+        CountDownLatch cancelReceived = new CountDownLatch(1);
+        AtomicReference<String> remoteStatus = new AtomicReference<>("running");
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/tasks",
+                exchange -> {
+                    String path = exchange.getRequestURI().getPath();
+                    if ("/tasks".equals(path)) {
+                        submitted.countDown();
+                    } else if (path.endsWith("/cancel")) {
+                        cancelReceived.countDown();
+                    }
+                    String body =
+                            path.endsWith("/cancel")
+                                    ? "{}"
+                                    : "{\"status\":\"" + remoteStatus.get() + "\"}";
+                    respond(exchange, 200, body);
+                });
+        server.start();
+
+        repository.putTask(
+                RuntimeContext.empty(),
+                "remote-delayed",
+                "remote-agent",
+                "session",
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        serverBaseUrl(), Map.of(), "remote-agent", "input"));
+        assertTrue(submitted.await(5, TimeUnit.SECONDS));
+
+        TaskCancellation cancellation =
+                repository.cancelTaskWithAcknowledgement(
+                        RuntimeContext.empty(), "session", "remote-delayed");
+        assertTrue(cancelReceived.await(5, TimeUnit.SECONDS));
+        assertEquals(
+                TaskCancellation.TerminationStatus.TIMED_OUT,
+                cancellation.awaitTermination(Duration.ofMillis(100)).status());
+
+        remoteStatus.set("cancelled");
+        assertEquals(
+                TaskCancellation.TerminationStatus.COOPERATIVE_STOP_CONFIRMED,
+                cancellation.awaitTermination(Duration.ofSeconds(5)).status());
+    }
+
+    @Test
+    void completedTaskReturnsAlreadyTerminalAcknowledgement() throws Exception {
+        repository.putTask(
+                RuntimeContext.empty(),
+                "already-complete",
+                "local-agent",
+                "session",
+                new TaskRunSpec.LocalTaskRunSpec(() -> "done"));
+        awaitTaskStatus("session", "already-complete", TaskStatus.COMPLETED);
+
+        TaskCancellation cancellation =
+                repository.cancelTaskWithAcknowledgement(
+                        RuntimeContext.empty(), "session", "already-complete");
+
+        assertEquals(TaskCancellation.RequestStatus.ALREADY_TERMINAL, cancellation.requestStatus());
+        assertEquals(
+                TaskCancellation.TerminationStatus.ALREADY_STOPPED,
+                cancellation.awaitTermination(Duration.ZERO).status());
+    }
+
+    private void awaitTaskStatus(String sessionId, String taskId, TaskStatus expected)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            BackgroundTask task = repository.getTask(RuntimeContext.empty(), sessionId, taskId);
+            if (task != null && task.getTaskStatus() == expected) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Task did not reach status " + expected);
+    }
+
     private void startTaskServer(
             CountDownLatch submitted,
             AtomicReference<String> remoteStatus,
