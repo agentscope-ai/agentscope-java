@@ -33,7 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class WorkspaceContextMiddlewareSandboxTest {
 
-    private static final RuntimeContext RC = RuntimeContext.builder().sessionId("test-session").build();
+    private static final RuntimeContext RC =
+            RuntimeContext.builder().sessionId("test-session").build();
 
     @Test
     void sandboxBranch_includesSandboxRootAndId(@TempDir Path workspace) {
@@ -149,21 +150,28 @@ class WorkspaceContextMiddlewareSandboxTest {
         }
 
         @Override
-        public ExecuteResponse execute(RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             if (command.contains("/etc/os-release")) {
                 if (osException != null) {
                     throw osException;
                 }
-                return osReleaseResponse != null ? osReleaseResponse : new ExecuteResponse("Linux 6.2", 0, false);
+                return osReleaseResponse != null
+                        ? osReleaseResponse
+                        : new ExecuteResponse("Linux 6.2", 0, false);
             }
             if (command.contains("uname")) {
                 if (osException != null) {
                     throw osException;
                 }
-                return unameResponse != null ? unameResponse : new ExecuteResponse("Linux", 0, false);
+                return unameResponse != null
+                        ? unameResponse
+                        : new ExecuteResponse("Linux", 0, false);
             }
             if (command.contains("TMPDIR")) {
-                return tempdirResponse != null ? tempdirResponse : new ExecuteResponse("/tmp", 0, false);
+                return tempdirResponse != null
+                        ? tempdirResponse
+                        : new ExecuteResponse("/tmp", 0, false);
             }
             return new ExecuteResponse("", 0, false);
         }
