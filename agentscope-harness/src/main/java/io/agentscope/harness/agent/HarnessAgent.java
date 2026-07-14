@@ -2221,8 +2221,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new AsyncToolMiddleware(messageBus, asyncToolTimeout, asyncToolRegistry));
             }
             if (messageBus != null) {
+                TaskRepository waitTaskRepo = null;
+                if (capturedSubagentMw instanceof SubagentsMiddleware sm) {
+                    waitTaskRepo = sm.getTaskRepository();
+                } else if (capturedSubagentMw instanceof DynamicSubagentsMiddleware dsm) {
+                    waitTaskRepo = dsm.getTaskRepository();
+                }
                 agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(messageBus));
+                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(
+                                messageBus, waitTaskRepo));
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----

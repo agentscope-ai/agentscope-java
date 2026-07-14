@@ -34,6 +34,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -80,6 +81,16 @@ public class AnthropicMessageConverter {
             Msg msg = messages.get(i);
             boolean isFirstMessage = (i == 0);
 
+            if (msg.getRole() == MsgRole.ASSISTANT
+                    && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
+                SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
+                if (shouldSplitParallelToolCalls(msg, splitResults)) {
+                    result.addAll(convertParallelToolCalls(msg, splitResults));
+                    i += splitResults.consumedMessages();
+                    continue;
+                }
+            }
+
             // Special handling for tool results - they create separate user messages
             if (msg.hasContentBlocks(ToolResultBlock.class)) {
                 // Add non-tool-result content first (if any)
@@ -116,6 +127,117 @@ public class AnthropicMessageConverter {
 
         return result;
     }
+
+    /**
+     * Decide whether the current assistant message should be expanded into Anthropic's required
+     * tool-use/tool-result alternation.
+     *
+     * <p>Splitting is enabled only when all of the following are true:
+     *
+     * <ul>
+     *   <li>The current message role is {@link MsgRole#ASSISTANT}.
+     *   <li>At least one following pure tool-result message was discovered.
+     *   <li>The current message contains two or more {@link ToolUseBlock}s.
+     *   <li>Every tool-use id is present and non-blank.
+     *   <li>The number of collected tool results equals the number of tool uses, and every
+     *       tool-use id has a corresponding result.
+     * </ul>
+     */
+    private boolean shouldSplitParallelToolCalls(Msg msg, SplitToolResultSequence splitResults) {
+        if (msg.getRole() != MsgRole.ASSISTANT || splitResults.consumedMessages() == 0) {
+            return false;
+        }
+
+        List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
+        if (toolUses.size() <= 1) {
+            return false;
+        }
+
+        List<String> toolUseIds = toolUses.stream().map(ToolUseBlock::getId).toList();
+        if (toolUseIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            return false;
+        }
+
+        return splitResults.resultsById().size() == toolUseIds.size()
+                && toolUseIds.stream().allMatch(id -> splitResults.resultsById().containsKey(id));
+    }
+
+    /**
+     * Collect the consecutive pure tool-result messages that immediately follow an assistant
+     * message.
+     *
+     * <p>Scanning starts at {@code startIndex}, which is normally the message right after the
+     * assistant message being inspected. The scan continues only across messages whose content is
+     * made entirely of {@link ToolResultBlock}s. It stops as soon as a message has no tool results
+     * or contains any non-tool-result content, because such a message must be preserved in its
+     * original position rather than consumed into the split sequence.
+     */
+    private SplitToolResultSequence collectSplitToolResults(List<Msg> messages, int startIndex) {
+        Map<String, ToolResultBlock> byId = new LinkedHashMap<>();
+        int consumed = 0;
+
+        for (int i = startIndex; i < messages.size(); i++) {
+            Msg msg = messages.get(i);
+            List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
+            if (toolResults.isEmpty() || hasNonToolResultContent(msg)) {
+                break;
+            }
+
+            consumed++;
+            for (ToolResultBlock toolResult : toolResults) {
+                if (toolResult.getId() != null) {
+                    byId.putIfAbsent(toolResult.getId(), toolResult);
+                }
+            }
+        }
+
+        return new SplitToolResultSequence(byId, consumed);
+    }
+
+    private boolean hasNonToolResultContent(Msg msg) {
+        return msg.getContent().stream().anyMatch(block -> !(block instanceof ToolResultBlock));
+    }
+
+    /**
+     * Expand one assistant message with parallel tool uses into alternating Anthropic messages.
+     *
+     * <p>Each {@link ToolUseBlock} from the original assistant message is wrapped in its own
+     * assistant message and immediately followed by the matching user tool-result message. Any
+     * leading assistant content, such as explanatory text before the tool calls, is attached only
+     * to the first split assistant message so it is not duplicated across the generated sequence.
+     */
+    private List<MessageParam> convertParallelToolCalls(
+            Msg assistantMsg, SplitToolResultSequence splitResults) {
+        List<MessageParam> converted = new ArrayList<>();
+        List<ContentBlock> leadingBlocks =
+                assistantMsg.getContent().stream()
+                        .filter(block -> !(block instanceof ToolUseBlock))
+                        .toList();
+        List<ToolUseBlock> toolUses = assistantMsg.getContentBlocks(ToolUseBlock.class);
+
+        for (int i = 0; i < toolUses.size(); i++) {
+            ToolUseBlock toolUse = toolUses.get(i);
+            List<ContentBlock> assistantBlocks = new ArrayList<>();
+            if (i == 0) {
+                assistantBlocks.addAll(leadingBlocks);
+            }
+            assistantBlocks.add(toolUse);
+
+            MessageParam assistantParam =
+                    convertMessageContent(assistantMsg, assistantBlocks, false);
+            if (assistantParam != null) {
+                converted.add(assistantParam);
+            }
+
+            ToolResultBlock toolResult = splitResults.resultsById().get(toolUse.getId());
+            converted.add(convertToolResult(toolResult));
+        }
+
+        return converted;
+    }
+
+    private record SplitToolResultSequence(
+            Map<String, ToolResultBlock> resultsById, int consumedMessages) {}
 
     /**
      * Convert message content to MessageParam.

@@ -31,7 +31,7 @@ description: "智能体通信，与前端流式数据传输"
 | `getMetadata()` | `Map<String, Object>` | 任意键值元数据 |
 | `getTimestamp()` | `String` | 创建时间（`yyyy-MM-dd HH:mm:ss.SSS`） |
 | `getUsage()` | `ChatUsage` | Token 用量（仅 assistant 消息） |
-| `getGenerateReason()` | `GenerateReason` | 退出原因：`MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `INTERRUPTED` / `MAX_ITERATIONS` |
+| `getGenerateReason()` | `GenerateReason` | 退出原因：`MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### 内容块
 
@@ -299,6 +299,12 @@ sequenceDiagram
     **UserConfirmResultEvent** — 用户提供确认结果（输入事件）。携带 `List<ConfirmResult>`。
 
     **ExternalExecutionResultEvent** — 外部系统提供执行结果（输入事件）。携带 `List<ToolResultBlock>`。
+
+    **AllToolsDeniedEvent** — 用户通过 HITL 确认拒绝了最近一轮推理产出的全部工具调用。该事件通过 `onActing` middleware 链发出，middleware 可据此发出 `RequestStopEvent` 停止 agent。若无 middleware 处理，agent 默认继续下一轮推理（向后兼容）。
+
+    | 方法 | 类型 | 说明 |
+    |------|------|------|
+    | `getDeniedToolCalls()` | `List<ToolUseBlock>` | 被拒绝的工具调用列表 |
 :::
 
   :::{dropdown} 子 Agent 事件
