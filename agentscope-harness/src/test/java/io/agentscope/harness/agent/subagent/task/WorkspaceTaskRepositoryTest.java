@@ -33,6 +33,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -814,6 +816,512 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(
                 result.stream().noneMatch(r -> "task-old".equals(r.getTaskId())),
                 "Old task file should be skipped by recentWindow filter");
+    }
+
+    // ------------------------------------------------------------------
+    //  Completion callback: terminal status and error propagation
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("callback carries COMPLETED status, taskId, subAgentId, sessionId, and result")
+    void completionCallback_completedStatusAndResult() throws Exception {
+        String session = "sess-cb-ok";
+        String taskId = "task-cb-ok";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-ok",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "success-result"));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        assertEquals(1, events.size());
+        TaskCompletionEvent e = events.get(0);
+        assertEquals(TaskStatus.COMPLETED, e.status(), "status must be COMPLETED");
+        assertEquals(taskId, e.taskId(), "taskId must match");
+        assertEquals("agent-cb-ok", e.subAgentId(), "subAgentId must match");
+        assertEquals(session, e.sessionId(), "sessionId must match");
+        assertEquals("success-result", e.result(), "result must carry success payload");
+        assertNull(e.errorMessage(), "errorMessage must be null for COMPLETED");
+    }
+
+    @Test
+    @DisplayName(
+            "callback carries FAILED status, taskId, subAgentId, sessionId, and authoritative"
+                    + " errorMessage")
+    void completionCallback_failedStatusAndErrorMessage() throws Exception {
+        String session = "sess-cb-fail";
+        String taskId = "task-cb-fail";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-fail",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("intentional-failure-marker");
+                        }));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        assertEquals(1, events.size());
+        TaskCompletionEvent e = events.get(0);
+        assertEquals(TaskStatus.FAILED, e.status(), "status must be FAILED");
+        assertEquals(taskId, e.taskId(), "taskId must match");
+        assertEquals("agent-cb-fail", e.subAgentId(), "subAgentId must match");
+        assertEquals(session, e.sessionId(), "sessionId must match");
+        assertNull(e.result(), "result must be null for FAILED");
+        assertNotNull(e.errorMessage(), "errorMessage must carry the authoritative error");
+        assertTrue(
+                e.errorMessage().contains("intentional-failure-marker"),
+                "errorMessage must contain the original exception message");
+    }
+
+    @Test
+    @DisplayName("callback carries CANCELLED status, taskId, subAgentId, sessionId when cancelled")
+    void completionCallback_cancelledStatus() throws Exception {
+        String session = "sess-cb-cancel";
+        String taskId = "task-cb-cancel";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CountDownLatch taskRunning = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-cancel",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "should-not-appear";
+                        }));
+
+        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
+                });
+
+        repo.cancelTask(RuntimeContext.empty(), session, taskId);
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.CANCELLED;
+                });
+
+        release.countDown();
+        Thread.sleep(200);
+
+        TaskCompletionEvent cancelEvent =
+                events.stream()
+                        .filter(e -> e.status() == TaskStatus.CANCELLED)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(cancelEvent, "Callback must receive a CANCELLED event");
+        assertEquals(TaskStatus.CANCELLED, cancelEvent.status(), "status must be CANCELLED");
+        assertEquals(taskId, cancelEvent.taskId(), "taskId must match");
+        assertEquals("agent-cb-cancel", cancelEvent.subAgentId(), "subAgentId must match");
+        assertEquals(session, cancelEvent.sessionId(), "sessionId must match");
+        assertNull(cancelEvent.result(), "result must be null for CANCELLED");
+        assertNull(cancelEvent.errorMessage(), "errorMessage must be null for CANCELLED");
+    }
+
+    @Test
+    @DisplayName(
+            "adopted (promised) task delivers COMPLETED callback with result via"
+                    + " future.whenComplete")
+    void completionCallback_adoptedFuture_deliversCompletedStatus() throws Exception {
+        String session = "sess-cb-adopted";
+        String taskId = "task-cb-adopted";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CompletableFuture<String> promised = new CompletableFuture<>();
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-adopted",
+                session,
+                new TaskRunSpec.AdoptedTaskRunSpec(promised));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus() == TaskStatus.RUNNING;
+                });
+
+        promised.complete("adopted-result");
+
+        awaitCondition(() -> events.stream().anyMatch(e -> e.status() == TaskStatus.COMPLETED));
+
+        TaskCompletionEvent e =
+                events.stream()
+                        .filter(ev -> ev.status() == TaskStatus.COMPLETED)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(TaskStatus.COMPLETED, e.status(), "adopted task status must be COMPLETED");
+        assertEquals(taskId, e.taskId(), "adopted task taskId must match");
+        assertEquals("agent-adopted", e.subAgentId(), "adopted task subAgentId must match");
+        assertEquals("adopted-result", e.result(), "adopted task result must carry the value");
+    }
+
+    @Test
+    @DisplayName(
+            "adopted (promised) task delivers FAILED callback with errorMessage via"
+                    + " future.whenComplete")
+    void completionCallback_adoptedFuture_deliversFailedStatus() throws Exception {
+        String session = "sess-cb-adopted-fail";
+        String taskId = "task-cb-adopted-fail";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CompletableFuture<String> promised = new CompletableFuture<>();
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-adopted-fail",
+                session,
+                new TaskRunSpec.AdoptedTaskRunSpec(promised));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus() == TaskStatus.RUNNING;
+                });
+
+        promised.completeExceptionally(new RuntimeException("adopted-failure-marker"));
+
+        awaitCondition(() -> events.stream().anyMatch(e -> e.status() == TaskStatus.FAILED));
+
+        TaskCompletionEvent e =
+                events.stream()
+                        .filter(ev -> ev.status() == TaskStatus.FAILED)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(TaskStatus.FAILED, e.status(), "adopted failed task status must be FAILED");
+        assertEquals(taskId, e.taskId(), "adopted failed taskId must match");
+        assertNotNull(e.errorMessage(), "adopted failed errorMessage must be non-null");
+        assertTrue(
+                e.errorMessage().contains("adopted-failure-marker"),
+                "adopted failed errorMessage must contain the original cause");
+    }
+
+    // ------------------------------------------------------------------
+    //  End-to-end: callback → MessageBus inbox → HintBlock content
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "end-to-end: FAILED task produces HintBlock with 'has FAILED' and error in parent"
+                    + " reasoning context")
+    void endToEnd_failedTask_hintBlockContainsFailedAndError() throws Exception {
+        java.nio.file.Path busDir = tempDir.resolve("bus-e2e-fail");
+        busDir.toFile().mkdirs();
+        var busFs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(busDir, true, 10);
+        var bus = new io.agentscope.harness.agent.bus.WorkspaceMessageBus(busFs, "/bus");
+        String session = "sess-e2e-fail";
+
+        repo.setCompletionCallback(
+                event -> {
+                    String userId = event.rc() != null ? event.rc().getUserId() : null;
+                    String hintContent =
+                            switch (event.status()) {
+                                case COMPLETED ->
+                                        String.format(
+                                                "<system-notification>Background subagent task '%s'"
+                                                        + " (agent=%s) has completed.\n\nResult:"
+                                                        + "\n\n%s</system-notification>",
+                                                event.taskId(),
+                                                event.subAgentId(),
+                                                event.result() != null
+                                                        ? event.result()
+                                                        : "(no output)");
+                                case FAILED ->
+                                        String.format(
+                                                "<system-notification>Background subagent task '%s'"
+                                                        + " (agent=%s) has FAILED.\n\nError:"
+                                                        + "\n\n%s</system-notification>",
+                                                event.taskId(),
+                                                event.subAgentId(),
+                                                event.errorMessage() != null
+                                                        ? event.errorMessage()
+                                                        : "(no error message)");
+                                case CANCELLED ->
+                                        String.format(
+                                                "<system-notification>Background subagent task '%s'"
+                                                        + " (agent=%s) was cancelled."
+                                                        + "</system-notification>",
+                                                event.taskId(), event.subAgentId());
+                                default ->
+                                        throw new IllegalStateException(
+                                                "Unexpected: " + event.status());
+                            };
+                    bus.inboxPush(
+                                    event.sessionId(),
+                                    java.util.Map.of(
+                                            "type",
+                                            "hint",
+                                            "id",
+                                            java.util.UUID.randomUUID().toString().replace("-", ""),
+                                            "hint",
+                                            hintContent,
+                                            "source",
+                                            "subagent_task"))
+                            .block();
+                });
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "e2e-fail-task",
+                "e2e-fail-agent",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("e2e-failure-marker");
+                        }));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t =
+                            repo.getTask(RuntimeContext.empty(), session, "e2e-fail-task");
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        // Drain the inbox the same way InboxMiddleware does
+        List<io.agentscope.harness.agent.bus.BusEntry> entries =
+                bus.inboxDrain(session, 10).block();
+        assertNotNull(entries, "inbox must have entries");
+        assertTrue(!entries.isEmpty(), "inbox must not be empty after FAILED task");
+
+        Map<String, Object> payload = entries.get(0).payload();
+        String hint = (String) payload.get("hint");
+        assertNotNull(hint, "deserialized hint must not be null");
+        assertTrue(
+                hint.contains("has FAILED"),
+                "HintBlock must say 'has FAILED' for a failed task, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-failure-marker"),
+                "HintBlock must contain the authoritative error message, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-fail-task"), "HintBlock must contain the taskId, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-fail-agent"),
+                "HintBlock must contain the subAgentId, got: " + hint);
+    }
+
+    @Test
+    @DisplayName(
+            "end-to-end: CANCELLED task produces HintBlock with 'was cancelled' in parent"
+                    + " reasoning context")
+    void endToEnd_cancelledTask_hintBlockContainsCancelled() throws Exception {
+        java.nio.file.Path busDir = tempDir.resolve("bus-e2e-cancel");
+        busDir.toFile().mkdirs();
+        var busFs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(busDir, true, 10);
+        var bus = new io.agentscope.harness.agent.bus.WorkspaceMessageBus(busFs, "/bus");
+        String session = "sess-e2e-cancel";
+
+        repo.setCompletionCallback(
+                event -> {
+                    String hintContent =
+                            switch (event.status()) {
+                                case COMPLETED -> "completed";
+                                case FAILED -> "failed";
+                                case CANCELLED ->
+                                        String.format(
+                                                "<system-notification>Background subagent task '%s'"
+                                                        + " (agent=%s) was cancelled."
+                                                        + "</system-notification>",
+                                                event.taskId(), event.subAgentId());
+                                default -> "unknown";
+                            };
+                    bus.inboxPush(
+                                    event.sessionId(),
+                                    java.util.Map.of(
+                                            "type",
+                                            "hint",
+                                            "id",
+                                            java.util.UUID.randomUUID().toString().replace("-", ""),
+                                            "hint",
+                                            hintContent,
+                                            "source",
+                                            "subagent_task"))
+                            .block();
+                });
+
+        CountDownLatch taskRunning = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                RuntimeContext.empty(),
+                "e2e-cancel-task",
+                "e2e-cancel-agent",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "should-not-appear";
+                        }));
+
+        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(),
+                                    "test-agent",
+                                    session,
+                                    "e2e-cancel-task");
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
+                });
+
+        repo.cancelTask(RuntimeContext.empty(), session, "e2e-cancel-task");
+        release.countDown();
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(),
+                                    "test-agent",
+                                    session,
+                                    "e2e-cancel-task");
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.CANCELLED;
+                });
+
+        Thread.sleep(200);
+        List<io.agentscope.harness.agent.bus.BusEntry> entries =
+                bus.inboxDrain(session, 10).block();
+        assertNotNull(entries, "inbox must have entries after CANCELLED");
+        assertTrue(!entries.isEmpty(), "inbox must not be empty after CANCELLED task");
+
+        Map<String, Object> payload = entries.get(0).payload();
+        String hint = (String) payload.get("hint");
+        assertNotNull(hint, "deserialized hint must not be null");
+        assertTrue(
+                hint.contains("was cancelled"),
+                "HintBlock must say 'was cancelled' for a cancelled task, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-cancel-task"),
+                "HintBlock must contain the taskId, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-cancel-agent"),
+                "HintBlock must contain the subAgentId, got: " + hint);
+    }
+
+    @Test
+    @DisplayName(
+            "end-to-end: COMPLETED task produces HintBlock with 'has completed' and result in"
+                    + " parent reasoning context")
+    void endToEnd_completedTask_hintBlockContainsCompletedAndResult() throws Exception {
+        java.nio.file.Path busDir = tempDir.resolve("bus-e2e-ok");
+        busDir.toFile().mkdirs();
+        var busFs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(busDir, true, 10);
+        var bus = new io.agentscope.harness.agent.bus.WorkspaceMessageBus(busFs, "/bus");
+        String session = "sess-e2e-ok";
+
+        repo.setCompletionCallback(
+                event -> {
+                    String hintContent =
+                            switch (event.status()) {
+                                case COMPLETED ->
+                                        String.format(
+                                                "<system-notification>Background subagent task '%s'"
+                                                        + " (agent=%s) has completed.\n\nResult:"
+                                                        + "\n\n%s</system-notification>",
+                                                event.taskId(),
+                                                event.subAgentId(),
+                                                event.result() != null
+                                                        ? event.result()
+                                                        : "(no output)");
+                                case FAILED -> "failed";
+                                case CANCELLED -> "cancelled";
+                                default -> "unknown";
+                            };
+                    bus.inboxPush(
+                                    event.sessionId(),
+                                    java.util.Map.of(
+                                            "type",
+                                            "hint",
+                                            "id",
+                                            java.util.UUID.randomUUID().toString().replace("-", ""),
+                                            "hint",
+                                            hintContent,
+                                            "source",
+                                            "subagent_task"))
+                            .block();
+                });
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "e2e-ok-task",
+                "e2e-ok-agent",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "e2e-success-payload"));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, "e2e-ok-task");
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        List<io.agentscope.harness.agent.bus.BusEntry> entries =
+                bus.inboxDrain(session, 10).block();
+        assertNotNull(entries, "inbox must have entries after COMPLETED");
+        assertTrue(!entries.isEmpty(), "inbox must not be empty after COMPLETED task");
+
+        Map<String, Object> payload = entries.get(0).payload();
+        String hint = (String) payload.get("hint");
+        assertNotNull(hint, "deserialized hint must not be null");
+        assertTrue(
+                hint.contains("has completed"),
+                "HintBlock must say 'has completed' for a successful task, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-success-payload"),
+                "HintBlock must contain the result payload, got: " + hint);
+        assertTrue(hint.contains("e2e-ok-task"), "HintBlock must contain the taskId, got: " + hint);
+        assertTrue(
+                hint.contains("e2e-ok-agent"),
+                "HintBlock must contain the subAgentId, got: " + hint);
     }
 
     // ------------------------------------------------------------------
