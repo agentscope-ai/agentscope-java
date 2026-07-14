@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.model;
 
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ModelCallAttemptRole;
 import java.time.Duration;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +75,56 @@ public final class ModelUtils {
             GenerateOptions defaultOptions,
             String modelName,
             String provider) {
+        // Try to read attempt event context from the merged ExecutionConfig
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
+        AttemptEventContext ctx = null;
+        if (effectiveOptions != null && effectiveOptions.getExecutionConfig() != null) {
+            ctx = effectiveOptions.getExecutionConfig().getAttemptEventContext();
+        }
+        if (ctx != null && ctx.isComplete()) {
+            return applyTimeoutAndRetry(
+                    responseFlux,
+                    options,
+                    defaultOptions,
+                    modelName,
+                    provider,
+                    ctx.getEmitter(),
+                    ctx.getReplyId(),
+                    0,
+                    ctx.getRole());
+        }
+        return applyTimeoutAndRetry(
+                responseFlux, options, defaultOptions, modelName, provider, null, null, 0, null);
+    }
+
+    /**
+     * Applies timeout, retry, and optional attempt tracking to a model response Flux.
+     *
+     * <p>When {@code attemptEmitter} is non-null, attempt lifecycle events are emitted
+     * <b>between</b> the timeout operator and the retry operator so that each retry
+     * resubscription triggers a fresh set of lifecycle callbacks.
+     *
+     * @param responseFlux the original response Flux to enhance
+     * @param options generation options containing timeout and retry config (may be null)
+     * @param defaultOptions default options to use if options is null
+     * @param modelName the name of the model for error messages and logging
+     * @param provider the provider name (e.g., "dashscope", "openai") for error messages
+     * @param attemptEmitter event emitter for attempt lifecycle events, or null to skip tracking
+     * @param replyId logical call/reply identifier, required when attemptEmitter is non-null
+     * @param maxAttempts configured maximum attempts, used for attempt event metadata
+     * @param role primary or fallback role, required when attemptEmitter is non-null
+     * @return wrapped Flux with timeout, retry, and optional attempt tracking applied
+     */
+    public static Flux<ChatResponse> applyTimeoutAndRetry(
+            Flux<ChatResponse> responseFlux,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            String modelName,
+            String provider,
+            Consumer<AgentEvent> attemptEmitter,
+            String replyId,
+            int maxAttempts,
+            ModelCallAttemptRole role) {
 
         // Merge options: per-request options (primary) override default options (fallback)
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
@@ -93,9 +146,29 @@ public final class ModelUtils {
                 LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
             }
 
+            // Apply attempt tracking between timeout and retry so that each retry
+            // resubscription triggers fresh lifecycle callbacks.
+            if (attemptEmitter != null && replyId != null) {
+                Integer effectiveMaxAttempts = execConfig.getMaxAttempts();
+                int effectiveMax =
+                        effectiveMaxAttempts != null ? effectiveMaxAttempts : maxAttempts;
+                AttemptEventContext trackingCtx = execConfig.getAttemptEventContext();
+                boolean hasFallback = trackingCtx != null && trackingCtx.hasFallback();
+                responseFlux =
+                        ModelCallAttemptTracker.wrap(
+                                responseFlux,
+                                attemptEmitter,
+                                replyId,
+                                effectiveMax,
+                                provider,
+                                modelName,
+                                role,
+                                hasFallback);
+            }
+
             // Apply retry if configured (maxAttempts > 1 means retry is enabled)
-            Integer maxAttempts = execConfig.getMaxAttempts();
-            if (maxAttempts != null && maxAttempts > 1) {
+            Integer retryMaxAttempts = execConfig.getMaxAttempts();
+            if (retryMaxAttempts != null && retryMaxAttempts > 1) {
                 Duration initialBackoff = execConfig.getInitialBackoff();
                 Duration maxBackoff = execConfig.getMaxBackoff();
                 Predicate<Throwable> retryOn = execConfig.getRetryOn();
@@ -112,7 +185,7 @@ public final class ModelUtils {
                 }
 
                 Retry retrySpec =
-                        Retry.backoff(maxAttempts - 1, initialBackoff)
+                        Retry.backoff(retryMaxAttempts - 1, initialBackoff)
                                 .maxBackoff(maxBackoff)
                                 .jitter(0.5)
                                 .filter(retryOn)
@@ -122,14 +195,14 @@ public final class ModelUtils {
                                                         "Retrying model request (attempt {}/{}) due"
                                                                 + " to: {}",
                                                         signal.totalRetriesInARow() + 1,
-                                                        maxAttempts - 1,
+                                                        retryMaxAttempts - 1,
                                                         signal.failure().getMessage(),
                                                         signal.failure()));
 
                 responseFlux = responseFlux.retryWhen(retrySpec);
                 LOG.debug(
                         "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
-                        maxAttempts,
+                        retryMaxAttempts,
                         initialBackoff,
                         modelName);
             }

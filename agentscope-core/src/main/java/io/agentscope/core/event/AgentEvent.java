@@ -39,6 +39,12 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = AgentResultEvent.class, name = "AGENT_RESULT"),
     @JsonSubTypes.Type(value = ModelCallStartEvent.class, name = "MODEL_CALL_START"),
     @JsonSubTypes.Type(value = ModelCallEndEvent.class, name = "MODEL_CALL_END"),
+    @JsonSubTypes.Type(value = ModelCallAttemptStartEvent.class, name = "MODEL_ATTEMPT_START"),
+    @JsonSubTypes.Type(value = ModelCallAttemptFailedEvent.class, name = "MODEL_ATTEMPT_FAILED"),
+    @JsonSubTypes.Type(
+            value = ModelFallbackActivatedEvent.class,
+            name = "MODEL_FALLBACK_ACTIVATED"),
+    @JsonSubTypes.Type(value = ModelCallAttemptEndEvent.class, name = "MODEL_ATTEMPT_END"),
     @JsonSubTypes.Type(value = TextBlockStartEvent.class, name = "TEXT_BLOCK_START"),
     @JsonSubTypes.Type(value = TextBlockDeltaEvent.class, name = "TEXT_BLOCK_DELTA"),
     @JsonSubTypes.Type(value = TextBlockEndEvent.class, name = "TEXT_BLOCK_END"),
