@@ -42,12 +42,16 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal Connect client for envd {@code process.Process/Start} (server streaming), sufficient
  * for {@code sh -c} command execution and binary tar streaming on stdout.
  */
 final class E2bEnvdProcessClient {
+
+    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
 
     private static final MediaType CONNECT_JSON = MediaType.get("application/connect+json");
     private static final MediaType CONNECT_PROTO = MediaType.get("application/connect+proto");
@@ -142,10 +146,10 @@ final class E2bEnvdProcessClient {
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = Integer.MIN_VALUE;
+        int exit;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body() != null ? res.body().string() : "";
+                String err = res.body().string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
@@ -178,7 +182,7 @@ final class E2bEnvdProcessClient {
             if (lenB.length < 4) {
                 break;
             }
-            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt() & 0x7FFFFFFF;
+            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt();
             if (len < 0 || len > 64 * 1024 * 1024) {
                 throw new IOException("Invalid connect frame length: " + len);
             }
@@ -186,12 +190,30 @@ final class E2bEnvdProcessClient {
             if (data.length < len) {
                 break;
             }
-            if (flags != 0x00) {
+            if ((flags & 0x02) != 0) {
+                EndStreamMessage endMsg = parseEndStreamResponse(data);
+                if (endMsg.hasError()) {
+                    log.debug(
+                            "drainStartStream: endStream error code={} msg={}",
+                            endMsg.code(),
+                            endMsg.message());
+                    throw new SandboxException.SandboxRuntimeException(
+                            SandboxErrorCode.WORKSPACE_START_ERROR,
+                            "Process start failed: " + endMsg.code() + ": " + endMsg.message());
+                }
+                log.debug("drainStartStream: endStream ok, exit={}", exit);
+                break;
+            }
+            if ((flags & 0x01) != 0) {
+                throw new IOException("Compressed connect frames not supported");
+            }
+            if ((flags & 0xFC) != 0) {
                 continue;
             }
             try {
                 DynamicMessage sr = parseStartResponseFrame(data);
                 if (!sr.hasField(srEventF)) {
+                    log.debug("drainStartStream: frame with no event");
                     continue;
                 }
                 DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
@@ -202,15 +224,18 @@ final class E2bEnvdProcessClient {
                 }
                 if (pe.hasField(peEndF)) {
                     DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
-                    Descriptors.FieldDescriptor ec =
-                            end.getDescriptorForType().findFieldByName("exit_code");
-                    if (end.hasField(ec)) {
-                        Object v = end.getField(ec);
-                        exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    Descriptors.Descriptor endDesc = end.getDescriptorForType();
+                    Descriptors.FieldDescriptor ecF = endDesc.findFieldByName("exit_code");
+                    Object v = end.getField(ecF);
+                    exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    Descriptors.FieldDescriptor errF = endDesc.findFieldByName("error");
+                    if (end.hasField(errF)) {
+                        stderr.write(
+                                String.valueOf(end.getField(errF))
+                                        .getBytes(StandardCharsets.UTF_8));
                     }
                 }
-            } catch (IOException e) {
-                continue;
+            } catch (IOException ignored) {
             }
         }
         return exit;
@@ -228,6 +253,26 @@ final class E2bEnvdProcessClient {
                 ((ByteString) v).writeTo(out);
             }
             return;
+        }
+    }
+
+    private static EndStreamMessage parseEndStreamResponse(byte[] data) throws IOException {
+        JsonNode root = JSON.readTree(data);
+        if (root == null || root.isNull()) {
+            return new EndStreamMessage(null, null);
+        }
+        JsonNode errorNode = root.path("error");
+        if (errorNode.isMissingNode() || errorNode.isNull()) {
+            return new EndStreamMessage(null, null);
+        }
+        String code = errorNode.path("code").asText(null);
+        String message = errorNode.path("message").asText(null);
+        return new EndStreamMessage(code, message);
+    }
+
+    private record EndStreamMessage(String code, String message) {
+        boolean hasError() {
+            return code != null;
         }
     }
 
@@ -345,9 +390,7 @@ final class E2bEnvdProcessClient {
             if (exitCodeNode.canConvertToInt()) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
             }
-            if (!endBuilder.getAllFields().isEmpty()) {
-                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
-            }
+            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
         }
 
         if (!event.getAllFields().isEmpty()) {
