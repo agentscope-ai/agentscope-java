@@ -26,8 +26,10 @@ import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.BaseSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,10 +38,25 @@ class WorkspaceContextMiddlewareSandboxTest {
     private static final RuntimeContext RC =
             RuntimeContext.builder().sessionId("test-session").build();
 
+    private final List<WorkspaceManager> openManagers = new ArrayList<>();
+
+    @AfterEach
+    void closeOpenManagers() {
+        for (WorkspaceManager wm : openManagers) {
+            wm.close();
+        }
+        openManagers.clear();
+    }
+
+    private WorkspaceManager track(WorkspaceManager wm) {
+        openManagers.add(wm);
+        return wm;
+    }
+
     @Test
     void sandboxBranch_includesSandboxRootAndId(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-1", "/custom/root");
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -53,7 +70,7 @@ class WorkspaceContextMiddlewareSandboxTest {
     @Test
     void sandboxBranch_defaultWorkspaceRoot(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-2", null);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -66,7 +83,7 @@ class WorkspaceContextMiddlewareSandboxTest {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-3", "/workspace");
         fs.osReleaseResponse = new ExecuteResponse("Ubuntu 22.04", 0, false);
         fs.tempdirResponse = new ExecuteResponse("/tmp", 0, false);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -79,7 +96,7 @@ class WorkspaceContextMiddlewareSandboxTest {
     void querySandbox_fallbackOnNonZeroExit(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-4", "/workspace");
         fs.osReleaseResponse = new ExecuteResponse("", 1, false);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -91,7 +108,7 @@ class WorkspaceContextMiddlewareSandboxTest {
     void querySandbox_fallbackOnException(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-5", "/workspace");
         fs.osException = new RuntimeException("sandbox unavailable");
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -103,7 +120,7 @@ class WorkspaceContextMiddlewareSandboxTest {
     void querySandbox_emptyOutputFallsBack(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-6", "/workspace");
         fs.tempdirResponse = new ExecuteResponse("", 0, false);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
@@ -114,7 +131,7 @@ class WorkspaceContextMiddlewareSandboxTest {
     @Test
     void sessionContext_includesSessionInfo(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-7", "/workspace");
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
