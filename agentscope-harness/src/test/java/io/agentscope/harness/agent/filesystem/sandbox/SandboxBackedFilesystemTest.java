@@ -66,6 +66,23 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void getWorkspaceRoot_delegatesToSandbox() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        sandbox.workspaceRoot = "/sandbox/root";
+        filesystem.setSandbox(sandbox);
+
+        assertEquals("/sandbox/root", filesystem.getWorkspaceRoot());
+    }
+
+    @Test
+    void getWorkspaceRoot_fallbackWhenSandboxIsNull() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+
+        assertEquals("/workspace", filesystem.getWorkspaceRoot());
+    }
+
+    @Test
     void downloadFiles_returnsFailureWhenCommandFails() {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeSandbox sandbox = new FakeSandbox(new ExecResult(1, "", "boom", false));
@@ -85,9 +102,15 @@ class SandboxBackedFilesystemTest {
 
         private final ExecResult execResult;
         private String lastCommand;
+        private String workspaceRoot = "/workspace";
 
         private FakeSandbox(ExecResult execResult) {
             this.execResult = execResult;
+        }
+
+        @Override
+        public String getWorkspaceRoot() {
+            return workspaceRoot;
         }
 
         @Override
