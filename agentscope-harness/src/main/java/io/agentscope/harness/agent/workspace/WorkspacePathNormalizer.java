@@ -31,6 +31,8 @@ import java.util.List;
  */
 public final class WorkspacePathNormalizer {
 
+    private static final String SHARED_SKILL_CACHE = ".skills-cache";
+
     private final List<String> prefixes;
 
     private WorkspacePathNormalizer(List<String> prefixes) {
@@ -81,10 +83,20 @@ public final class WorkspacePathNormalizer {
         for (String prefix : prefixes) {
             String stripped = tryStrip(path, prefix);
             if (stripped != null) {
+                // Marketplace skills are staged once at the workspace root and shared by all
+                // namespaces. Keep that root virtual-absolute so namespace-aware filesystems do
+                // not remap it to <workspace>/<userId>/.skills-cache.
+                if (isSharedSkillCachePath(stripped)) {
+                    return "/" + stripped;
+                }
                 return stripped;
             }
         }
         return path;
+    }
+
+    private static boolean isSharedSkillCachePath(String path) {
+        return path.equals(SHARED_SKILL_CACHE) || path.startsWith(SHARED_SKILL_CACHE + "/");
     }
 
     private static String tryStrip(String path, String prefix) {
