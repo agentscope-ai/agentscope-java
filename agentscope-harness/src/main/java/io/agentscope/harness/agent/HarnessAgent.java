@@ -1862,7 +1862,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** No-op since 2.0; session persistence is owned by ReActAgent itself. */
+        /**
+         * Disables Harness session transcript persistence ({@code .jsonl} and
+         * {@code .log.jsonl}). Agent state persistence configured on the underlying ReActAgent is
+         * unaffected.
+         */
         public Builder disableSessionPersistence() {
             this.disableSessionPersistence = true;
             return this;
@@ -2037,10 +2041,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             + " .distributedStore(...).");
             }
             WorkspaceIndex workspaceIndex =
-                    remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.getWorkspaceIndex() : null;
             AbstractFilesystem filesystem =
                     HarnessAgentBuilderSupport.resolveFilesystem(
-                            this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
+                            this, resolvedWorkspace, resolvedAgentId, nsFactory);
+            // Remote deployments persist the complete ReActAgent state in AgentStateStore. Avoid
+            // creating a second, ever-growing host-local transcript cache in this mode.
+            boolean sessionTranscriptEnabled =
+                    !disableSessionPersistence && remoteFilesystemSpec == null;
 
             // ---- Sandbox integration ----
             SandboxLifecycleMiddleware sandboxLifecycleMw = null;
@@ -2143,7 +2151,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryModel,
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
-                                effectiveIsolationScope));
+                                effectiveIsolationScope,
+                                sessionTranscriptEnabled));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -2170,7 +2179,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager,
+                                    compactionModel,
+                                    compactionConfig,
+                                    sessionTranscriptEnabled);
                     inner.middleware(compactionHook);
                 }
             }
@@ -2480,7 +2493,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     delegate,
                     wsManager,
                     workspaceFactoryFn,
-                    workspaceIndex,
+                    null,
                     defaultSandboxContext,
                     compactionHook,
                     sandboxLifecycleMw,

@@ -160,12 +160,18 @@ public class RemoteFilesystemSpec {
     }
 
     /**
-     * Sets the workspace index for accelerating remote filesystem reads (ls/glob/exists/grep).
-     * If not set, the remote filesystem falls back to full store scans.
+     * Sets an optional caller-managed local index for accelerating remote filesystem reads
+     * (ls/glob/exists/grep). If not set, no local database is created and the remote filesystem
+     * falls back to store scans.
      */
     public RemoteFilesystemSpec workspaceIndex(WorkspaceIndex index) {
         this.workspaceIndex = index;
         return this;
+    }
+
+    /** Returns the explicitly configured local workspace index, or {@code null} when disabled. */
+    public WorkspaceIndex getWorkspaceIndex() {
+        return workspaceIndex;
     }
 
     /**
