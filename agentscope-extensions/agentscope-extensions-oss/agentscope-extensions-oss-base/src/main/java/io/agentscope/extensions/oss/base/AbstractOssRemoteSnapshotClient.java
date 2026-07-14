@@ -50,7 +50,10 @@ public abstract class AbstractOssRemoteSnapshotClient implements RemoteSnapshotC
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
-        adapter.putBytes(objectKey(snapshotId), data.readAllBytes());
+        // Snapshot archives can reach hundreds of MB (whole sandbox workspace tar). Delegate to
+        // putStream so the vendor adapter streams to the network (or spools to disk) instead of
+        // buffering the whole payload — putBytes(readAllBytes()) would OOM on large workspaces.
+        adapter.putStream(objectKey(snapshotId), data);
     }
 
     @Override

@@ -20,6 +20,9 @@ import io.agentscope.extensions.oss.base.OssListObjectPage;
 import io.agentscope.extensions.oss.base.OssObjectSummary;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -76,6 +79,16 @@ public class AwsS3OssAdapter implements OssAdapter {
         s3Client.putObject(
                 PutObjectRequest.builder().bucket(bucketName).key(key).build(),
                 RequestBody.fromBytes(data));
+    }
+
+    @Override
+    public void putStream(String key, InputStream data) throws Exception {
+        // AWS SDK v2 requires a known Content-Length for streaming PutObject. Rather than
+        // buffer the whole stream in memory (defeats the point of putStream), we need to know the content length
+        long contentLength = data.available();
+        s3Client.putObject(
+                PutObjectRequest.builder().bucket(bucketName).key(key).build(),
+                RequestBody.fromInputStream(data, contentLength));
     }
 
     @Override

@@ -46,6 +46,21 @@ public interface OssAdapter {
     void putBytes(String key, byte[] data);
 
     /**
+     * Uploads a stream to {@code key} without buffering the entire payload in memory.
+     * Callers own the stream lifecycle (this method reads from it but does not close it —
+     * the caller-supplied stream is closed by the caller).
+     *
+     * <p>Implementations MUST NOT materialize the whole stream via {@code readAllBytes()}:
+     * this method exists specifically for large objects (e.g. sandbox snapshot archives
+     * that can reach hundreds of MB) where an in-memory buffer would OOM the JVM.
+     *
+     * @param key full object key
+     * @param data payload stream (never {@code null})
+     * @throws Exception if the transfer fails
+     */
+    void putStream(String key, InputStream data) throws Exception;
+
+    /**
      * Reads the object at {@code key} into memory and returns its bytes. Returns {@code null}
      * when the key does not exist. All other errors must be surfaced as unchecked exceptions.
      *

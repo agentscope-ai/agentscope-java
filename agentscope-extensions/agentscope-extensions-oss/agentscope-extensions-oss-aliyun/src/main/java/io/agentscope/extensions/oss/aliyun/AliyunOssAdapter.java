@@ -64,6 +64,13 @@ public class AliyunOssAdapter implements OssAdapter {
     }
 
     @Override
+    public void putStream(String key, InputStream data) {
+        // Alibaba OSS SDK natively streams the InputStream to the network without buffering
+        // the whole payload; no temp file needed.
+        ossClient.putObject(bucketName, key, data);
+    }
+
+    @Override
     public byte[] getBytes(String key) {
         if (!ossClient.doesObjectExist(bucketName, key)) {
             return null;

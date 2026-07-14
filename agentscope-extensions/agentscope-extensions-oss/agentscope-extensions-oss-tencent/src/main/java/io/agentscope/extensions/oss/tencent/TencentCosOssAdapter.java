@@ -31,6 +31,9 @@ import io.agentscope.extensions.oss.base.OssObjectSummary;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -77,6 +80,16 @@ public class TencentCosOssAdapter implements OssAdapter {
         metadata.setContentLength(data.length);
         cosClient.putObject(
                 new PutObjectRequest(bucketName, key, new ByteArrayInputStream(data), metadata));
+    }
+
+    @Override
+    public void putStream(String key, InputStream data) throws Exception {
+        // Tencent COS SDK's InputStream-based putObject requires a known Content-Length;
+        ObjectMetadata omt = new ObjectMetadata();
+        omt.setContentLength(data.available());
+        omt.setContentType("application/octet-stream");
+        omt.setCacheControl("no-cache");
+        cosClient.putObject(new PutObjectRequest(bucketName, key, data, omt));
     }
 
     @Override
