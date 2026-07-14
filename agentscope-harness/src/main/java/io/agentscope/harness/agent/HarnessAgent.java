@@ -2425,8 +2425,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else if (filesystem instanceof SandboxBackedFilesystem) {
                     String wsPrefix =
                             defaultSandboxContext != null
-                                            && defaultSandboxContext.getClientOptions() != null
-                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
+                                            && defaultSandboxContext.getWorkspaceSpec() != null
+                                    ? defaultSandboxContext.getWorkspaceSpec().getRoot()
                                     : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                             .SANDBOX_WORKSPACE_PREFIX;
                     shellPolicy =

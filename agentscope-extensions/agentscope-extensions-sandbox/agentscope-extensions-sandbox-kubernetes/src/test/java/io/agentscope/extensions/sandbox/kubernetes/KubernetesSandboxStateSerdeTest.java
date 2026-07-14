@@ -36,7 +36,6 @@ class KubernetesSandboxStateSerdeTest {
         state.setSessionId("s1");
         state.setNamespace("ns1");
         state.setPodName("p1");
-        state.setWorkspaceRoot("/workspace");
         state.setImage("ubuntu:22.04");
         WorkspaceSpec ws = new WorkspaceSpec();
         ws.setRoot("/tmp/host");

@@ -295,6 +295,11 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         return sandboxId;
     }
 
+    @Override
+    public String getWorkspaceRoot() {
+        return getCwd().toAbsolutePath().normalize().toString();
+    }
+
     /**
      * Returns the working directory configured for shell {@code execute()} calls, or {@code null}
      * when shell falls back to the filesystem root (with namespace prefix). Used by upstream

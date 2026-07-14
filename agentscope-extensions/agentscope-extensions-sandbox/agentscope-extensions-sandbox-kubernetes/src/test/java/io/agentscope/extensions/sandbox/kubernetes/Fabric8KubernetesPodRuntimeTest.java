@@ -92,7 +92,6 @@ class Fabric8KubernetesPodRuntimeTest {
         state.setNamespace("default");
         state.setContainerName("workspace");
         state.setImage("ubuntu:22.04");
-        state.setWorkspaceRoot("/workspace");
         state.setWorkspaceSpec(ws);
 
         ArgumentCaptor<Pod> podCaptor = ArgumentCaptor.forClass(Pod.class);
@@ -119,7 +118,6 @@ class Fabric8KubernetesPodRuntimeTest {
         state.setNamespace("default");
         state.setContainerName("workspace");
         state.setImage("ubuntu:22.04");
-        state.setWorkspaceRoot("/workspace");
 
         ArgumentCaptor<Pod> podCaptor = ArgumentCaptor.forClass(Pod.class);
         doReturn(podResource).when(inNamespace).resource(podCaptor.capture());
@@ -150,7 +148,9 @@ class Fabric8KubernetesPodRuntimeTest {
         state.setPodName("test-pod");
         state.setContainerName("workspace");
         state.setImage("ubuntu:22.04");
-        state.setWorkspaceRoot("/opt");
+        WorkspaceSpec ws = new WorkspaceSpec();
+        ws.setRoot("/opt");
+        state.setWorkspaceSpec(ws);
         return state;
     }
 

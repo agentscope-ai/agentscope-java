@@ -64,16 +64,16 @@ public class KubernetesSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        runtime.mkdir(k8sState, k8sState.getWorkspaceRoot());
+        runtime.mkdir(k8sState, k8sState.getWorkspaceSpec().getRoot());
     }
 
     @Override
     protected void doDestroyWorkspace() throws Exception {
-        runtime.rmRf(k8sState, k8sState.getWorkspaceRoot());
+        runtime.rmRf(k8sState, k8sState.getWorkspaceSpec().getRoot());
     }
 
     @Override
-    protected String getWorkspaceRoot() {
-        return k8sState.getWorkspaceRoot();
+    public String getWorkspaceRoot() {
+        return k8sState.getWorkspaceSpec().getRoot();
     }
 }

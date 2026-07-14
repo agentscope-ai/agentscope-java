@@ -149,7 +149,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 段落 | 来源 | 受预算约束 |
 |------|------|-----------|
-| `## Session Context` | 模板生成（日期、操作系统、workspace 绝对路径、临时目录、当前 `sessionId`） | 否 |
+| `## Session Context` | 模板生成（Agent 名称、当前日期、会话 ID） | 否 |
 | `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge） | 否 |
 | `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
 | `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |

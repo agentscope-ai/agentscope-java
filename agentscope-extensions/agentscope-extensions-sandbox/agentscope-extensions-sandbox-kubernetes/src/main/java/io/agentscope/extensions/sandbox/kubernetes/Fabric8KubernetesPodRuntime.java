@@ -109,7 +109,11 @@ public class Fabric8KubernetesPodRuntime {
     public ExecResult exec(KubernetesSandboxState state, String command, int timeoutSeconds)
             throws Exception {
         String script =
-                "cd " + shellSingleQuote(state.getWorkspaceRoot()) + " && (" + command + ")";
+                "cd "
+                        + shellSingleQuote(state.getWorkspaceSpec().getRoot())
+                        + " && ("
+                        + command
+                        + ")";
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         ContainerResource pod = pod(state);
@@ -131,7 +135,7 @@ public class Fabric8KubernetesPodRuntime {
     }
 
     public InputStream tarWorkspaceOut(KubernetesSandboxState state) throws Exception {
-        String root = state.getWorkspaceRoot();
+        String root = state.getWorkspaceSpec().getRoot();
         StringBuilder script = new StringBuilder("tar ");
         for (String ex :
                 WorkspaceMountSupport.tarExcludeArgsForBindMounts(state.getWorkspaceSpec())) {
@@ -159,7 +163,7 @@ public class Fabric8KubernetesPodRuntime {
 
     private void hydrateWithArchive(KubernetesSandboxState state, InputStream archive)
             throws Exception {
-        String root = state.getWorkspaceRoot();
+        String root = state.getWorkspaceSpec().getRoot();
         mkdir(state, root);
 
         // Two-phase approach to avoid the Fabric8 WebSocket stdin race:
@@ -305,7 +309,7 @@ public class Fabric8KubernetesPodRuntime {
                         .withName(volName)
                         .withMountPath(
                                 WorkspaceMountSupport.containerMountPath(
-                                        state.getWorkspaceRoot(), ent.getKey()))
+                                        state.getWorkspaceSpec().getRoot(), ent.getKey()))
                         .withReadOnly(bm.isReadOnly())
                         .endVolumeMount();
             }
