@@ -1913,7 +1913,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     this, resolvedWorkspace, sandboxFs);
         }
 
-        private static void wireTaskRepositoryMessageBus(
+        static void wireTaskRepositoryMessageBus(
                 io.agentscope.harness.agent.subagent.task.TaskRepository repo,
                 io.agentscope.harness.agent.bus.MessageBus bus,
                 String agentId) {
