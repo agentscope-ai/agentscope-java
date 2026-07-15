@@ -27,6 +27,8 @@ import io.agentscope.core.a2a.agent.message.PartParserRouter;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -60,6 +62,42 @@ public class MessageConvertUtil {
     }
 
     /**
+     * Compact consecutive streaming delta messages that share the same message id.
+     *
+     * <p>This is intended for executor fallback paths that accumulate {@code Event} chunks. Regular
+     * conversion from user-provided message lists must keep using {@link #convertFromMsgToMessage(List, String, String)}
+     * directly so semantic message and block boundaries are preserved.
+     *
+     * @param msgs messages emitted by the streaming event pipeline
+     * @return messages with consecutive text/thinking deltas merged per message id
+     */
+    public static List<Msg> compactStreamingChunks(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
+        }
+
+        List<Msg> result = new LinkedList<>();
+        Msg current = null;
+        for (Msg msg : msgs) {
+            if (msg == null) {
+                continue;
+            }
+            if (canMergeStreamingChunk(current, msg)) {
+                current = current.withContent(mergeContent(current.getContent(), msg.getContent()));
+            } else {
+                if (current != null) {
+                    result.add(current);
+                }
+                current = msg;
+            }
+        }
+        if (current != null) {
+            result.add(current);
+        }
+        return result;
+    }
+
+    /**
      * Convert a {@link Msg} to {@link Message}.
      *
      * @param msg the Msg to convert
@@ -88,6 +126,17 @@ public class MessageConvertUtil {
      * @return list of Part
      */
     public static List<Part<?>> convertFromContentBlocks(Msg msg) {
+        return convertFromContentBlocks(msg, false);
+    }
+
+    /**
+     * Convert content blocks in {@link Msg} to list of {@link Part}.
+     *
+     * @param msg the Msg saved content blocks to convert
+     * @param streamingChunk whether these parts represent streaming delta chunks
+     * @return list of Part
+     */
+    public static List<Part<?>> convertFromContentBlocks(Msg msg, boolean streamingChunk) {
         return new LinkedList<>(
                 msg.getContent().stream()
                         .map(CONTENT_BLOCK_PARSER::parse)
@@ -100,8 +149,62 @@ public class MessageConvertUtil {
                                             .put(
                                                     MessageConstants.SOURCE_NAME_METADATA_KEY,
                                                     msg.getName());
+                                    if (streamingChunk) {
+                                        part.getMetadata()
+                                                .put(
+                                                        MessageConstants.STREAM_CHUNK_METADATA_KEY,
+                                                        Boolean.TRUE);
+                                    }
                                 })
                         .toList());
+    }
+
+    private static boolean canMergeStreamingChunk(Msg current, Msg next) {
+        return current != null
+                && current.getId() != null
+                && Objects.equals(current.getId(), next.getId())
+                && Objects.equals(current.getName(), next.getName())
+                && Objects.equals(current.getRole(), next.getRole());
+    }
+
+    private static List<ContentBlock> mergeContent(
+            List<ContentBlock> first, List<ContentBlock> second) {
+        List<ContentBlock> merged = new LinkedList<>();
+        if (first != null) {
+            merged.addAll(first);
+        }
+        if (second == null) {
+            return merged;
+        }
+        for (ContentBlock block : second) {
+            appendMergedBlock(merged, block);
+        }
+        return merged;
+    }
+
+    private static void appendMergedBlock(List<ContentBlock> blocks, ContentBlock block) {
+        if (block == null || blocks.isEmpty()) {
+            if (block != null) {
+                blocks.add(block);
+            }
+            return;
+        }
+
+        ContentBlock previous = blocks.get(blocks.size() - 1);
+        if (previous instanceof TextBlock previousText && block instanceof TextBlock textBlock) {
+            blocks.set(
+                    blocks.size() - 1,
+                    TextBlock.builder().text(previousText.getText() + textBlock.getText()).build());
+        } else if (previous instanceof ThinkingBlock previousThinking
+                && block instanceof ThinkingBlock thinkingBlock) {
+            blocks.set(
+                    blocks.size() - 1,
+                    ThinkingBlock.builder()
+                            .thinking(previousThinking.getThinking() + thinkingBlock.getThinking())
+                            .build());
+        } else {
+            blocks.add(block);
+        }
     }
 
     /**
@@ -128,6 +231,7 @@ public class MessageConvertUtil {
         Set<String> msgIds = new LinkedHashSet<>();
         Map<String, List<ContentBlock>> partsByMsgId = new HashMap<>();
         Map<String, String> msgIdToName = new HashMap<>();
+        Map<String, MsgRole> msgIdToRole = new HashMap<>();
         message.getParts().stream()
                 .filter(Objects::nonNull)
                 .forEach(
@@ -145,6 +249,10 @@ public class MessageConvertUtil {
                                     .add(PART_PARSER.parse(part));
                             msgIds.add(msgId);
                             msgIdToName.put(msgId, getMsgName(part));
+                            MsgRole role = getMsgRole(part);
+                            if (role != null) {
+                                msgIdToRole.putIfAbsent(msgId, role);
+                            }
                         });
         msgIds.forEach(
                 msgId ->
@@ -152,7 +260,9 @@ public class MessageConvertUtil {
                                 Msg.builder()
                                         .id(msgId)
                                         .name(msgIdToName.get(msgId))
-                                        .role(MsgRole.USER)
+                                        .role(
+                                                msgIdToRole.getOrDefault(
+                                                        msgId, convertRole(message.getRole())))
                                         .content(partsByMsgId.get(msgId))
                                         .metadata(getMsgMetadata(message, msgId))
                                         .build()));
@@ -175,6 +285,28 @@ public class MessageConvertUtil {
             return null;
         }
         return part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+    }
+
+    private static MsgRole getMsgRole(Part<?> part) {
+        if (null == part.getMetadata()) {
+            return null;
+        }
+        Object role = part.getMetadata().get(MessageConstants.MSG_ROLE_METADATA_KEY);
+        if (role == null) {
+            return null;
+        }
+        try {
+            return MsgRole.valueOf(role.toString());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static MsgRole convertRole(Message.Role role) {
+        if (role == Message.Role.AGENT) {
+            return MsgRole.ASSISTANT;
+        }
+        return MsgRole.USER;
     }
 
     @SuppressWarnings("unchecked")

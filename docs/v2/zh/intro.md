@@ -13,7 +13,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">构建<span class="hs-hero__accent">分布式、企业级</span>智能体！</h1>
-    <p class="hs-hero__desc">AgentScope Java 是面向 JVM 的开源 Agent 框架。提供 ReAct 推理、Harness 工程化基础设施、多智能体编排与 MCP/A2A 协议支持，覆盖从本地原型到企业级分布式部署全链路。</p>
+    <p class="hs-hero__desc">AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框架，提供与模型能力相匹配的核心 Harness 抽象，可支持长期、稳定、安全可控的智能体任务执行。</p>
     <div class="hs-hero__actions">
       <a href="docs/quickstart.html" class="hs-btn hs-btn--primary">快速开始 →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
@@ -144,7 +144,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
     <a class="hs-card" href="docs/building-blocks/model.html">
       <svg class="hs-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
       <h3>模型容错</h3>
-      <p>统一的 Credential + ChatModel 抽象，覆盖 Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama；可配置最大重试与备用模型，主模型不可用时自动切换。</p>
+      <p>通过模型扩展模块提供统一的 Credential + ChatModel 抽象，覆盖 Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama；可配置最大重试与备用模型，主模型不可用时自动切换。</p>
       <span class="hs-card__link">了解模型 →</span>
     </a>
     <a class="hs-card" href="docs/harness/memory.html">
@@ -199,7 +199,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>支持哪些 LLM 提供商？</summary>
-    <p>开箱支持：OpenAI（含兼容端点 vLLM、DeepSeek、Kimi、Moonshot）、Anthropic Claude、阿里云通义千问（DashScope）、Google Gemini、xAI Grok、本地 Ollama。每个都是统一 builder 后面一份独立的 <code>ChatModel</code> 实现，可在模型层配置重试与备用模型实现容错切换。</p>
+    <p>通过模型扩展模块支持：OpenAI（含兼容端点 vLLM、DeepSeek、Kimi、Moonshot）、Anthropic Claude、阿里云通义千问（DashScope）、Google Gemini、xAI Grok、本地 Ollama。每个都是统一 builder 后面一份独立的 <code>ChatModel</code> 实现，可在模型层配置重试与备用模型实现容错切换。</p>
   </details>
   <details class="hs-faq-item">
     <summary>Harness 和裸的 ReActAgent 有什么区别？</summary>

@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.0-SNAPSHOT</revision>
+        <revision>2.0.1-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -236,6 +236,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-cos</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions PostgreSql (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-postgresql</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -452,6 +459,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-anthropic-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Ollama Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

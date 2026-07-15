@@ -23,9 +23,19 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 Substitute `${agentscope.version}` with the latest version. See [Release Notes](others/release-notes.md) for the latest version and full release details.
 :::
 
-If you only need a bare `ReActAgent` (no workspace / persistence / subagents / sandbox), depend on `agentscope-core` alone. The difference between the two is covered in [Harness Architecture](./harness/architecture.md).
+If you only need the bare `ReActAgent` APIs (no workspace / persistence / subagents / sandbox), `agentscope-core` is enough for the agent framework itself. Concrete model providers are separate: provider-specific chat models and formatters live in independent `agentscope-extensions-model-*` modules. The difference between `ReActAgent` and `HarnessAgent` is covered in [Harness Architecture](./harness/architecture.md).
 
-The DashScope / OpenAI / Anthropic / Gemini / Ollama formatters and chat models all live inside `agentscope-core`. MCP integration requires the official MCP SDK — see `agentscope-examples/documentation/pom.xml` for a working example.
+The quickstart below uses DashScope through `.model("dashscope:qwen-plus")`, so add the matching model extension as well:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+MCP integration requires the official MCP SDK — see `agentscope-examples/documentation/pom.xml` for a working example.
 
 ## Your first agent
 
@@ -113,7 +123,7 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
 ```
 
 :::{tip}
-Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, change the string passed to `.model(...)` and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
+Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, add the matching `agentscope-extensions-model-*` module, change the string passed to `.model(...)`, and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with the provider builder such as `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
 :::
 
 ### Multi-user concurrency
