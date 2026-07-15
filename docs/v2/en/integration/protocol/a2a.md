@@ -104,4 +104,4 @@ server.postEndpointReady();   // call after the web server is listening — trig
 
 ## Spring Boot Starter
 
-If you're on Spring Boot, prefer `agentscope-spring-boot-starter-a2a-server` — it auto-configures the server and controller. See [Spring Boot Starters](../../docs/quickstart.md#spring-boot-starters).
+If you're on Spring Boot, prefer `agentscope-spring-boot-starter-a2a-server` — it auto-configures the server and controller. See [Quickstart](../../docs/quickstart.md).
