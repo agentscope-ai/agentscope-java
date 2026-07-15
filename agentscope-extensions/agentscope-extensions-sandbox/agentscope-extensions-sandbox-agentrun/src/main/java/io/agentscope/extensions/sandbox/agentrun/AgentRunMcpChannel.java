@@ -34,7 +34,7 @@ import java.util.Objects;
  * header, and exposes the three tool names that an AgentRun sandbox template enables for
  * AgentScope: {@code process_exec_cmd}, {@code read_file}, {@code write_file}.
  */
-final class AgentRunMcpChannel implements AutoCloseable {
+final class AgentRunMcpChannel implements AgentRunSandbox.AgentRunExecutor {
 
     /** MCP tool name for shell-style command execution. */
     static final String TOOL_EXEC = "process_exec_cmd";
@@ -57,7 +57,8 @@ final class AgentRunMcpChannel implements AutoCloseable {
     }
 
     /** Connects the MCP client. Idempotent — repeated calls are a no-op. */
-    void connect() {
+    @Override
+    public void connect() {
         if (client != null) {
             return;
         }
@@ -87,7 +88,8 @@ final class AgentRunMcpChannel implements AutoCloseable {
     }
 
     /** Runs {@code command} via the AgentRun {@code process_exec_cmd} MCP tool. */
-    ExecResult exec(String command, String cwd, int timeoutSeconds) {
+    @Override
+    public ExecResult exec(String command, String cwd, int timeoutSeconds) {
         ensureConnected();
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("command", command);
