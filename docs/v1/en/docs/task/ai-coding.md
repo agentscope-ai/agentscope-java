@@ -10,8 +10,10 @@ AgentScope provides the following files:
 
 | File | Best For | URL |
 |------|----------|-----|
-| `llms.txt` | Tools that can fetch links dynamically | `https://java.agentscope.io/llms.txt` |
-| `llms-full.txt` | Tools that need a single, static text dump | `https://java.agentscope.io/llms-full.txt` |
+| `v2/llms.txt` | New projects using AgentScope Java 2.0 | `https://java.agentscope.io/v2/llms.txt` |
+| `v2/llms-full.txt` | Single-file AgentScope Java 2.0 context | `https://java.agentscope.io/v2/llms-full.txt` |
+| `v1/llms.txt` | Existing AgentScope Java 1.x projects | `https://java.agentscope.io/v1/llms.txt` |
+| `v1/llms-full.txt` | Single-file AgentScope Java 1.x context | `https://java.agentscope.io/v1/llms-full.txt` |
 
 ## Development Tools
 
@@ -22,7 +24,7 @@ AgentScope provides the following files:
 **Installation:**
 
 ```bash
-claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/llms.txt
+claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/v2/llms.txt
 ```
 
 **Usage:**
@@ -39,7 +41,7 @@ Once installed, you can ask questions about AgentScope directly in Claude Code:
 
 1. Open **Cursor Settings** -> **Features** -> **Docs**
 2. Click **+ Add new Doc**
-3. Add URL: `https://java.agentscope.io/llms-full.txt`
+3. Add URL: `https://java.agentscope.io/v2/llms-full.txt`
 
 **Method 2: MCP Server**
 
@@ -54,7 +56,7 @@ Once installed, you can ask questions about AgentScope directly in Claude Code:
       "command": "uvx",
       "args": [
         "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+        "--urls", "AgentScopeJava:https://java.agentscope.io/v2/llms.txt"
       ]
     }
   }
@@ -84,7 +86,7 @@ Once configured, you can prompt the coding agent:
       "command": "uvx",
       "args": [
         "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+        "--urls", "AgentScopeJava:https://java.agentscope.io/v2/llms.txt"
       ]
     }
   }
@@ -96,7 +98,7 @@ Once configured, you can prompt the coding agent:
 Any tool that supports the `llms.txt` standard or can ingest documentation from a URL can benefit from these files.
 
 **For tools with Docs/Knowledge Base feature:**
-- Add URL: `https://java.agentscope.io/llms-full.txt`
+- Add URL: `https://java.agentscope.io/v2/llms-full.txt`
 
 **For tools with MCP support:**
 - Use the MCP configuration template above with `mcpdoc`
@@ -104,3 +106,8 @@ Any tool that supports the `llms.txt` standard or can ingest documentation from 
 **Prerequisites:**
 
 MCP configurations require [`uv`](https://docs.astral.sh/uv/) to be installed, as they use `uvx` to run the documentation server.
+
+For AgentScope Java 1.x projects, use the v1 URLs instead:
+
+- `https://java.agentscope.io/v1/llms.txt`
+- `https://java.agentscope.io/v1/llms-full.txt`
