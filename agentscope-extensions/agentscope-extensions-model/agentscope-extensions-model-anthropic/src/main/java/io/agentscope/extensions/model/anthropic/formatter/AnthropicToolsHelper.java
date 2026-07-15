@@ -55,6 +55,16 @@ public class AnthropicToolsHelper {
             return;
         }
 
+        // ToolChoice.None means "prevent the model from calling any tools".
+        // The Anthropic API has no native "none" value for tool_choice,
+        // so the only correct way to enforce this is to omit tools entirely.
+        if (options != null && options.getToolChoice() instanceof ToolChoice.None) {
+            log.debug(
+                    "ToolChoice.None specified, suppressing all tools in Anthropic request"
+                            + " (Anthropic API has no native 'none' tool_choice)");
+            return;
+        }
+
         // Convert and add tools
         for (ToolSchema schema : tools) {
             Tool tool =
@@ -92,18 +102,20 @@ public class AnthropicToolsHelper {
             MessageCreateParams.Builder builder, ToolChoice toolChoice) {
         if (toolChoice instanceof ToolChoice.Auto) {
             builder.toolChoice(ofAuto(ToolChoiceAuto.builder().build()));
-        } else if (toolChoice instanceof ToolChoice.None) {
-            // Anthropic doesn't have None, use Any instead
-            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Required) {
-            // Anthropic doesn't have a direct "required" option, use "any" which forces tool
-            // use
+            // Anthropic doesn't have a direct "required" option, use "any" which forces tool use
             log.warn(
                     "Anthropic API doesn't support ToolChoice.Required directly, using 'any'"
                             + " instead");
             builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
             builder.toolChoice(ofTool(ToolChoiceTool.builder().name(specific.toolName()).build()));
+        } else if (toolChoice instanceof ToolChoice.None) {
+            // Should not reach here — None is handled earlier in applyTools by suppressing tools.
+            // Guard against misuse if this method is called directly.
+            log.warn(
+                    "ToolChoice.None should be handled by suppressing tools, not by setting"
+                            + " tool_choice. Ignoring tool_choice for None.");
         } else {
             log.warn("Unknown tool choice type: {}", toolChoice);
         }

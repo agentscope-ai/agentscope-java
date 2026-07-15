@@ -155,9 +155,9 @@ class AnthropicToolsHelperTest {
         AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
 
         MessageCreateParams params = builder.build();
-        assertTrue(params.toolChoice().isPresent());
-        // None maps to "any" in Anthropic
-        assertTrue(params.toolChoice().get().isAny());
+        // ToolChoice.None must suppress tools entirely — no tools and no tool_choice
+        assertTrue(params.tools().isEmpty());
+        assertTrue(params.toolChoice().isEmpty());
     }
 
     @Test
@@ -200,6 +200,74 @@ class AnthropicToolsHelperTest {
         assertTrue(params.toolChoice().isPresent());
         assertTrue(params.toolChoice().get().isTool());
         assertEquals("search", params.toolChoice().get().asTool().name());
+    }
+
+    @Test
+    void testApplyToolChoiceNoneWithMultipleTools() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema1 =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+        ToolSchema schema2 =
+                ToolSchema.builder()
+                        .name("calculator")
+                        .description("Calculate")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.None()).build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema1, schema2), options);
+
+        MessageCreateParams params = builder.build();
+        // None must suppress all tools
+        assertTrue(params.tools().isEmpty());
+        assertTrue(params.toolChoice().isEmpty());
+    }
+
+    @Test
+    void testApplyToolChoiceNoneWithNullOptions() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        // null options — tools should still be applied normally
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.tools().isPresent());
+        assertEquals(1, params.tools().get().size());
+        assertTrue(params.toolChoice().isEmpty());
+    }
+
+    @Test
+    void testApplyToolChoiceNoneWithEmptyOptions() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        // Options without toolChoice — tools should be applied normally
+        GenerateOptions options = GenerateOptions.builder().build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.tools().isPresent());
+        assertEquals(1, params.tools().get().size());
+        assertTrue(params.toolChoice().isEmpty());
     }
 
     @Test
