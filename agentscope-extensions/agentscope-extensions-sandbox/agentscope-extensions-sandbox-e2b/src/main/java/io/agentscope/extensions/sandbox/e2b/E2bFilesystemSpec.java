@@ -60,11 +60,6 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
-    public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
-        defaultWorkspaceSpec.setRoot(workspaceRoot);
-        return this;
-    }
-
     public E2bFilesystemSpec sandboxTimeoutSeconds(int sandboxTimeoutSeconds) {
         options.setSandboxTimeoutSeconds(sandboxTimeoutSeconds);
         return this;
