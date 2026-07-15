@@ -176,6 +176,9 @@
                     </execution>
                 </executions>
                 <configuration>
+                    <!-- Force LF line endings regardless of platform/git checkout settings,
+                         so spotless:check behaves the same on Windows, macOS and Linux. -->
+                    <lineEndings>UNIX</lineEndings>
                     <formats>
                         <!-- you can define as many formats as you want, each is independent -->
                         <format>

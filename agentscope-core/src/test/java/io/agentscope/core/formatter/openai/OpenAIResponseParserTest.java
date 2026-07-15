@@ -710,6 +710,80 @@ class OpenAIResponseParserTest {
         }
 
         @Test
+        @DisplayName("Should propagate stream index metadata on named chunks and fragments")
+        void testStreamingToolCallCarriesStreamIndex() {
+            // Named chunk: id + name + index
+            OpenAIResponse namedChunk = new OpenAIResponse();
+            namedChunk.setObject("chat.completion.chunk");
+
+            OpenAIFunction namedFunction = new OpenAIFunction();
+            namedFunction.setName("get_weather");
+            namedFunction.setArguments("{\"city\":");
+
+            OpenAIToolCall namedToolCall = new OpenAIToolCall();
+            namedToolCall.setId("call_123");
+            namedToolCall.setIndex(0);
+            namedToolCall.setType("function");
+            namedToolCall.setFunction(namedFunction);
+
+            OpenAIMessage namedDelta = new OpenAIMessage();
+            namedDelta.setToolCalls(List.of(namedToolCall));
+            namedDelta.setRole("assistant");
+
+            OpenAIChoice namedChoice = new OpenAIChoice();
+            namedChoice.setDelta(namedDelta);
+            namedChoice.setIndex(0);
+            namedChunk.setChoices(List.of(namedChoice));
+
+            ChatResponse namedResult = parser.parseResponse(namedChunk, startTime);
+            ToolUseBlock namedBlock =
+                    namedResult.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+            assertNotNull(namedBlock);
+            assertEquals("call_123", namedBlock.getId());
+            assertEquals("get_weather", namedBlock.getName());
+            assertEquals(0, namedBlock.getMetadata().get(ToolUseBlock.METADATA_STREAM_INDEX));
+
+            // Fragment chunk: no id, no name, same index
+            OpenAIResponse fragmentChunk = new OpenAIResponse();
+            fragmentChunk.setObject("chat.completion.chunk");
+
+            OpenAIFunction fragmentFunction = new OpenAIFunction();
+            fragmentFunction.setName(null);
+            fragmentFunction.setArguments("\"Beijing\"}");
+
+            OpenAIToolCall fragmentToolCall = new OpenAIToolCall();
+            fragmentToolCall.setId(null);
+            fragmentToolCall.setIndex(0);
+            fragmentToolCall.setType("function");
+            fragmentToolCall.setFunction(fragmentFunction);
+
+            OpenAIMessage fragmentDelta = new OpenAIMessage();
+            fragmentDelta.setToolCalls(List.of(fragmentToolCall));
+            fragmentDelta.setRole("assistant");
+
+            OpenAIChoice fragmentChoice = new OpenAIChoice();
+            fragmentChoice.setDelta(fragmentDelta);
+            fragmentChoice.setIndex(0);
+            fragmentChunk.setChoices(List.of(fragmentChoice));
+
+            ChatResponse fragmentResult = parser.parseResponse(fragmentChunk, startTime);
+            ToolUseBlock fragmentBlock =
+                    fragmentResult.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+            assertNotNull(fragmentBlock);
+            assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, fragmentBlock.getName());
+            assertEquals("", fragmentBlock.getId());
+            assertEquals(0, fragmentBlock.getMetadata().get(ToolUseBlock.METADATA_STREAM_INDEX));
+        }
+
+        @Test
         @DisplayName("Should parse chunk with reasoning content")
         void testChunkWithReasoningContent() {
             OpenAIResponse response = new OpenAIResponse();

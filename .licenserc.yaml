@@ -78,6 +78,7 @@ header:
     - '**/Dockerfile'
     - '**/src/main/resources/**'
     - '**/src/test/resources/**'
+    - '.gitattributes'
   comment: on-failure
 
   license-location-threshold: 130

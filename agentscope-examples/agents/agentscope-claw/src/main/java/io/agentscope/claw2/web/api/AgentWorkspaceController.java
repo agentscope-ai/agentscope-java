@@ -492,8 +492,15 @@ public class AgentWorkspaceController {
     // {@code listSubagents} / {@code memory} depend on this. {@code maxFileSizeMb=10} matches the
     // {@code LocalFilesystem} default; {@code namespaceFactory=null} keeps claw single-tenant
     // (multi-user namespacing belongs in agentscope-builder, which uses CompositeFilesystem).
+    //
+    // The 3-arg constructor with a {@code null} index is used deliberately: this manager is a
+    // short-lived, per-request object, and the 2-arg constructor would open (and never close) a
+    // SQLite-backed {@link io.agentscope.harness.agent.workspace.WorkspaceIndex}, leaking a JDBC
+    // connection/file handle on every request. On Windows that leaked handle prevents deleting
+    // the workspace directory (e.g. a test's {@code @TempDir}) until the JVM exits.
     private static WorkspaceManager newWorkspaceManager(Path workspace) {
-        return new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
+        return new WorkspaceManager(
+                workspace, new LocalFilesystem(workspace, true, 10, null), null);
     }
 
     private Path customAgentWorkspace(UserAgentDefinitionStore.StoredEntry entry) {

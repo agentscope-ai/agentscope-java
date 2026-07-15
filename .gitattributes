@@ -1,0 +1,21 @@
+# Ensure consistent LF line endings across platforms (Windows, Linux, macOS)
+# so that Spotless formatting checks don't fail due to CRLF/LF mismatches.
+* text=auto eol=lf
+
+*.java text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.properties text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+
+# Binary files should never be modified by git's line-ending normalization.
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg binary
+*.ico binary
