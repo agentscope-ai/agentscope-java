@@ -59,33 +59,39 @@ final class AnthropicThinkingMetadata {
             return List.of();
         }
 
-        List<Map.Entry<Long, Object>> storedBlocks =
+        List<Map.Entry<String, Object>> metadataEntries =
                 block.getMetadata().entrySet().stream()
                         .filter(
                                 entry ->
                                         entry.getKey() != null
-                                                && entry.getValue() != null
                                                 && entry.getKey().startsWith(KEY_PREFIX))
-                        .map(
-                                entry ->
-                                        parseIndex(entry.getKey())
-                                                .map(index -> Map.entry(index, entry.getValue()))
-                                                .orElse(null))
-                        .filter(entry -> entry != null)
-                        .sorted(Comparator.comparingLong(Map.Entry::getKey))
                         .toList();
 
-        if (storedBlocks.isEmpty()) {
+        if (metadataEntries.isEmpty()) {
             return List.of();
         }
 
-        List<ContentBlockParam> result = new ArrayList<>(storedBlocks.size());
-        for (Map.Entry<Long, Object> storedBlock : storedBlocks) {
-            Optional<ContentBlockParam> converted = convert(storedBlock.getValue());
-            if (converted.isEmpty()) {
-                return List.of();
+        List<Map.Entry<Long, Object>> storedBlocks = new ArrayList<>(metadataEntries.size());
+        for (Map.Entry<String, Object> entry : metadataEntries) {
+            long index = parseIndex(entry.getKey());
+            if (entry.getValue() == null) {
+                throw invalidMetadata(index);
             }
-            result.add(converted.get());
+            storedBlocks.add(Map.entry(index, entry.getValue()));
+        }
+        storedBlocks.sort(Comparator.comparingLong(Map.Entry::getKey));
+
+        List<ContentBlockParam> result = new ArrayList<>(storedBlocks.size());
+        Long previousIndex = null;
+        for (Map.Entry<Long, Object> storedBlock : storedBlocks) {
+            long index = storedBlock.getKey();
+            if (previousIndex != null && previousIndex == index) {
+                throw invalidMetadata(index);
+            }
+            ContentBlockParam converted =
+                    convert(storedBlock.getValue()).orElseThrow(() -> invalidMetadata(index));
+            result.add(converted);
+            previousIndex = index;
         }
         return result;
     }
@@ -127,12 +133,25 @@ final class AnthropicThinkingMetadata {
         return KEY_PREFIX + index;
     }
 
-    private static Optional<Long> parseIndex(String key) {
+    private static long parseIndex(String key) {
         try {
-            return Optional.of(Long.parseLong(key.substring(KEY_PREFIX.length())));
+            long index = Long.parseLong(key.substring(KEY_PREFIX.length()));
+            if (index < 0 || !key.equals(key(index))) {
+                throw invalidMetadataKey(key);
+            }
+            return index;
         } catch (NumberFormatException e) {
-            return Optional.empty();
+            throw invalidMetadataKey(key);
         }
+    }
+
+    private static IllegalArgumentException invalidMetadata(long index) {
+        return new IllegalArgumentException(
+                "Invalid Anthropic thinking metadata at content index " + index);
+    }
+
+    private static IllegalArgumentException invalidMetadataKey(String key) {
+        return new IllegalArgumentException("Invalid Anthropic thinking metadata key: " + key);
     }
 
     private static String stringValue(Object value) {

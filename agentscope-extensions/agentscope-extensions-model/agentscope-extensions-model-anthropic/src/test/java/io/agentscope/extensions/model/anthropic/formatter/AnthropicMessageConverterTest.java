@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.ContentBlockParam;
@@ -277,6 +278,28 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(2, blocks.size());
         assertEquals("signature-123", blocks.get(0).asThinking().signature());
         assertEquals("encrypted-data", blocks.get(1).asRedactedThinking().data());
+    }
+
+    @Test
+    void testRejectsMalformedAnthropicThinkingMetadata() {
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder()
+                        .thinking("Reasoning")
+                        .metadata(
+                                Map.of(
+                                        "anthropicThinkingBlock:0",
+                                        Map.of(
+                                                "type", "thinking",
+                                                "thinking", "Reasoning")))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(thinkingBlock))
+                        .build();
+
+        assertThrows(IllegalArgumentException.class, () -> converter.convert(List.of(msg)));
     }
 
     @Test
