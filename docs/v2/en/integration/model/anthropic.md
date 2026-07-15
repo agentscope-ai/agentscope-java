@@ -28,14 +28,25 @@ ReActAgent agent = ReActAgent.builder()
 Use the builder when you need a custom endpoint, formatter, transport, prompt caching, thinking, or generation options:
 
 ```java
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
     .modelName("claude-sonnet-4.5")
     .stream(true)
+    .defaultOptions(GenerateOptions.builder()
+        .maxTokens(4096)
+        .thinkingBudget(2048)
+        .build())
     .build();
 ```
+
+Setting `thinkingBudget` enables Anthropic extended thinking with the corresponding
+`budget_tokens` value. For models that support manual thinking budgets, the budget must be lower
+than `maxTokens`. Anthropic extended thinking is incompatible with custom `temperature`, `topK`,
+and forced tool choice settings; consult the Anthropic model documentation for model-specific
+requirements.
 
 ## Spring Boot
 

@@ -33,6 +33,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -201,6 +202,81 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).isText());
         assertEquals("Let me think...", blocks.get(0).asText().text());
+    }
+
+    @Test
+    void testConvertAnthropicThinkingBlockWithSignature() {
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder()
+                        .thinking("Let me think...")
+                        .metadata(
+                                AnthropicThinkingMetadata.thinking(
+                                        0, "Let me think...", "signature-123"))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(thinkingBlock))
+                        .build();
+
+        List<ContentBlockParam> blocks =
+                converter.convert(List.of(msg)).get(0).content().asBlockParams();
+
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isThinking());
+        assertEquals("Let me think...", blocks.get(0).asThinking().thinking());
+        assertEquals("signature-123", blocks.get(0).asThinking().signature());
+    }
+
+    @Test
+    void testConvertAnthropicThinkingBlocksInOriginalOrder() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.putAll(AnthropicThinkingMetadata.redactedThinking(2, "encrypted-data"));
+        metadata.putAll(AnthropicThinkingMetadata.thinking(0, "Reasoning", "signature-123"));
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder().thinking("Reasoning").metadata(metadata).build();
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(thinkingBlock))
+                        .build();
+
+        List<ContentBlockParam> blocks =
+                converter.convert(List.of(msg)).get(0).content().asBlockParams();
+
+        assertEquals(2, blocks.size());
+        assertTrue(blocks.get(0).isThinking());
+        assertEquals("signature-123", blocks.get(0).asThinking().signature());
+        assertTrue(blocks.get(1).isRedactedThinking());
+        assertEquals("encrypted-data", blocks.get(1).asRedactedThinking().data());
+    }
+
+    @Test
+    void testConvertAnthropicThinkingBlocksAfterJsonRoundTrip() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.putAll(AnthropicThinkingMetadata.thinking(0, "Reasoning", "signature-123"));
+        metadata.putAll(AnthropicThinkingMetadata.redactedThinking(1, "encrypted-data"));
+        Msg original =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Reasoning")
+                                                .metadata(metadata)
+                                                .build()))
+                        .build();
+        Msg restored = jsonCodec.fromJson(jsonCodec.toJson(original), Msg.class);
+
+        List<ContentBlockParam> blocks =
+                converter.convert(List.of(restored)).get(0).content().asBlockParams();
+
+        assertEquals(2, blocks.size());
+        assertEquals("signature-123", blocks.get(0).asThinking().signature());
+        assertEquals("encrypted-data", blocks.get(1).asRedactedThinking().data());
     }
 
     @Test

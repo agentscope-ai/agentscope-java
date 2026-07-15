@@ -241,6 +241,33 @@ class AnthropicToolsHelperTest {
     }
 
     @Test
+    void testApplyOptionsWithThinkingBudget() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(2048).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.thinking().isPresent());
+        assertTrue(params.thinking().get().isEnabled());
+        assertEquals(2048L, params.thinking().get().asEnabled().budgetTokens());
+    }
+
+    @Test
+    void testApplyOptionsThinkingBudgetOverridesDefault() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(2048).build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(1024).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertEquals(2048L, params.thinking().orElseThrow().asEnabled().budgetTokens());
+    }
+
+    @Test
     void testApplyOptionsWithAllParameters() {
         MessageCreateParams.Builder builder = createBuilder();
 
