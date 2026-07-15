@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.sandbox.agentrun;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,21 +48,7 @@ class AgentRunDataPlaneHttpTest {
 
     @Test
     void usesSandboxPathsWithoutVersionPrefix() throws Exception {
-        String baseUrl = mockServer.url("/").toString();
-        if (baseUrl.endsWith("/")) {
-            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-        }
-
-        AgentRunSandboxClientOptions opt =
-                new AgentRunSandboxClientOptions()
-                        .setApiKey("test-key")
-                        .setAccountId("1234567890")
-                        .setTemplateName("agentscope-default")
-                        .setMcpServerUrl("https://example.com/mcp")
-                        .setDataPlaneBaseUrl(baseUrl)
-                        .setHttpClient(new OkHttpClient());
-
-        AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(opt);
+        AgentRunDataPlaneHttp http = newHttp();
 
         mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-1\"}"));
         JsonNode created = http.createSandbox("sb-1");
@@ -91,5 +78,51 @@ class AgentRunDataPlaneHttpTest {
         assertNotNull(deleteReq);
         assertEquals("DELETE", deleteReq.getMethod());
         assertEquals("/sandboxes/sb-1", deleteReq.getPath());
+    }
+
+    @Test
+    void waitUntilReadyPrefersDataStatus() throws Exception {
+        AgentRunDataPlaneHttp http = newHttp();
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"data\":{\"status\":\"READY\"},\"state\":\"FAILED\"}"));
+
+        assertDoesNotThrow(() -> http.waitUntilReady("sb-1", 1));
+        RecordedRequest getReq = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(getReq);
+        assertEquals("GET", getReq.getMethod());
+        assertEquals("/sandboxes/sb-1", getReq.getPath());
+    }
+
+    @Test
+    void waitUntilReadyFallsBackToTopLevelState() throws Exception {
+        AgentRunDataPlaneHttp http = newHttp();
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"state\":\"READY\"}"));
+
+        assertDoesNotThrow(() -> http.waitUntilReady("sb-1", 1));
+        RecordedRequest getReq = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(getReq);
+        assertEquals("GET", getReq.getMethod());
+        assertEquals("/sandboxes/sb-1", getReq.getPath());
+    }
+
+    private AgentRunDataPlaneHttp newHttp() {
+        String baseUrl = mockServer.url("/").toString();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setAccountId("1234567890")
+                        .setTemplateName("agentscope-default")
+                        .setMcpServerUrl("https://example.com/mcp")
+                        .setDataPlaneBaseUrl(baseUrl)
+                        .setHttpClient(new OkHttpClient());
+
+        return new AgentRunDataPlaneHttp(opt);
     }
 }
