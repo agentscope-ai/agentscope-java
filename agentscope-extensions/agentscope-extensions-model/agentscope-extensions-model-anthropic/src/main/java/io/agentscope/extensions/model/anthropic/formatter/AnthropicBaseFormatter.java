@@ -58,11 +58,11 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions) {
+        // Save options for applyTools
+        currentOptions.set(options);
+
         // Apply other options
         AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);
-
-        // Save effective options for applyTools only after option application succeeds
-        currentOptions.set(GenerateOptions.mergeOptions(options, defaultOptions));
     }
 
     /**
@@ -74,13 +74,17 @@ public abstract class AnthropicBaseFormatter
      */
     @Override
     public void applyTools(MessageCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        try {
-            // Use saved options to apply tools with tool choice
-            AnthropicToolsHelper.applyTools(paramsBuilder, tools, currentOptions.get());
-        } finally {
-            // Clean up even when tool conversion fails
+        if (tools == null || tools.isEmpty()) {
             currentOptions.remove();
+            return;
         }
+
+        // Use saved options to apply tools with tool choice
+        GenerateOptions options = currentOptions.get();
+        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options);
+
+        // Clean up thread-local storage
+        currentOptions.remove();
     }
 
     /**

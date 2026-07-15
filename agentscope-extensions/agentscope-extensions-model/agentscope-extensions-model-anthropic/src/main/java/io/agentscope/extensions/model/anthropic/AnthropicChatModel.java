@@ -172,8 +172,10 @@ public class AnthropicChatModel extends ChatModelBase {
                                 // Apply generation options via formatter
                                 formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
-                                // Add tools and release formatter request state
-                                formatter.applyTools(paramsBuilder, tools);
+                                // Add tools if provided
+                                if (tools != null && !tools.isEmpty()) {
+                                    formatter.applyTools(paramsBuilder, tools);
+                                }
 
                                 // Create the request
                                 MessageCreateParams params = paramsBuilder.build();

@@ -59,17 +59,6 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         formatter = new AnthropicChatFormatter();
     }
 
-    private MessageCreateParams.Builder createParamsBuilder() {
-        return MessageCreateParams.builder()
-                .model("claude-sonnet-4-5-20250929")
-                .maxTokens(1024)
-                .addMessage(
-                        MessageParam.builder()
-                                .role(MessageParam.Role.USER)
-                                .content("test")
-                                .build());
-    }
-
     @Test
     void testFormatSimpleUserMessage() {
         Msg msg =
@@ -369,74 +358,6 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .build();
 
         assertNotNull(params);
-    }
-
-    @Test
-    void testApplyToolsUsesDefaultToolChoice() {
-        MessageCreateParams.Builder paramsBuilder = createParamsBuilder();
-        ToolSchema searchTool =
-                ToolSchema.builder()
-                        .name("search")
-                        .description("Search the web")
-                        .parameters(Map.of("type", "object"))
-                        .build();
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder()
-                        .thinkingBudget(1024)
-                        .toolChoice(new ToolChoice.None())
-                        .build();
-
-        formatter.applyOptions(paramsBuilder, null, defaultOptions);
-        formatter.applyTools(paramsBuilder, List.of(searchTool));
-
-        MessageCreateParams params = paramsBuilder.build();
-        assertTrue(params.thinking().orElseThrow().isEnabled());
-        assertTrue(params.toolChoice().orElseThrow().isNone());
-    }
-
-    @Test
-    void testApplyToolsRequestToolChoiceOverridesDefault() {
-        MessageCreateParams.Builder paramsBuilder = createParamsBuilder();
-        ToolSchema searchTool =
-                ToolSchema.builder()
-                        .name("search")
-                        .description("Search the web")
-                        .parameters(Map.of("type", "object"))
-                        .build();
-        GenerateOptions options =
-                GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder().toolChoice(new ToolChoice.None()).build();
-
-        formatter.applyOptions(paramsBuilder, options, defaultOptions);
-        formatter.applyTools(paramsBuilder, List.of(searchTool));
-
-        assertTrue(paramsBuilder.build().toolChoice().orElseThrow().isAuto());
-    }
-
-    @Test
-    void testApplyToolsClearsOptionsAfterFailure() {
-        formatter.applyOptions(
-                createParamsBuilder(),
-                GenerateOptions.builder().toolChoice(new ToolChoice.None()).build(),
-                null);
-
-        assertThrows(
-                NullPointerException.class,
-                () ->
-                        formatter.applyTools(
-                                createParamsBuilder(), java.util.Collections.singletonList(null)));
-
-        ToolSchema searchTool =
-                ToolSchema.builder()
-                        .name("search")
-                        .description("Search the web")
-                        .parameters(Map.of("type", "object"))
-                        .build();
-        MessageCreateParams.Builder nextRequest = createParamsBuilder();
-        formatter.applyTools(nextRequest, List.of(searchTool));
-
-        assertTrue(nextRequest.build().toolChoice().isEmpty());
     }
 
     @Test

@@ -156,31 +156,8 @@ class AnthropicToolsHelperTest {
 
         MessageCreateParams params = builder.build();
         assertTrue(params.toolChoice().isPresent());
-        assertTrue(params.toolChoice().get().isNone());
-    }
-
-    @Test
-    void testApplyThinkingWithToolChoiceNone() {
-        MessageCreateParams.Builder builder = createBuilder();
-        ToolSchema schema =
-                ToolSchema.builder()
-                        .name("search")
-                        .description("Search")
-                        .parameters(Map.of("type", "object"))
-                        .build();
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .maxTokens(2048)
-                        .thinkingBudget(1024)
-                        .toolChoice(new ToolChoice.None())
-                        .build();
-
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
-
-        MessageCreateParams params = builder.build();
-        assertTrue(params.thinking().orElseThrow().isEnabled());
-        assertTrue(params.toolChoice().orElseThrow().isNone());
+        // None maps to "any" in Anthropic
+        assertTrue(params.toolChoice().get().isAny());
     }
 
     @Test

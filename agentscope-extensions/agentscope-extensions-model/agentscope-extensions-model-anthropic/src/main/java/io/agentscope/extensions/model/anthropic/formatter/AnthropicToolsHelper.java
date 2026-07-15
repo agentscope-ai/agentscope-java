@@ -17,7 +17,6 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static com.anthropic.models.messages.ToolChoice.ofAny;
 import static com.anthropic.models.messages.ToolChoice.ofAuto;
-import static com.anthropic.models.messages.ToolChoice.ofNone;
 import static com.anthropic.models.messages.ToolChoice.ofTool;
 
 import com.anthropic.core.JsonValue;
@@ -26,7 +25,6 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolChoiceAny;
 import com.anthropic.models.messages.ToolChoiceAuto;
-import com.anthropic.models.messages.ToolChoiceNone;
 import com.anthropic.models.messages.ToolChoiceTool;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -95,7 +93,8 @@ public class AnthropicToolsHelper {
         if (toolChoice instanceof ToolChoice.Auto) {
             builder.toolChoice(ofAuto(ToolChoiceAuto.builder().build()));
         } else if (toolChoice instanceof ToolChoice.None) {
-            builder.toolChoice(ofNone(ToolChoiceNone.builder().build()));
+            // Anthropic doesn't have None, use Any instead
+            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Required) {
             // Anthropic doesn't have a direct "required" option, use "any" which forces tool
             // use

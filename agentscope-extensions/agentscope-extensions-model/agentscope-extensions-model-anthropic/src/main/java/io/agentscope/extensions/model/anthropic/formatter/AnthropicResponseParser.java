@@ -52,7 +52,6 @@ public class AnthropicResponseParser {
 
         // Process content blocks
         for (int index = 0; index < message.content().size(); index++) {
-            int contentIndex = index;
             var block = message.content().get(index);
             // Text block
             block.text()
@@ -80,32 +79,27 @@ public class AnthropicResponseParser {
                             });
 
             // Thinking block (extended thinking)
-            block.thinking()
-                    .ifPresent(
-                            thinking ->
-                                    contentBlocks.add(
-                                            ThinkingBlock.builder()
-                                                    .thinking(thinking.thinking())
-                                                    .metadata(
-                                                            AnthropicThinkingMetadata.thinking(
-                                                                    contentIndex,
-                                                                    thinking.thinking(),
-                                                                    thinking.signature()))
-                                                    .build()));
+            if (block.thinking().isPresent()) {
+                var thinking = block.thinking().get();
+                contentBlocks.add(
+                        ThinkingBlock.builder()
+                                .thinking(thinking.thinking())
+                                .metadata(
+                                        AnthropicThinkingMetadata.thinking(
+                                                index, thinking.thinking(), thinking.signature()))
+                                .build());
+            }
 
             // Redacted thinking block
-            block.redactedThinking()
-                    .ifPresent(
-                            redactedThinking ->
-                                    contentBlocks.add(
-                                            ThinkingBlock.builder()
-                                                    .metadata(
-                                                            AnthropicThinkingMetadata
-                                                                    .redactedThinking(
-                                                                            contentIndex,
-                                                                            redactedThinking
-                                                                                    .data()))
-                                                    .build()));
+            if (block.redactedThinking().isPresent()) {
+                var redactedThinking = block.redactedThinking().get();
+                contentBlocks.add(
+                        ThinkingBlock.builder()
+                                .metadata(
+                                        AnthropicThinkingMetadata.redactedThinking(
+                                                index, redactedThinking.data()))
+                                .build());
+            }
         }
 
         // Parse usage
@@ -127,23 +121,18 @@ public class AnthropicResponseParser {
         return Flux.defer(
                 () -> {
                     StreamState streamState = new StreamState();
-                    return eventFlux
-                            .concatMap(
-                                    event -> {
-                                        try {
-                                            return Flux.just(
-                                                    parseStreamEvent(
-                                                            event, startTime, streamState));
-                                        } catch (Exception e) {
-                                            log.warn(
-                                                    "Error parsing stream event: {}",
-                                                    e.getMessage());
-                                            return Flux.empty();
-                                        }
-                                    })
-                            .filter(
-                                    response ->
-                                            response != null && !response.getContent().isEmpty());
+                    return eventFlux.<ChatResponse>handle(
+                            (event, sink) -> {
+                                try {
+                                    ChatResponse response =
+                                            parseStreamEvent(event, startTime, streamState);
+                                    if (response != null && !response.getContent().isEmpty()) {
+                                        sink.next(response);
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("Error parsing stream event: {}", e.getMessage());
+                                }
+                            });
                 });
     }
 
@@ -228,27 +217,6 @@ public class AnthropicResponseParser {
 
             startEvent
                     .contentBlock()
-                    .thinking()
-                    .ifPresent(
-                            thinking -> {
-                                streamState.appendThinking(startEvent.index(), thinking.thinking());
-                                if (!thinking.thinking().isEmpty()
-                                        || !thinking.signature().isEmpty()) {
-                                    ThinkingBlock.Builder thinkingBuilder =
-                                            ThinkingBlock.builder().thinking(thinking.thinking());
-                                    if (!thinking.signature().isEmpty()) {
-                                        thinkingBuilder.metadata(
-                                                AnthropicThinkingMetadata.thinking(
-                                                        startEvent.index(),
-                                                        thinking.thinking(),
-                                                        thinking.signature()));
-                                    }
-                                    contentBlocks.add(thinkingBuilder.build());
-                                }
-                            });
-
-            startEvent
-                    .contentBlock()
                     .redactedThinking()
                     .ifPresent(
                             redactedThinking ->
@@ -275,10 +243,6 @@ public class AnthropicResponseParser {
                                                 .content("")
                                                 .build());
                             });
-        }
-
-        if (event.isContentBlockStop()) {
-            streamState.remove(event.asContentBlockStop().index());
         }
 
         // Message delta - usage information
@@ -309,10 +273,6 @@ public class AnthropicResponseParser {
         private String getThinking(long index) {
             StringBuilder thinking = thinkingByIndex.get(index);
             return thinking != null ? thinking.toString() : "";
-        }
-
-        private void remove(long index) {
-            thinkingByIndex.remove(index);
         }
     }
 
