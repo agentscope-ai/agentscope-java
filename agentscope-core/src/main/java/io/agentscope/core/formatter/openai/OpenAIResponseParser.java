@@ -513,6 +513,10 @@ public class OpenAIResponseParser {
                                                     ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                                     thoughtSignature);
                                         }
+                                        if (toolIndex != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_STREAM_INDEX, toolIndex);
+                                        }
 
                                         contentBlocks.add(
                                                 ToolUseBlock.builder()
@@ -534,6 +538,10 @@ public class OpenAIResponseParser {
                                             metadata.put(
                                                     ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                                     thoughtSignature);
+                                        }
+                                        if (toolIndex != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_STREAM_INDEX, toolIndex);
                                         }
 
                                         contentBlocks.add(

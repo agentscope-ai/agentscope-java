@@ -325,6 +325,184 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
+    @DisplayName("Should merge fragments into the named call via stream index (standard stream)")
+    void testStreamIndexRoutingStandardStream() {
+        // First chunk: real id + name, start of arguments, carries stream index 0
+        ToolUseBlock named =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("get_weather")
+                        .content("{\"city\":")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+
+        // Subsequent chunks: no id, placeholder name, same stream index
+        ToolUseBlock fragment =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+
+        accumulator.add(named);
+        accumulator.add(fragment);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock toolCall = result.get(0);
+        assertEquals("call_1", toolCall.getId());
+        assertEquals("get_weather", toolCall.getName());
+        assertEquals("{\"city\":\"Beijing\"}", toolCall.getContent());
+        assertEquals("Beijing", toolCall.getInput().get("city"));
+        // Internal routing metadata must not leak into the final block
+        assertTrue(toolCall.getMetadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should merge a late-arriving tool name into the same call via stream index")
+    void testStreamIndexRoutingLateName() {
+        // Fragments arrive before the chunk that carries the tool name
+        ToolUseBlock fragment1 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("{\"city\":")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+        ToolUseBlock fragment2 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+        ToolUseBlock named =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("get_weather")
+                        .content("")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+
+        accumulator.add(fragment1);
+        accumulator.add(fragment2);
+        accumulator.add(named);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock toolCall = result.get(0);
+        assertEquals("call_1", toolCall.getId());
+        assertEquals("get_weather", toolCall.getName());
+        assertEquals("{\"city\":\"Beijing\"}", toolCall.getContent());
+        assertEquals("Beijing", toolCall.getInput().get("city"));
+    }
+
+    @Test
+    @DisplayName("Should keep interleaved parallel tool calls separate via stream index")
+    void testStreamIndexRoutingInterleavedParallelCalls() {
+        ToolUseBlock named0 =
+                ToolUseBlock.builder()
+                        .id("call_a")
+                        .name("weather")
+                        .content("{\"city\":")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+        ToolUseBlock named1 =
+                ToolUseBlock.builder()
+                        .id("call_b")
+                        .name("calculator")
+                        .content("{\"expr\":")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 1))
+                        .build();
+        // Fragments interleave across the two calls; neither carries an id.
+        // Without index routing, both would follow the last named call.
+        ToolUseBlock fragment0 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+        ToolUseBlock fragment1 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("\"1+1\"}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 1))
+                        .build();
+
+        accumulator.add(named0);
+        accumulator.add(named1);
+        accumulator.add(fragment0);
+        accumulator.add(fragment1);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(2, result.size());
+
+        ToolUseBlock weather =
+                result.stream().filter(t -> "call_a".equals(t.getId())).findFirst().orElse(null);
+        assertNotNull(weather);
+        assertEquals("weather", weather.getName());
+        assertEquals("Beijing", weather.getInput().get("city"));
+
+        ToolUseBlock calculator =
+                result.stream().filter(t -> "call_b".equals(t.getId())).findFirst().orElse(null);
+        assertNotNull(calculator);
+        assertEquals("calculator", calculator.getName());
+        assertEquals("1+1", calculator.getInput().get("expr"));
+    }
+
+    @Test
+    @DisplayName("Should drop tool calls whose name never arrived instead of emitting null name")
+    void testDropToolCallWithoutName() {
+        // All chunks are fragments: the model or gateway never sent function.name
+        ToolUseBlock fragment1 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("{\"city\":")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+        ToolUseBlock fragment2 =
+                ToolUseBlock.builder()
+                        .id("")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_STREAM_INDEX, 0))
+                        .build();
+
+        accumulator.add(fragment1);
+        accumulator.add(fragment2);
+
+        assertTrue(accumulator.hasContent());
+        // The nameless call must not surface as a block with a null name
+        assertTrue(accumulator.buildAllToolCalls().isEmpty());
+        assertNull(accumulator.buildAggregated());
+    }
+
+    @Test
+    @DisplayName("Should preserve legacy id/name/lastKey routing for blocks without stream index")
+    void testLegacyRoutingWithoutStreamIndex() {
+        // Simulates parsers that do not provide the stream index (e.g. DashScope)
+        ToolUseBlock named =
+                ToolUseBlock.builder().id("call_1").name("weather").content("{\"city\":").build();
+        ToolUseBlock fragment =
+                ToolUseBlock.builder().id("").name("__fragment__").content("\"Beijing\"}").build();
+
+        accumulator.add(named);
+        accumulator.add(fragment);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertEquals("call_1", result.get(0).getId());
+        assertEquals("weather", result.get(0).getName());
+        assertEquals("Beijing", result.get(0).getInput().get("city"));
+    }
+
+    @Test
     @DisplayName("Should produce valid JSON content when streaming is interrupted mid-arguments")
     void testInterruptedStreamingProducesValidJsonContent() {
         // Simulate streaming that gets interrupted mid-arguments:

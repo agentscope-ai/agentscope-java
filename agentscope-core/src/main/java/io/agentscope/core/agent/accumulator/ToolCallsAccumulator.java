@@ -23,6 +23,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tool calls accumulator for accumulating streaming tool call chunks.
@@ -39,6 +41,8 @@ import java.util.stream.Collectors;
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
+    private static final Logger log = LoggerFactory.getLogger(ToolCallsAccumulator.class);
+
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
     private final Map<String, ToolCallBuilder> builders = new LinkedHashMap<>();
@@ -47,6 +51,11 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     // Track the last tool call key for streaming chunks without ID
     // This is needed when models return fragments with placeholder names and empty IDs
     private String lastToolCallKey = null;
+
+    // Maps the protocol-level tool call index (OpenAI tool_calls[].index) to a builder key.
+    // The index is the only identity guaranteed to be present on every chunk of the same
+    // tool call, so it takes priority over id/name heuristics when available.
+    private final Map<Integer, String> streamIndexToKey = new HashMap<>();
 
     /** Builder for a single tool call. */
     private static class ToolCallBuilder {
@@ -83,6 +92,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             }
         }
 
+        boolean hasName() {
+            return name != null;
+        }
+
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
@@ -113,12 +126,17 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 contentStr = "{}";
             }
 
+            // The stream index is internal routing information; do not leak it
+            // into the final block (it would otherwise be persisted in memory).
+            Map<String, Object> finalMetadata = new HashMap<>(metadata);
+            finalMetadata.remove(ToolUseBlock.METADATA_STREAM_INDEX);
+
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .build();
         }
 
@@ -159,6 +177,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * <p>Priority:
      *
      * <ol>
+     *   <li>Use the protocol-level stream index if present (every chunk of the same tool call
+     *       carries the same index, regardless of whether it has an id or name)
      *   <li>Use tool ID if available (non-empty)
      *   <li>Use tool name if available (non-placeholder)
      *   <li>If this is a fragment (placeholder name), reuse the last tool call key
@@ -166,6 +186,24 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * </ol>
      */
     private String determineKey(ToolUseBlock block) {
+        // 0. Prefer the protocol-level stream index when the parser provided one
+        Integer streamIndex = getStreamIndex(block);
+        if (streamIndex != null) {
+            String key = streamIndexToKey.get(streamIndex);
+            if (key == null) {
+                // First chunk for this index: prefer the real tool ID as key,
+                // otherwise derive a stable key from the index itself
+                if (block.getId() != null && !block.getId().isEmpty()) {
+                    key = block.getId();
+                } else {
+                    key = "stream_index:" + streamIndex;
+                }
+                streamIndexToKey.put(streamIndex, key);
+            }
+            lastToolCallKey = key;
+            return key;
+        }
+
         // 1. Prefer tool ID if non-empty
         if (block.getId() != null && !block.getId().isEmpty()) {
             String key = block.getId();
@@ -198,6 +236,14 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         return name != null && name.startsWith("__");
     }
 
+    private Integer getStreamIndex(ToolUseBlock block) {
+        if (block.getMetadata() == null) {
+            return null;
+        }
+        Object index = block.getMetadata().get(ToolUseBlock.METADATA_STREAM_INDEX);
+        return index instanceof Integer ? (Integer) index : null;
+    }
+
     /**
      * @hidden
      */
@@ -225,11 +271,31 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     /**
      * Build all accumulated tool calls.
      *
+     * <p>Builders whose tool name never arrived (e.g. a gateway stripped {@code function.name}
+     * from every streaming chunk) are dropped with a warning instead of producing a block with
+     * a null name. Such a block could not be executed, and once persisted in memory it would be
+     * skipped on every subsequent model request, stalling the agent.
+     *
      * @hidden
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
-        return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+        return builders.values().stream()
+                .filter(
+                        builder -> {
+                            if (builder.hasName()) {
+                                return true;
+                            }
+                            log.warn(
+                                    "Dropping accumulated tool call without a name (id={},"
+                                            + " arguments={}). The model or gateway did not send"
+                                            + " function.name in any streaming chunk.",
+                                    builder.toolId,
+                                    builder.rawContent);
+                            return false;
+                        })
+                .map(ToolCallBuilder::build)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -301,5 +367,6 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         builders.clear();
         nextIndex = 0;
         lastToolCallKey = null;
+        streamIndexToKey.clear();
     }
 }

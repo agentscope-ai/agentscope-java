@@ -36,6 +36,17 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /**
+     * Metadata key carrying the tool call index of a streaming chunk (Integer value).
+     *
+     * <p>OpenAI-compatible streaming APIs identify which tool call a delta belongs to via the
+     * {@code tool_calls[].index} field; subsequent deltas of the same call may omit both id and
+     * name. Parsers propagate this index so the accumulator can reliably merge chunks of the
+     * same tool call. This key is internal routing information and is stripped from the final
+     * accumulated block.
+     */
+    public static final String METADATA_STREAM_INDEX = "streamToolCallIndex";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
