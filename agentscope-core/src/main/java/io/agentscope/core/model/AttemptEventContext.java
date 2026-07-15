@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 
 /**
  * Runtime-only context for emitting attempt lifecycle events from within the
- * model transport pipeline. ，。/‘
+ * model transport pipeline.
  *
  * <p>This object is <b>not serialized</b> and does not participate in JSON
  * round-trips. It is set by {@code ReActAgent} (or any caller that owns the

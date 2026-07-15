@@ -916,4 +916,83 @@ class ModelCallAttemptFeatureTest {
         assertEquals(ModelCallAttemptNextAction.FAIL, nonRetryableEvent.getNextAction());
         assertEquals(0, nonRetryableEvent.getMaxAttempts());
     }
+
+    // ========================================================================
+    // Bug-fix: sanitizeMessage redacts Bearer tokens
+    // ========================================================================
+
+    @Test
+    void sanitizeMessage_redactsBearerToken() {
+        HttpTransportException ex = new HttpTransportException("Bearer sk-abc123secret", 401, "");
+        String sanitized = ModelCallFailureClassifier.sanitizeMessage(ex);
+        assertFalse(sanitized.contains("sk-abc123secret"), "Bearer token must be redacted");
+        assertTrue(sanitized.contains("[REDACTED]"), "Must contain redaction placeholder");
+    }
+
+    // ========================================================================
+    // Bug-fix: sanitizeMessage redacts Api-Key patterns
+    // ========================================================================
+
+    @Test
+    void sanitizeMessage_redactsApiKey() {
+        HttpTransportException ex =
+                new HttpTransportException("Api-Key: my-secret-key-12345", 403, "");
+        String sanitized = ModelCallFailureClassifier.sanitizeMessage(ex);
+        assertFalse(sanitized.contains("my-secret-key-12345"), "API key must be redacted");
+        assertTrue(sanitized.contains("[REDACTED]"), "Must contain redaction placeholder");
+    }
+
+    // ========================================================================
+    // Bug-fix: sanitizeMessage strips \nResponse body format
+    // ========================================================================
+
+    @Test
+    void sanitizeMessage_stripsNewlineResponseBodyFormat() {
+        // Construct a message that uses the \n format instead of " | "
+        String rawMessage = "Request failed\nResponse body: {\"error\":\"internal\"}";
+        RuntimeException ex = new RuntimeException(rawMessage);
+        String sanitized = ModelCallFailureClassifier.sanitizeMessage(ex);
+        assertFalse(
+                sanitized.contains("{\"error\":\"internal\"}"), "Response body must be stripped");
+        assertTrue(sanitized.contains("Request failed"), "Base message must be preserved");
+    }
+
+    // ========================================================================
+    // Bug-fix: sanitizeMessage handles combined Bearer + Response body
+    // ========================================================================
+
+    @Test
+    void sanitizeMessage_handlesCombinedBearerAndResponseBody() {
+        // HttpTransportException with response body containing sensitive data
+        HttpTransportException ex =
+                new HttpTransportException(
+                        "Bearer sk-leaked-token", 429, "{\"error\":\"rate limited\"}");
+        String sanitized = ModelCallFailureClassifier.sanitizeMessage(ex);
+        assertFalse(sanitized.contains("sk-leaked-token"), "Bearer token must be redacted");
+        assertFalse(
+                sanitized.contains("{\"error\":\"rate limited\"}"),
+                "Response body must be stripped");
+    }
+
+    // ========================================================================
+    // Bug-fix: sanitizeMessage redacts various credential key formats
+    // ========================================================================
+
+    @Test
+    void sanitizeMessage_redactsVariousCredentialFormats() {
+        // Test "Authorization: xxx"
+        RuntimeException ex1 = new RuntimeException("Authorization: Bearer abc123");
+        String s1 = ModelCallFailureClassifier.sanitizeMessage(ex1);
+        assertFalse(s1.contains("abc123"));
+
+        // Test "Token: xxx"
+        RuntimeException ex2 = new RuntimeException("Token: tok-secret");
+        String s2 = ModelCallFailureClassifier.sanitizeMessage(ex2);
+        assertFalse(s2.contains("tok-secret"));
+
+        // Test "api_key=xxx"
+        RuntimeException ex3 = new RuntimeException("api_key=key-12345");
+        String s3 = ModelCallFailureClassifier.sanitizeMessage(ex3);
+        assertFalse(s3.contains("key-12345"));
+    }
 }

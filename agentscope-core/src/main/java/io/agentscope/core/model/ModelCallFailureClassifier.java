@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 /**
  * Classifies model call exceptions into structured failure categories for attempt events.
@@ -31,6 +32,24 @@ import java.util.concurrent.TimeoutException;
 public final class ModelCallFailureClassifier {
 
     private ModelCallFailureClassifier() {}
+
+    /**
+     * Pattern matching "Bearer &lt;token&gt;" — the most common credential leak format.
+     * Matches "Bearer" followed by one or more spaces and the token value.
+     */
+    private static final Pattern BEARER_TOKEN_PATTERN = Pattern.compile("(?i)Bearer\\s+\\S+");
+
+    /**
+     * Pattern matching key-value credential patterns like "Api-Key: xxx",
+     * "Authorization: xxx", "Token=xxx", "api_key xxx", "Secret: xxx", etc.
+     */
+    private static final Pattern KEY_VALUE_CREDENTIAL_PATTERN =
+            Pattern.compile(
+                    "(?i)(Api-?Key|Authorization|Token|Secret|api_key|apikey)" + "[\\s:=]+\\S+");
+
+    /** Pattern matching response body sections appended by HttpTransportException. */
+    private static final Pattern RESPONSE_BODY_PATTERN =
+            Pattern.compile("\\s*[|\\n]\\s*Response body:.*", Pattern.DOTALL);
 
     /**
      * Classifies the given throwable into a failure category.
@@ -157,9 +176,10 @@ public final class ModelCallFailureClassifier {
      * Extracts a sanitized, short error message suitable for event payloads.
      *
      * <p>The message contains only the exception's top-level message with no response
-     * bodies, headers, or credential data. For {@link HttpTransportException}, the
-     * response body is stripped even if {@code getMessage()} includes it. Truncated
-     * to 200 characters.
+     * bodies, headers, or credential data. For {@link HttpTransportException} and any
+     * exception whose message includes a "Response body:" section, the response body is
+     * stripped. Credential patterns (Bearer tokens, API keys, etc.) are replaced with
+     * {@code [REDACTED]}. Truncated to 200 characters.
      *
      * @param error the exception
      * @return a safe, truncated error message
@@ -168,24 +188,18 @@ public final class ModelCallFailureClassifier {
         if (error == null) {
             return "unknown error";
         }
-        // For HttpTransportException, use only the base message without response body
-        String message;
-        if (error instanceof HttpTransportException) {
-            message = error.getMessage();
-            // HttpTransportException.getMessage() appends " | Response body: ..." — strip it
-            if (message != null) {
-                int sep = message.indexOf(" | Response body: ");
-                if (sep > 0) {
-                    message = message.substring(0, sep);
-                }
-            }
-        } else {
-            message = error.getMessage();
-        }
+        String message = error.getMessage();
         if (message == null || message.isEmpty()) {
             return error.getClass().getSimpleName();
         }
-        // Take only the first line and truncate
+        // Strip any "Response body:" section (handles both "| Response body:" and
+        // "\nResponse body:" formats from HttpTransportException and similar)
+        message = RESPONSE_BODY_PATTERN.matcher(message).replaceAll("");
+        // Redact "Bearer <token>" patterns first (most common leak format)
+        message = BEARER_TOKEN_PATTERN.matcher(message).replaceAll("Bearer [REDACTED]");
+        // Redact key-value credential patterns like "Authorization: xxx", "Api-Key=xxx"
+        message = KEY_VALUE_CREDENTIAL_PATTERN.matcher(message).replaceAll("$1 [REDACTED]");
+        // Take only the first line
         int newline = message.indexOf('\n');
         if (newline > 0) {
             message = message.substring(0, newline);

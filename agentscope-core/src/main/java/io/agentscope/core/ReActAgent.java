@@ -3507,11 +3507,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
-                return primaryFlux.switchOnFirst(
-                        (signal, flux) -> {
-                            if (signal.isOnError()) {
-                                Throwable error = signal.getThrowable();
-                                activeModel.set(fallbackModel);
                                 int failedAttempts = primaryAttemptCount.get();
                                 // Extract replyId from the ExecutionConfig if present
                                 String replyId = extractReplyId(options);
