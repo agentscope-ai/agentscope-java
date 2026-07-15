@@ -65,9 +65,13 @@ public class FilesystemTool {
             @ToolParam(name = "path", description = "File path to read") String path,
             @ToolParam(
                             name = "offset",
-                            description = "Start line (0-indexed). Default: 0 (from beginning)")
+                            description = "Start line (0-indexed). Default: 0 (from beginning)",
+                            required = false)
                     int offset,
-            @ToolParam(name = "limit", description = "Max lines to return. Default: 0 (all lines)")
+            @ToolParam(
+                            name = "limit",
+                            description = "Max lines to return. Default: 0 (all lines)",
+                            required = false)
                     int limit) {
         ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), offset, limit);
         if (!r.isSuccess()) {
@@ -119,8 +123,12 @@ public class FilesystemTool {
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
                     String pattern,
-            @ToolParam(name = "path", description = "Directory or file to search") String path,
-            @ToolParam(name = "glob", description = "Optional file glob filter (e.g., *.java)")
+            @ToolParam(name = "path", description = "Directory or file to search", required = false)
+                    String path,
+            @ToolParam(
+                            name = "glob",
+                            description = "Optional file glob filter (e.g., *.java)",
+                            required = false)
                     String glob) {
         GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, norm(path), glob);
         if (!r.isSuccess()) {
@@ -140,7 +148,11 @@ public class FilesystemTool {
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
                     String pattern,
-            @ToolParam(name = "path", description = "Base directory to search from") String path) {
+            @ToolParam(
+                            name = "path",
+                            description = "Base directory to search from",
+                            required = false)
+                    String path) {
         GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path));
         if (!r.isSuccess()) {
             return "Error: " + r.error();
