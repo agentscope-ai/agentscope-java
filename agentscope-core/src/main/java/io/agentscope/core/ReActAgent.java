@@ -1756,6 +1756,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return ToolResultBlock.builder()
                     .id(toolId)
                     .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                    .state(ToolResultState.ERROR)
                     .build();
         }
 
@@ -1983,10 +1984,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         new ReasoningInput(
                                                                 modelInput, tools, options));
                                 // Track any RequestStopEvent emitted by middlewares while still
-                                // exhausting the stream (publishEvent already fires on each event).
+                                // exhausting the stream. Publish at the outer reasoning boundary
+                                // so events added by onReasoning middlewares are forwarded too.
                                 AtomicReference<RequestStopEvent> stopRequested =
                                         new AtomicReference<>();
-                                return stream.doOnNext(
+                                return stream.doOnNext(this::publishEvent)
+                                        .doOnNext(
                                                 ev -> {
                                                     if (ev instanceof RequestStopEvent rs) {
                                                         stopRequested.compareAndSet(null, rs);
@@ -2127,6 +2130,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             new ModelCallInput(
                                     messages, tools, options, modelForCall(this::publishEvent)))
                     .doOnNext(this::publishEvent);
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
         }
 
         private Flux<AgentEvent> modelCallStream(
