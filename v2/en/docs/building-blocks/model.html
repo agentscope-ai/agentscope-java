@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-10T09:42:07+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
+    <meta property="article:modified_time" content="2026-07-15T06:41:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Permission System" href="permission-system.html"><link rel="prev" title="Middleware" href="middleware.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/model.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1019,7 +1019,7 @@
 </section>
 <section id="spring-boot-applications">
 <h3>Spring Boot applications<a class="headerlink" href="#spring-boot-applications" title="Link to this heading">¶</a></h3>
-<p>For Spring Boot, prefer provider-specific starters such as <code class="docutils literal notranslate"><span class="pre">agentscope-openai-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-dashscope-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-gemini-spring-boot-starter</span></code>, and <code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code>. These starters directly depend on the matching model extension, create Spring-managed <code class="docutils literal notranslate"><span class="pre">Model</span></code> beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code>; advanced users can always provide their own <code class="docutils literal notranslate"><span class="pre">Model</span></code> bean.</p>
+<p>For Spring Boot, prefer provider-specific starters such as <code class="docutils literal notranslate"><span class="pre">agentscope-openai-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-dashscope-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-gemini-spring-boot-starter</span></code>, <code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code>, and <code class="docutils literal notranslate"><span class="pre">agentscope-ollama-spring-boot-starter</span></code>. These starters directly depend on the matching model extension, create Spring-managed <code class="docutils literal notranslate"><span class="pre">Model</span></code> beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static <code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code>; advanced users can always provide their own <code class="docutils literal notranslate"><span class="pre">Model</span></code> bean.</p>
 <p>OpenAI example:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">model</span><span class="p">:</span>
@@ -1055,6 +1055,9 @@ default generation options, proxy/client settings, or provider-specific flags.</
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-anthropic-spring-boot-starter</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatModelBuilderCustomizer</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope-ollama-spring-boot-starter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OllamaChatModelBuilderCustomizer</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -1692,7 +1695,7 @@ Reasoning</label><div class="sd-tab-content docutils">
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-10</div>
+              Last updated on 2026-07-15</div>
           </div>
           <div class="right-details">
             <div class="icons">
