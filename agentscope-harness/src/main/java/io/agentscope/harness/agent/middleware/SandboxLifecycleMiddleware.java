@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
  * <ol>
  *   <li>Read {@link SandboxContext} from the current {@link RuntimeContext}</li>
  *   <li>Acquire a session via {@link SandboxManager}</li>
+ *   <li>Bind the per-call {@link RuntimeContext} to the sandbox</li>
  *   <li>Start the session (4-branch workspace init)</li>
  *   <li>Inject the live session into the {@link SandboxBackedFilesystem} proxy</li>
  * </ol>
@@ -107,6 +108,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {
+                sandbox.bindRuntimeContext(ctx);
                 sandbox.start();
                 filesystemProxy.setSandbox(sandbox);
                 currentAcquireResult.set(result);

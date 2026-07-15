@@ -24,6 +24,7 @@ import java.io.InputStream;
  * <p>Lifecycle:
  * <ol>
  *   <li>Acquire via {@link SandboxClient#create} (new) or {@link SandboxClient#resume} (existing)
+ *   <li>Call {@link #bindRuntimeContext(RuntimeContext)} with the current call context
  *   <li>Call {@link #start()} — initializes or restores the workspace
  *   <li>Use {@link #exec} for command execution, {@link #persistWorkspace}/{@link #hydrateWorkspace}
  *       for archive operations
@@ -40,6 +41,19 @@ import java.io.InputStream;
  * </ul>
  */
 public interface Sandbox extends AutoCloseable {
+
+    /**
+     * Binds the per-call runtime context before {@link #start()}.
+     *
+     * <p>Sandbox implementations that derive ownership or isolation metadata from the current
+     * user/session should override this method. The harness invokes it for every acquired sandbox,
+     * including caller-provided sandboxes, so implementations must treat repeated calls as normal.
+     *
+     * @param runtimeContext per-call agent context; never {@code null} in the managed lifecycle
+     */
+    default void bindRuntimeContext(RuntimeContext runtimeContext) {
+        // no-op by default
+    }
 
     void start() throws Exception;
 
