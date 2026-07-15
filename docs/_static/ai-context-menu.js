@@ -162,7 +162,8 @@
   }
 
   function openLlmsTxt() {
-    window.open(SITE_URL + "/llms.txt", "_blank");
+    var version = window.location.pathname.indexOf("/v1/") !== -1 ? "v1" : "v2";
+    window.open(SITE_URL + "/" + version + "/llms.txt", "_blank");
   }
 
   // ── Dropdown items (shown in the "more" menu) ─────────────────────
