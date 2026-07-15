@@ -1751,6 +1751,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return ToolResultBlock.builder()
                     .id(toolId)
                     .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                    .state(ToolResultState.ERROR)
                     .build();
         }
 
