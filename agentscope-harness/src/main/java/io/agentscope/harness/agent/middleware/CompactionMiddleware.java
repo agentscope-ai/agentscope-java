@@ -59,13 +59,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
     private final WorkspaceManager workspaceManager;
-    private final Model model;
     private final CompactionConfig config;
 
-    public CompactionMiddleware(
-            WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+    public CompactionMiddleware(WorkspaceManager workspaceManager, CompactionConfig config) {
         this.workspaceManager = workspaceManager;
-        this.model = model;
         this.config = config;
     }
 
@@ -79,6 +76,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        final Model dedicated = config.getModel();
+        final Model effective = dedicated != null ? dedicated : reActAgent.getModel(rc);
 
         return Flux.defer(
                 () -> {
@@ -98,12 +97,12 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-                    CompactionConfig effectiveConfig = resolveEffectiveConfig();
+                    CompactionConfig effectiveConfig = resolveEffectiveConfig(effective);
 
                     MemoryFlushManager flushManager =
-                            new MemoryFlushManager(workspaceManager, model);
+                            new MemoryFlushManager(workspaceManager, effective);
                     ConversationCompactor compactor =
-                            new ConversationCompactor(model, flushManager);
+                            new ConversationCompactor(effective, flushManager);
                     final Msg sys = systemMsg;
 
                     return compactor
@@ -145,7 +144,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     /**
      * Resolves dynamic defaults in the config using the model's context window.
      */
-    private CompactionConfig resolveEffectiveConfig() {
+    private CompactionConfig resolveEffectiveConfig(Model effective) {
         int configTrigger = config.getTriggerTokens();
         int configKeep = config.getKeepTokens();
 
@@ -154,7 +153,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             return config;
         }
 
-        int contextWindow = model.getContextWindowSize();
+        int contextWindow = effective.getContextWindowSize();
 
         int effectiveTrigger;
         if (configTrigger == 0) {

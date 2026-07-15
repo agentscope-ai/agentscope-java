@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -164,8 +165,16 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             return Mono.empty();
         }
 
+        Model effective;
+        if (model != null) {
+            effective = model;
+        } else if (agent instanceof ReActAgent reActAgent) {
+            effective = reActAgent.getModel(rc);
+        } else {
+            return Mono.empty();
+        }
         MemoryFlushManager flushManager =
-                new MemoryFlushManager(workspaceManager, model, flushPrompt);
+                new MemoryFlushManager(workspaceManager, effective, flushPrompt);
 
         boolean shouldFlush = shouldFlushNow(rc);
         Mono<Void> flushMono;

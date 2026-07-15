@@ -2118,7 +2118,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall(rc)))
                     .doOnNext(this::publishEvent);
         }
 
@@ -3052,7 +3052,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messageList = prepareSummaryMessages();
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
-            Model summaryModel = modelForCall();
+            Model summaryModel = modelForCall(rc);
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
@@ -3482,29 +3482,63 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
-    private Model modelForCall() {
-        Model fallbackModel = modelConfig.fallbackModel();
-        if (fallbackModel == null) {
-            return model;
-        }
+    /**
+     * Resolves the model for a single call, wrapping it with the configured fallback when one is
+     * present.
+     */
+    private Model modelForCall(RuntimeContext ctx) {
+        Model primary = getModel(ctx);
+        Model fallback = modelConfig.fallbackModel();
+        return fallback == null ? primary : wrapWithFallback(primary, fallback);
+    }
 
-        AtomicReference<Model> activeModel = new AtomicReference<>(model);
+    /**
+     * Returns the model effective for the session carried by {@code ctx}: the session's registered
+     * id resolved through {@link ModelRegistry} when set, otherwise the agent's default model. An
+     * unresolvable session id is logged and falls back to the default.
+     *
+     * @param ctx the runtime context identifying the session (may be {@code null})
+     * @return the resolved session model, or the default model when no id is set or it fails to
+     *     resolve
+     */
+    public Model getModel(RuntimeContext ctx) {
+        AgentState s = ctx != null ? ctx.getAgentState() : null;
+        String mid = s != null ? s.getModelId() : null;
+        if (mid != null && !mid.isBlank()) {
+            try {
+                return ModelRegistry.resolve(mid);
+            } catch (Exception e) {
+                log.warn(
+                        "Session modelId [{}] unresolvable, fallback to default model: {}",
+                        mid,
+                        e.getMessage());
+            }
+        }
+        return model;
+    }
+
+    /**
+     * Wraps {@code primary} so that {@code fallback} takes over if the first signal from
+     * {@code primary} is an error.
+     */
+    private static Model wrapWithFallback(Model primary, Model fallback) {
+        AtomicReference<Model> activeModel = new AtomicReference<>(primary);
         return new Model() {
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                Flux<ChatResponse> primaryFlux = primary.stream(messages, tools, options);
                 return primaryFlux.switchOnFirst(
                         (signal, flux) -> {
                             if (signal.isOnError()) {
                                 Throwable error = signal.getThrowable();
-                                activeModel.set(fallbackModel);
+                                activeModel.set(fallback);
                                 log.warn(
                                         "Primary model {} failed, switching to fallback {}",
-                                        model.getModelName(),
-                                        fallbackModel.getModelName(),
+                                        primary.getModelName(),
+                                        fallback.getModelName(),
                                         error);
-                                return fallbackModel.stream(messages, tools, options);
+                                return fallback.stream(messages, tools, options);
                             }
                             return flux;
                         });
@@ -3691,6 +3725,54 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;
         setPermissionMode(uid, sid, mode);
+    }
+
+    /**
+     * Switches the model used by the given {@code (userId, sessionId)} session at runtime by storing
+     * its id in the persisted {@link AgentState}. The id is resolved through {@link ModelRegistry}
+     * on each {@code call}, so a blank or {@code null} id restores the agent's default model. The
+     * change is persisted so the next {@code call} on that session—and any cluster node that
+     * reloads the state—sees it.
+     *
+     * <p>Unlike {@link #setPermissionMode(String, String, PermissionMode)}, no per-slot cache is
+     * rebuilt: models are stateless, so resolution happens fresh on every call.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param modelId the registered model id to use, or {@code null}/blank to restore the default
+     */
+    public void setModel(String userId, String sessionId, String modelId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState s = getAgentState(userId, sid);
+        s.setModelId(modelId);
+        saveAgentState(userId, sid);
+    }
+
+    /**
+     * Switches the model for the session identified by the given {@link RuntimeContext}. See
+     * {@link #setModel(String, String, String)}.
+     *
+     * @param ctx the runtime context identifying the session
+     * @param modelId the registered model id to use, or {@code null}/blank to restore the default
+     */
+    public void setModel(RuntimeContext ctx, String modelId) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        setModel(uid, sid, modelId);
+    }
+
+    /**
+     * Clears the session's model id so subsequent calls revert to the agent's default model. The
+     * change is persisted.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     */
+    public void clearModel(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState s = getAgentState(userId, sid);
+        s.setModelId(null);
+        saveAgentState(userId, sid);
     }
 
     /**

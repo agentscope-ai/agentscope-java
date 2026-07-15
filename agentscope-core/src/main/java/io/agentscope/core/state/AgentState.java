@@ -54,7 +54,8 @@ import java.util.UUID;
     "permission_context",
     "tool_context",
     "tasks_context",
-    "plan_mode_context"
+    "plan_mode_context",
+    "model_id"
 })
 public final class AgentState implements State {
 
@@ -69,6 +70,7 @@ public final class AgentState implements State {
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
     private final PlanModeContextState planModeContext;
+    private String modelId;
 
     /**
      * Per-session interrupt signal. Runtime-only (never serialized): a stateless agent engine
@@ -100,6 +102,7 @@ public final class AgentState implements State {
                 builder.planModeContext == null
                         ? new PlanModeContextState()
                         : builder.planModeContext;
+        this.modelId = builder.modelId;
     }
 
     @JsonCreator
@@ -114,7 +117,8 @@ public final class AgentState implements State {
             @JsonProperty("permission_context") PermissionContextState permissionContext,
             @JsonProperty("tool_context") ToolContextState toolContext,
             @JsonProperty("tasks_context") TaskContextState tasksContext,
-            @JsonProperty("plan_mode_context") PlanModeContextState planModeContext) {
+            @JsonProperty("plan_mode_context") PlanModeContextState planModeContext,
+            @JsonProperty("model_id") String modelId) {
         Builder b = builder();
         if (sessionId != null) {
             b.sessionId(sessionId);
@@ -148,6 +152,9 @@ public final class AgentState implements State {
         }
         if (planModeContext != null) {
             b.planModeContext(planModeContext);
+        }
+        if (modelId != null) {
+            b.modelId(modelId);
         }
         return b.build();
     }
@@ -247,6 +254,15 @@ public final class AgentState implements State {
         return planModeContext;
     }
 
+    @JsonProperty("model_id")
+    public String getModelId() {
+        return modelId;
+    }
+
+    public void setModelId(String modelId) {
+        this.modelId = (modelId == null || modelId.isBlank()) ? null : modelId;
+    }
+
     /**
      * The per-session interrupt signal for this state, created on first access. Runtime-only and not
      * serialized.
@@ -305,7 +321,8 @@ public final class AgentState implements State {
                 && Objects.equals(permissionContext, other.permissionContext)
                 && Objects.equals(toolContext, other.toolContext)
                 && Objects.equals(tasksContext, other.tasksContext)
-                && Objects.equals(planModeContext, other.planModeContext);
+                && Objects.equals(planModeContext, other.planModeContext)
+                && Objects.equals(modelId, other.modelId);
     }
 
     @Override
@@ -321,7 +338,8 @@ public final class AgentState implements State {
                 permissionContext,
                 toolContext,
                 tasksContext,
-                planModeContext);
+                planModeContext,
+                modelId);
     }
 
     @Override
@@ -351,6 +369,7 @@ public final class AgentState implements State {
         private ToolContextState toolContext;
         private TaskContextState tasksContext;
         private PlanModeContextState planModeContext;
+        private String modelId;
 
         private Builder() {}
 
@@ -413,6 +432,11 @@ public final class AgentState implements State {
 
         public Builder planModeContext(PlanModeContextState planModeContext) {
             this.planModeContext = planModeContext;
+            return this;
+        }
+
+        public Builder modelId(String modelId) {
+            this.modelId = modelId;
             return this;
         }
 
