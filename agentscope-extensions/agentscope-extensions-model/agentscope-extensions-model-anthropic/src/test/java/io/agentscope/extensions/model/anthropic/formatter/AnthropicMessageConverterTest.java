@@ -493,6 +493,80 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testPreserveSignedThinkingWithParallelToolCalls() {
+        Msg userMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Check two cities.").build())
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I should check both cities.")
+                                                .metadata(
+                                                        AnthropicThinkingMetadata.thinking(
+                                                                0,
+                                                                "I should check both cities.",
+                                                                "signature-123"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Hangzhou"))
+                                                .build()))
+                        .build();
+        Msg firstResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_1")
+                                        .name("get_weather")
+                                        .output(TextBlock.builder().text("Sunny").build())
+                                        .build())
+                        .build();
+        Msg secondResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_2")
+                                        .name("get_weather")
+                                        .output(TextBlock.builder().text("Cloudy").build())
+                                        .build())
+                        .build();
+
+        List<MessageParam> result =
+                converter.convert(List.of(userMsg, assistantMsg, firstResult, secondResult));
+
+        assertEquals(3, result.size());
+        List<ContentBlockParam> assistantBlocks = result.get(1).content().asBlockParams();
+        assertEquals(3, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isThinking());
+        assertEquals("signature-123", assistantBlocks.get(0).asThinking().signature());
+        assertEquals("call_1", assistantBlocks.get(1).asToolUse().id());
+        assertEquals("call_2", assistantBlocks.get(2).asToolUse().id());
+
+        assertEquals(MessageParam.Role.USER, result.get(2).role());
+        List<ContentBlockParam> resultBlocks = result.get(2).content().asBlockParams();
+        assertEquals(2, resultBlocks.size());
+        assertEquals("call_1", resultBlocks.get(0).asToolResult().toolUseId());
+        assertEquals("call_2", resultBlocks.get(1).asToolResult().toolUseId());
+    }
+
+    @Test
     void testConvertToolResultBlockNullOutput() {
         // Builder without output() call will have null output, which becomes empty list
         Msg msg =
