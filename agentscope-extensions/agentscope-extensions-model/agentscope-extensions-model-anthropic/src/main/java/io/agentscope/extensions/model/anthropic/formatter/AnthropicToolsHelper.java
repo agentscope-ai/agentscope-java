@@ -54,12 +54,6 @@ public class AnthropicToolsHelper {
     public static void applyTools(
             MessageCreateParams.Builder builder, List<ToolSchema> tools, GenerateOptions options) {
         if (tools == null || tools.isEmpty()) {
-            if (options != null && options.getToolChoice() != null) {
-                log.debug(
-                        "ToolChoice is set to {} but no tools provided; skipping toolChoice"
-                                + " application",
-                        options.getToolChoice());
-            }
             return;
         }
 
