@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="AgentScope Training 训练扩展" href="online-training.html"><link rel="prev" title="MsgHub（消息中心）" href="msghub.html">
+    <meta property="article:modified_time" content="2026-07-15T05:51:18+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="AgentScope Training 训练扩展" href="online-training.html"><link rel="prev" title="MsgHub（消息中心）" href="msghub.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/task/ai-coding.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -904,7 +904,7 @@
 <section id="llms-txt">
 <h2>什么是 llms.txt？<a class="headerlink" href="#llms-txt" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code> 是一个专为大模型设计的文档索引文件，包含文档结构和关键页面说明，方便 AI 工具快速定位所需内容。</p>
-<p>AgentScope 提供两个文件：</p>
+<p>AgentScope Java 现在按版本提供文档入口：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -914,13 +914,21 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code></p></td>
-<td><p>索引文件，包含各页面链接</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms.txt</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v2/llms.txt</span></code></p></td>
+<td><p>AgentScope Java 2.0 文档索引</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms.txt</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">llms-full.txt</span></code></p></td>
-<td><p>完整文档，单文件包含所有内容</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v2/llms-full.txt</span></code></p></td>
+<td><p>AgentScope Java 2.0 单文件完整上下文</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v1/llms.txt</span></code></p></td>
+<td><p>AgentScope Java 1.x 文档索引</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms.txt</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v1/llms-full.txt</span></code></p></td>
+<td><p>AgentScope Java 1.x 单文件完整上下文</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms-full.txt</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -930,13 +938,13 @@
 <h2>配置指南<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <section id="claude-code">
 <h3>Claude Code<a class="headerlink" href="#claude-code" title="Link to this heading">¶</a></h3>
-<p><a class="reference external" href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 通过 MCP 服务器接入文档。</p>
+<p><a class="reference external" href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 可以通过 MCP 服务接入文档。</p>
 <p><strong>安装：</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>agentscope-docs<span class="w"> </span>--<span class="w"> </span>uvx<span class="w"> </span>--from<span class="w"> </span>mcpdoc<span class="w"> </span>mcpdoc<span class="w"> </span>--urls<span class="w"> </span>AgentScopeJava:https://java.agentscope.io/llms.txt
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>agentscope-docs<span class="w"> </span>--<span class="w"> </span>uvx<span class="w"> </span>--from<span class="w"> </span>mcpdoc<span class="w"> </span>mcpdoc<span class="w"> </span>--urls<span class="w"> </span>AgentScopeJava:https://java.agentscope.io/v2/llms.txt
 </pre></div>
 </div>
 <p><strong>示例：</strong></p>
-<p>安装后直接提问即可：</p>
+<p>安装后可以直接提问：</p>
 <blockquote>
 <div><p>如何用 AgentScope Java 创建一个工具？</p>
 </div></blockquote>
@@ -948,9 +956,9 @@
 <ol class="arabic simple">
 <li><p>打开 <strong>Cursor Settings</strong> -&gt; <strong>Features</strong> -&gt; <strong>Docs</strong></p></li>
 <li><p>点击 <strong>+ Add new Doc</strong></p></li>
-<li><p>填入：<code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></li>
+<li><p>填入：<code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code></p></li>
 </ol>
-<p><strong>方式二：MCP 服务器</strong></p>
+<p><strong>方式二：MCP 服务</strong></p>
 <ol class="arabic simple">
 <li><p>打开 <strong>Cursor Settings</strong> -&gt; <strong>Tools &amp; MCP</strong></p></li>
 <li><p>点击 <strong>New MCP Server</strong> 编辑 <code class="docutils literal notranslate"><span class="pre">mcp.json</span></code></p></li>
@@ -962,7 +970,7 @@
 <span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/v2/llms.txt&quot;</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -976,10 +984,10 @@
 </section>
 <section id="windsurf">
 <h3>Windsurf<a class="headerlink" href="#windsurf" title="Link to this heading">¶</a></h3>
-<p><a class="reference external" href="https://codeium.com/windsurf">Windsurf</a> 通过 MCP 服务器接入。</p>
+<p><a class="reference external" href="https://codeium.com/windsurf">Windsurf</a> 可以通过 MCP 服务接入。</p>
 <ol class="arabic simple">
 <li><p>打开设置，进入 MCP 配置</p></li>
-<li><p>添加服务器：</p></li>
+<li><p>添加服务：</p></li>
 </ol>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -987,7 +995,7 @@
 <span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/v2/llms.txt&quot;</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -998,9 +1006,15 @@
 <section id="id2">
 <h3>其他工具<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <p><strong>支持文档/知识库的工具：</strong></p>
-<p>直接添加 <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p>
+<p>直接添加 <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code>。</p>
 <p><strong>支持 MCP 的工具：</strong></p>
-<p>参考上述 MCP 配置模板</p>
+<p>参考上面的 MCP 配置模板。</p>
+<p><strong>使用 AgentScope Java 1.x：</strong></p>
+<p>如果项目仍在使用 1.x，请改用：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms.txt</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms-full.txt</span></code></p></li>
+</ul>
 <p><strong>环境要求：</strong></p>
 <p>MCP 方式需要先安装 <a class="reference external" href="https://docs.astral.sh/uv/"><code class="docutils literal notranslate"><span class="pre">uv</span></code></a>。</p>
 </section>
@@ -1060,7 +1074,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-07-15</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1138,6 +1152,6 @@
     <script src="../../../../_static/notice-bar.js?v=6a544133"></script>
     <script src="../../../../_static/mermaid-zoom.js?v=b287901b"></script>
     <script src="../../../../_static/version.js?v=b09c2e6c"></script>
-    <script src="../../../../_static/ai-context-menu.js?v=0f9728a6"></script>
+    <script src="../../../../_static/ai-context-menu.js?v=915d0de6"></script>
     </body>
 </html>

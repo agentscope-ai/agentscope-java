@@ -1,0 +1,60 @@
+# AgentScope Java v2
+
+> AgentScope Java 2.0 documentation for new projects and production agent engineering with HarnessAgent.
+
+## Docs
+
+- [What's AgentScope 2.0?](https://java.agentscope.io/_sources/v2/en/docs/index.md): Harness engineering, enterprise-grade distributed deployment, and a redesigned foundation.
+- [Quickstart](https://java.agentscope.io/_sources/v2/en/docs/quickstart.md): Get started with AgentScope Java 2.0 — bring up your first long-running agent with HarnessAgent
+- [Agent](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/agent.md): Learn how to define and configure agents in AgentScope Java 2.0
+- [Message & Event](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/message-and-event.md): The core data abstractions for agent communication and streaming
+- [Middleware](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/middleware.md): Intercept and extend agent behavior at key lifecycle points
+- [Model](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/model.md): Configure and connect LLM model providers in AgentScope Java
+- [Permission System](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/permission-system.md): Fine-grained control over which tools your agents can execute and when
+- [Tool](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/tool.md): Define, register, and manage the capabilities an agent can call
+- [Context & AgentState](https://java.agentscope.io/_sources/v2/en/docs/building-blocks/context.md): Stateless agent engine, AgentState lifecycle, state persistence, and RuntimeContext
+- [Harness Architecture](https://java.agentscope.io/_sources/v2/en/docs/harness/architecture.md): What HarnessAgent is, how its capabilities cooperate, and how state flows during a call()
+- [Context Compaction](https://java.agentscope.io/_sources/v2/en/docs/harness/compaction.md): Keep the conversation within the model's token budget without losing critical information
+- [Workspace](https://java.agentscope.io/_sources/v2/en/docs/harness/workspace.md): Source of truth for agent definition and evolution: directory layout, workspace-vs-API parity, native multi-tenant isolation, filesystem modes, and deep dive on key contents
+- [Memory](https://java.agentscope.io/_sources/v2/en/docs/harness/memory.md): Two-layer long-term memory, conversation compaction, large tool-result offloading; prompts and trigger policy are customizable
+- [Filesystem](https://java.agentscope.io/_sources/v2/en/docs/harness/filesystem.md): Three deployment modes: local + shell / shared store / sandbox; IsolationScope dimensions; multi-user isolation; how skills and tools behave in each mode
+- [Sandbox](https://java.agentscope.io/_sources/v2/en/docs/harness/sandbox.md): Isolated execution + cross-call recovery + multi-replica deployment
+- [Subagent](https://java.agentscope.io/_sources/v2/en/docs/harness/subagent.md): Declare subagents, sync/background calls, auto push-back, remote subagents, streaming forwarding
+- [Skill](https://java.agentscope.io/_sources/v2/en/docs/harness/skill.md): Four-layer skill composition, skill marketplaces, the self-learning loop
+- [Plan Mode](https://java.agentscope.io/_sources/v2/en/docs/harness/plan-mode.md): Think before acting: a read-only phase that writes a plan file and requires HITL approval before executing
+- [Channel](https://java.agentscope.io/_sources/v2/en/docs/harness/channel.md): Route messages, manage sessions, and stream events through Channel
+- [V1 Migration Guide](https://java.agentscope.io/_sources/v2/en/docs/change-log.md): Complete migration guide from AgentScope Java 1.x to 2.0
+- [Release Notes](https://java.agentscope.io/_sources/v2/en/docs/others/release-notes.md): Per-version change records for AgentScope Java
+- [Going to Production](https://java.agentscope.io/_sources/v2/en/docs/others/going-to-production.md): From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability
+- [FAQ](https://java.agentscope.io/_sources/v2/en/docs/others/faq.md): Frequently asked questions about AgentScope Java 2.0
+- [Integration Overview](https://java.agentscope.io/_sources/v2/en/integration/overview.md)
+- [Memory](https://java.agentscope.io/_sources/v2/en/integration/memory/overview.md)
+- [Mem0](https://java.agentscope.io/_sources/v2/en/integration/memory/mem0.md)
+- [Bailian Memory](https://java.agentscope.io/_sources/v2/en/integration/memory/bailian.md)
+- [ReMe](https://java.agentscope.io/_sources/v2/en/integration/memory/reme.md)
+- [Agent State Store (AgentStateStore)](https://java.agentscope.io/_sources/v2/en/integration/session/overview.md)
+- [MySQL State Store](https://java.agentscope.io/_sources/v2/en/integration/session/mysql.md)
+- [Redis State Store](https://java.agentscope.io/_sources/v2/en/integration/session/redis.md)
+- [OSS State Store](https://java.agentscope.io/_sources/v2/en/integration/session/oss.md)
+- [RAG Knowledge Base](https://java.agentscope.io/_sources/v2/en/integration/rag/overview.md)
+- [Simple Knowledge](https://java.agentscope.io/_sources/v2/en/integration/rag/simple.md)
+- [Bailian Knowledge](https://java.agentscope.io/_sources/v2/en/integration/rag/bailian.md)
+- [Dify Knowledge](https://java.agentscope.io/_sources/v2/en/integration/rag/dify.md)
+- [HayStack Knowledge](https://java.agentscope.io/_sources/v2/en/integration/rag/haystack.md)
+- [RAGFlow Knowledge](https://java.agentscope.io/_sources/v2/en/integration/rag/ragflow.md)
+- [Skill Repository](https://java.agentscope.io/_sources/v2/en/integration/skill/overview.md)
+- [Git Skill Repository](https://java.agentscope.io/_sources/v2/en/integration/skill/git-repository.md)
+- [MySQL Skill Repository](https://java.agentscope.io/_sources/v2/en/integration/skill/mysql-repository.md)
+- [PostgreSQL Skill Repository](https://java.agentscope.io/_sources/v2/en/integration/skill/postgresql-repository.md)
+- [Agent Protocols](https://java.agentscope.io/_sources/v2/en/integration/protocol/overview.md)
+- [A2A (Agent-to-Agent)](https://java.agentscope.io/_sources/v2/en/integration/protocol/a2a.md)
+- [AG-UI](https://java.agentscope.io/_sources/v2/en/integration/protocol/agui.md)
+- [Agent Protocol](https://java.agentscope.io/_sources/v2/en/integration/protocol/agent-protocol.md)
+- [Infrastructure / Middleware](https://java.agentscope.io/_sources/v2/en/integration/infrastructure/overview.md)
+- [Higress AI Gateway](https://java.agentscope.io/_sources/v2/en/integration/infrastructure/higress.md)
+- [Nacos](https://java.agentscope.io/_sources/v2/en/integration/infrastructure/nacos.md)
+- [Scheduler](https://java.agentscope.io/_sources/v2/en/integration/infrastructure/scheduler.md)
+- [Ecosystem](https://java.agentscope.io/_sources/v2/en/integration/ecosystem/overview.md)
+- [Chat Completions Web](https://java.agentscope.io/_sources/v2/en/integration/ecosystem/chat-completions-web.md)
+- [AgentScope Studio](https://java.agentscope.io/_sources/v2/en/integration/ecosystem/studio.md)
+- [Online Training](https://java.agentscope.io/_sources/v2/en/integration/ecosystem/training.md)

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="AgentScope Training Extension" href="online-training.html"><link rel="prev" title="MsgHub" href="msghub.html">
+    <meta property="article:modified_time" content="2026-07-15T05:51:18+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="AgentScope Training Extension" href="online-training.html"><link rel="prev" title="MsgHub" href="msghub.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/task/ai-coding.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -914,13 +914,21 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code></p></td>
-<td><p>Tools that can fetch links dynamically</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms.txt</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v2/llms.txt</span></code></p></td>
+<td><p>New projects using AgentScope Java 2.0</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms.txt</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">llms-full.txt</span></code></p></td>
-<td><p>Tools that need a single, static text dump</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v2/llms-full.txt</span></code></p></td>
+<td><p>Single-file AgentScope Java 2.0 context</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v1/llms.txt</span></code></p></td>
+<td><p>Existing AgentScope Java 1.x projects</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms.txt</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v1/llms-full.txt</span></code></p></td>
+<td><p>Single-file AgentScope Java 1.x context</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms-full.txt</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -932,7 +940,7 @@
 <h3>Claude Code<a class="headerlink" href="#claude-code" title="Link to this heading">¶</a></h3>
 <p><a class="reference external" href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> can be configured to query the AgentScope documentation by adding an MCP server.</p>
 <p><strong>Installation:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>agentscope-docs<span class="w"> </span>--<span class="w"> </span>uvx<span class="w"> </span>--from<span class="w"> </span>mcpdoc<span class="w"> </span>mcpdoc<span class="w"> </span>--urls<span class="w"> </span>AgentScopeJava:https://java.agentscope.io/llms.txt
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>agentscope-docs<span class="w"> </span>--<span class="w"> </span>uvx<span class="w"> </span>--from<span class="w"> </span>mcpdoc<span class="w"> </span>mcpdoc<span class="w"> </span>--urls<span class="w"> </span>AgentScopeJava:https://java.agentscope.io/v2/llms.txt
 </pre></div>
 </div>
 <p><strong>Usage:</strong></p>
@@ -948,7 +956,7 @@
 <ol class="arabic simple">
 <li><p>Open <strong>Cursor Settings</strong> -&gt; <strong>Features</strong> -&gt; <strong>Docs</strong></p></li>
 <li><p>Click <strong>+ Add new Doc</strong></p></li>
-<li><p>Add URL: <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></li>
+<li><p>Add URL: <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code></p></li>
 </ol>
 <p><strong>Method 2: MCP Server</strong></p>
 <ol class="arabic simple">
@@ -962,7 +970,7 @@
 <span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/v2/llms.txt&quot;</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -990,7 +998,7 @@
 <span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/v2/llms.txt&quot;</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -1003,7 +1011,7 @@
 <p>Any tool that supports the <code class="docutils literal notranslate"><span class="pre">llms.txt</span></code> standard or can ingest documentation from a URL can benefit from these files.</p>
 <p><strong>For tools with Docs/Knowledge Base feature:</strong></p>
 <ul class="simple">
-<li><p>Add URL: <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></li>
+<li><p>Add URL: <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v2/llms-full.txt</span></code></p></li>
 </ul>
 <p><strong>For tools with MCP support:</strong></p>
 <ul class="simple">
@@ -1011,6 +1019,11 @@
 </ul>
 <p><strong>Prerequisites:</strong></p>
 <p>MCP configurations require <a class="reference external" href="https://docs.astral.sh/uv/"><code class="docutils literal notranslate"><span class="pre">uv</span></code></a> to be installed, as they use <code class="docutils literal notranslate"><span class="pre">uvx</span></code> to run the documentation server.</p>
+<p>For AgentScope Java 1.x projects, use the v1 URLs instead:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms.txt</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/v1/llms-full.txt</span></code></p></li>
+</ul>
 </section>
 </section>
 </section>
@@ -1068,7 +1081,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-07-15</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1146,6 +1159,6 @@
     <script src="../../../../_static/notice-bar.js?v=6a544133"></script>
     <script src="../../../../_static/mermaid-zoom.js?v=b287901b"></script>
     <script src="../../../../_static/version.js?v=b09c2e6c"></script>
-    <script src="../../../../_static/ai-context-menu.js?v=0f9728a6"></script>
+    <script src="../../../../_static/ai-context-menu.js?v=915d0de6"></script>
     </body>
 </html>
