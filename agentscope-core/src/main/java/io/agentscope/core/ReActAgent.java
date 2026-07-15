@@ -3506,7 +3506,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                // Count each subscription to the primary model as one attempt,
+                // including retries applied by ModelUtils.applyTimeoutAndRetry
+                // inside the provider transport.
+                Flux<ChatResponse> primaryFlux =
+                        model.stream(messages, tools, options)
+                                .doOnSubscribe(sub -> primaryAttemptCount.incrementAndGet());
+                return primaryFlux.switchOnFirst(
+                        (signal, flux) -> {
+                            if (signal.isOnError()) {
+                                Throwable error = signal.getThrowable();
+                                activeModel.set(fallbackModel);
                                 int failedAttempts = primaryAttemptCount.get();
                                 // Extract replyId from the ExecutionConfig if present
                                 String replyId = extractReplyId(options);
