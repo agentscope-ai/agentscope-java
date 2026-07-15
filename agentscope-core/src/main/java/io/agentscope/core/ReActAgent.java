@@ -2130,7 +2130,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             new ModelCallInput(
                                     messages, tools, options, modelForCall(this::publishEvent)))
                     .doOnNext(this::publishEvent);
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
         }
 
         private Flux<AgentEvent> modelCallStream(
