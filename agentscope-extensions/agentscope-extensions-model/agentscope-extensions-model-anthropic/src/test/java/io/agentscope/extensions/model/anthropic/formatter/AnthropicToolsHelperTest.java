@@ -156,8 +156,28 @@ class AnthropicToolsHelperTest {
 
         MessageCreateParams params = builder.build();
         assertTrue(params.toolChoice().isPresent());
-        // None maps to "any" in Anthropic
-        assertTrue(params.toolChoice().get().isAny());
+        // None correctly maps to "none" in Anthropic — tools exist but are disabled for this turn
+        assertTrue(params.toolChoice().get().isNone());
+        // Exclusive: must not be confused with "any" (forced tool use) or "auto"
+        assertTrue(!params.toolChoice().get().isAny());
+        assertTrue(!params.toolChoice().get().isAuto());
+
+        // Tools list must still be present and intact
+        assertTrue(params.tools().isPresent());
+        assertEquals(1, params.tools().get().size());
+    }
+
+    @Test
+    void testApplyToolChoiceNoneWithEmptyToolsSkipsToolChoice() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.None()).build();
+        // Empty tools list — applyTools returns early, toolChoice should not be set
+        AnthropicToolsHelper.applyTools(builder, List.of(), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isEmpty());
     }
 
     @Test
