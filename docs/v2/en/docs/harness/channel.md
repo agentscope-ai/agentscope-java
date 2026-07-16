@@ -266,15 +266,15 @@ gw.stop();    // calls stop() on all channels
 
 AgentScope provides ready-to-use Channel adapters for popular messaging platforms as extension modules:
 
-- [DingTalk](../../../integration/channel/dingtalk.md) — Stream protocol (persistent WebSocket)
-- [Feishu / Lark](../../../integration/channel/feishu.md) — Event subscription callback
-- [GitHub](../../../integration/channel/github.md) — Issue / PR comment webhook
-- [GitLab](../../../integration/channel/gitlab.md) — Note hook
-- [WeCom](../../../integration/channel/wecom.md) — Encrypted callback
+- [DingTalk](../../integration/channel/dingtalk.md) — Stream protocol (persistent WebSocket)
+- [Feishu / Lark](../../integration/channel/feishu.md) — Event subscription callback
+- [GitHub](../../integration/channel/github.md) — Issue / PR comment webhook
+- [GitLab](../../integration/channel/gitlab.md) — Note hook
+- [WeCom](../../integration/channel/wecom.md) — Encrypted callback
 
-See the [Channel Adapters](../../../integration/channel/index.md) integration overview for details.
+See the [Channel Adapters](../../integration/channel/index.md) integration overview for details.
 
 ## Related pages
 
-- [Subagent](./subagent) — declaring and spawning subagents, background tasks, streaming forwarding
-- [Architecture](./architecture) — how parent and child agents cooperate
+- [Subagent](./subagent.md) — declaring and spawning subagents, background tasks, streaming forwarding
+- [Architecture](./architecture.md) — how parent and child agents cooperate
