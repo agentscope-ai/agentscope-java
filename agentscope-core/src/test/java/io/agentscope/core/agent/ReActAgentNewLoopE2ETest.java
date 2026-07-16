@@ -134,6 +134,32 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    private static final class ReturningErrorTool extends ToolBase {
+        ReturningErrorTool(String name) {
+            super(
+                    name,
+                    "returns structured error",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.error("probe failed"));
+        }
+    }
+
     private static final class RecordingMiddleware implements MiddlewareBase {
         final List<String> trace = new ArrayList<>();
 
@@ -227,5 +253,43 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    @Test
+    void toolReturningErrorBlockEmitsErrorResultEndState() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "failing", "probe")),
+                                () -> Flux.just(textResponse("handled"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ReturningErrorTool("failing"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run the failing tool")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        ToolResultEndEvent end =
+                events.stream()
+                        .filter(ToolResultEndEvent.class::isInstance)
+                        .map(ToolResultEndEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, end.getState());
     }
 }
