@@ -41,9 +41,12 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
- * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
- * does not run on every single call.
+ * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
+ * {@link MemoryFlushMiddleware}) in a genuinely detached, fire-and-forget fashion: the
+ * maintenance {@code Mono} is subscribed independently of the returned {@code Flux} rather
+ * than being concatenated onto it, so callers that wait for the response to complete (e.g.
+ * {@code blockLast()}, {@code takeLast(1)}) are not delayed by maintenance work. It is also
+ * throttled by a configurable minimum gap so it does not run on every single call.
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -140,16 +143,18 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         return next.apply(input)
-                .concatWith(
-                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn(
-                                                    "Memory maintenance failed: {}",
-                                                    e.getMessage());
-                                            return Mono.empty();
-                                        }));
+                .doOnComplete(
+                        () ->
+                                Mono.fromRunnable(() -> maybeRunMaintenance(rc))
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .onErrorResume(
+                                                e -> {
+                                                    log.warn(
+                                                            "Memory maintenance failed: {}",
+                                                            e.getMessage());
+                                                    return Mono.empty();
+                                                })
+                                        .subscribe());
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

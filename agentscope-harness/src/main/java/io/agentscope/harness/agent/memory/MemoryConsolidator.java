@@ -19,11 +19,13 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -60,6 +62,15 @@ public class MemoryConsolidator {
 
     /** Hidden state file inside {@code memory/} tracking the last consolidation Instant. */
     public static final String STATE_FILE = ".consolidation_state";
+
+    /**
+     * Upper bound on the consolidation LLM call. Consolidation runs on a shared
+     * {@code boundedElastic} worker thread (see {@code MemoryMaintenanceMiddleware}); without a
+     * timeout, a hung model provider would tie up that thread indefinitely. Reuses
+     * {@link ExecutionConfig#MODEL_DEFAULTS}'s timeout so this stays consistent with the
+     * standard per-call model timeout used elsewhere in the codebase.
+     */
+    static final Duration CONSOLIDATION_TIMEOUT = ExecutionConfig.MODEL_DEFAULTS.getTimeout();
 
     /**
      * Default prompt for the consolidation step. Exposed publicly so callers can extend
@@ -167,6 +178,7 @@ public class MemoryConsolidator {
                         .build());
 
         return model.stream(messages, null, null)
+                .timeout(CONSOLIDATION_TIMEOUT)
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {
