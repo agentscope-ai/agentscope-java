@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -55,6 +57,8 @@ final class E2bEnvdProcessClient {
 
     private static final MediaType CONNECT_JSON = MediaType.get("application/connect+json");
     private static final MediaType CONNECT_PROTO = MediaType.get("application/connect+proto");
+    private static final MediaType APPLICATION_OCTET_STREAM =
+            MediaType.get("application/octet-stream");
     private static final int ENVD_PORT = 49983;
     private static final int OUTPUT_TRUNCATE_BYTES = 512 * 1024;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -130,19 +134,7 @@ final class E2bEnvdProcessClient {
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request.Builder rb =
-                new Request.Builder()
-                        .url(url)
-                        .post(RequestBody.create(envelope, connectMediaType()))
-                        .addHeader("Connect-Protocol-Version", "1")
-                        .addHeader("User-Agent", "agentscope-java-e2b")
-                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
-                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
-                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
-        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
-            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
-        }
-        Request req = rb.build();
+        Request req = buildEnvdRequest(url, envelope, connectMediaType(), state).build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
@@ -352,6 +344,101 @@ final class E2bEnvdProcessClient {
         ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(msg.length);
         System.arraycopy(msg, 0, out, 5, msg.length);
         return out;
+    }
+
+    // ---- filesystem helpers (REST API) ----
+
+    /**
+     * Upload a file to the sandbox filesystem via the E2B Filesystem REST API. Creates parent
+     * directories automatically and overwrites existing files.
+     *
+     * @param state      sandbox state
+     * @param remotePath absolute path in the sandbox
+     * @param data       file content
+     */
+    public void uploadFile(E2bSandboxState state, String remotePath, byte[] data) throws Exception {
+        String host = filesystemHost(state);
+        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+
+        RequestBody fileBody = RequestBody.create(data, APPLICATION_OCTET_STREAM);
+        RequestBody multipart =
+                new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("file", filenameFromPath(remotePath), fileBody)
+                        .build();
+        Request req = buildFilesystemRequest(url, state).post(multipart).build();
+
+        try (Response res = http.newCall(req).execute()) {
+            if (!res.isSuccessful()) {
+                String err = res.body().string();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
+                        "envd upload file failed HTTP " + res.code() + ": " + err);
+            }
+        }
+    }
+
+    /**
+     * Download a file from the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param state      sandbox state
+     * @param remotePath absolute path in the sandbox
+     * @return file content
+     */
+    public byte[] downloadFile(E2bSandboxState state, String remotePath) throws Exception {
+        String host = filesystemHost(state);
+        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+        Request req = buildFilesystemRequest(url, state).get().build();
+        try (Response res = http.newCall(req).execute()) {
+            if (!res.isSuccessful()) {
+                String err = res.body().string();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                        "envd download file failed HTTP " + res.code() + ": " + err);
+            }
+            return res.body().bytes();
+        }
+    }
+
+    private static String filenameFromPath(String path) {
+        int idx = path.lastIndexOf('/');
+        return idx >= 0 ? path.substring(idx + 1) : path;
+    }
+
+    private Request.Builder buildEnvdRequest(
+            String url, byte[] body, MediaType mediaType, E2bSandboxState state) {
+        Request.Builder rb =
+                new Request.Builder()
+                        .url(url)
+                        .post(RequestBody.create(body, mediaType))
+                        .addHeader("Connect-Protocol-Version", "1")
+                        .addHeader("User-Agent", "agentscope-java-e2b")
+                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
+                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
+            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
+        }
+        return rb;
+    }
+
+    private Request.Builder buildFilesystemRequest(String url, E2bSandboxState state) {
+        Request.Builder rb =
+                new Request.Builder()
+                        .url(url)
+                        .addHeader("User-Agent", "agentscope-java-e2b")
+                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
+                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
+            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
+        }
+        return rb;
+    }
+
+    private static String filesystemHost(E2bSandboxState state) {
+        String dom = state.getSandboxDomain();
+        return "https://sandbox." + (dom != null && !dom.isBlank() ? dom : "e2b.app");
     }
 
     private E2bCodec codec() {
