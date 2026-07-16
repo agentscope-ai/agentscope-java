@@ -17,15 +17,16 @@ package io.agentscope.harness.agent;
 
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.util.List;
 
 /**
  * Controls how agent state is isolated and shared across calls.
  *
- * <p>This enum is the canonical isolation-scope definition used by both the sandbox filesystem
- * backend ({@link io.agentscope.harness.agent.sandbox.SandboxContext}) and the remote filesystem
- * backend ({@link RemoteFilesystemSpec}).
+ * <p>This enum is the canonical isolation-scope definition used by the sandbox filesystem backend
+ * ({@link io.agentscope.harness.agent.sandbox.SandboxContext}), the remote filesystem backend
+ * ({@link RemoteFilesystemSpec}), and local shared-prefix overlays ({@link LocalFilesystemSpec}).
  *
  * <p><b>Sandbox semantics</b>: the scope determines which key is used when persisting and loading
  * {@code _sandbox.json} state. Calls that resolve to the <em>same</em> scope key will
@@ -36,6 +37,11 @@ import java.util.List;
  * {@link RemoteFilesystem} when routing files to the shared
  * key-value store. Different scopes produce different namespace prefixes, controlling which calls
  * share the same view of stored files.
+ *
+ * <p><b>Local shared-prefix semantics</b>: the scope determines the local workspace namespace used
+ * for copy-on-write overrides of directories registered through {@link
+ * LocalFilesystemSpec#addSharedPrefix(String)}. The un-namespaced directory remains the shared,
+ * read-only baseline.
  *
  * <p>Scope selection:
  * <ul>

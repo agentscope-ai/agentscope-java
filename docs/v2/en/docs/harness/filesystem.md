@@ -300,6 +300,8 @@ HarnessAgent agent = HarnessAgent.builder()
     .env("MY_VAR", "value")          // extra environment variables
     .inheritEnv(true)                // inherit parent process env
     .mode(LocalFsMode.ROOTED)        // path policy
+    .isolationScope(IsolationScope.USER) // isolate shared-prefix overrides per user
+    .addSharedPrefix("docs/")         // shared read-only baseline in the workspace
     .project(Paths.get("/my/project")) // project root (shell cwd + overlay lower)
     .addRoot(Paths.get("/extra/dir"))) // extra allowed directory
 ```
@@ -311,6 +313,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `env(String, String)` | Add a shell environment variable | none |
 | `inheritEnv(boolean)` | Inherit parent process environment | `false` |
 | `mode(LocalFsMode)` | Path resolution policy | `ROOTED` |
+| `isolationScope(IsolationScope)` | Isolation dimension for local shared-prefix overrides | `USER` |
+| `addSharedPrefix(String)` | Add a workspace-relative shared read-only baseline directory | none |
+| `sharedPrefixes(Collection)` | Replace the shared read-only baseline directories in bulk | none |
 | `project(Path)` | Project root directory (overlay lower layer + shell cwd) | `System.getProperty("user.dir")` |
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
@@ -332,6 +337,41 @@ Local mode actually produces an `OverlayFilesystem`:
 - **Lower** (read-only): `LocalFilesystem`, rooted at `project`.
 
 Reads check workspace first, then fall back to project (copy-on-write semantics). Shell `pwd` is the project directory, so `ls` shows project files.
+
+#### Shared read-only prefixes (`addSharedPrefix`)
+
+Local mode can register additional workspace-relative directories just like Remote mode, but the persistence location differs: Remote mode writes tenant overrides to the `BaseStore`, while Local mode keeps both the shared baseline and all scoped overrides in the agent's local workspace.
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("local-team-agent")
+    .model(model)
+    .workspace(Paths.get("/srv/agent-workspace"))
+    .filesystem(new LocalFilesystemSpec()
+        .isolationScope(IsolationScope.USER)
+        .addSharedPrefix("docs/")
+        .addSharedPrefix("knowledge-base/"))
+    .build();
+```
+
+With `USER` scope, the directory layout is:
+
+```text
+/srv/agent-workspace/
+├── docs/guide.md              # shared read-only baseline
+├── knowledge-base/faq.md      # shared read-only baseline
+├── alice/docs/guide.md        # Alice's private override after a write
+└── bob/docs/guide.md          # Bob's private override after a write
+```
+
+- Reads prefer the current scope's override and fall back to the shared source under `<workspace>/<prefix>`.
+- `write` / `edit` use copy-on-write: they change only the namespaced override, never the shared source.
+- `delete` removes only the current scope's override; if the shared source still exists, later reads reveal it again.
+- `ls` / `glob` / `grep` merge the shared and override layers, with the override winning on path collisions.
+- This merged view applies to filesystem APIs and file tools. Shell commands still use `project` as their `cwd` and do not materialize the virtual merged view on the host.
+- Prefixes must be workspace-relative directories; empty paths, `.`, `..`, and paths containing those segments are rejected.
+
+This feature requires an explicit `LocalFilesystemSpec`. Omitting `filesystem(...)` still selects ordinary Local mode and does not register any shared prefixes automatically.
 
 #### Project-writable mode (`projectWritable`)
 
@@ -374,7 +414,7 @@ The agent can read/write files under `/Users/alice/my-project` and `/Users/alice
 
 ## IsolationScope — bucketing across users and replicas
 
-Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` concept to decide **who shares state with whom**:
+Mode 1 (shared store), mode 2 (sandbox), and local shared-prefix overrides in mode 3 use the same `IsolationScope` concept to decide **who shares state or an override view with whom**:
 
 | Scope | Meaning | Namespace key | Typical use |
 |-------|---------|--------------|-------------|
