@@ -379,6 +379,13 @@ public class LocalFilesystemSpec {
                 defaultFilesystem, routes, (AbstractSandboxFilesystem) defaultFilesystem);
     }
 
+    /**
+     * Builds the copy-on-write view for one shared prefix. The upper store is rooted at the main
+     * workspace and receives a tenant namespace plus {@code routeSegment}, so every tenant writes
+     * to its own override directory. The lower store is rooted directly at the un-namespaced
+     * shared directory and therefore acts as the common read-only baseline. {@link
+     * OverlayFilesystem} resolves reads from upper to lower while routing all mutations to upper.
+     */
     private static OverlayFilesystem localOverlayRoute(
             Path workspace,
             String routeSegment,
@@ -428,9 +435,23 @@ public class LocalFilesystemSpec {
         }
     }
 
-    /** Normalizes Local listing/search output to CompositeFilesystem's route-local path format. */
+    /**
+     * Copy-on-write overlay for a single shared route.
+     *
+     * <p>The delegate {@link LocalFilesystem} instances report paths relative to their physical
+     * roots. Before those results return to {@link CompositeFilesystem}, this adapter converts
+     * them to route-local absolute paths (for example, {@code /guide.md}). The composite layer can
+     * then prepend the registered prefix exactly once, without exposing tenant namespace segments
+     * or duplicating the shared prefix in {@code ls}, {@code grep}, and {@code glob} results.
+     */
     private static final class LocalRouteOverlay extends OverlayFilesystem {
 
+        /**
+         * Creates a route-local CoW view.
+         *
+         * @param upper tenant-namespaced writable overrides for this shared prefix
+         * @param lower un-namespaced shared baseline used only when upper has no override
+         */
         private LocalRouteOverlay(AbstractFilesystem upper, AbstractFilesystem lower) {
             super(upper, lower);
         }

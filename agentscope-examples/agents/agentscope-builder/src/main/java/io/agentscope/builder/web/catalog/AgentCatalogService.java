@@ -857,9 +857,9 @@ public class AgentCatalogService {
                         builderBootstrap.channelManager()));
         b.toolkit(ucaToolkit);
 
-        // Reuse the same cross-cutting configuration as startup-loaded agents. In particular,
-        // this supplies the filesystem spec (including shared read prefixes), state store, and
-        // middleware for the custom agent's own workspace.
+        // Keep this call after per-agent fields/toolkit setup and before build(). This matches the
+        // startup build order, so global configurators intentionally get the same final say over
+        // the filesystem spec (including shared read prefixes), state store, and middleware.
         builderBootstrap.configureDynamicAgent(b);
 
         HarnessAgent agent = b.build();

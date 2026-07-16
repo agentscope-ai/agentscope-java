@@ -244,6 +244,11 @@ public final class BuilderBootstrap {
      *
      * <p>Dynamic agents must use this method so filesystem, state-store, middleware, and similar
      * application-wide settings remain consistent with agents loaded during {@link Builder#build()}.
+     * Call it after applying the dynamic agent's own fields and toolkit, but before {@link
+     * HarnessAgent.Builder#build()}; this mirrors startup ordering and gives global configurators
+     * the same final override semantics for both startup and dynamically created agents.
+     *
+     * @param builder fully initialized dynamic builder awaiting global configuration and build
      */
     public void configureDynamicAgent(HarnessAgent.Builder builder) {
         Objects.requireNonNull(builder, "builder");
