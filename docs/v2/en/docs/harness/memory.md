@@ -260,6 +260,6 @@ HarnessAgent.builder()
 
 ## Related Pages
 
-- [Workspace](./workspace) — where `MEMORY.md` / `memory/` live in the workspace
-- [Context](./context) — the never-compacted `*.log.jsonl` conversation log
-- [Architecture](./architecture) — how facts in long conversations settle into `MEMORY.md`
+- [Workspace](./workspace.md) — where `MEMORY.md` / `memory/` live in the workspace
+- [Context](../building-blocks/context.md) — the never-compacted `*.log.jsonl` conversation log
+- [Architecture](./architecture.md) — how facts in long conversations settle into `MEMORY.md`
