@@ -462,6 +462,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Ollama Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Chat Completions Web Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
