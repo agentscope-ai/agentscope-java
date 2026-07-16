@@ -49,9 +49,13 @@ public class ShellExecuteTool {
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Working directory (relative to workspace root, optional)")
+                                    "Working directory (relative to workspace root, optional)",
+                            required = false)
                     String workingDirectory,
-            @ToolParam(name = "timeout", description = "Timeout in seconds (default: 30)")
+            @ToolParam(
+                            name = "timeout",
+                            description = "Timeout in seconds (default: 30)",
+                            required = false)
                     int timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
