@@ -15,23 +15,35 @@
  */
 package io.agentscope.harness.agent.filesystem.spec;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepMatch;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.util.SharedPrefixUtils;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Specification for the local filesystem mode (with shell execution).
@@ -51,6 +63,7 @@ public class LocalFilesystemSpec {
     private int executeTimeoutSeconds = LocalFilesystemWithShell.DEFAULT_EXECUTE_TIMEOUT;
     private int maxOutputBytes = 100_000;
     private final Map<String, String> env = new LinkedHashMap<>();
+    private final Set<String> sharedPrefixes = new LinkedHashSet<>();
     private boolean inheritEnv = false;
 
     /**
@@ -195,6 +208,40 @@ public class LocalFilesystemSpec {
     }
 
     /**
+     * Adds a workspace-relative prefix whose files are exposed as a shared, read-only baseline.
+     * Per-user writes still land in the namespaced workspace upper layer and therefore override,
+     * rather than mutate, the shared source files.
+     *
+     * <p>For example, {@code addSharedPrefix("docs/")} exposes {@code <workspace>/docs/} to every
+     * user while a write by user {@code bob} lands under {@code <workspace>/bob/docs/}.
+     *
+     * @param prefix workspace-relative directory prefix
+     * @return this spec
+     */
+    public LocalFilesystemSpec addSharedPrefix(String prefix) {
+        if (prefix != null && !prefix.isBlank()) {
+            sharedPrefixes.add(SharedPrefixUtils.normalizeDirectoryPrefix(prefix));
+        }
+        return this;
+    }
+
+    /** Replaces the configured shared, read-only workspace prefixes. */
+    public LocalFilesystemSpec sharedPrefixes(Collection<String> prefixes) {
+        sharedPrefixes.clear();
+        if (prefixes != null) {
+            for (String prefix : prefixes) {
+                addSharedPrefix(prefix);
+            }
+        }
+        return this;
+    }
+
+    /** Returns the normalized shared prefixes in registration order. */
+    public Set<String> getSharedPrefixes() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(sharedPrefixes));
+    }
+
+    /**
      * Adds an extra host directory the agent is allowed to access by absolute path under
      * {@link LocalFsMode#ROOTED}. {@code null} entries are ignored.
      *
@@ -304,14 +351,176 @@ public class LocalFilesystemSpec {
                         inheritEnv,
                         localNamespaceFactory,
                         effectiveProject);
-        LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        AbstractFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        AbstractFilesystem defaultFilesystem;
         if (projectWritable) {
             LocalFilesystem projectFs =
                     new LocalFilesystem(
                             effectiveProject, mode, pathPolicy, 10, localNamespaceFactory);
-            return new ProjectAwareOverlay(
-                    (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
+            defaultFilesystem =
+                    new ProjectAwareOverlay(
+                            (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
+        } else {
+            defaultFilesystem = OverlayFilesystem.of(upper, lower);
         }
-        return OverlayFilesystem.of(upper, lower);
+
+        if (sharedPrefixes.isEmpty()) {
+            return defaultFilesystem;
+        }
+
+        Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
+        for (String prefix : sharedPrefixes) {
+            String routeSegment = SharedPrefixUtils.routeSegment(prefix);
+            routes.put(
+                    prefix,
+                    localOverlayRoute(workspace, routeSegment, localNamespaceFactory, pathPolicy));
+        }
+        return new LocalCompositeFilesystem(
+                defaultFilesystem, routes, (AbstractSandboxFilesystem) defaultFilesystem);
+    }
+
+    private static OverlayFilesystem localOverlayRoute(
+            Path workspace,
+            String routeSegment,
+            NamespaceFactory localNamespaceFactory,
+            PathPolicy pathPolicy) {
+        NamespaceFactory routeNamespace =
+                rc -> {
+                    List<String> namespace =
+                            localNamespaceFactory != null
+                                    ? new ArrayList<>(localNamespaceFactory.getNamespace(rc))
+                                    : new ArrayList<>();
+                    // USER/SESSION normally provide a namespace. AGENT/GLOBAL (and missing
+                    // runtime identity) do not, so keep their writable overlay in a hidden
+                    // directory rather than writing into the shared source itself.
+                    if (namespace.isEmpty()) {
+                        namespace.add(".shared-overrides");
+                    }
+                    for (String segment : routeSegment.split("/")) {
+                        if (!segment.isBlank()) {
+                            namespace.add(segment);
+                        }
+                    }
+                    return namespace;
+                };
+        LocalFilesystem upper = new RouteLocalFilesystem(workspace, pathPolicy, routeNamespace);
+        Path sharedRoot = workspace.resolve(routeSegment);
+        LocalFilesystem lower =
+                new RouteLocalFilesystem(sharedRoot, PathPolicy.of(List.of(sharedRoot)), null);
+        return new LocalRouteOverlay(upper, lower);
+    }
+
+    /**
+     * CompositeFilesystem supplies route-local paths with a leading slash. Strip it inside the
+     * Local implementation so LocalFilesystem applies the tenant namespace instead of treating
+     * the path as an already-scoped host absolute path.
+     */
+    private static final class RouteLocalFilesystem extends LocalFilesystem {
+
+        private RouteLocalFilesystem(
+                Path root, PathPolicy pathPolicy, NamespaceFactory namespaceFactory) {
+            super(root, LocalFsMode.ROOTED, pathPolicy, 10, namespaceFactory);
+        }
+
+        @Override
+        protected Path resolvePath(RuntimeContext runtimeContext, String path) {
+            return super.resolvePath(runtimeContext, relativeRoutePath(path));
+        }
+    }
+
+    /** Normalizes Local listing/search output to CompositeFilesystem's route-local path format. */
+    private static final class LocalRouteOverlay extends OverlayFilesystem {
+
+        private LocalRouteOverlay(AbstractFilesystem upper, AbstractFilesystem lower) {
+            super(upper, lower);
+        }
+
+        @Override
+        public LsResult ls(RuntimeContext runtimeContext, String path) {
+            LsResult result = super.ls(runtimeContext, path);
+            if (!result.isSuccess() || result.entries() == null) {
+                return result;
+            }
+            return LsResult.success(result.entries().stream().map(this::routeFileInfo).toList());
+        }
+
+        @Override
+        public GrepResult grep(
+                RuntimeContext runtimeContext, String pattern, String path, String glob) {
+            GrepResult result = super.grep(runtimeContext, pattern, path, glob);
+            if (!result.isSuccess() || result.matches() == null) {
+                return result;
+            }
+            return GrepResult.success(
+                    result.matches().stream()
+                            .map(
+                                    match ->
+                                            new GrepMatch(
+                                                    routeAbsolutePath(match.path()),
+                                                    match.line(),
+                                                    match.text()))
+                            .toList());
+        }
+
+        @Override
+        public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
+            GlobResult result = super.glob(runtimeContext, pattern, path);
+            if (!result.isSuccess() || result.matches() == null) {
+                return result;
+            }
+            return GlobResult.success(result.matches().stream().map(this::routeFileInfo).toList());
+        }
+
+        private FileInfo routeFileInfo(FileInfo file) {
+            return new FileInfo(
+                    routeAbsolutePath(file.path()),
+                    file.isDirectory(),
+                    file.size(),
+                    file.modifiedAt());
+        }
+    }
+
+    /** Keeps LocalFilesystemSpec's existing shell capability outside the routed file view. */
+    private static final class LocalCompositeFilesystem extends CompositeFilesystem
+            implements AbstractSandboxFilesystem {
+
+        private final AbstractSandboxFilesystem shell;
+
+        private LocalCompositeFilesystem(
+                AbstractFilesystem defaultFilesystem,
+                Map<String, AbstractFilesystem> routes,
+                AbstractSandboxFilesystem shell) {
+            super(defaultFilesystem, routes);
+            this.shell = shell;
+        }
+
+        @Override
+        public String id() {
+            return shell.id();
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return shell.execute(runtimeContext, command, timeoutSeconds);
+        }
+    }
+
+    private static String relativeRoutePath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String normalized = path.replace('\\', '/');
+        int first = 0;
+        while (first < normalized.length() && normalized.charAt(first) == '/') {
+            first++;
+        }
+        String relative = normalized.substring(first);
+        return relative.isEmpty() ? "." : relative;
+    }
+
+    private static String routeAbsolutePath(String path) {
+        String relative = relativeRoutePath(path);
+        return ".".equals(relative) ? "/" : "/" + relative;
     }
 }

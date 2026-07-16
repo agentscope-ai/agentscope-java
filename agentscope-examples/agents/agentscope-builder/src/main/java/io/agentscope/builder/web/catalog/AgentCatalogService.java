@@ -74,7 +74,6 @@ public class AgentCatalogService {
     private final BuilderBootstrap builderBootstrap;
     private final UserAgentDefinitionStore store;
     private final Model model;
-    private final io.agentscope.builder.web.toolbus.ToolEventBus toolEventBus;
     private final TemplateRegistry templateRegistry;
     private final SharedWorkspacePaths sharedWorkspacePaths;
     private final UserStore userStore;
@@ -99,7 +98,6 @@ public class AgentCatalogService {
             BuilderBootstrap builderBootstrap,
             UserAgentDefinitionStore store,
             Optional<Model> modelOpt,
-            io.agentscope.builder.web.toolbus.ToolEventBus toolEventBus,
             TemplateRegistry templateRegistry,
             SharedWorkspacePaths sharedWorkspacePaths,
             UserStore userStore,
@@ -107,7 +105,6 @@ public class AgentCatalogService {
         this.builderBootstrap = builderBootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
-        this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
         this.sharedWorkspacePaths = sharedWorkspacePaths;
         this.userStore = userStore;
@@ -860,9 +857,10 @@ public class AgentCatalogService {
                         builderBootstrap.channelManager()));
         b.toolkit(ucaToolkit);
 
-        // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
-        b.middleware(
-                new io.agentscope.builder.web.toolbus.ToolNotificationMiddleware(toolEventBus));
+        // Reuse the same cross-cutting configuration as startup-loaded agents. In particular,
+        // this supplies the filesystem spec (including shared read prefixes), state store, and
+        // middleware for the custom agent's own workspace.
+        builderBootstrap.configureDynamicAgent(b);
 
         HarnessAgent agent = b.build();
 

@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -112,6 +113,9 @@ public class BuilderConfig {
 
     @Value("${builder.workspace:${claw.workspace:}}")
     private String workspaceDir;
+
+    @Value("${builder.workspace-store.shared-read-prefixes:}")
+    private List<String> sharedReadPrefixes;
 
     // -----------------------------------------------------------------
     //  Model bean — only created when an api-key is set AND no other
@@ -227,12 +231,17 @@ public class BuilderConfig {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.stateStore(stateStore);
                     if (localStore) {
-                        b.filesystem(new LocalFilesystemSpec().isolationScope(IsolationScope.USER));
+                        LocalFilesystemSpec filesystemSpec =
+                                new LocalFilesystemSpec().isolationScope(IsolationScope.USER);
+                        sharedReadPrefixes.forEach(filesystemSpec::addSharedPrefix);
+                        b.filesystem(filesystemSpec);
                     } else {
-                        b.filesystem(
+                        RemoteFilesystemSpec filesystemSpec =
                                 new RemoteFilesystemSpec(baseStore)
                                         .isolationScope(IsolationScope.USER)
-                                        .addSharedPrefix("activity/"));
+                                        .addSharedPrefix("activity/");
+                        sharedReadPrefixes.forEach(filesystemSpec::addSharedPrefix);
+                        b.filesystem(filesystemSpec);
                     }
                 });
 
