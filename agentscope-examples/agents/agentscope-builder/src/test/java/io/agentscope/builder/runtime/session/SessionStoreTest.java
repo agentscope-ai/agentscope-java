@@ -15,12 +15,16 @@
  */
 package io.agentscope.builder.runtime.session;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,6 +51,143 @@ class SessionStoreTest {
         assertEquals("main", restored.agentId());
         assertEquals(200L, restored.lastActivityMs());
         assertEquals("user-1", restored.userId());
+    }
+
+    @Test
+    void localSessionStoreStartsEmptyForMissingAndBlankFiles() throws IOException {
+        LocalSessionStore missingStore =
+                new LocalSessionStore(tempDir.resolve("missing-sessions.json"));
+
+        missingStore.load();
+
+        assertEquals(0, missingStore.size());
+
+        Path blankFile = tempDir.resolve("blank-sessions.json");
+        Files.writeString(blankFile, "  \n");
+        LocalSessionStore blankStore = new LocalSessionStore(blankFile);
+
+        blankStore.load();
+
+        assertEquals(0, blankStore.size());
+    }
+
+    @Test
+    void localSessionStoreUpsertsAndRemovesEntriesDurably() {
+        Path storeFile = tempDir.resolve("sessions.json");
+        LocalSessionStore store = new LocalSessionStore(storeFile);
+        String firstKey = "agent:main:main:session-1";
+        String secondKey = "agent:main:main:session-2";
+
+        store.save(entry(firstKey, 100L));
+        store.save(entry(firstKey, 300L));
+        store.save(entry(secondKey, 200L));
+
+        assertEquals(2, store.size());
+        assertEquals(300L, store.get(firstKey).orElseThrow().lastActivityMs());
+
+        store.remove(firstKey);
+
+        LocalSessionStore reloaded = new LocalSessionStore(storeFile);
+        reloaded.load();
+        assertEquals(1, reloaded.size());
+        assertTrue(reloaded.get(firstKey).isEmpty());
+        assertTrue(reloaded.get(secondKey).isPresent());
+        assertFalse(Files.exists(storeFile.resolveSibling("sessions.json.tmp")));
+    }
+
+    @Test
+    void localSessionStoreIgnoresUnknownKeysWithoutCreatingAFile() {
+        Path storeFile = tempDir.resolve("sessions.json");
+        LocalSessionStore store = new LocalSessionStore(storeFile);
+
+        store.touch("missing", 200L);
+        store.remove("missing");
+
+        assertEquals(0, store.size());
+        assertFalse(Files.exists(storeFile));
+    }
+
+    @Test
+    void localSessionStoreRecoversAsEmptyFromMalformedJson() throws IOException {
+        Path storeFile = tempDir.resolve("sessions.json");
+        LocalSessionStore store = new LocalSessionStore(storeFile);
+        store.save(entry("agent:main:main:session-1", 100L));
+        Files.writeString(storeFile, "{not-json");
+
+        assertDoesNotThrow(store::load);
+
+        assertEquals(0, store.size());
+        assertTrue(store.listAll().isEmpty());
+    }
+
+    @Test
+    void localSessionStoreIgnoresUnknownJsonFields() throws IOException {
+        Path storeFile = tempDir.resolve("sessions.json");
+        Files.writeString(
+                storeFile,
+                """
+                {
+                  "agent:main:main:session-1": {
+                    "sessionKey": "agent:main:main:session-1",
+                    "agentId": "main",
+                    "sessionId": "session-1",
+                    "label": "label",
+                    "kind": "main",
+                    "spawnDepth": 0,
+                    "createdAtMs": 100,
+                    "lastActivityMs": 200,
+                    "sessionFilePath": "/tmp/session-1.json",
+                    "gateKey": "gate-1",
+                    "userId": "user-1",
+                    "futureField": "ignored"
+                  }
+                }
+                """);
+        LocalSessionStore store = new LocalSessionStore(storeFile);
+
+        store.load();
+
+        SessionEntry restored =
+                store.get("agent:main:main:session-1").orElseThrow().toSessionEntry();
+        assertEquals("main", restored.agentId());
+        assertEquals(200L, restored.lastActivityMs());
+        assertEquals("user-1", restored.userId());
+    }
+
+    @Test
+    void localSessionStoreListAllReturnsAnImmutableSnapshot() {
+        LocalSessionStore store = new LocalSessionStore(tempDir.resolve("sessions.json"));
+        store.save(entry("agent:main:main:session-1", 100L));
+
+        Collection<SessionStore.StoredEntry> snapshot = store.listAll();
+        store.save(entry("agent:main:main:session-2", 200L));
+
+        assertEquals(1, snapshot.size());
+        assertEquals(2, store.size());
+        assertThrows(UnsupportedOperationException.class, snapshot::clear);
+    }
+
+    @Test
+    void storedEntryRoundTripsAllSessionMetadata() {
+        SessionEntry original =
+                new SessionEntry(
+                        "agent:main:subagent:session-2",
+                        "worker",
+                        "session-2",
+                        "worker-label",
+                        SessionKind.SUBAGENT,
+                        "agent:main:main:session-1",
+                        2,
+                        100L,
+                        200L,
+                        "/tmp/session-2.json",
+                        "run-2",
+                        "gate-2",
+                        "user-2");
+
+        SessionEntry restored = SessionStore.StoredEntry.from(original).toSessionEntry();
+
+        assertEquals(original, restored);
     }
 
     @Test
