@@ -21,11 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.util.SharedPrefixUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,11 +42,38 @@ class LocalFilesystemSpecSharedPrefixTest {
     @Test
     void sharedPrefixesAreNormalizedOrderedAndImmutable() {
         LocalFilesystemSpec spec =
-                new LocalFilesystemSpec().addSharedPrefix("docs").addSharedPrefix("knowledge/");
+                new LocalFilesystemSpec()
+                        .addSharedPrefix(null)
+                        .addSharedPrefix(" ")
+                        .addSharedPrefix("old")
+                        .sharedPrefixes(Arrays.asList(" docs\\ ", "", null, "knowledge/", "docs"));
 
         assertEquals(List.of("docs/", "knowledge/"), new ArrayList<>(spec.getSharedPrefixes()));
         assertThrows(
                 UnsupportedOperationException.class, () -> spec.getSharedPrefixes().add("other/"));
+
+        spec.sharedPrefixes(null);
+        assertTrue(spec.getSharedPrefixes().isEmpty());
+    }
+
+    @Test
+    void sharedPrefixNormalizationHandlesSeparatorsAndRejectsUnsafeSegments() {
+        assertEquals(
+                "docs/reference/",
+                SharedPrefixUtils.normalizeDirectoryPrefix(" ///docs\\reference/// "));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SharedPrefixUtils.normalizeDirectoryPrefix("////"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SharedPrefixUtils.normalizeDirectoryPrefix("docs//private"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SharedPrefixUtils.normalizeDirectoryPrefix("./docs"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SharedPrefixUtils.normalizeDirectoryPrefix("docs/../private"));
     }
 
     @Test
@@ -98,5 +130,47 @@ class LocalFilesystemSpecSharedPrefixTest {
         assertEquals(
                 "agent override",
                 Files.readString(workspace.resolve(".shared-overrides/docs/guide.md")));
+    }
+
+    @Test
+    void sharedRouteSupportsListingSearchingAndShellDelegationWithProjectWritable()
+            throws Exception {
+        Path workspace = tempDir.resolve("routed-workspace");
+        Path project = tempDir.resolve("routed-project");
+        Files.createDirectories(workspace.resolve("docs/nested"));
+        Files.createDirectories(project);
+        Files.writeString(workspace.resolve("docs/guide.md"), "shared guide");
+        Files.writeString(workspace.resolve("docs/nested/notes.md"), "shared notes");
+
+        LocalFilesystemSpec spec =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .projectWritable(true)
+                        .addSharedPrefix("docs");
+        AbstractFilesystem fs = spec.toFilesystem(workspace, null);
+        RuntimeContext context = RuntimeContext.empty();
+
+        assertTrue(spec.isProjectWritable());
+
+        LsResult listing = fs.ls(context, "docs");
+        assertTrue(listing.isSuccess());
+        assertEquals(
+                List.of("docs/guide.md", "docs/nested/"),
+                listing.entries().stream().map(file -> file.path()).toList());
+
+        GrepResult grep = fs.grep(context, "shared", "docs", "*.md");
+        assertTrue(grep.isSuccess());
+        assertTrue(grep.matches().stream().anyMatch(match -> "docs/guide.md".equals(match.path())));
+        assertTrue(
+                grep.matches().stream()
+                        .anyMatch(match -> "docs/nested/notes.md".equals(match.path())));
+
+        GlobResult glob = fs.glob(context, "**/*", "docs");
+        assertTrue(glob.isSuccess());
+        assertTrue(glob.matches().stream().anyMatch(file -> "docs/guide.md".equals(file.path())));
+
+        AbstractSandboxFilesystem shell = (AbstractSandboxFilesystem) fs;
+        assertTrue(shell.id().startsWith("local-"));
+        assertEquals(1, shell.execute(context, " ", null).exitCode());
     }
 }
