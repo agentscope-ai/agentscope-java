@@ -67,13 +67,15 @@ public class FilesystemTool {
                             name = "offset",
                             description = "Start line (0-indexed). Default: 0 (from beginning)",
                             required = false)
-                    int offset,
+                    Integer offset,
             @ToolParam(
                             name = "limit",
                             description = "Max lines to return. Default: 0 (all lines)",
                             required = false)
-                    int limit) {
-        ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), offset, limit);
+                    Integer limit) {
+        int off = offset != null ? offset : 0;
+        int lim = limit != null ? limit : 0;
+        ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), off, lim);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }

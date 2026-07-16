@@ -56,7 +56,7 @@ public class ShellExecuteTool {
                             name = "timeout",
                             description = "Timeout in seconds (default: 30)",
                             required = false)
-                    int timeout) {
+                    Integer timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
@@ -67,8 +67,8 @@ public class ShellExecuteTool {
             effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
         }
 
-        ExecuteResponse result =
-                sandbox.execute(runtimeContext, effectiveCommand, timeout > 0 ? timeout : 30);
+        int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
+        ExecuteResponse result = sandbox.execute(runtimeContext, effectiveCommand, timeoutSeconds);
 
         StringBuilder sb = new StringBuilder();
         sb.append("Exit code: ").append(result.exitCode()).append("\n");
