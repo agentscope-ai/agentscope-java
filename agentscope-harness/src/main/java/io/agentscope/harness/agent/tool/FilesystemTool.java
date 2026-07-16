@@ -95,7 +95,12 @@ public class FilesystemTool {
     public String editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
-            @ToolParam(name = "old_string", description = "Text to find") String oldString,
+            @ToolParam(
+                            name = "old_string",
+                            description =
+                                    "Text to find. Must match exactly once unless replace_all is"
+                                            + " true; otherwise the edit fails.")
+                    String oldString,
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
             @ToolParam(
                             name = "replace_all",
@@ -120,7 +125,13 @@ public class FilesystemTool {
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
                     String pattern,
             @ToolParam(name = "path", description = "Directory or file to search") String path,
-            @ToolParam(name = "glob", description = "Optional file glob filter (e.g., *.java)")
+            @ToolParam(
+                            name = "glob",
+                            description =
+                                    "Optional file glob filter matched against the file name only"
+                                            + " (e.g., *.java). Path-based patterns such as"
+                                            + " **/*.java are not supported here; the search"
+                                            + " already recurses into subdirectories.")
                     String glob) {
         GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, norm(path), glob);
         if (!r.isSuccess()) {
@@ -135,7 +146,13 @@ public class FilesystemTool {
                 .collect(Collectors.joining("\n"));
     }
 
-    @Tool(name = "glob_files", readOnly = true, description = "Find files matching a glob pattern.")
+    @Tool(
+            name = "glob_files",
+            readOnly = true,
+            description =
+                    "Find files by name using a glob pattern (e.g., **/*.java). Use this to locate"
+                            + " files by path/name; use grep_files instead to search file"
+                            + " contents.")
     public String globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
