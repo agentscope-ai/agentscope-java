@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 class JsonFileAgentStateStoreTest {
 
     @Test
-    @DisplayName("Should sanitize invalid unicode when saving single state")
+    @DisplayName("Should sanitize invalid Unicode when saving single state")
     void saveSanitizesInvalidUnicode(@TempDir Path tempDir) {
         JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
 
@@ -41,7 +41,7 @@ class JsonFileAgentStateStoreTest {
     }
 
     @Test
-    @DisplayName("Should sanitize invalid unicode when saving list state")
+    @DisplayName("Should sanitize invalid Unicode when saving list state")
     void saveListSanitizesInvalidUnicode(@TempDir Path tempDir) {
         JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
 
@@ -57,5 +57,28 @@ class JsonFileAgentStateStoreTest {
         assertEquals("before \uFFFD after", loaded.get(0).value());
     }
 
+    @Test
+    @DisplayName("Should sanitize invalid Unicode when rewriting list state")
+    void rewriteListSanitizesInvalidUnicode(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+
+        store.save(
+                null,
+                "session1",
+                "memory_messages",
+                List.of(new TestState("ok", 1), new TestState("ok2", 2)));
+
+        // Shrink list to force rewriteEntireList(...)
+        store.save(
+                null,
+                "session1",
+                "memory_messages",
+                List.of(new TestState("before \uD800 after", 1)));
+
+        List<TestState> loaded =
+                store.getList(null, "session1", "memory_messages", TestState.class);
+        assertEquals(1, loaded.size());
+        assertEquals("before \uFFFD after", loaded.get(0).value());
+    }
+
     public record TestState(String value, int count) implements State {}
-}
