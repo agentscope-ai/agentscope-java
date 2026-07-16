@@ -82,3 +82,4 @@ class JsonFileAgentStateStoreTest {
     }
 
     public record TestState(String value, int count) implements State {}
+}
