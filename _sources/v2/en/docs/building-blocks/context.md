@@ -152,7 +152,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem.md).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -291,7 +291,7 @@ Available accessors:
 
 ## Related pages
 
-- [Agent](./agent) — full `ReActAgent` API and builder fields
-- [Context Compaction](../harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
-- [Memory](../harness/memory) — long-term memory, background maintenance
-- [Permissions](./permission-system) — persistence of permission rules
+- [Agent](./agent.md) — full `ReActAgent` API and builder fields
+- [Context Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](../harness/memory.md) — long-term memory, background maintenance
+- [Permissions](./permission-system.md) — persistence of permission rules

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上下文压缩" href="compaction.html"><link rel="prev" title="上下文与 AgentState" href="../building-blocks/context.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上下文压缩" href="compaction.html"><link rel="prev" title="上下文与 AgentState" href="../building-blocks/context.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/architecture.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -941,62 +941,62 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 <co
 <tr class="row-even"><td><p>工作区驱动的人格</p></td>
 <td><p>人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.workspace(path)</span></code></p></td>
-<td><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a></p></td>
+<td><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>状态持久化</p></td>
 <td><p>同 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 跨请求、跨进程、跨副本恢复</p></td>
 <td><p>默认开启；<code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code> 替换实现</p></td>
-<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">上下文与 AgentState</span></a></p></td>
+<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>双层长期记忆</p></td>
 <td><p>长会话里有价值的事实自动沉淀到 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></td>
 <td><p>默认开启；<code class="docutils literal notranslate"><span class="pre">.memory(...)</span></code> 定制 prompt / 触发策略</p></td>
-<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a></p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>对话压缩</p></td>
 <td><p>上下文有界；模型真的溢出时强制重试</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">上下文压缩</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">上下文压缩</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>大工具结果卸载</p></td>
 <td><p>超 80K 字符的结果落盘 + 占位符</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">上下文压缩</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">上下文压缩</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>子 agent 编排</p></td>
 <td><p>委派给子 agent，支持同步或后台，自动反向通知</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.subagent(...)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">workspace/subagents/</span></code></p></td>
-<td><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a></p></td>
+<td><p><a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>可插拔文件系统</p></td>
 <td><p>本机 + shell / 共享存储 / 沙箱，不改代码切换</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.filesystem(...)</span></code></p></td>
-<td><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a></p></td>
+<td><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>沙箱隔离</p></td>
 <td><p>文件与命令隔离，跨调用恢复，多副本部署</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.filesystem(new</span> <span class="pre">DockerFilesystemSpec()...)</span></code></p></td>
-<td><p><a class="reference internal" href="sandbox.html"><span class="doc std std-doc">沙箱</span></a></p></td>
+<td><p><a class="reference internal" href="sandbox.html"><span class="std std-doc">沙箱</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>计划模式</p></td>
 <td><p>只读思考阶段 + HITL 退出</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
-<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">计划模式</span></a></p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">计划模式</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>技能装配</p></td>
 <td><p>来自 Git / Nacos / MySQL / classpath / 工作区</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.skillRepository(...)</span></code></p></td>
-<td><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">技能</span></a></p></td>
+<td><p><a class="reference internal" href="skill.html"><span class="std std-doc">技能</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>MCP 集成与工具白名单</p></td>
 <td><p>声明式 MCP server + 工具粒度允许 / 拒绝</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">workspace/tools.json</span></code></p></td>
-<td><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a></p></td>
+<td><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Channel 路由</p></td>
 <td><p>会话管理、per-session 并发控制、多 agent 路由、流式事件</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agent.channel(...)</span></code> / <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code></p></td>
-<td><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a></p></td>
+<td><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1029,16 +1029,16 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 <co
 <section id="id4">
 <h2>相关文档<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a> — 目录结构、注入到 system prompt 的内容、<code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
-<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">上下文与 AgentState</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>、<code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>、<code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 持久化、多用户隔离</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a> — 两层记忆</p></li>
-<li><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">上下文压缩</span></a> — 摘要压缩、大结果卸载、溢出兜底</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a> — 本机 + shell / 共享存储 / 沙箱</p></li>
-<li><p><a class="reference internal" href="sandbox.html"><span class="doc std std-doc">沙箱</span></a> — 隔离执行、跨调用恢复、分布式</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> — 声明、同步/后台、流式转发</p></li>
-<li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">技能</span></a> — 四层合成、自学习闭环</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">计划模式</span></a> — 只读阶段 + HITL 退出</p></li>
-<li><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a> — 会话管理、多 agent 路由、流式 SSE</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — 目录结构、注入到 system prompt 的内容、<code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>、<code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>、<code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 持久化、多用户隔离</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a> — 两层记忆</p></li>
+<li><p><a class="reference internal" href="compaction.html"><span class="std std-doc">上下文压缩</span></a> — 摘要压缩、大结果卸载、溢出兜底</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 本机 + shell / 共享存储 / 沙箱</p></li>
+<li><p><a class="reference internal" href="sandbox.html"><span class="std std-doc">沙箱</span></a> — 隔离执行、跨调用恢复、分布式</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a> — 声明、同步/后台、流式转发</p></li>
+<li><p><a class="reference internal" href="skill.html"><span class="std std-doc">技能</span></a> — 四层合成、自学习闭环</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">计划模式</span></a> — 只读阶段 + HITL 退出</p></li>
+<li><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a> — 会话管理、多 agent 路由、流式 SSE</p></li>
 </ul>
 </section>
 </section>
@@ -1096,7 +1096,7 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 <co
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

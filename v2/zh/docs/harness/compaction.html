@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工作区（Workspace）" href="workspace.html"><link rel="prev" title="Harness 架构" href="architecture.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工作区（Workspace）" href="workspace.html"><link rel="prev" title="Harness 架构" href="architecture.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/compaction.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -907,7 +907,7 @@
 <h1>上下文压缩<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>本页讲的是<strong>上下文压缩</strong>——<code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 用来把对话控制在模型 token 预算内的几种策略。它建立在<a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">上下文与 AgentState</span></a> 所描述的无状态引擎和 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 持久化基础之上。如果还没有读过那一页,建议先看——压缩操作的对象正是持久化链路保存和恢复的同一份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>。</p>
+<p>本页讲的是<strong>上下文压缩</strong>——<code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 用来把对话控制在模型 token 预算内的几种策略。它建立在<a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a> 所描述的无状态引擎和 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 持久化基础之上。如果还没有读过那一页,建议先看——压缩操作的对象正是持久化链路保存和恢复的同一份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>。</p>
 <p><strong>两条链路如何配合</strong>:压缩在内存里更新 <code class="docutils literal notranslate"><span class="pre">AgentState.contextMutable()</span></code>,状态存储在 call 结束时把更新后的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 整体持久化存储。两条路径独立但按顺序执行——状态存储拿到的永远是压缩后的版本。</p>
 </div>
 <p>LLM 的 token 预算是有限的。一段对话越跑越长,要么主动压缩、要么撞到模型的硬上限报错。<code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 内置了一整套压缩链路,默认是关的,按需 <code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code> 开启。</p>
@@ -958,7 +958,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>默认摘要 prompt 会把内容组织成 <code class="docutils literal notranslate"><span class="pre">SESSION</span> <span class="pre">INTENT</span> <span class="pre">/</span> <span class="pre">SUMMARY</span> <span class="pre">/</span> <span class="pre">ARTIFACTS</span> <span class="pre">/</span> <span class="pre">NEXT</span> <span class="pre">STEPS</span></code> 四个小节,适合工程/编排类 agent。<code class="docutils literal notranslate"><span class="pre">CompactionConfig</span></code> 还支持 <code class="docutils literal notranslate"><span class="pre">.model(...)</span></code> 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(<code class="docutils literal notranslate"><span class="pre">triggerTokens</span></code>、<code class="docutils literal notranslate"><span class="pre">keepTokens</span></code>、<code class="docutils literal notranslate"><span class="pre">flushBeforeCompact</span></code>、<code class="docutils literal notranslate"><span class="pre">offloadBeforeCompact</span></code>、<code class="docutils literal notranslate"><span class="pre">model</span></code>、<code class="docutils literal notranslate"><span class="pre">TruncateArgsConfig</span></code>)与摘要 prompt 模板在<a class="reference internal" href="#./memory#%E5%BC%80%E5%90%AF%E5%8E%8B%E7%BC%A9"><span class="xref myst">记忆</span></a>文档里有详细列表,这里不重复。</p>
+<p>默认摘要 prompt 会把内容组织成 <code class="docutils literal notranslate"><span class="pre">SESSION</span> <span class="pre">INTENT</span> <span class="pre">/</span> <span class="pre">SUMMARY</span> <span class="pre">/</span> <span class="pre">ARTIFACTS</span> <span class="pre">/</span> <span class="pre">NEXT</span> <span class="pre">STEPS</span></code> 四个小节,适合工程/编排类 agent。<code class="docutils literal notranslate"><span class="pre">CompactionConfig</span></code> 还支持 <code class="docutils literal notranslate"><span class="pre">.model(...)</span></code> 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(<code class="docutils literal notranslate"><span class="pre">triggerTokens</span></code>、<code class="docutils literal notranslate"><span class="pre">keepTokens</span></code>、<code class="docutils literal notranslate"><span class="pre">flushBeforeCompact</span></code>、<code class="docutils literal notranslate"><span class="pre">offloadBeforeCompact</span></code>、<code class="docutils literal notranslate"><span class="pre">model</span></code>、<code class="docutils literal notranslate"><span class="pre">TruncateArgsConfig</span></code>)与摘要 prompt 模板在<a class="reference internal" href="memory.html#id3"><span class="std std-ref">记忆</span></a>文档里有详细列表,这里不重复。</p>
 </section>
 <section id="toolresultevictionmiddleware">
 <h3>2. 大工具结果卸载 (<code class="docutils literal notranslate"><span class="pre">ToolResultEvictionMiddleware</span></code>)<a class="headerlink" href="#toolresultevictionmiddleware" title="Link to this heading">¶</a></h3>
@@ -969,7 +969,7 @@
 </pre></div>
 </div>
 <p>默认排除 <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> / <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_*</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code>——这些工具要么自带分页、要么返回值很小。<strong>Shell <code class="docutils literal notranslate"><span class="pre">execute</span></code> 默认不排除</strong>,因为命令输出可能非常大。</p>
-<p>详情见<a class="reference internal" href="#./memory#%E5%A4%A7%E5%B7%A5%E5%85%B7%E7%BB%93%E6%9E%9C%E5%8D%B8%E8%BD%BD"><span class="xref myst">记忆 - 大工具结果卸载</span></a>。</p>
+<p>详情见<a class="reference internal" href="memory.html#id7"><span class="std std-ref">记忆 - 大工具结果卸载</span></a>。</p>
 </section>
 <section id="id2">
 <h3>3. 上下文溢出兜底<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
@@ -996,16 +996,16 @@
 <p><code class="docutils literal notranslate"><span class="pre">CompactionConfig.flushBeforeCompact</span></code>(默认 <code class="docutils literal notranslate"><span class="pre">true</span></code>)决定<strong>摘要发生前是否先把对话前缀里的事实抽取到长期记忆(Memory)中</strong>——这一步由 <code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> + <code class="docutils literal notranslate"><span class="pre">MemoryFlushManager</span></code> 完成,会读 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/MEMORY.md</span></code> 与 <code class="docutils literal notranslate"><span class="pre">memory/*.md</span></code>,把新事实增量写进去。等会儿摘要丢掉前缀消息时,信息不会随之消失——agent 仍可以通过 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 工具回头查。</p>
 <p>类似地,<code class="docutils literal notranslate"><span class="pre">offloadBeforeCompact</span></code>(默认 <code class="docutils literal notranslate"><span class="pre">true</span></code>)在摘要前把<strong>原始消息</strong>整段写到永不压缩的 <code class="docutils literal notranslate"><span class="pre">*.log.jsonl</span></code>,供 <code class="docutils literal notranslate"><span class="pre">session_search</span></code> 检索。</p>
 <blockquote>
-<div><p>Memory 子系统的完整工作机制——双层结构、后台维护任务(归档、合并)、记忆工具——见 <a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a> 文档。压缩与 memory 是一对常常一起用的组件,但有各自独立的开关。</p>
+<div><p>Memory 子系统的完整工作机制——双层结构、后台维护任务(归档、合并)、记忆工具——见 <a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a> 文档。压缩与 memory 是一对常常一起用的组件,但有各自独立的开关。</p>
 </div></blockquote>
 </section>
 <section id="id4">
 <h2>压缩不会触碰的内容<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">ConversationCompactor</span></code> 只处理 <code class="docutils literal notranslate"><span class="pre">AgentState.contextMutable()</span></code> 里的<strong>对话消息列表</strong>。下面这些活在 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 其他字段里,<strong>完全不会被摘要压缩波及</strong>:</p>
 <ul class="simple">
-<li><p><strong>Plan Mode 状态</strong>(<code class="docutils literal notranslate"><span class="pre">AgentState.getPlanModeContext()</span></code>):是否在 plan 阶段、当前计划文件路径。计划文件本身在工作区 <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下,生命周期由 Plan Mode 自己管理。详见 <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>。</p></li>
-<li><p><strong>子 agent 后台任务</strong>(<code class="docutils literal notranslate"><span class="pre">task_id</span></code>、状态、结果):住在 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;parentAgentId&gt;/tasks/&lt;sessionId&gt;.json</span></code> 里,由 <code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code> 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,<strong>不进入对话消息流</strong>,所以摘要也无从压缩。详见 <a class="reference internal" href="#./subagent#%E5%BC%82%E6%AD%A5%E4%BB%BB%E5%8A%A1%E7%9A%84%E5%AD%98%E5%82%A8%E4%BD%8D%E7%BD%AE"><span class="xref myst">子 Agent - 异步任务的存储位置</span></a>。</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 任务清单</strong>(<code class="docutils literal notranslate"><span class="pre">AgentState.getTasksContext()</span></code>):独立字段,跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 一起持久化,但不参与对话压缩。详见 <a class="reference internal" href="#./plan-mode#%E4%B8%8E-todo_write-%E7%9A%84%E5%8D%8F%E4%BD%9C"><span class="xref myst">Plan Mode - 与 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 的协作</span></a>。</p></li>
+<li><p><strong>Plan Mode 状态</strong>(<code class="docutils literal notranslate"><span class="pre">AgentState.getPlanModeContext()</span></code>):是否在 plan 阶段、当前计划文件路径。计划文件本身在工作区 <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下,生命周期由 Plan Mode 自己管理。详见 <a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a>。</p></li>
+<li><p><strong>子 agent 后台任务</strong>(<code class="docutils literal notranslate"><span class="pre">task_id</span></code>、状态、结果):住在 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;parentAgentId&gt;/tasks/&lt;sessionId&gt;.json</span></code> 里,由 <code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code> 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,<strong>不进入对话消息流</strong>,所以摘要也无从压缩。详见 <a class="reference internal" href="subagent.html#id15"><span class="std std-ref">子 Agent - 异步任务的存储位置</span></a>。</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 任务清单</strong>(<code class="docutils literal notranslate"><span class="pre">AgentState.getTasksContext()</span></code>):独立字段,跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 一起持久化,但不参与对话压缩。详见 <a class="reference internal" href="plan-mode.html#todo-write"><span class="std std-ref">Plan Mode - 与 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 的协作</span></a>。</p></li>
 <li><p><strong>权限规则</strong>(<code class="docutils literal notranslate"><span class="pre">getPermissionContext()</span></code>):独立字段,自带持久化。</p></li>
 </ul>
 <p>这些组件各有自己的状态机和恢复机制,压缩通路对它们是透明的——你可以放心开启 <code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code> 而不用担心丢 plan / 丢未完成的后台 task。</p>
@@ -1024,12 +1024,12 @@
 <section id="id5">
 <h2>相关文档<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">上下文与 AgentState</span></a> —— 无状态引擎设计、<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 结构、状态持久化、<code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> —— Context、状态持久化、工作区在一次 call 内如何协作</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a> —— 长期记忆、对话压缩的详细配置、大工具结果卸载、后台维护</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> —— plan 状态的独立持久化与恢复</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> —— 后台任务的存储位置与跨节点恢复</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a> —— <code class="docutils literal notranslate"><span class="pre">userId</span></code> 多租户路径隔离</p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a> —— 无状态引擎设计、<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 结构、状态持久化、<code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> —— Context、状态持久化、工作区在一次 call 内如何协作</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a> —— 长期记忆、对话压缩的详细配置、大工具结果卸载、后台维护</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a> —— plan 状态的独立持久化与恢复</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a> —— 后台任务的存储位置与跨节点恢复</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> —— <code class="docutils literal notranslate"><span class="pre">userId</span></code> 多租户路径隔离</p></li>
 </ul>
 </section>
 </section>
@@ -1087,7 +1087,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

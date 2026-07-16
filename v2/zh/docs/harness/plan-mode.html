@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="技能（Skill）" href="skill.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="技能（Skill）" href="skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/plan-mode.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1056,7 +1056,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 </section>
 <section id="id6">
 <h2>运行期切换权限模式（”危险开关”逃生口）<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
-<p>Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 <a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a>，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的”跳过所有权限确认”开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：</p>
+<p>Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a>，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的”跳过所有权限确认”开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">BYPASS</span><span class="p">);</span><span class="w">    </span><span class="c1">// 全部放开、不再弹确认</span>
@@ -1101,7 +1101,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">todo_write</span></code></strong> —— 在执行阶段维护”当前要做什么”的结构化清单（全量替换，必须恰好一个 <code class="docutils literal notranslate"><span class="pre">in_progress</span></code>）</p></li>
 </ul>
 <p>典型工作流：plan 阶段写完 <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code> → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> → 执行阶段用 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 把 PLAN 拆成 5–8 条 todo → 逐条推进。Agent 每轮推理前能看到 todos 的小提示，帮助保持聚焦。</p>
-<p>⚠ 不要和子 agent 的<strong>后台任务</strong>（<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>）混淆——那是另一回事，详见 <a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a>。</p>
+<p>⚠ 不要和子 agent 的<strong>后台任务</strong>（<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>）混淆——那是另一回事，详见 <a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a>。</p>
 </section>
 <section id="id8">
 <h2>查看任务列表<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
@@ -1138,9 +1138,9 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <section id="id9">
 <h2>相关文档<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 目录的位置</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> ≠ subagent task，不要混淆</p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> — Plan Mode 在 call() 时序中的位置</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 目录的位置</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> ≠ subagent task，不要混淆</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> — Plan Mode 在 call() 时序中的位置</p></li>
 </ul>
 </section>
 </section>
@@ -1198,7 +1198,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

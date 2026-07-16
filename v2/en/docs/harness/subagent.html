@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1126,7 +1126,7 @@ You are a subagent focused on code review.
 <span class="n">chat</span><span class="p">.</span><span class="na">sendToSubagent</span><span class="p">(</span><span class="n">subagentId</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Focus on LLM agents specifically&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>This is useful for “branch-off” scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See <a class="reference internal" href="#./channel#talking-to-exposed-subagents"><span class="xref myst">Channel — Talking to exposed subagents</span></a> for the full Channel-side API.</p>
+<p>This is useful for “branch-off” scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See <a class="reference internal" href="channel.html#talking-to-exposed-subagents"><span class="std std-ref">Channel — Talking to exposed subagents</span></a> for the full Channel-side API.</p>
 <section id="how-to-enable">
 <h3>How to enable<a class="headerlink" href="#how-to-enable" title="Link to this heading">¶</a></h3>
 <p>Use <code class="docutils literal notranslate"><span class="pre">agent.channel(...)</span></code> — the bridge is wired automatically, zero configuration:</p>
@@ -1139,7 +1139,7 @@ You are a subagent focused on code review.
 <span class="n">ChatUiChannel</span><span class="w"> </span><span class="n">chat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">channel</span><span class="p">(</span><span class="n">ChatUiChannel</span><span class="p">.</span><span class="na">create</span><span class="p">());</span>
 </pre></div>
 </div>
-<p>Without a Channel binding, <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code> in <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code>, see <a class="reference internal" href="#./channel#thread-exposure-with-gatewaybootstrap"><span class="xref myst">Channel — Thread exposure with GatewayBootstrap</span></a>.</p>
+<p>Without a Channel binding, <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code> in <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code>, see <a class="reference internal" href="channel.html#thread-exposure-with-gatewaybootstrap"><span class="std std-ref">Channel — Thread exposure with GatewayBootstrap</span></a>.</p>
 </section>
 <section id="controlling-exposure-from-code">
 <h3>Controlling exposure from code<a class="headerlink" href="#controlling-exposure-from-code" title="Link to this heading">¶</a></h3>
@@ -1354,10 +1354,10 @@ description: Investigates topics and returns a synthesized report.
 <section id="related-pages">
 <h2>Related pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a> — <code class="docutils literal notranslate"><span class="pre">expose_to_user</span></code>, <code class="docutils literal notranslate"><span class="pre">SendOptions</span></code>, direct user-to-subagent messaging</p></li>
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> and <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> layout</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> — restrictions on subagents during the plan phase</p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">Architecture</span></a> — how parent and child cooperate</p></li>
+<li><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a> — <code class="docutils literal notranslate"><span class="pre">expose_to_user</span></code>, <code class="docutils literal notranslate"><span class="pre">SendOptions</span></code>, direct user-to-subagent messaging</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> and <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> layout</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a> — restrictions on subagents during the plan phase</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a> — how parent and child cooperate</p></li>
 <li><p><a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> hierarchy (recommended) and the deprecated <code class="docutils literal notranslate"><span class="pre">Event</span></code> / <code class="docutils literal notranslate"><span class="pre">EventType</span></code> / <code class="docutils literal notranslate"><span class="pre">StreamOptions</span></code> types</p></li>
 <li><p><a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide B.4</span></a> — <code class="docutils literal notranslate"><span class="pre">stream()</span></code> → <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> deprecation timeline</p></li>
 </ul>
@@ -1417,7 +1417,7 @@ description: Investigates topics and returns a synthesized report.
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

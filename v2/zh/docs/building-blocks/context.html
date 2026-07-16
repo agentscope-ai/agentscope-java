@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-23T01:24:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness 架构" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness 架构" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/context.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1092,7 +1092,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 和 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 解决的不是同一件事:</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">sessionId</span></code></strong> —— 决定哪段对话是哪段,独立的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 快照。</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">userId</span></code></strong> —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见<a class="reference internal" href="../harness/filesystem.html"><span class="doc std std-doc">文件系统</span></a>。</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">userId</span></code></strong> —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见<a class="reference internal" href="../harness/filesystem.html"><span class="std std-doc">文件系统</span></a>。</p></li>
 </ul>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;alice-1&quot;</span><span class="p">).</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
@@ -1262,10 +1262,10 @@
 <section id="id8">
 <h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="agent.html"><span class="doc std std-doc">智能体（Agent）</span></a> —— <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 完整接口与 Builder 参数</p></li>
-<li><p><a class="reference internal" href="../harness/compaction.html"><span class="doc std std-doc">上下文压缩</span></a> —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)</p></li>
-<li><p><a class="reference internal" href="../harness/memory.html"><span class="doc std std-doc">记忆</span></a> —— 长期记忆与后台维护</p></li>
-<li><p><a class="reference internal" href="permission-system.html"><span class="doc std std-doc">权限系统</span></a> —— 权限规则的持久化</p></li>
+<li><p><a class="reference internal" href="agent.html"><span class="std std-doc">智能体（Agent）</span></a> —— <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 完整接口与 Builder 参数</p></li>
+<li><p><a class="reference internal" href="../harness/compaction.html"><span class="std std-doc">上下文压缩</span></a> —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)</p></li>
+<li><p><a class="reference internal" href="../harness/memory.html"><span class="std std-doc">记忆</span></a> —— 长期记忆与后台维护</p></li>
+<li><p><a class="reference internal" href="permission-system.html"><span class="std std-doc">权限系统</span></a> —— 权限规则的持久化</p></li>
 </ul>
 </section>
 </section>
@@ -1323,7 +1323,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-23</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

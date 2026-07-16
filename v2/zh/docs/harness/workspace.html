@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -982,7 +982,7 @@
 </div>
 <p>混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。</p>
 <blockquote>
-<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 不是工作区内容——别把两者混为一谈。</strong> agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的<em>元数据</em>，例如当前激活的计划文件）会被序列化成一份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 文档，存进<strong>独立子系统 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的<em>文件产物</em>（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 保存易失的<em>运行期上下文 + 工作区元数据</em>。两个存储、两套生命周期——详见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>。</p>
+<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 不是工作区内容——别把两者混为一谈。</strong> agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的<em>元数据</em>，例如当前激活的计划文件）会被序列化成一份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 文档，存进<strong>独立子系统 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的<em>文件产物</em>（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 保存易失的<em>运行期上下文 + 工作区元数据</em>。两个存储、两套生命周期——详见 <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a>。</p>
 </div></blockquote>
 <p><strong>3. 原生多租户隔离。</strong> 工作区数据（记忆、会话、任务、技能、沙箱状态）由单一的 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 分桶——无需应用层手写任何分区逻辑。Scope 决定谁和谁共享一个桶：</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1013,12 +1013,12 @@
 </tbody>
 </table>
 </div>
-<p>选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 <a class="reference internal" href="#./filesystem#isolationscope--%E5%A4%9A%E7%94%A8%E6%88%B7%E4%B8%8E%E5%A4%9A%E5%89%AF%E6%9C%AC%E6%80%8E%E4%B9%88%E5%88%86%E6%A1%B6"><span class="xref myst">filesystem — IsolationScope</span></a>。</p>
+<p>选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 <a class="reference internal" href="filesystem.html#isolationscope"><span class="std std-ref">filesystem — IsolationScope</span></a>。</p>
 <blockquote>
 <div><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 管的是上面<strong>工作区 / filesystem</strong> 的分桶。<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 有自己正交的寻址方式：无论哪种 scope，它始终按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 存进 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>。</p>
 </div></blockquote>
 <p>单个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例可服务数千并发用户，用户间数据零泄漏。</p>
-<p><strong>4. 工作区与 filesystem 解耦。</strong> 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 能”代码不动、部署形态切换”的根因。详细见 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 的三种模式。</p>
+<p><strong>4. 工作区与 filesystem 解耦。</strong> 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 能”代码不动、部署形态切换”的根因。详细见 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a> 的三种模式。</p>
 </section>
 <section id="id2">
 <h2>工作区目录布局<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
@@ -1046,7 +1046,7 @@
 </pre></div>
 </div>
 <blockquote>
-<div><p><strong>这棵树是<em>逻辑</em>布局，不是固定的磁盘路径。</strong> 它画成 <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>，但那只是默认的本机落点。同一份布局可以物理上落在<strong>本机磁盘</strong>、落在<strong>远端分布式存储</strong>（Redis / JDBC / OSS，通过 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>），或<strong>映射进沙箱容器</strong>（<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>）——下面这些相对路径在三种模式下完全一致，变的只是后端存储，你的 agent 代码不用动。用 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 选后端；本文其余内容都是按这套逻辑布局来写的。</p>
+<div><p><strong>这棵树是<em>逻辑</em>布局，不是固定的磁盘路径。</strong> 它画成 <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>，但那只是默认的本机落点。同一份布局可以物理上落在<strong>本机磁盘</strong>、落在<strong>远端分布式存储</strong>（Redis / JDBC / OSS，通过 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>），或<strong>映射进沙箱容器</strong>（<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>）——下面这些相对路径在三种模式下完全一致，变的只是后端存储，你的 agent 代码不用动。用 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a> 选后端；本文其余内容都是按这套逻辑布局来写的。</p>
 </div></blockquote>
 <p><strong>唯一你真正需要写的是 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></strong>（不写也能跑，只是少一段人格注入）。其他目录在你启用对应能力时自动出现：</p>
 <ul class="simple">
@@ -1115,7 +1115,7 @@
 </section>
 <section id="id3">
 <h2>工作区内容如何被加载<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<p>因为工作区是逻辑布局（见上方提示框），”加载”从不假设它是一个普通本机目录——每次读取都经过配置的 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的<a class="reference internal" href="#filesystem-first">两层读</a>正是把这种”与后端无关”落到实处的机制；各模式如何在物理上解析路径，见 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a>。</p>
+<p>因为工作区是逻辑布局（见上方提示框），”加载”从不假设它是一个普通本机目录——每次读取都经过配置的 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的<a class="reference internal" href="#filesystem-first">两层读</a>正是把这种”与后端无关”落到实处的机制；各模式如何在物理上解析路径，见 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a>。</p>
 <section id="system-prompt">
 <h3>一次推理的 system prompt 拼装<a class="headerlink" href="#system-prompt" title="Link to this heading">¶</a></h3>
 <p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 进入 reasoning 阶段时，<code class="docutils literal notranslate"><span class="pre">WorkspaceContextMiddleware</span></code>（位于 <code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.middleware</span></code>）会按下表把工作区文件拼成一段文本，<strong>追加到</strong> builder 上配置的 <code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> 之后形成最终 system 消息：</p>
@@ -1198,7 +1198,7 @@
         └── researcher.md             ← 只对 alice 生效
 </pre></div>
 </div>
-<p>调用时只要 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>，框架就会先看 <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code>，没有再退到 <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>。下层独有的 skill 仍然可见，只在重名时被上层挡住。完整优先级表参考 <a class="reference internal" href="#./skill#%E5%90%8C%E5%90%8D%E5%86%B2%E7%AA%81%E8%B0%81%E8%AF%B4%E4%BA%86%E7%AE%97"><span class="xref myst">技能 — 同名冲突谁说了算</span></a>。</p>
+<p>调用时只要 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>，框架就会先看 <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code>，没有再退到 <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>。下层独有的 skill 仍然可见，只在重名时被上层挡住。完整优先级表参考 <a class="reference internal" href="skill.html#id7"><span class="std std-ref">技能 — 同名冲突谁说了算</span></a>。</p>
 <section id="agent">
 <h4>同一套 agent 逻辑，按用户定制<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h4>
 <p>这套覆盖机制正是让<strong>单个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例对每个租户表现得像一个不同的 agent</strong> 的根本——不用 fork 代码、不用多套部署。你只交付一份二进制、一份 agent 定义；每个用户在共享底座之上拿到属于自己的那一层：</p>
@@ -1239,7 +1239,7 @@
 </section>
 <section id="filesystem">
 <h3>三种 filesystem 模式下的加载行为<a class="headerlink" href="#filesystem" title="Link to this heading">¶</a></h3>
-<p>工作区只是”逻辑布局”，物理落点由 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 选择。同一份目录在不同模式下被加载的方式不一样，这里分别举例。</p>
+<p>工作区只是”逻辑布局”，物理落点由 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a> 选择。同一份目录在不同模式下被加载的方式不一样，这里分别举例。</p>
 <p><strong>模式 1 · 共享存储（<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>）—— 模板 + 远端覆盖</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
@@ -1253,7 +1253,7 @@
 </div>
 <ul class="simple">
 <li><p><strong>如何加载</strong>：每次推理时，<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">tools.json</span></code> 会被框架以”远端为上层、本机模板为下层”的 overlay 读出来。本地磁盘上的 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/AGENTS.md</span></code> 是<strong>只读模板</strong>——是初始或多副本同步的种子；远端 KV 里如果存在该用户的同名 key，就以远端为准。</p></li>
-<li><p><strong>路由规则</strong>：<code class="docutils literal notranslate"><span class="pre">memory/</span></code> / <code class="docutils literal notranslate"><span class="pre">skills/</span></code> / <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/sessions/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> 都自动按 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 进命名空间（默认 USER，每个 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 一个命名空间；详见 <a class="reference internal" href="#./filesystem#isolationscope--%E5%A4%9A%E7%94%A8%E6%88%B7%E4%B8%8E%E5%A4%9A%E5%89%AF%E6%9C%AC%E6%80%8E%E4%B9%88%E5%88%86%E6%A1%B6"><span class="xref myst">filesystem — IsolationScope</span></a>）。</p></li>
+<li><p><strong>路由规则</strong>：<code class="docutils literal notranslate"><span class="pre">memory/</span></code> / <code class="docutils literal notranslate"><span class="pre">skills/</span></code> / <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/sessions/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> 都自动按 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 进命名空间（默认 USER，每个 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 一个命名空间；详见 <a class="reference internal" href="filesystem.html#isolationscope"><span class="std std-ref">filesystem — IsolationScope</span></a>）。</p></li>
 <li><p><strong>最佳实践</strong>：把团队约定的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / 共享 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 用 git 同步到所有副本的本地磁盘作为模板；运行时产物（<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>、<code class="docutils literal notranslate"><span class="pre">memory/</span></code>、<code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/...</span></code>）让 KV 自己长。</p></li>
 </ul>
 <p><strong>模式 2 · 沙箱（<code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code> / K8s / E2B / AgentRun）—— Projection + Hydrate</strong></p>
@@ -1328,7 +1328,7 @@
 <blockquote>
 <div><p>默认的 <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> 仅适合单机。生产多副本必须换成分布式后端（<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> ……）。如果你已经在用 <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> 但没换成分布式状态存储，<code class="docutils literal notranslate"><span class="pre">build()</span></code> 会直接抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>—— 强制提醒你别让运行时状态成为单点。</p>
 </div></blockquote>
-<p>完整细节（恢复链路、跨节点接续、<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 寻址）见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>。</p>
+<p>完整细节（恢复链路、跨节点接续、<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 寻址）见 <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a>。</p>
 </section>
 <section id="id7">
 <h3>Memory（长期记忆）<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
@@ -1348,7 +1348,7 @@
 <p>读取路径：</p>
 <ul class="simple">
 <li><p>框架自动读 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>（两层读，filesystem 优先）；</p></li>
-<li><p>agent 可主动调 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 找老内容（详见 <a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a>）。</p></li>
+<li><p>agent 可主动调 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 找老内容（详见 <a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a>）。</p></li>
 </ul>
 </section>
 <section id="id8">
@@ -1402,31 +1402,31 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
 <td><p>压缩前 <code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> 从对话前缀抽取事实；后台节流任务合并去重写回 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>，每轮重新注入</p></td>
-<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a></p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>自学习技能</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/_drafts/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/.archive/</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enableSkillManageTool(...)</span></code></p></td>
 <td><p>agent 调 <code class="docutils literal notranslate"><span class="pre">propose_skill</span></code> 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天）</p></td>
-<td><p><a class="reference internal" href="#./skill#%E8%87%AA%E5%AD%A6%E4%B9%A0%E9%97%AD%E7%8E%AF%E5%8F%AF%E9%80%89"><span class="xref myst">技能 — 自学习闭环</span></a></p></td>
+<td><p><a class="reference internal" href="skill.html#id8"><span class="std std-ref">技能 — 自学习闭环</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p><strong>计划文件</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">plans/PLAN.md</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
 <td><p>只读规划阶段用 <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦</p></td>
-<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a></p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>工具结果落盘</strong></p></td>
 <td><p>工作区下的 eviction 目录</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
 <td><p>单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + <code class="docutils literal notranslate"><span class="pre">read_file</span></code> 指针</p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">上下文压缩</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">上下文压缩</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p><strong>会话日志</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>（工作区）</p></td>
 <td><p>默认开启</p></td>
 <td><p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 追加到永不压缩的 JSONL 日志；<code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> 查它</p></td>
-<td><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a></p></td>
+<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1451,7 +1451,7 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> —— 工作区共用</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> —— 用户隔离（覆盖以上所有）</p></li>
 </ol>
-<p>下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 <code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> 重新合成 → 在 system prompt 里渲染成 <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> 块（只列 name + description），agent 看到觉得相关才会 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 拉详情。完整工作机制见 <a class="reference internal" href="skill.html"><span class="doc std std-doc">技能</span></a>。</p>
+<p>下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 <code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> 重新合成 → 在 system prompt 里渲染成 <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> 块（只列 name + description），agent 看到觉得相关才会 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 拉详情。完整工作机制见 <a class="reference internal" href="skill.html"><span class="std std-doc">技能</span></a>。</p>
 </section>
 <section id="subagents">
 <h3><code class="docutils literal notranslate"><span class="pre">subagents/</span></code><a class="headerlink" href="#subagents" title="Link to this heading">¶</a></h3>
@@ -1468,7 +1468,7 @@ model: qwen3-max         # 可选；默认继承父
 </pre></div>
 </div>
 <p>加载：<code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code> 在构建期<strong>非递归</strong>地扫 <code class="docutils literal notranslate"><span class="pre">workspace/subagents/*.md</span></code>，再合并你通过 <code class="docutils literal notranslate"><span class="pre">.subagent(SubagentDeclaration...)</span></code> 编程注册的声明。主 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span> <span class="pre">agent_id=&quot;reviewer&quot;</span> <span class="pre">task=&quot;...&quot;</span></code> 调用。
-完整细节（同步 / 后台、远程子 agent、流式转发、任务存储）见 <a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a>。</p>
+完整细节（同步 / 后台、远程子 agent、流式转发、任务存储）见 <a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a>。</p>
 </section>
 <section id="tools-json">
 <h3><code class="docutils literal notranslate"><span class="pre">tools.json</span></code><a class="headerlink" href="#tools-json" title="Link to this heading">¶</a></h3>
@@ -1510,7 +1510,7 @@ model: qwen3-max         # 可选；默认继承父
 └── PLAN.md           ← plan_write 写入的当前计划
 </pre></div>
 </div>
-<p>注意：<code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code>（是否处于 plan 阶段、当前计划文件路径）跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 走，是<strong>运行时状态</strong>，通过 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 持久化（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，在工作区之外）。<code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下只是 markdown 内容本身。详见 <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>。</p>
+<p>注意：<code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code>（是否处于 plan 阶段、当前计划文件路径）跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 走，是<strong>运行时状态</strong>，通过 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 持久化（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，在工作区之外）。<code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下只是 markdown 内容本身。详见 <a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a>。</p>
 </section>
 <section id="agents-agentid">
 <h3><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code><a class="headerlink" href="#agents-agentid" title="Link to this heading">¶</a></h3>
@@ -1526,7 +1526,7 @@ model: qwen3-max         # 可选；默认继承父
 <blockquote>
 <div><p>序列化的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（<code class="docutils literal notranslate"><span class="pre">agent_state</span></code>）默认<strong>不</strong>在工作区里——它存在配置的 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>）。工作区里只保留上面的对话日志与任务记录。</p>
 </div></blockquote>
-<p>跨节点恢复 / 多副本部署时这些数据必须共享（要么走 <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>，要么走沙箱+分布式状态）。详见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> 与 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a>。</p>
+<p>跨节点恢复 / 多副本部署时这些数据必须共享（要么走 <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>，要么走沙箱+分布式状态）。详见 <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a> 与 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a>。</p>
 </section>
 <section id="knowledge">
 <h3><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code><a class="headerlink" href="#knowledge" title="Link to this heading">¶</a></h3>
@@ -1553,13 +1553,13 @@ model: qwen3-max         # 可选；默认继承父
 <section id="id12">
 <h2>相关文档<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> — system prompt 是怎么拼出来的，能力之间如何协作</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a> — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、<code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>、多用户隔离</p></li>
-<li><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 的持久化、跨节点恢复</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a> — <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> 的生成与维护、压缩、卸载</p></li>
-<li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">技能</span></a> — 四层合成、自学习闭环、<code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> 块</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 声明文件、同步/后台、流式转发</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 计划文件、只读阶段、HITL 退出</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> — system prompt 是怎么拼出来的，能力之间如何协作</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、<code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>、多用户隔离</p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 的持久化、跨节点恢复</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a> — <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> 的生成与维护、压缩、卸载</p></li>
+<li><p><a class="reference internal" href="skill.html"><span class="std std-doc">技能</span></a> — 四层合成、自学习闭环、<code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> 块</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 声明文件、同步/后台、流式转发</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 计划文件、只读阶段、HITL 退出</p></li>
 </ul>
 </section>
 </section>
@@ -1617,7 +1617,7 @@ model: qwen3-max         # 可选；默认继承父
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context Compaction" href="compaction.html"><link rel="prev" title="Context &amp; AgentState" href="../building-blocks/context.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context Compaction" href="compaction.html"><link rel="prev" title="Context &amp; AgentState" href="../building-blocks/context.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/architecture.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -941,62 +941,62 @@ Harness wires its built-in middleware in a fixed order at build time. Anything y
 <tr class="row-even"><td><p>Workspace-driven persona</p></td>
 <td><p>Persona, knowledge, subagent specs, skills, MCP allowlist all live as files</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.workspace(path)</span></code></p></td>
-<td><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a></p></td>
+<td><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>State persistence</p></td>
 <td><p>Same <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> resumes across requests, processes, replicas</p></td>
 <td><p>on by default; override with <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code></p></td>
-<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">Context &amp; AgentState</span></a></p></td>
+<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context &amp; AgentState</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>Two-layer long-term memory</p></td>
 <td><p>Facts in long conversations sediment into <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></td>
 <td><p>on by default; <code class="docutils literal notranslate"><span class="pre">.memory(...)</span></code> customizes prompts / trigger policy</p></td>
-<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a></p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Conversation compaction</p></td>
 <td><p>History bounded; force-retry on real overflow</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">Compaction</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">Compaction</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>Large tool-result offloading</p></td>
 <td><p>&gt;80K-char results moved to disk + placeholder</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">Compaction</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">Compaction</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Subagent orchestration</p></td>
 <td><p>Delegate to children, sync or background, with auto push-back</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.subagent(...)</span></code> or drop spec in <code class="docutils literal notranslate"><span class="pre">workspace/subagents/</span></code></p></td>
-<td><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a></p></td>
+<td><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>Pluggable filesystem</p></td>
 <td><p>Local + shell / shared store / sandbox without code changes</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.filesystem(...)</span></code></p></td>
-<td><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a></p></td>
+<td><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Sandbox isolation</p></td>
 <td><p>Files and commands isolated; cross-call recovery; multi-replica</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.filesystem(new</span> <span class="pre">DockerFilesystemSpec()...)</span></code></p></td>
-<td><p><a class="reference internal" href="sandbox.html"><span class="doc std std-doc">Sandbox</span></a></p></td>
+<td><p><a class="reference internal" href="sandbox.html"><span class="std std-doc">Sandbox</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>Plan Mode</p></td>
 <td><p>Read-only think-first phase with HITL exit</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
-<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a></p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Skill composition</p></td>
 <td><p>Skills from Git / Nacos / MySQL / classpath / workspace</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.skillRepository(...)</span></code></p></td>
-<td><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">Skill</span></a></p></td>
+<td><p><a class="reference internal" href="skill.html"><span class="std std-doc">Skill</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p>MCP integration &amp; tool allowlist</p></td>
 <td><p>Declarative MCP servers + allow/deny per tool</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">workspace/tools.json</span></code></p></td>
-<td><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a></p></td>
+<td><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p>Channel routing</p></td>
 <td><p>Session management, per-session concurrency, multi-agent routing, streaming events</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agent.channel(...)</span></code> / <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code></p></td>
-<td><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a></p></td>
+<td><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1029,16 +1029,16 @@ Harness wires its built-in middleware in a fixed order at build time. Anything y
 <section id="related-pages">
 <h2>Related pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a> — directory layout, what gets injected into the system prompt, <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
-<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc">Context &amp; AgentState</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>, <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>, <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> persistence, multi-user isolation</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a> — two-layer memory</p></li>
-<li><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">Compaction</span></a> — summary compaction, large-result offloading, overflow recovery</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> — local + shell / shared store / sandbox</p></li>
-<li><p><a class="reference internal" href="sandbox.html"><span class="doc std std-doc">Sandbox</span></a> — isolated execution, cross-call recovery, distributed</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a> — declarations, sync/background, streaming forwarding</p></li>
-<li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">Skill</span></a> — four-layer composition, self-learning loop</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> — read-only phase + HITL exit</p></li>
-<li><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a> — session management, multi-agent routing, streaming SSE</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a> — directory layout, what gets injected into the system prompt, <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context &amp; AgentState</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>, <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>, <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> persistence, multi-user isolation</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> — two-layer memory</p></li>
+<li><p><a class="reference internal" href="compaction.html"><span class="std std-doc">Compaction</span></a> — summary compaction, large-result offloading, overflow recovery</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> — local + shell / shared store / sandbox</p></li>
+<li><p><a class="reference internal" href="sandbox.html"><span class="std std-doc">Sandbox</span></a> — isolated execution, cross-call recovery, distributed</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a> — declarations, sync/background, streaming forwarding</p></li>
+<li><p><a class="reference internal" href="skill.html"><span class="std std-doc">Skill</span></a> — four-layer composition, self-learning loop</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a> — read-only phase + HITL exit</p></li>
+<li><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a> — session management, multi-agent routing, streaming SSE</p></li>
 </ul>
 </section>
 </section>
@@ -1096,7 +1096,7 @@ Harness wires its built-in middleware in a fixed order at build time. Anything y
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

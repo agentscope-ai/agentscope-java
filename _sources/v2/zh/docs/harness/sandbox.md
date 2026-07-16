@@ -3,7 +3,7 @@ title: "沙箱（Sandbox）"
 description: "隔离执行 + 跨调用恢复 + 多副本部署"
 ---
 
-> 三种文件系统模式的对比见 [文件系统](./filesystem)。本文专门讲沙箱模式怎么用。
+> 三种文件系统模式的对比见 [文件系统](./filesystem.md)。本文专门讲沙箱模式怎么用。
 
 ## 沙箱解决什么
 
@@ -201,6 +201,6 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 
 ## 相关文档
 
-- [文件系统](./filesystem) — 三种声明式模式对比
-- [工作区](./workspace) — `workspace/` 下哪些文件会同步进沙箱
-- [架构](./architecture) — 沙箱 acquire / release 在 call() 时序中的位置
+- [文件系统](./filesystem.md) — 三种声明式模式对比
+- [工作区](./workspace.md) — `workspace/` 下哪些文件会同步进沙箱
+- [架构](./architecture.md) — 沙箱 acquire / release 在 call() 时序中的位置

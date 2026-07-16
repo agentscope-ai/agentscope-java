@@ -3566,7 +3566,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem.md).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -3705,10 +3705,10 @@ Available accessors:
 
 ## Related pages
 
-- [Agent](./agent) — full `ReActAgent` API and builder fields
-- [Context Compaction](../harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
-- [Memory](../harness/memory) — long-term memory, background maintenance
-- [Permissions](./permission-system) — persistence of permission rules
+- [Agent](./agent.md) — full `ReActAgent` API and builder fields
+- [Context Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](../harness/memory.md) — long-term memory, background maintenance
+- [Permissions](./permission-system.md) — persistence of permission rules
 
 ---
 
@@ -3745,18 +3745,18 @@ Each capability answers one problem; opt in on the builder.
 
 | Capability | What it solves | Builder hook | Detail |
 |---|---|---|---|
-| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace) |
-| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](../building-blocks/context) |
-| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory) |
-| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](./compaction) |
-| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](./compaction) |
-| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent) |
-| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](./filesystem) |
-| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](./sandbox) |
-| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](./plan-mode) |
-| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](./skill) |
-| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](./workspace) |
-| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel) |
+| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace.md) |
+| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](../building-blocks/context.md) |
+| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory.md) |
+| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](./compaction.md) |
+| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](./compaction.md) |
+| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent.md) |
+| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](./filesystem.md) |
+| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](./sandbox.md) |
+| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](./plan-mode.md) |
+| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](./skill.md) |
+| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](./workspace.md) |
+| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel.md) |
 
 ## How state flows
 
@@ -3782,16 +3782,16 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Related pages
 
-- [Workspace](./workspace) — directory layout, what gets injected into the system prompt, `tools.json`
-- [Context & AgentState](../building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
-- [Memory](./memory) — two-layer memory
-- [Compaction](./compaction) — summary compaction, large-result offloading, overflow recovery
-- [Filesystem](./filesystem) — local + shell / shared store / sandbox
-- [Sandbox](./sandbox) — isolated execution, cross-call recovery, distributed
-- [Subagent](./subagent) — declarations, sync/background, streaming forwarding
-- [Skill](./skill) — four-layer composition, self-learning loop
-- [Plan Mode](./plan-mode) — read-only phase + HITL exit
-- [Channel](./channel) — session management, multi-agent routing, streaming SSE
+- [Workspace](./workspace.md) — directory layout, what gets injected into the system prompt, `tools.json`
+- [Context & AgentState](../building-blocks/context.md) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
+- [Memory](./memory.md) — two-layer memory
+- [Compaction](./compaction.md) — summary compaction, large-result offloading, overflow recovery
+- [Filesystem](./filesystem.md) — local + shell / shared store / sandbox
+- [Sandbox](./sandbox.md) — isolated execution, cross-call recovery, distributed
+- [Subagent](./subagent.md) — declarations, sync/background, streaming forwarding
+- [Skill](./skill.md) — four-layer composition, self-learning loop
+- [Plan Mode](./plan-mode.md) — read-only phase + HITL exit
+- [Channel](./channel.md) — session management, multi-agent routing, streaming SSE
 
 ---
 
@@ -3800,7 +3800,7 @@ Source: https://java.agentscope.io/_sources/v2/en/docs/harness/compaction.md
 # Context Compaction
 
 :::{note}
-This page covers **context compaction** — the strategies `HarnessAgent` uses to keep the conversation within the model's token budget. It builds on the stateless-engine design and `AgentState` persistence described in [Context & AgentState](../building-blocks/context). Read that page first if you haven't — compaction operates on the same `AgentState` that the persistence layer saves and restores.
+This page covers **context compaction** — the strategies `HarnessAgent` uses to keep the conversation within the model's token budget. It builds on the stateless-engine design and `AgentState` persistence described in [Context & AgentState](../building-blocks/context.md). Read that page first if you haven't — compaction operates on the same `AgentState` that the persistence layer saves and restores.
 
 **How they work together**: compaction mutates `AgentState.contextMutable()` in memory; the state store writes the updated `AgentState` at end of call. The two paths are independent but always run in that order — the state store sees the post-compaction state.
 :::
@@ -3831,7 +3831,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](./memory#enable-compaction); not duplicated here.
+The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](./memory.md#enable-compaction); not duplicated here.
 
 ### 2. Large tool-result eviction (`ToolResultEvictionMiddleware`)
 
@@ -3845,7 +3845,7 @@ HarnessAgent.builder()
 
 `read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
 
-Details in [Memory — Large tool-result offloading](./memory#large-tool-result-offloading).
+Details in [Memory — Large tool-result offloading](./memory.md#large-tool-result-offloading).
 
 ### 3. Overflow safety net
 
@@ -3875,15 +3875,15 @@ In many workloads this single step delays the summarization trigger considerably
 
 Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them.
 
-> The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory). Compaction and memory are commonly used together but have independent switches.
+> The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory.md). Compaction and memory are commonly used together but have independent switches.
 
 ## What compaction does *not* touch
 
 `ConversationCompactor` only operates on the **conversation message list** in `AgentState.contextMutable()`. The following live in other `AgentState` fields and **stay untouched by summarization**:
 
-- **Plan Mode state** (`AgentState.getPlanModeContext()`): whether plan mode is active, current plan file path. The plan file itself lives under `plans/` in the workspace and is managed by Plan Mode's own lifecycle. See [Plan Mode](./plan-mode).
-- **Subagent background tasks** (`task_id`, status, result): stored at `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json`, managed by `TaskRepository`; completed results are injected back into the parent via a system reminder on the next reasoning turn — they **do not enter the conversation message stream**, so summarization can't touch them. See [Subagent — Background task storage](./subagent#background-task-storage).
-- **`todo_write` task list** (`AgentState.getTasksContext()`): independent field, persisted with `AgentState` but not in the compaction path. See [Plan Mode — Interaction with `todo_write`](./plan-mode#interaction-with-todo_write).
+- **Plan Mode state** (`AgentState.getPlanModeContext()`): whether plan mode is active, current plan file path. The plan file itself lives under `plans/` in the workspace and is managed by Plan Mode's own lifecycle. See [Plan Mode](./plan-mode.md).
+- **Subagent background tasks** (`task_id`, status, result): stored at `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json`, managed by `TaskRepository`; completed results are injected back into the parent via a system reminder on the next reasoning turn — they **do not enter the conversation message stream**, so summarization can't touch them. See [Subagent — Background task storage](./subagent.md#background-task-storage).
+- **`todo_write` task list** (`AgentState.getTasksContext()`): independent field, persisted with `AgentState` but not in the compaction path. See [Plan Mode — Interaction with `todo_write`](./plan-mode.md#interaction-with-todo_write).
 - **Permission rules** (`getPermissionContext()`): independent field, self-persisting.
 
 Each of these owns its own state machine and recovery path; the compaction track is transparent to them — you can enable `.compaction(...)` without worrying about losing a plan or an in-flight background task.
@@ -3902,12 +3902,12 @@ These tools read the **uncompressed conversation log** (`<workspace>/agents/<age
 
 ## Related pages
 
-- [Context & AgentState](../building-blocks/context) — stateless engine design, `AgentState` structure, state persistence, `RuntimeContext`
-- [Architecture](./architecture) — how context, state persistence, and workspace cooperate inside one call
-- [Memory](./memory) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
-- [Plan Mode](./plan-mode) — independent persistence and recovery of plan state
-- [Subagent](./subagent) — where background tasks live and how they survive node migration
-- [Filesystem](./filesystem) — `userId`-based multi-tenant path isolation
+- [Context & AgentState](../building-blocks/context.md) — stateless engine design, `AgentState` structure, state persistence, `RuntimeContext`
+- [Architecture](./architecture.md) — how context, state persistence, and workspace cooperate inside one call
+- [Memory](./memory.md) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
+- [Plan Mode](./plan-mode.md) — independent persistence and recovery of plan state
+- [Subagent](./subagent.md) — where background tasks live and how they survive node migration
+- [Filesystem](./filesystem.md) — `userId`-based multi-tenant path isolation
 
 ---
 
@@ -3957,7 +3957,7 @@ Evolution data is long-lived by default: memory accumulates indefinitely, sessio
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
 
-> **`AgentState` is not workspace content — don't conflate the two.** The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the *metadata* pointing at workspace artifacts such as the active plan file) is serialized as a single `AgentState` document into the **`AgentStateStore`**, a separate subsystem (default `~/.agentscope/state/<agentId>/`, fully outside the workspace tree). The split is deliberate: the workspace holds the durable *file artifacts* (the never-compacted session log, plan markdown, task records, memory), while `AgentState` holds the volatile *runtime context + workspace metadata*. Two stores, two lifecycles — see [Context](./context).
+> **`AgentState` is not workspace content — don't conflate the two.** The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the *metadata* pointing at workspace artifacts such as the active plan file) is serialized as a single `AgentState` document into the **`AgentStateStore`**, a separate subsystem (default `~/.agentscope/state/<agentId>/`, fully outside the workspace tree). The split is deliberate: the workspace holds the durable *file artifacts* (the never-compacted session log, plan markdown, task records, memory), while `AgentState` holds the volatile *runtime context + workspace metadata*. Two stores, two lifecycles — see [Context](../building-blocks/context.md).
 
 **3. Natively multi-tenant.** Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single `IsolationScope` — no application-level partitioning code. The scope decides who shares one bucket:
 
@@ -3968,13 +3968,13 @@ They live in one tree purely for deployment convenience (copy a directory, get a
 | `AGENT` | all users & sessions of this agent | shared-knowledge-base agent |
 | `GLOBAL` | one bucket for the whole store instance | use with care — every agent/user competes for the same slot |
 
-The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in [Filesystem — IsolationScope](./filesystem#isolationscope--bucketing-across-users-and-replicas).
+The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in [Filesystem — IsolationScope](./filesystem.md#isolationscope--bucketing-across-users-and-replicas).
 
 > `IsolationScope` governs the **workspace/filesystem** buckets above. `AgentState` has its own, orthogonal addressing: it is always keyed by `(userId, sessionId)` in the `AgentStateStore`, regardless of scope.
 
 A single `HarnessAgent` instance can serve thousands of concurrent users with zero cross-user data leakage.
 
-**4. Workspace decouples from filesystem.** The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See [Filesystem](./filesystem) for the three modes.
+**4. Workspace decouples from filesystem.** The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See [Filesystem](./filesystem.md) for the three modes.
 
 ## Workspace directory layout
 
@@ -4002,7 +4002,7 @@ A single `HarnessAgent` instance can serve thousands of concurrent users with ze
         └── <sessionId>.json
 ```
 
-> **This tree is a *logical* layout, not a fixed on-disk path.** It is drawn as `.agentscope/workspace/...`, but that is only the default local placement. The exact same layout can physically live on **local disk**, in a **remote distributed store** (Redis / JDBC / OSS, via `RemoteFilesystemSpec`), or be **projected into a sandbox container** (`SandboxFilesystemSpec`) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with [Filesystem](./filesystem); everything in this document is written against the logical layout.
+> **This tree is a *logical* layout, not a fixed on-disk path.** It is drawn as `.agentscope/workspace/...`, but that is only the default local placement. The exact same layout can physically live on **local disk**, in a **remote distributed store** (Redis / JDBC / OSS, via `RemoteFilesystemSpec`), or be **projected into a sandbox container** (`SandboxFilesystemSpec`) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with [Filesystem](./filesystem.md); everything in this document is written against the logical layout.
 
 **Only `AGENTS.md` is something you actually need to write** (skip it and the agent still runs — you just lose the persona injection). Everything else appears as you turn on the matching capability:
 
@@ -4051,7 +4051,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 
 ## How workspace content gets loaded
 
-Because the workspace is a logical layout (see the callout above), "loading" never assumes a plain local directory — every read goes through the configured `AbstractFilesystem`, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The [two-layer read](#two-layer-reads-filesystem-first--local-fallback) below is what makes that backing-store independence concrete; [Filesystem](./filesystem) covers how each mode resolves paths physically.
+Because the workspace is a logical layout (see the callout above), "loading" never assumes a plain local directory — every read goes through the configured `AbstractFilesystem`, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The [two-layer read](#two-layer-reads-filesystem-first--local-fallback) below is what makes that backing-store independence concrete; [Filesystem](./filesystem.md) covers how each mode resolves paths physically.
 
 ### System-prompt assembly per turn
 
@@ -4109,7 +4109,7 @@ workspace/
         └── researcher.md             ← only visible to alice
 ```
 
-When called with `RuntimeContext.userId="alice"`, the framework looks in `alice/skills/code-reviewer/` first and falls back to `skills/code-reviewer/`. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in [Skills — Conflict resolution](./skill#conflict-resolution).
+When called with `RuntimeContext.userId="alice"`, the framework looks in `alice/skills/code-reviewer/` first and falls back to `skills/code-reviewer/`. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in [Skills — Conflict resolution](./skill.md#conflict-resolution).
 
 #### One agent logic, customized per user
 
@@ -4127,7 +4127,7 @@ The result is **two layers of multi-tenancy at once**: the *definition* differs 
 
 ### Loading behavior under each filesystem mode
 
-The workspace is a logical layout; physical placement is up to [Filesystem](./filesystem). The same directory loads differently depending on mode — illustrated below.
+The workspace is a logical layout; physical placement is up to [Filesystem](./filesystem.md). The same directory loads differently depending on mode — illustrated below.
 
 **Mode 1 · Shared store (`RemoteFilesystemSpec`) — template + remote override**
 
@@ -4143,7 +4143,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```
 
 - **How it loads**: at each turn, `AGENTS.md` / `MEMORY.md` / `tools.json` are served by an overlay with the remote KV as the upper layer and the workspace template as the read-only lower layer. The local `<workspace>/AGENTS.md` is a **read-only seed** — used at first boot or to sync across replicas; if the remote KV has a per-user copy under the same key, the remote wins.
-- **Routing**: `memory/` / `skills/` / `subagents/` / `knowledge/` / `agents/<id>/sessions/` / `agents/<id>/tasks/` are namespaced per `IsolationScope` (default USER → one namespace per `userId`; see [Filesystem — IsolationScope](./filesystem#isolationscope--bucketing-across-users-and-replicas)).
+- **Routing**: `memory/` / `skills/` / `subagents/` / `knowledge/` / `agents/<id>/sessions/` / `agents/<id>/tasks/` are namespaced per `IsolationScope` (default USER → one namespace per `userId`; see [Filesystem — IsolationScope](./filesystem.md#isolationscope--bucketing-across-users-and-replicas)).
 - **Best practice**: git-sync the team-agreed `AGENTS.md` / `knowledge/` / shared `skills/` to every replica's local disk as the template; let runtime outputs (`MEMORY.md`, `memory/`, `agents/<id>/...`) accrete in the KV.
 
 **Mode 2 · Sandbox (`DockerFilesystemSpec` / K8s / E2B / AgentRun) — projection + hydrate**
@@ -4205,7 +4205,7 @@ Distinct from `AgentState`, the workspace holds the **conversation logs** under 
 
 > The default `JsonFileAgentStateStore` is single-machine only. Multi-replica production must switch to a distributed store (`RedisAgentStateStore` / `MysqlAgentStateStore` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping in a distributed state store, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
 
-Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](./context).
+Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](../building-blocks/context.md).
 
 ### Memory (long-term)
 
@@ -4227,7 +4227,7 @@ Write path:
 Read path:
 
 - Framework reads `MEMORY.md` itself (two-layer; filesystem first).
-- Agent can actively call `memory_search` / `memory_get` for older entries. See [Memory](./memory).
+- Agent can actively call `memory_search` / `memory_get` for older entries. See [Memory](./memory.md).
 
 ### How namespace isolation maps to physical location
 
@@ -4249,11 +4249,11 @@ Beyond its static definition, the workspace is where the agent's *accumulated ex
 
 | Channel | Where it lives | Turn it on | How it accrues | Deep dive |
 |---------|----------------|------------|----------------|-----------|
-| **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, re-injected every turn | [Memory](./memory) |
-| **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](./skill#self-learning-loop-optional) |
-| **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](./plan-mode) |
-| **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](./compaction) |
-| **Session logs** | `agents/<agentId>/sessions/` (workspace) | on by default | every `call()` appends to the never-compacted JSONL log; `session_search` / `session_history` query it | [Context](./context) |
+| **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, re-injected every turn | [Memory](./memory.md) |
+| **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](./skill.md#self-learning-loop-optional) |
+| **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](./plan-mode.md) |
+| **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](./compaction.md) |
+| **Session logs** | `agents/<agentId>/sessions/` (workspace) | on by default | every `call()` appends to the never-compacted JSONL log; `session_search` / `session_history` query it | [Context](../building-blocks/context.md) |
 
 The unifying idea: **the agent improves between runs without you wiring up any storage.** Memory, skills, plans, session logs, and offloaded results are all just files in the workspace — they get the same per-tenant isolation, the same two-layer reads, and the same filesystem-mode portability as everything else on this page. (The volatile `AgentState` runtime context is the one exception — it lives in the separate `AgentStateStore`, not the workspace; see [How runtime data and memory are stored](#how-runtime-data-and-memory-are-stored).)
 
@@ -4277,7 +4277,7 @@ There are four registration layers (low → high priority):
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
-Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, `DynamicSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](./skill).
+Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, `DynamicSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](./skill.md).
 
 ### `subagents/`
 
@@ -4296,7 +4296,7 @@ You are a code review subagent…
 ```
 
 Loading: `AgentSpecLoader` **non-recursively** scans `workspace/subagents/*.md` at build time and merges with any declarations you registered programmatically via `.subagent(SubagentDeclaration...)`. The main agent invokes them via `agent_spawn agent_id="reviewer" task="..."`.
-Full details (sync vs background, remote subagents, stream forwarding, task storage) in [Subagent](./subagent).
+Full details (sync vs background, remote subagents, stream forwarding, task storage) in [Subagent](./subagent.md).
 
 ### `tools.json`
 
@@ -4341,7 +4341,7 @@ plans/
 └── PLAN.md           ← current plan written by plan_write
 ```
 
-Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted via the `AgentStateStore` (by default `~/.agentscope/state/<agentId>/`, outside the workspace). The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode).
+Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted via the `AgentStateStore` (by default `~/.agentscope/state/<agentId>/`, outside the workspace). The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode.md).
 
 ### `agents/<agentId>/`
 
@@ -4358,7 +4358,7 @@ agents/<agentId>/
 
 > The serialized `AgentState` (`agent_state`) is **not** in the workspace by default — it lives in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`). Only the conversation logs and task records above stay in the workspace.
 
-For cross-node recovery / multi-replica deployments this data must be shared (either `RedisAgentStateStore` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](./context) and [Filesystem](./filesystem).
+For cross-node recovery / multi-replica deployments this data must be shared (either `RedisAgentStateStore` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](../building-blocks/context.md) and [Filesystem](./filesystem.md).
 
 ### `knowledge/`
 
@@ -4385,13 +4385,13 @@ When you need to write files, **go through `HarnessAgent#getWorkspaceManager()`,
 
 ## Related Pages
 
-- [Architecture](./architecture) — how the system prompt is assembled and how capabilities cooperate
-- [Filesystem](./filesystem) — where the workspace physically lives (local / sandbox / shared store), `IsolationScope`, multi-user isolation
-- [Context](./context) — `AgentState` and `AgentStateStore` persistence, cross-node recovery
-- [Memory](./memory) — how `MEMORY.md` / `memory/` are produced and maintained, compaction, eviction
-- [Skills](./skill) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Subagent](./subagent) — `subagents/` declarations, sync vs background, stream forwarding
-- [Plan Mode](./plan-mode) — `plans/` files, read-only phase, HITL exit
+- [Architecture](./architecture.md) — how the system prompt is assembled and how capabilities cooperate
+- [Filesystem](./filesystem.md) — where the workspace physically lives (local / sandbox / shared store), `IsolationScope`, multi-user isolation
+- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore` persistence, cross-node recovery
+- [Memory](./memory.md) — how `MEMORY.md` / `memory/` are produced and maintained, compaction, eviction
+- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Subagent](./subagent.md) — `subagents/` declarations, sync vs background, stream forwarding
+- [Plan Mode](./plan-mode.md) — `plans/` files, read-only phase, HITL exit
 
 ---
 
@@ -4656,9 +4656,9 @@ HarnessAgent.builder()
 
 ## Related Pages
 
-- [Workspace](./workspace) — where `MEMORY.md` / `memory/` live in the workspace
-- [Context](./context) — the never-compacted `*.log.jsonl` conversation log
-- [Architecture](./architecture) — how facts in long conversations settle into `MEMORY.md`
+- [Workspace](./workspace.md) — where `MEMORY.md` / `memory/` live in the workspace
+- [Context](../building-blocks/context.md) — the never-compacted `*.log.jsonl` conversation log
+- [Architecture](./architecture.md) — how facts in long conversations settle into `MEMORY.md`
 
 ---
 
@@ -5173,12 +5173,12 @@ Usually not needed — the three modes cover ~95% of use cases.
 
 ## Related Pages
 
-- [Sandbox](./sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
-- [Workspace](./workspace) — directory layout, loading mechanics, the "lower layer" of two-layer reads
-- [Context](./context) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
-- [Skills](./skill) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Tools](../building-blocks/tool) — `read_file` / `write_file` / `execute` parameters
-- [Architecture](./architecture) — how filesystem and runtime context cooperate
+- [Sandbox](./sandbox.md) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
+- [Workspace](./workspace.md) — directory layout, loading mechanics, the "lower layer" of two-layer reads
+- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
+- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Tools](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` parameters
+- [Architecture](./architecture.md) — how filesystem and runtime context cooperate
 
 ---
 
@@ -5186,7 +5186,7 @@ Source: https://java.agentscope.io/_sources/v2/en/docs/harness/sandbox.md
 
 # Sandbox
 
-> For the three filesystem-mode comparison see [Filesystem](./filesystem). This page focuses on sandbox mode usage.
+> For the three filesystem-mode comparison see [Filesystem](./filesystem.md). This page focuses on sandbox mode usage.
 
 ## What sandbox solves
 
@@ -5385,9 +5385,9 @@ To integrate a non-Docker isolation environment (self-hosted remote executor, co
 
 ## Related pages
 
-- [Filesystem](./filesystem) — three declarative modes compared
-- [Workspace](./workspace) — which files under `workspace/` sync into the sandbox
-- [Architecture](./architecture) — where sandbox acquire / release sits in the call() timeline
+- [Filesystem](./filesystem.md) — three declarative modes compared
+- [Workspace](./workspace.md) — which files under `workspace/` sync into the sandbox
+- [Architecture](./architecture.md) — where sandbox acquire / release sits in the call() timeline
 
 ---
 
@@ -5595,7 +5595,7 @@ chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate
 chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
 ```
 
-This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel#talking-to-exposed-subagents) for the full Channel-side API.
+This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel.md#talking-to-exposed-subagents) for the full Channel-side API.
 
 ### How to enable
 
@@ -5611,7 +5611,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
-Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel#thread-exposure-with-gatewaybootstrap).
+Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel.md#thread-exposure-with-gatewaybootstrap).
 
 ### Controlling exposure from code
 
@@ -5818,10 +5818,10 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 
 ## Related pages
 
-- [Channel](./channel) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
-- [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
-- [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
-- [Architecture](./architecture) — how parent and child cooperate
+- [Channel](./channel.md) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
+- [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
+- [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
+- [Architecture](./architecture.md) — how parent and child cooperate
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
 - [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline
 
@@ -5996,13 +5996,13 @@ workspace/
 
 This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 
-`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
+`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem.md) you configure — so per-user skill isolation is decoupled from the storage backend:
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
 - **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
 - **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
 
-Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem#how-multi-user-isolation-works).
+Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem.md#how-multi-user-isolation-works).
 
 ## Conflict resolution
 
@@ -6158,7 +6158,7 @@ If two repositories report the same `getSource()`, the second is auto-suffixed (
 
 ## Running skills in a sandbox
 
-In [sandbox mode](./filesystem#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
+In [sandbox mode](./filesystem.md#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
 
 ### Which skills end up in the sandbox
 
@@ -6217,7 +6217,7 @@ That command runs in the container and reads exactly the file that was projected
 
 ### Persisting script side effects across calls
 
-If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
+If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem.md#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
 
 ### Note: reading SKILL.md doesn't need the sandbox
 
@@ -6239,9 +6239,9 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 ## Related Pages
 
-- [Workspace](./workspace) — overall layout of `skills/`
-- [Filesystem](./filesystem) — multi-tenant isolation and per-user bucketing
-- [Architecture](./architecture) — how the skill set is rebuilt each reasoning step
+- [Workspace](./workspace.md) — overall layout of `skills/`
+- [Filesystem](./filesystem.md) — multi-tenant isolation and per-user bucketing
+- [Architecture](./architecture.md) — how the skill set is rebuilt each reasoning step
 
 ---
 
@@ -6358,7 +6358,7 @@ This mirrors how OpenCode handles its plan agent: it allows the shell for invest
 
 ## Runtime permission switching (the "bypass" escape hatch)
 
-Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](../building-blocks/context) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
+Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](../building-blocks/context.md) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -6409,7 +6409,7 @@ Plan Mode and `todo_write` (provided by core) are **independent but commonly use
 
 Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in execution use `todo_write` to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.
 
-⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent).
+⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent.md).
 
 ## Viewing the task list
 
@@ -6451,9 +6451,9 @@ agent.streamEvents(message)
 
 ## Related Pages
 
-- [Workspace](./workspace) — `plans/` directory location
-- [Subagent](./subagent) — `todo_write` ≠ subagent task; don't confuse them
-- [Architecture](./architecture) — where Plan Mode sits in the call() timeline
+- [Workspace](./workspace.md) — `plans/` directory location
+- [Subagent](./subagent.md) — `todo_write` ≠ subagent task; don't confuse them
+- [Architecture](./architecture.md) — where Plan Mode sits in the call() timeline
 
 ---
 
@@ -6724,18 +6724,18 @@ gw.stop();    // calls stop() on all channels
 
 AgentScope provides ready-to-use Channel adapters for popular messaging platforms as extension modules:
 
-- [DingTalk](../../../integration/channel/dingtalk.md) — Stream protocol (persistent WebSocket)
-- [Feishu / Lark](../../../integration/channel/feishu.md) — Event subscription callback
-- [GitHub](../../../integration/channel/github.md) — Issue / PR comment webhook
-- [GitLab](../../../integration/channel/gitlab.md) — Note hook
-- [WeCom](../../../integration/channel/wecom.md) — Encrypted callback
+- [DingTalk](../../integration/channel/dingtalk.md) — Stream protocol (persistent WebSocket)
+- [Feishu / Lark](../../integration/channel/feishu.md) — Event subscription callback
+- [GitHub](../../integration/channel/github.md) — Issue / PR comment webhook
+- [GitLab](../../integration/channel/gitlab.md) — Note hook
+- [WeCom](../../integration/channel/wecom.md) — Encrypted callback
 
-See the [Channel Adapters](../../../integration/channel/index.md) integration overview for details.
+See the [Channel Adapters](../../integration/channel/index.md) integration overview for details.
 
 ## Related pages
 
-- [Subagent](./subagent) — declaring and spawning subagents, background tasks, streaming forwarding
-- [Architecture](./architecture) — how parent and child agents cooperate
+- [Subagent](./subagent.md) — declaring and spawning subagents, background tasks, streaming forwarding
+- [Architecture](./architecture.md) — how parent and child agents cooperate
 
 ---
 
@@ -9188,7 +9188,7 @@ Source: https://java.agentscope.io/_sources/v2/en/integration/skill/overview.md
 
 # Skill Repository
 
-An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](../../docs/harness/skill)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
+An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](../../docs/harness/skill.md)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
 
 The `agentscope-extensions-*` repository ships the following ready-to-use implementations:
 
@@ -9198,7 +9198,7 @@ The `agentscope-extensions-*` repository ships the following ready-to-use implem
 | [MySQL Repository](mysql-repository.md) | MySQL database | Online editing via admin console / business systems |
 | [PostgreSQL Repository](postgresql-repository.md) | PostgreSQL database | Existing PostgreSQL infra, online editing |
 
-> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](../infrastructure/nacos).
+> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](../infrastructure/nacos.md).
 
 ## Wiring
 
@@ -9549,7 +9549,7 @@ AgentScope offers a few protocol adapters to let an Agent talk to the outside wo
 | [AG-UI](agui.md) | [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) | Standardized event stream for front-end UIs |
 | [Agent Protocol](agent-protocol.md) | [Agent Protocol](https://agentprotocol.ai/) | HTTP-based way for other systems to submit "tasks" |
 
-> See also [Chat Completions Web](../ecosystem/chat-completions-web): expose your Agent behind an OpenAI-compatible API.
+> See also [Chat Completions Web](../ecosystem/chat-completions-web.md): expose your Agent behind an OpenAI-compatible API.
 
 ## Choosing one
 
@@ -9663,11 +9663,11 @@ server.postEndpointReady();   // call after the web server is listening — trig
 
 - `TaskStore` / `QueueManager`: task and event queue stores; in-memory by default, swap for persistent versions in production.
 - `PushNotificationConfigStore` / `PushNotificationSender`: outbound notifications.
-- `AgentRegistry`: register `AgentCard` to an external registry such as Nacos (see [Nacos](../infrastructure/nacos)).
+- `AgentRegistry`: register `AgentCard` to an external registry such as Nacos (see [Nacos](../infrastructure/nacos.md)).
 
 ## Spring Boot Starter
 
-If you're on Spring Boot, prefer `agentscope-spring-boot-starter-a2a-server` — it auto-configures the server and controller. See [Spring Boot Starters](../../docs/quickstart#spring-boot-starters).
+If you're on Spring Boot, prefer `agentscope-spring-boot-starter-a2a-server` — it auto-configures the server and controller. See [Quickstart](../../docs/quickstart.md).
 
 ---
 
@@ -9744,7 +9744,7 @@ Source: https://java.agentscope.io/_sources/v2/en/integration/protocol/agent-pro
 
 # Agent Protocol
 
-`agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](../../docs/harness/architecture) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
+`agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](../../docs/harness/architecture.md) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
 
 ## When to use
 
@@ -10005,7 +10005,7 @@ Version/label resolution order: `Properties` provided to the constructor → JVM
 
 ## Pairs well with
 
-- [A2A](../protocol/a2a): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
+- [A2A](../protocol/a2a.md): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
 - [Skill repositories](../skill/): coexist with Git/MySQL `AgentSkillRepository` to assemble a Toolkit from multiple sources.
 
 ---

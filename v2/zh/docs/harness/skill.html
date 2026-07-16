@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/skill.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1050,13 +1050,13 @@ name: code-reviewer
 </pre></div>
 </div>
 <p>前提是调用时 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 传了”alice”。</p>
-<p>这里的 <code class="docutils literal notranslate"><span class="pre">workspace/&lt;userId&gt;/skills/</span></code> 是一个<strong>逻辑路径</strong>，不等于”一定是本机磁盘上的目录”。技能文件的读写统一走 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 抽象，实际落在哪儿由你配的<a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统模式</span></a>决定，所以”按用户隔离 skill”这个能力跟具体存储后端解耦：</p>
+<p>这里的 <code class="docutils literal notranslate"><span class="pre">workspace/&lt;userId&gt;/skills/</span></code> 是一个<strong>逻辑路径</strong>，不等于”一定是本机磁盘上的目录”。技能文件的读写统一走 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 抽象，实际落在哪儿由你配的<a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统模式</span></a>决定，所以”按用户隔离 skill”这个能力跟具体存储后端解耦：</p>
 <ul class="simple">
 <li><p><strong>本机 + shell</strong> —— 就是宿主磁盘上的 <code class="docutils literal notranslate"><span class="pre">workspace/alice/skills/...</span></code>；</p></li>
 <li><p><strong>共享存储（remote filesystem）</strong> —— <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 前缀被路由到 KV，用户隔离体现为命名空间键 <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/users/alice/skills/...</span></code>，多副本之间一致；管理台改完下一轮推理即可生效；</p></li>
 <li><p><strong>沙箱（sandbox filesystem）</strong> —— 宿主侧的用户目录在沙箱启动时通过 workspace projection 注入容器的 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>，agent 在沙箱里读到的是同一份。</p></li>
 </ul>
-<p>不管跑在哪种模式，<code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 的作用，详见<a class="reference internal" href="#./filesystem#%E5%A4%9A%E7%94%A8%E6%88%B7%E9%9A%94%E7%A6%BB%E6%80%8E%E4%B9%88%E5%AE%9E%E7%8E%B0"><span class="xref myst">文件系统</span></a>。</p>
+<p>不管跑在哪种模式，<code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 的作用，详见<a class="reference internal" href="filesystem.html#id12"><span class="std std-ref">文件系统</span></a>。</p>
 </section>
 </section>
 <section id="id7">
@@ -1273,7 +1273,7 @@ name: code-reviewer
 </section>
 <section id="id14">
 <h2>在沙箱里运行 skill<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
-<p><a class="reference internal" href="#./filesystem#%E6%A8%A1%E5%BC%8F-2%E6%B2%99%E7%AE%B1sandboxfilesystemspec-%E7%B3%BB%E5%88%97"><span class="xref myst">沙箱模式</span></a>下，文件操作和 shell 都在隔离容器里执行，宿主完全不受影响。这就带来一个问题：skill 的脚本（<code class="docutils literal notranslate"><span class="pre">scripts/run-checks.sh</span></code>、<code class="docutils literal notranslate"><span class="pre">scripts/foo.py</span></code> 之类）写在宿主侧，agent 却要在容器里把它们跑起来。harness 用”物化 → 投影 → 容器内执行”三步把这件事做成透明的，下面拆开讲。</p>
+<p><a class="reference internal" href="filesystem.html#sandboxfilesystemspec"><span class="std std-ref">沙箱模式</span></a>下，文件操作和 shell 都在隔离容器里执行，宿主完全不受影响。这就带来一个问题：skill 的脚本（<code class="docutils literal notranslate"><span class="pre">scripts/run-checks.sh</span></code>、<code class="docutils literal notranslate"><span class="pre">scripts/foo.py</span></code> 之类）写在宿主侧，agent 却要在容器里把它们跑起来。harness 用”物化 → 投影 → 容器内执行”三步把这件事做成透明的，下面拆开讲。</p>
 <section id="id15">
 <h3>哪些 skill 会进沙箱<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
 <p>容器里能跑的 skill 分两类，进沙箱前的落点不同：</p>
@@ -1365,7 +1365,7 @@ name: code-reviewer
 </section>
 <section id="id18">
 <h3>跨调用保留脚本副作用<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
-<p>脚本如果装了依赖、生成了产物（<code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span></code>、<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code>、编译输出），想下次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 还在，就给沙箱配<a class="reference internal" href="#./filesystem#%E5%BF%AB%E7%85%A7%E7%AD%96%E7%95%A5"><span class="xref myst">快照</span></a>（<code class="docutils literal notranslate"><span class="pre">snapshotSpec(...)</span></code>）。快照保存整个 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>，下次同一 scope key 的调用先恢复快照、再叠加投影，所以装过的东西不用重装。</p>
+<p>脚本如果装了依赖、生成了产物（<code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span></code>、<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code>、编译输出），想下次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 还在，就给沙箱配<a class="reference internal" href="filesystem.html#id6"><span class="std std-ref">快照</span></a>（<code class="docutils literal notranslate"><span class="pre">snapshotSpec(...)</span></code>）。快照保存整个 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>，下次同一 scope key 的调用先恢复快照、再叠加投影，所以装过的东西不用重装。</p>
 </section>
 <section id="id19">
 <h3>注意：读 SKILL.md 不需要沙箱<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
@@ -1384,9 +1384,9 @@ name: code-reviewer
 <section id="id21">
 <h2>相关文档<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 目录的整体布局</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a> — 多租户隔离与按用户切目录</p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> — skill 集合是怎么每轮重新合成的</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 目录的整体布局</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 多租户隔离与按用户切目录</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> — skill 集合是怎么每轮重新合成的</p></li>
 </ul>
 </section>
 </section>
@@ -1444,7 +1444,7 @@ name: code-reviewer
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-11</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

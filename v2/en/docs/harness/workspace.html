@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context Compaction" href="compaction.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context Compaction" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -982,7 +982,7 @@
 </div>
 <p>They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.</p>
 <blockquote>
-<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> is not workspace content — don’t conflate the two.</strong> The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the <em>metadata</em> pointing at workspace artifacts such as the active plan file) is serialized as a single <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> document into the <strong><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>, a separate subsystem (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, fully outside the workspace tree). The split is deliberate: the workspace holds the durable <em>file artifacts</em> (the never-compacted session log, plan markdown, task records, memory), while <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> holds the volatile <em>runtime context + workspace metadata</em>. Two stores, two lifecycles — see <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>.</p>
+<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> is not workspace content — don’t conflate the two.</strong> The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the <em>metadata</em> pointing at workspace artifacts such as the active plan file) is serialized as a single <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> document into the <strong><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>, a separate subsystem (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, fully outside the workspace tree). The split is deliberate: the workspace holds the durable <em>file artifacts</em> (the never-compacted session log, plan markdown, task records, memory), while <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> holds the volatile <em>runtime context + workspace metadata</em>. Two stores, two lifecycles — see <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a>.</p>
 </div></blockquote>
 <p><strong>3. Natively multi-tenant.</strong> Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> — no application-level partitioning code. The scope decides who shares one bucket:</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1013,12 +1013,12 @@
 </tbody>
 </table>
 </div>
-<p>The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in <a class="reference internal" href="#./filesystem#isolationscope--bucketing-across-users-and-replicas"><span class="xref myst">Filesystem — IsolationScope</span></a>.</p>
+<p>The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in <a class="reference internal" href="filesystem.html#isolationscope-bucketing-across-users-and-replicas"><span class="std std-ref">Filesystem — IsolationScope</span></a>.</p>
 <blockquote>
 <div><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> governs the <strong>workspace/filesystem</strong> buckets above. <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> has its own, orthogonal addressing: it is always keyed by <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> in the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, regardless of scope.</p>
 </div></blockquote>
 <p>A single <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> instance can serve thousands of concurrent users with zero cross-user data leakage.</p>
-<p><strong>4. Workspace decouples from filesystem.</strong> The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> for the three modes.</p>
+<p><strong>4. Workspace decouples from filesystem.</strong> The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> for the three modes.</p>
 </section>
 <section id="workspace-directory-layout">
 <h2>Workspace directory layout<a class="headerlink" href="#workspace-directory-layout" title="Link to this heading">¶</a></h2>
@@ -1046,7 +1046,7 @@
 </pre></div>
 </div>
 <blockquote>
-<div><p><strong>This tree is a <em>logical</em> layout, not a fixed on-disk path.</strong> It is drawn as <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>, but that is only the default local placement. The exact same layout can physically live on <strong>local disk</strong>, in a <strong>remote distributed store</strong> (Redis / JDBC / OSS, via <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>), or be <strong>projected into a sandbox container</strong> (<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>; everything in this document is written against the logical layout.</p>
+<div><p><strong>This tree is a <em>logical</em> layout, not a fixed on-disk path.</strong> It is drawn as <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>, but that is only the default local placement. The exact same layout can physically live on <strong>local disk</strong>, in a <strong>remote distributed store</strong> (Redis / JDBC / OSS, via <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>), or be <strong>projected into a sandbox container</strong> (<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a>; everything in this document is written against the logical layout.</p>
 </div></blockquote>
 <p><strong>Only <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> is something you actually need to write</strong> (skip it and the agent still runs — you just lose the persona injection). Everything else appears as you turn on the matching capability:</p>
 <ul class="simple">
@@ -1115,7 +1115,7 @@ You are an XX assistant. Follow these behavior guidelines.
 </section>
 <section id="how-workspace-content-gets-loaded">
 <h2>How workspace content gets loaded<a class="headerlink" href="#how-workspace-content-gets-loaded" title="Link to this heading">¶</a></h2>
-<p>Because the workspace is a logical layout (see the callout above), “loading” never assumes a plain local directory — every read goes through the configured <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The <a class="reference internal" href="#two-layer-reads-filesystem-first-local-fallback">two-layer read</a> below is what makes that backing-store independence concrete; <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> covers how each mode resolves paths physically.</p>
+<p>Because the workspace is a logical layout (see the callout above), “loading” never assumes a plain local directory — every read goes through the configured <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The <a class="reference internal" href="#two-layer-reads-filesystem-first-local-fallback">two-layer read</a> below is what makes that backing-store independence concrete; <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> covers how each mode resolves paths physically.</p>
 <section id="system-prompt-assembly-per-turn">
 <h3>System-prompt assembly per turn<a class="headerlink" href="#system-prompt-assembly-per-turn" title="Link to this heading">¶</a></h3>
 <p>Before every reasoning step, <code class="docutils literal notranslate"><span class="pre">WorkspaceContextMiddleware</span></code> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.middleware</span></code>) assembles the following sections and <strong>appends them to</strong> the <code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> you set on the builder to form the final system message:</p>
@@ -1198,7 +1198,7 @@ You are an XX assistant. Follow these behavior guidelines.
         └── researcher.md             ← only visible to alice
 </pre></div>
 </div>
-<p>When called with <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>, the framework looks in <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code> first and falls back to <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in <a class="reference internal" href="#./skill#conflict-resolution"><span class="xref myst">Skills — Conflict resolution</span></a>.</p>
+<p>When called with <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>, the framework looks in <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code> first and falls back to <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in <a class="reference internal" href="skill.html#conflict-resolution"><span class="std std-ref">Skills — Conflict resolution</span></a>.</p>
 <section id="one-agent-logic-customized-per-user">
 <h4>One agent logic, customized per user<a class="headerlink" href="#one-agent-logic-customized-per-user" title="Link to this heading">¶</a></h4>
 <p>This override mechanism is what lets a <strong>single <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> instance behave like a different agent for every tenant</strong> — without forking code or spinning up separate deployments. You ship one binary, one agent definition; each user gets their own slice on top:</p>
@@ -1239,7 +1239,7 @@ You are an XX assistant. Follow these behavior guidelines.
 </section>
 <section id="loading-behavior-under-each-filesystem-mode">
 <h3>Loading behavior under each filesystem mode<a class="headerlink" href="#loading-behavior-under-each-filesystem-mode" title="Link to this heading">¶</a></h3>
-<p>The workspace is a logical layout; physical placement is up to <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>. The same directory loads differently depending on mode — illustrated below.</p>
+<p>The workspace is a logical layout; physical placement is up to <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a>. The same directory loads differently depending on mode — illustrated below.</p>
 <p><strong>Mode 1 · Shared store (<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>) — template + remote override</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
@@ -1253,7 +1253,7 @@ You are an XX assistant. Follow these behavior guidelines.
 </div>
 <ul class="simple">
 <li><p><strong>How it loads</strong>: at each turn, <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">tools.json</span></code> are served by an overlay with the remote KV as the upper layer and the workspace template as the read-only lower layer. The local <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/AGENTS.md</span></code> is a <strong>read-only seed</strong> — used at first boot or to sync across replicas; if the remote KV has a per-user copy under the same key, the remote wins.</p></li>
-<li><p><strong>Routing</strong>: <code class="docutils literal notranslate"><span class="pre">memory/</span></code> / <code class="docutils literal notranslate"><span class="pre">skills/</span></code> / <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/sessions/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> are namespaced per <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> (default USER → one namespace per <code class="docutils literal notranslate"><span class="pre">userId</span></code>; see <a class="reference internal" href="#./filesystem#isolationscope--bucketing-across-users-and-replicas"><span class="xref myst">Filesystem — IsolationScope</span></a>).</p></li>
+<li><p><strong>Routing</strong>: <code class="docutils literal notranslate"><span class="pre">memory/</span></code> / <code class="docutils literal notranslate"><span class="pre">skills/</span></code> / <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/sessions/</span></code> / <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> are namespaced per <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> (default USER → one namespace per <code class="docutils literal notranslate"><span class="pre">userId</span></code>; see <a class="reference internal" href="filesystem.html#isolationscope-bucketing-across-users-and-replicas"><span class="std std-ref">Filesystem — IsolationScope</span></a>).</p></li>
 <li><p><strong>Best practice</strong>: git-sync the team-agreed <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / shared <code class="docutils literal notranslate"><span class="pre">skills/</span></code> to every replica’s local disk as the template; let runtime outputs (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, <code class="docutils literal notranslate"><span class="pre">memory/</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/...</span></code>) accrete in the KV.</p></li>
 </ul>
 <p><strong>Mode 2 · Sandbox (<code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code> / K8s / E2B / AgentRun) — projection + hydrate</strong></p>
@@ -1328,7 +1328,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <blockquote>
 <div><p>The default <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> is single-machine only. Multi-replica production must switch to a distributed store (<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> / …). If you have configured <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> or <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> without swapping in a distributed state store, <code class="docutils literal notranslate"><span class="pre">build()</span></code> raises <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> — a forced reminder not to make runtime state a single point of failure.</p>
 </div></blockquote>
-<p>Full details (recovery flow, cross-node continuation, <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> addressing) live in <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>.</p>
+<p>Full details (recovery flow, cross-node continuation, <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> addressing) live in <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a>.</p>
 </section>
 <section id="memory-long-term">
 <h3>Memory (long-term)<a class="headerlink" href="#memory-long-term" title="Link to this heading">¶</a></h3>
@@ -1348,7 +1348,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <p>Read path:</p>
 <ul class="simple">
 <li><p>Framework reads <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> itself (two-layer; filesystem first).</p></li>
-<li><p>Agent can actively call <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> for older entries. See <a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a>.</p></li>
+<li><p>Agent can actively call <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> for older entries. See <a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a>.</p></li>
 </ul>
 </section>
 <section id="how-namespace-isolation-maps-to-physical-location">
@@ -1402,31 +1402,31 @@ You are an XX assistant. Follow these behavior guidelines.
 <td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, re-injected every turn</p></td>
-<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a></p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>Self-learning skills</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/_drafts/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/.archive/</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enableSkillManageTool(...)</span></code></p></td>
 <td><p>the agent calls <code class="docutils literal notranslate"><span class="pre">propose_skill</span></code> to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d)</p></td>
-<td><p><a class="reference internal" href="#./skill#self-learning-loop-optional"><span class="xref myst">Skills — Self-learning loop</span></a></p></td>
+<td><p><a class="reference internal" href="skill.html#self-learning-loop-optional"><span class="std std-ref">Skills — Self-learning loop</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p><strong>Plans</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">plans/PLAN.md</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
 <td><p>a read-only planning phase writes the plan via <code class="docutils literal notranslate"><span class="pre">plan_write</span></code>; it persists across calls and drives the execution phase, decoupling intent from action</p></td>
-<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a></p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a></p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>Offloaded tool results</strong></p></td>
 <td><p>the eviction directory under the workspace</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
 <td><p>when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a <code class="docutils literal notranslate"><span class="pre">read_file</span></code> pointer</p></td>
-<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">Compaction</span></a></p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="std std-doc">Compaction</span></a></p></td>
 </tr>
 <tr class="row-even"><td><p><strong>Session logs</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> (workspace)</p></td>
 <td><p>on by default</p></td>
 <td><p>every <code class="docutils literal notranslate"><span class="pre">call()</span></code> appends to the never-compacted JSONL log; <code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> query it</p></td>
-<td><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a></p></td>
+<td><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1451,7 +1451,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <li><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> — workspace shared</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> — per-user (overrides all above)</p></li>
 </ol>
-<p>Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, <code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> re-merges and renders an <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block (name + description only) into the system prompt. The agent calls <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> to pull full details when relevant. Full mechanics in <a class="reference internal" href="skill.html"><span class="doc std std-doc">Skills</span></a>.</p>
+<p>Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, <code class="docutils literal notranslate"><span class="pre">DynamicSkillMiddleware</span></code> re-merges and renders an <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block (name + description only) into the system prompt. The agent calls <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> to pull full details when relevant. Full mechanics in <a class="reference internal" href="skill.html"><span class="std std-doc">Skills</span></a>.</p>
 </section>
 <section id="subagents">
 <h3><code class="docutils literal notranslate"><span class="pre">subagents/</span></code><a class="headerlink" href="#subagents" title="Link to this heading">¶</a></h3>
@@ -1468,7 +1468,7 @@ You are a code review subagent…
 </pre></div>
 </div>
 <p>Loading: <code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code> <strong>non-recursively</strong> scans <code class="docutils literal notranslate"><span class="pre">workspace/subagents/*.md</span></code> at build time and merges with any declarations you registered programmatically via <code class="docutils literal notranslate"><span class="pre">.subagent(SubagentDeclaration...)</span></code>. The main agent invokes them via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span> <span class="pre">agent_id=&quot;reviewer&quot;</span> <span class="pre">task=&quot;...&quot;</span></code>.
-Full details (sync vs background, remote subagents, stream forwarding, task storage) in <a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a>.</p>
+Full details (sync vs background, remote subagents, stream forwarding, task storage) in <a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a>.</p>
 </section>
 <section id="tools-json">
 <h3><code class="docutils literal notranslate"><span class="pre">tools.json</span></code><a class="headerlink" href="#tools-json" title="Link to this heading">¶</a></h3>
@@ -1510,7 +1510,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 └── PLAN.md           ← current plan written by plan_write
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code> (whether the plan phase is active, current plan file path) lives in <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> — it is <strong>runtime state</strong>, persisted via the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (by default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, outside the workspace). The files under <code class="docutils literal notranslate"><span class="pre">plans/</span></code> are only the markdown content itself. See <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>.</p>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code> (whether the plan phase is active, current plan file path) lives in <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> — it is <strong>runtime state</strong>, persisted via the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (by default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, outside the workspace). The files under <code class="docutils literal notranslate"><span class="pre">plans/</span></code> are only the markdown content itself. See <a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a>.</p>
 </section>
 <section id="agents-agentid">
 <h3><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code><a class="headerlink" href="#agents-agentid" title="Link to this heading">¶</a></h3>
@@ -1526,7 +1526,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 <blockquote>
 <div><p>The serialized <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> (<code class="docutils literal notranslate"><span class="pre">agent_state</span></code>) is <strong>not</strong> in the workspace by default — it lives in the configured <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>). Only the conversation logs and task records above stay in the workspace.</p>
 </div></blockquote>
-<p>For cross-node recovery / multi-replica deployments this data must be shared (either <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, or sandbox with distributed state). See <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> and <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>.</p>
+<p>For cross-node recovery / multi-replica deployments this data must be shared (either <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, or sandbox with distributed state). See <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a> and <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a>.</p>
 </section>
 <section id="knowledge">
 <h3><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code><a class="headerlink" href="#knowledge" title="Link to this heading">¶</a></h3>
@@ -1553,13 +1553,13 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 <section id="related-pages">
 <h2>Related Pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">Architecture</span></a> — how the system prompt is assembled and how capabilities cooperate</p></li>
-<li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> — where the workspace physically lives (local / sandbox / shared store), <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>, multi-user isolation</p></li>
-<li><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> and <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> persistence, cross-node recovery</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a> — how <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> are produced and maintained, compaction, eviction</p></li>
-<li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">Skills</span></a> — four-layer composition, self-learning loop, the <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> declarations, sync vs background, stream forwarding</p></li>
-<li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> files, read-only phase, HITL exit</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a> — how the system prompt is assembled and how capabilities cooperate</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> — where the workspace physically lives (local / sandbox / shared store), <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>, multi-user isolation</p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> and <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> persistence, cross-node recovery</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> — how <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> are produced and maintained, compaction, eviction</p></li>
+<li><p><a class="reference internal" href="skill.html"><span class="std std-doc">Skills</span></a> — four-layer composition, self-learning loop, the <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> declarations, sync vs background, stream forwarding</p></li>
+<li><p><a class="reference internal" href="plan-mode.html"><span class="std std-doc">Plan Mode</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> files, read-only phase, HITL exit</p></li>
 </ul>
 </section>
 </section>
@@ -1617,7 +1617,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">

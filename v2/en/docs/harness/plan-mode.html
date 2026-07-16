@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-15T02:52:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="Skill" href="skill.html">
+    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="Skill" href="skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/plan-mode.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1056,7 +1056,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 </section>
 <section id="runtime-permission-switching-the-bypass-escape-hatch">
 <h2>Runtime permission switching (the “bypass” escape hatch)<a class="headerlink" href="#runtime-permission-switching-the-bypass-escape-hatch" title="Link to this heading">¶</a></h2>
-<p>Plan Mode is one specific phase switch. Underneath it, every session carries a <a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a> that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated “skip all permission prompts” toggle (similar to a YOLO / dangerous-skip switch in other coding tools):</p>
+<p>Plan Mode is one specific phase switch. Underneath it, every session carries a <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a> that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated “skip all permission prompts” toggle (similar to a YOLO / dangerous-skip switch in other coding tools):</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">BYPASS</span><span class="p">);</span><span class="w">    </span><span class="c1">// allow everything, no prompts</span>
@@ -1101,7 +1101,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">todo_write</span></code></strong> — maintain a structured “what to do now” list during execution (whole-list replace; exactly one <code class="docutils literal notranslate"><span class="pre">in_progress</span></code>)</p></li>
 </ul>
 <p>Typical workflow: write <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code> during the plan phase → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> → in execution use <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.</p>
-<p>⚠ Don’t confuse with subagent <strong>background tasks</strong> (<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>) — that’s a different concept; see <a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a>.</p>
+<p>⚠ Don’t confuse with subagent <strong>background tasks</strong> (<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>) — that’s a different concept; see <a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a>.</p>
 </section>
 <section id="viewing-the-task-list">
 <h2>Viewing the task list<a class="headerlink" href="#viewing-the-task-list" title="Link to this heading">¶</a></h2>
@@ -1138,9 +1138,9 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <section id="related-pages">
 <h2>Related Pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> directory location</p></li>
-<li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a> — <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> ≠ subagent task; don’t confuse them</p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">Architecture</span></a> — where Plan Mode sits in the call() timeline</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> directory location</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a> — <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> ≠ subagent task; don’t confuse them</p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a> — where Plan Mode sits in the call() timeline</p></li>
 </ul>
 </section>
 </section>
@@ -1198,7 +1198,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-15</div>
+              Last updated on 2026-07-16</div>
           </div>
           <div class="right-details">
             <div class="icons">
