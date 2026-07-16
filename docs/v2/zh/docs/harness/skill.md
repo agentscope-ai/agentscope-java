@@ -170,13 +170,13 @@ workspace/
 
 前提是调用时 `RuntimeContext.userId` 传了"alice"。
 
-这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](./filesystem)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
+这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](./filesystem.md)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
 
 - **本机 + shell** —— 就是宿主磁盘上的 `workspace/alice/skills/...`；
 - **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一轮推理即可生效；
 - **沙箱（sandbox filesystem）** —— 宿主侧的用户目录在沙箱启动时通过 workspace projection 注入容器的 `/workspace`，agent 在沙箱里读到的是同一份。
 
-不管跑在哪种模式，`<userId>/skills/` 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](./filesystem#多用户隔离怎么实现)。
+不管跑在哪种模式，`<userId>/skills/` 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](./filesystem.md#多用户隔离怎么实现)。
 
 ## 同名冲突谁说了算
 
@@ -332,7 +332,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ## 在沙箱里运行 skill
 
-[沙箱模式](./filesystem#模式-2沙箱sandboxfilesystemspec-系列)下，文件操作和 shell 都在隔离容器里执行，宿主完全不受影响。这就带来一个问题：skill 的脚本（`scripts/run-checks.sh`、`scripts/foo.py` 之类）写在宿主侧，agent 却要在容器里把它们跑起来。harness 用"物化 → 投影 → 容器内执行"三步把这件事做成透明的，下面拆开讲。
+[沙箱模式](./filesystem.md#模式-2沙箱sandboxfilesystemspec-系列)下，文件操作和 shell 都在隔离容器里执行，宿主完全不受影响。这就带来一个问题：skill 的脚本（`scripts/run-checks.sh`、`scripts/foo.py` 之类）写在宿主侧，agent 却要在容器里把它们跑起来。harness 用"物化 → 投影 → 容器内执行"三步把这件事做成透明的，下面拆开讲。
 
 ### 哪些 skill 会进沙箱
 
@@ -391,7 +391,7 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 
 ### 跨调用保留脚本副作用
 
-脚本如果装了依赖、生成了产物（`npm install`、`pip install`、编译输出），想下次 `call()` 还在，就给沙箱配[快照](./filesystem#快照策略)（`snapshotSpec(...)`）。快照保存整个 `/workspace`，下次同一 scope key 的调用先恢复快照、再叠加投影，所以装过的东西不用重装。
+脚本如果装了依赖、生成了产物（`npm install`、`pip install`、编译输出），想下次 `call()` 还在，就给沙箱配[快照](./filesystem.md#快照策略)（`snapshotSpec(...)`）。快照保存整个 `/workspace`，下次同一 scope key 的调用先恢复快照、再叠加投影，所以装过的东西不用重装。
 
 ### 注意：读 SKILL.md 不需要沙箱
 
@@ -413,6 +413,6 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 
 ## 相关文档
 
-- [工作区](./workspace) — `skills/` 目录的整体布局
-- [文件系统](./filesystem) — 多租户隔离与按用户切目录
-- [架构](./architecture) — skill 集合是怎么每轮重新合成的
+- [工作区](./workspace.md) — `skills/` 目录的整体布局
+- [文件系统](./filesystem.md) — 多租户隔离与按用户切目录
+- [架构](./architecture.md) — skill 集合是怎么每轮重新合成的

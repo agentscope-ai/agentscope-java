@@ -510,9 +510,9 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [沙箱](./sandbox) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
-- [工作区](./workspace) — 目录布局、加载机制、两层读取的"下层"来源
-- [Context](./context) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
-- [技能](./skill) — 四层合成、自学习闭环、`<available_skills>` 块
-- [工具](../building-blocks/tool) — `read_file` / `write_file` / `execute` 等参数
-- [架构](./architecture) — 文件系统与运行时上下文如何协作
+- [沙箱](./sandbox.md) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
+- [工作区](./workspace.md) — 目录布局、加载机制、两层读取的"下层"来源
+- [Context](../building-blocks/context.md) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
+- [技能](./skill.md) — 四层合成、自学习闭环、`<available_skills>` 块
+- [工具](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` 等参数
+- [架构](./architecture.md) — 文件系统与运行时上下文如何协作
