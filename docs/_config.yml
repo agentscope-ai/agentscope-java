@@ -48,13 +48,13 @@ sphinx:
     - sphinx.ext.napoleon
     - sphinx.ext.intersphinx
     - sphinx.ext.autosummary
-    - sphinx_llms_txt
     - sphinx_sitemap
     - sphinx_design
     - sphinxcontrib.mermaid
   # Patches root index.html redirect stub so docs_site_notice appears on "/".
   local_extensions:
     root_index_notice: ./_sphinx_extensions
+    versioned_llms: ./_sphinx_extensions
   config:
     # Mermaid Configuration (CDN client-side rendering, no Node.js required)
     mermaid_version: "11"
@@ -76,10 +76,6 @@ sphinx:
     html_baseurl: "https://java.agentscope.io/"
     sitemap_url_scheme: "{link}"
     sitemap_show_lastmod: true
-
-    # LLMs.txt Configuration (English only)
-    llms_txt_exclude:
-      - "v1/zh/*"
 
     # API Documentation Configuration
     autosummary_generate: True

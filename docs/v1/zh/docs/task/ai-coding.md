@@ -6,28 +6,30 @@ AgentScope Java 文档支持 [`llms.txt` 标准](https://llmstxt.org/)，让 AI 
 
 `llms.txt` 是一个专为大模型设计的文档索引文件，包含文档结构和关键页面说明，方便 AI 工具快速定位所需内容。
 
-AgentScope 提供两个文件：
+AgentScope Java 现在按版本提供文档入口：
 
 | 文件 | 说明 | URL |
 |------|------|-----|
-| `llms.txt` | 索引文件，包含各页面链接 | `https://java.agentscope.io/llms.txt` |
-| `llms-full.txt` | 完整文档，单文件包含所有内容 | `https://java.agentscope.io/llms-full.txt` |
+| `v2/llms.txt` | AgentScope Java 2.0 文档索引 | `https://java.agentscope.io/v2/llms.txt` |
+| `v2/llms-full.txt` | AgentScope Java 2.0 单文件完整上下文 | `https://java.agentscope.io/v2/llms-full.txt` |
+| `v1/llms.txt` | AgentScope Java 1.x 文档索引 | `https://java.agentscope.io/v1/llms.txt` |
+| `v1/llms-full.txt` | AgentScope Java 1.x 单文件完整上下文 | `https://java.agentscope.io/v1/llms-full.txt` |
 
 ## 配置指南
 
 ### Claude Code
 
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过 MCP 服务器接入文档。
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) 可以通过 MCP 服务接入文档。
 
 **安装：**
 
 ```bash
-claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/llms.txt
+claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/v2/llms.txt
 ```
 
 **示例：**
 
-安装后直接提问即可：
+安装后可以直接提问：
 
 > 如何用 AgentScope Java 创建一个工具？
 
@@ -39,9 +41,9 @@ claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava
 
 1. 打开 **Cursor Settings** -> **Features** -> **Docs**
 2. 点击 **+ Add new Doc**
-3. 填入：`https://java.agentscope.io/llms-full.txt`
+3. 填入：`https://java.agentscope.io/v2/llms-full.txt`
 
-**方式二：MCP 服务器**
+**方式二：MCP 服务**
 
 1. 打开 **Cursor Settings** -> **Tools & MCP**
 2. 点击 **New MCP Server** 编辑 `mcp.json`
@@ -54,7 +56,7 @@ claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava
       "command": "uvx",
       "args": [
         "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+        "--urls", "AgentScopeJava:https://java.agentscope.io/v2/llms.txt"
       ]
     }
   }
@@ -67,10 +69,10 @@ claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava
 
 ### Windsurf
 
-[Windsurf](https://codeium.com/windsurf) 通过 MCP 服务器接入。
+[Windsurf](https://codeium.com/windsurf) 可以通过 MCP 服务接入。
 
 1. 打开设置，进入 MCP 配置
-2. 添加服务器：
+2. 添加服务：
 
 ```json
 {
@@ -79,7 +81,7 @@ claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava
       "command": "uvx",
       "args": [
         "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+        "--urls", "AgentScopeJava:https://java.agentscope.io/v2/llms.txt"
       ]
     }
   }
@@ -90,11 +92,18 @@ claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava
 
 **支持文档/知识库的工具：**
 
-直接添加 `https://java.agentscope.io/llms-full.txt`
+直接添加 `https://java.agentscope.io/v2/llms-full.txt`。
 
 **支持 MCP 的工具：**
 
-参考上述 MCP 配置模板
+参考上面的 MCP 配置模板。
+
+**使用 AgentScope Java 1.x：**
+
+如果项目仍在使用 1.x，请改用：
+
+- `https://java.agentscope.io/v1/llms.txt`
+- `https://java.agentscope.io/v1/llms-full.txt`
 
 **环境要求：**
 

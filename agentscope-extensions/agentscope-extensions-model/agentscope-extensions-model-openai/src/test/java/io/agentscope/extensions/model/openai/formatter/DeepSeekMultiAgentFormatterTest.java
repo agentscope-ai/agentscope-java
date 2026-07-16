@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test;
  * <p>Tests verify DeepSeek multi-agent specific requirements:
  * <ul>
  *   <li>Inherits multi-agent conversation merging from OpenAIMultiAgentFormatter</li>
- *   <li>Applies DeepSeek-specific fixes (no name, system to user, reasoning_content)</li>
+ *   <li>Applies DeepSeek-specific fixes (no name and reasoning_content handling)</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>Optional empty user message appending</li>
  * </ul>
@@ -261,8 +261,8 @@ class DeepSeekMultiAgentFormatterTest {
         }
 
         @Test
-        @DisplayName("Should convert system to user in merged output")
-        void testConvertSystemToUser() {
+        @DisplayName("Should preserve system role in merged output")
+        void testPreserveSystemRole() {
             List<Msg> messages =
                     List.of(
                             Msg.builder()
@@ -280,8 +280,8 @@ class DeepSeekMultiAgentFormatterTest {
 
             List<OpenAIMessage> result = formatter.format(messages);
 
-            // First message (system) should be converted to user
-            assertEquals("user", result.get(0).getRole());
+            // First message should preserve the system role
+            assertEquals("system", result.get(0).getRole());
         }
 
         @Test
@@ -433,10 +433,10 @@ class DeepSeekMultiAgentFormatterTest {
             List<OpenAIMessage> result = formatter.format(messages);
 
             assertNotNull(result);
-            // Should have: system (converted to user) + merged conversation + tool sequence
+            // Should have: system + merged conversation + tool sequence
             assertTrue(result.size() >= 3);
-            // First message should be user (converted from system)
-            assertEquals("user", result.get(0).getRole());
+            // First message should preserve the system role
+            assertEquals("system", result.get(0).getRole());
         }
 
         @Test
