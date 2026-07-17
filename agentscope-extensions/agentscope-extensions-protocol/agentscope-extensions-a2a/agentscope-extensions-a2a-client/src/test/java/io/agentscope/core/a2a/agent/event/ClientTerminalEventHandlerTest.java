@@ -31,6 +31,7 @@ import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Map;
@@ -130,6 +131,38 @@ class ClientTerminalEventHandlerTest {
     }
 
     @Test
+    @DisplayName("Should deliver a new input-required Task after resume progress")
+    void shouldDeliverNewPauseAfterResumeProgress() {
+        TestContext test = context();
+        test.context().ignorePriorHandoffSnapshot("task-1", "context-1", "handoff-1");
+        Task working =
+                Task.builder()
+                        .id("task-1")
+                        .contextId("context-1")
+                        .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                        .build();
+        new TaskEventHandler().handle(new TaskEvent(working), test.context());
+
+        Message prompt =
+                Message.builder(A2A.toAgentMessage("Confirm again"))
+                        .metadata(Map.of(MessageConstants.HANDOFF_ID_METADATA_KEY, "handoff-2"))
+                        .build();
+        Task repaused =
+                Task.builder()
+                        .id("task-1")
+                        .contextId("context-1")
+                        .status(new TaskStatus(TaskState.TASK_STATE_INPUT_REQUIRED, prompt, null))
+                        .build();
+        new TaskEventHandler().handle(new TaskEvent(repaused), test.context());
+
+        ArgumentCaptor<Msg> delivered = ArgumentCaptor.forClass(Msg.class);
+        verify(test.sink()).success(delivered.capture());
+        assertEquals(
+                "handoff-2",
+                delivered.getValue().getMetadata().get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+    }
+
+    @Test
     @DisplayName("Should fail auth-required exactly once without publishing a post hook or Msg")
     void shouldFailAuthRequiredExactlyOnceWithoutPostHookOrMsg() {
         TestContext test = context();
@@ -221,6 +254,40 @@ class ClientTerminalEventHandlerTest {
         test.context().completeExceptionally(new IllegalStateException("late"));
 
         verify(test.sink()).success(first);
+    }
+
+    @Test
+    @DisplayName("Should abandon once without hooks or sink terminals")
+    void shouldAbandonOnceWithoutHooksOrSinkTerminals() {
+        TestContext test = context();
+        AtomicInteger chunkCount = new AtomicInteger();
+        AtomicInteger postCount = new AtomicInteger();
+        test.context()
+                .setHooks(
+                        List.of(
+                                new Hook() {
+                                    @Override
+                                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                        if (event instanceof ReasoningChunkEvent) {
+                                            chunkCount.incrementAndGet();
+                                        } else if (event instanceof PostReasoningEvent) {
+                                            postCount.incrementAndGet();
+                                        }
+                                        return Mono.just(event);
+                                    }
+                                }));
+
+        assertTrue(test.context().abandon());
+        assertFalse(test.context().abandon());
+        test.context().publishReasoningChunk(Msg.builder().textContent("late chunk").build());
+        assertFalse(test.context().complete(Msg.builder().textContent("late result").build()));
+        test.context().completeExceptionally(new IllegalStateException("late error"));
+
+        assertTrue(test.context().isTerminalDelivered());
+        assertEquals(0, chunkCount.get());
+        assertEquals(0, postCount.get());
+        verify(test.sink(), never()).success(any(Msg.class));
+        verify(test.sink(), never()).error(any(Throwable.class));
     }
 
     private Task completedTask(String text) {

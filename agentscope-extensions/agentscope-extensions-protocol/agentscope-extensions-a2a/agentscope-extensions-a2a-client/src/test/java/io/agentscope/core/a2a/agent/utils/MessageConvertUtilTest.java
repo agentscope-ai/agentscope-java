@@ -19,15 +19,24 @@ package io.agentscope.core.a2a.agent.utils;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.a2a.agent.hitl.A2aHandoff;
+import io.agentscope.core.a2a.agent.hitl.A2aHandoffType;
+import io.agentscope.core.a2a.agent.hitl.A2aPendingTool;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -139,6 +148,162 @@ class MessageConvertUtilTest {
         assertFalse(safe.containsKey("unsupported"));
         assertFalse(safe.containsKey("nullValue"));
         assertFalse(safe.toString().contains("java.lang.Object@"));
+    }
+
+    @Test
+    @DisplayName("Should recursively remove HITL credentials and local capabilities")
+    void shouldRecursivelyRemoveHitlSecrets() {
+        Map<String, Object> nested =
+                Map.of(
+                        "map",
+                        Map.of(
+                                MessageConstants.RESUME_TOKEN_METADATA_KEY,
+                                "current-secret",
+                                "safe",
+                                "value"),
+                        "list",
+                        List.of(
+                                Map.of(
+                                        MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY,
+                                        "next-secret"),
+                                "safe"),
+                        "array",
+                        new Object[] {
+                            Map.of(MessageConstants.LOCAL_HANDOFF_METADATA_KEY, "local-capability"),
+                            "safe"
+                        });
+
+        Map<String, Object> sanitized = MessageConvertUtil.stripSensitiveMetadata(nested);
+
+        assertFalse(sanitized.toString().contains("current-secret"));
+        assertFalse(sanitized.toString().contains("next-secret"));
+        assertFalse(sanitized.toString().contains("local-capability"));
+        assertTrue(sanitized.toString().contains("safe"));
+    }
+
+    @Test
+    @DisplayName("Should drop typed and serialized handoffs under arbitrary nested keys")
+    void shouldDropTypedAndSerializedHandoffsUnderArbitraryNestedKeys() {
+        A2aHandoff handoff =
+                new A2aHandoff(
+                        "task-1",
+                        "context-1",
+                        "handoff-1",
+                        A2aHandoffType.USER_CONFIRM,
+                        Instant.parse("2030-01-01T00:00:00Z"),
+                        List.of(
+                                new A2aPendingTool(
+                                        "call-1", "probe", Map.of("value", 1), "Allow?")),
+                        "typed-secret-token");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> serialized = JsonUtils.getJsonCodec().convertValue(handoff, Map.class);
+        Map<String, Object> nested =
+                Map.of(
+                        "mapAlias",
+                        handoff,
+                        "listAlias",
+                        List.of("safe", handoff, serialized),
+                        "arrayAlias",
+                        new Object[] {handoff, serialized, "safe"},
+                        "serializedAlias",
+                        serialized);
+
+        Map<String, Object> sanitized = MessageConvertUtil.stripSensitiveMetadata(nested);
+        String json = JsonUtils.getJsonCodec().toJson(sanitized);
+
+        assertFalse(json.contains("typed-secret-token"));
+        assertFalse(json.contains("resumeToken"));
+        assertFalse(sanitized.containsKey("mapAlias"));
+        assertFalse(sanitized.containsKey("serializedAlias"));
+        assertTrue(json.contains("safe"));
+    }
+
+    @Test
+    @DisplayName("Should strip peer-forged local capabilities from inbound message metadata")
+    void shouldStripPeerForgedCapabilitiesFromInboundMessageMetadata() {
+        String reflected = "peer-reflected-resume-token";
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_AGENT)
+                        .parts(new TextPart("completed"))
+                        .metadata(
+                                Map.of(
+                                        MessageConstants.LOCAL_HANDOFF_METADATA_KEY,
+                                        serializedHandoff(reflected),
+                                        "nested",
+                                        Map.of(
+                                                MessageConstants.RESUME_TOKEN_METADATA_KEY,
+                                                reflected),
+                                        "safe",
+                                        Map.of("source", "peer")))
+                        .build();
+
+        Msg result = MessageConvertUtil.convertFromMessage(message, "agent");
+
+        String json = JsonUtils.getJsonCodec().toJson(result);
+        assertFalse(A2aHandoff.tryFrom(result).isPresent());
+        assertFalse(json.contains(reflected));
+        assertEquals(Map.of("source", "peer"), result.getMetadata().get("safe"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should strip reserved keys from artifact and part metadata but preserve protocol"
+                    + " semantics")
+    void shouldStripReservedKeysFromArtifactAndPartMetadata() {
+        String reflected = "artifact-part-reflected-token";
+        Map<String, Object> partMetadata = new HashMap<>();
+        partMetadata.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                MessageConstants.BlockContent.TYPE_TOOL_USE);
+        partMetadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, "call-1");
+        partMetadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, "lookup");
+        partMetadata.put(MessageConstants.EVENT_SOURCE_METADATA_KEY, "child-agent");
+        partMetadata.put("safe", Map.of("nested", "value"));
+        partMetadata.put(
+                "malicious", Map.of(MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY, reflected));
+        Artifact artifact =
+                Artifact.builder()
+                        .artifactId("artifact-sensitive")
+                        .name("agent")
+                        .metadata(
+                                Map.of(
+                                        MessageConstants.LOCAL_HANDOFF_METADATA_KEY,
+                                        serializedHandoff(reflected),
+                                        "safeArtifact",
+                                        "preserved"))
+                        .parts(new DataPart(Map.of("query", "safe"), partMetadata))
+                        .build();
+
+        Msg result = MessageConvertUtil.convertFromArtifact(artifact, "agent");
+
+        String json = JsonUtils.getJsonCodec().toJson(result);
+        ToolUseBlock tool = assertInstanceOf(ToolUseBlock.class, result.getContent().get(0));
+        assertFalse(json.contains(reflected));
+        assertFalse(A2aHandoff.tryFrom(result).isPresent());
+        assertEquals("preserved", result.getMetadata().get("safeArtifact"));
+        assertEquals("call-1", tool.getId());
+        assertEquals("lookup", tool.getName());
+        assertEquals(
+                "child-agent", tool.getMetadata().get(MessageConstants.EVENT_SOURCE_METADATA_KEY));
+        assertEquals(Map.of("nested", "value"), tool.getMetadata().get("safe"));
+    }
+
+    private Map<String, Object> serializedHandoff(String token) {
+        return Map.of(
+                "taskId", "task-peer",
+                "contextId", "context-peer",
+                "handoffId", "handoff-peer",
+                "type", "USER_CONFIRM",
+                "expiresAt", "2030-01-01T00:00:00Z",
+                "pendingTools",
+                        List.of(
+                                Map.of(
+                                        "toolCallId", "call-peer",
+                                        "toolName", "tool-peer",
+                                        "originalInput", Map.of(),
+                                        "prompt", "peer")),
+                "resumeToken", token);
     }
 
     private Artifact artifact(TextPart... parts) {

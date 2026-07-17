@@ -67,6 +67,11 @@ final class TaskTerminalMessageFactory {
                             .build();
         }
         result.getMetadata().put(MessageConstants.A2A_TASK_STATE_METADATA_KEY, wireState(state));
+        if (task != null) {
+            result.getMetadata().put(MessageConstants.A2A_TASK_ID_METADATA_KEY, task.id());
+            result.getMetadata()
+                    .put(MessageConstants.A2A_CONTEXT_ID_METADATA_KEY, task.contextId());
+        }
         return result;
     }
 
