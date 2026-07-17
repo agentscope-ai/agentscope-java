@@ -33,6 +33,7 @@
     <modules>
         <module>agentscope-extensions-a2a-client</module>
         <module>agentscope-extensions-a2a-server</module>
+        <module>agentscope-extensions-a2a-hitl-redis</module>
     </modules>
 
 </project>

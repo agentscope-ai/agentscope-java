@@ -113,6 +113,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions A2A Durable HITL Redis Provider -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-a2a-hitl-redis</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions AGUI -->
             <dependency>
                 <groupId>io.agentscope</groupId>
