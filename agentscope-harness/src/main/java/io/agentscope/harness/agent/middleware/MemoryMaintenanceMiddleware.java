@@ -29,11 +29,13 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -79,6 +81,19 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final int sessionRetentionDays;
     private final Duration minGap;
     private final IsolationScope isolationScope;
+
+    /** Upper bound {@link #close()} waits for outstanding fire-and-forget runs to drain. */
+    static final Duration CLOSE_AWAIT_TIMEOUT = Duration.ofSeconds(5);
+
+    /**
+     * Tracks the {@link Disposable} of every fire-and-forget maintenance subscription that has
+     * been scheduled but not yet finished, so {@link #close()} can wait for/dispose them instead
+     * of leaving them racing against teardown of the resources they read/write (e.g. a workspace
+     * directory being deleted).
+     */
+    private final Set<Disposable> pending = ConcurrentHashMap.newKeySet();
+
+    private volatile boolean closed = false;
 
     /**
      * Process-wide per-isolation-key maintenance timestamps. Static so that the throttle window
@@ -142,19 +157,66 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input)
-                .doOnComplete(
-                        () ->
-                                Mono.fromRunnable(() -> maybeRunMaintenance(rc))
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .onErrorResume(
-                                                e -> {
-                                                    log.warn(
-                                                            "Memory maintenance failed: {}",
-                                                            e.getMessage());
-                                                    return Mono.empty();
-                                                })
-                                        .subscribe());
+        return next.apply(input).doOnComplete(() -> scheduleMaintenance(rc));
+    }
+
+    /**
+     * Fires the fire-and-forget maintenance {@code Mono} on {@code boundedElastic}, tracking its
+     * {@link Disposable} in {@link #pending} until it terminates so {@link #close()} can wait for
+     * it. No-ops (and disposes immediately) once {@link #close()} has been called, so a call that
+     * races with shutdown doesn't spawn untracked work.
+     */
+    private void scheduleMaintenance(RuntimeContext rc) {
+        if (closed) {
+            return;
+        }
+        Disposable[] holder = new Disposable[1];
+        Disposable d =
+                Mono.fromRunnable(() -> maybeRunMaintenance(rc))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .onErrorResume(
+                                e -> {
+                                    log.warn("Memory maintenance failed: {}", e.getMessage());
+                                    return Mono.empty();
+                                })
+                        .doFinally(
+                                sig -> {
+                                    if (holder[0] != null) {
+                                        pending.remove(holder[0]);
+                                    }
+                                })
+                        .subscribe();
+        holder[0] = d;
+        pending.add(d);
+        if (closed) {
+            pending.remove(d);
+            d.dispose();
+        }
+    }
+
+    /**
+     * Waits (bounded by {@link #CLOSE_AWAIT_TIMEOUT}) for outstanding fire-and-forget maintenance
+     * runs to finish, then disposes anything still outstanding. Intended to be called from
+     * {@code HarnessAgent#close()} so short-lived callers (tests using JUnit {@code @TempDir},
+     * CLI runs, etc.) don't tear down the workspace while a detached maintenance write is still
+     * in flight — see {@link MemoryMaintenanceMiddleware class docs} for why maintenance is
+     * detached in the first place.
+     */
+    public void close() {
+        closed = true;
+        long deadline = System.nanoTime() + CLOSE_AWAIT_TIMEOUT.toNanos();
+        while (!pending.isEmpty() && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        for (Disposable d : pending) {
+            d.dispose();
+        }
+        pending.clear();
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

@@ -168,6 +168,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final MemoryMaintenanceMiddleware memoryMaintenanceMw;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -199,6 +200,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
+            MemoryMaintenanceMiddleware memoryMaintenanceMw,
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer) {
@@ -217,6 +219,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.memoryMaintenanceMw = memoryMaintenanceMw;
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
@@ -375,14 +378,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void close() {
         try {
-            shutdownTaskRepository();
+            if (memoryMaintenanceMw != null) {
+                memoryMaintenanceMw.close();
+            }
         } finally {
             try {
-                if (ownedWorkspaceIndex != null) {
-                    ownedWorkspaceIndex.close();
-                }
+                shutdownTaskRepository();
             } finally {
-                delegate.close();
+                try {
+                    if (ownedWorkspaceIndex != null) {
+                        ownedWorkspaceIndex.close();
+                    }
+                } finally {
+                    delegate.close();
+                }
             }
         }
     }
@@ -2130,6 +2139,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new AtPathExpansionMiddleware(wsManager));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
+            MemoryMaintenanceMiddleware memoryMaintenanceMw = null;
             if (memoryModel != null && !disableMemoryHooks) {
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
 
@@ -2155,14 +2165,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryModel,
                                 effectiveConsolidationPrompt,
                                 memoryConfig.consolidationMaxTokens());
-                inner.middleware(
+                memoryMaintenanceMw =
                         new MemoryMaintenanceMiddleware(
                                 wsManager,
                                 consolidator,
                                 memoryConfig.dailyFileRetentionDays(),
                                 memoryConfig.sessionRetentionDays(),
                                 memoryConfig.consolidationMinGap(),
-                                effectiveIsolationScope));
+                                effectiveIsolationScope);
+                inner.middleware(memoryMaintenanceMw);
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
@@ -2491,6 +2502,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillCurator,
                     pendingSkillAuditLog,
                     memoryConfig,
+                    memoryMaintenanceMw,
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer);
