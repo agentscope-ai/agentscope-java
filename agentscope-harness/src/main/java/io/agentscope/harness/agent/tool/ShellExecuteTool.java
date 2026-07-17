@@ -60,7 +60,14 @@ public class ShellExecuteTool {
                 return "Error: working_directory must be a relative path within the workspace"
                         + " (absolute paths, '~', and '..' are not allowed).";
             }
-            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            String osName = System.getProperty("os.name").toLowerCase();
+            if (osName.contains("win")) {
+                // Windows cmd.exe only understands double quotes and uses & as separator
+                effectiveCommand = "cd \"" + wd.replace("\"", "\\\"") + "\" & " + command;
+            } else {
+                // Unix/Linux/macOS shell syntax
+                effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            }
         }
 
         ExecuteResponse result =
