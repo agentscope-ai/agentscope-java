@@ -16,18 +16,18 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.TaskUpdateEvent;
-import io.a2a.spec.TaskArtifactUpdateEvent;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TaskStatusUpdateEvent;
-import io.a2a.spec.UpdateEvent;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.client.TaskUpdateEvent;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.UpdateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +55,13 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
 
     @Override
     public void handle(TaskUpdateEvent event, ClientEventContext context) {
+        if (context.isTerminalDelivered()) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] TaskUpdateEventHandler: post-terminal event ignored.",
+                    context.getCurrentRequestId());
+            return;
+        }
         handleTaskUpdateEvent(event, context);
     }
 
@@ -89,35 +96,16 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
         @Override
         public void handle(TaskStatusUpdateEvent event, ClientEventContext context) {
             String currentRequestId = context.getCurrentRequestId();
-            if (event.isFinal()) {
-                TaskState state = event.getStatus().state();
-                if (!TaskState.COMPLETED.equals(state)) {
-                    String errorMsg =
-                            "A2A task ended with state: "
-                                    + state
-                                    + (event.getStatus().message() != null
-                                            ? ", message: " + event.getStatus().message()
-                                            : "");
-                    LoggerUtil.warn(
-                            log,
-                            "[{}] A2aAgent task ended with non-completed state: {}.",
-                            currentRequestId,
-                            state);
-                    if (!context.complete(Msg.builder().textContent(errorMsg).build())) {
-                        LoggerUtil.debug(
-                                log,
-                                "[{}] TaskStatusUpdateEventHandler: duplicate terminal event"
-                                        + " ignored.",
-                                currentRequestId);
-                    }
-                    return;
-                }
+            TaskState state = event.status().state();
+            if (TaskTerminalMessageFactory.isAuthenticationRequired(state)) {
+                context.completeExceptionally(
+                        TaskTerminalMessageFactory.authenticationRequiredError());
+                return;
+            }
+            if (TaskTerminalMessageFactory.isTerminal(state)) {
                 Msg msg =
-                        MessageConvertUtil.convertFromArtifact(
-                                context.getTask().getArtifacts(), context.getAgent().getName());
-
-                msg = context.publishPostReasoning(msg);
-
+                        TaskTerminalMessageFactory.create(
+                                context.getTask(), event.status(), context.getAgent().getName());
                 if (!context.complete(msg)) {
                     LoggerUtil.debug(
                             log,
@@ -130,7 +118,7 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);
                 LoggerUtil.logTextMsgDetail(log, List.of(msg));
             } else {
-                TaskStatus taskStatus = event.getStatus();
+                TaskStatus taskStatus = event.status();
                 LoggerUtil.debug(
                         log,
                         "[{}] A2aAgent task status updated to: {}.",
@@ -157,12 +145,12 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
         @Override
         public void handle(TaskArtifactUpdateEvent event, ClientEventContext context) {
             String currentRequestTaskId = context.getCurrentRequestId();
-            if (null == event.getArtifact()) {
+            if (null == event.artifact()) {
                 return;
             }
             Msg msg =
                     MessageConvertUtil.convertFromArtifact(
-                            event.getArtifact(), context.getAgent().getName());
+                            event.artifact(), context.getAgent().getName());
             LoggerUtil.debug(
                     log, "[{}] A2aAgent artifact append with messages: ", currentRequestTaskId);
             LoggerUtil.logTextMsgDetail(log, List.of(msg));

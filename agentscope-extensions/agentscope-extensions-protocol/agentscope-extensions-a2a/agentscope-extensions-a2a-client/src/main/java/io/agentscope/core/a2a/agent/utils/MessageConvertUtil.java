@@ -16,9 +16,6 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -27,12 +24,24 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.Array;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -65,7 +74,8 @@ public class MessageConvertUtil {
     public static Msg convertFromArtifact(List<Artifact> artifacts, String agentName) {
         Msg.Builder builder = Msg.builder();
         List<Part<?>> parts = new LinkedList<>();
-        artifacts.stream()
+        List<Artifact> safeArtifacts = artifacts == null ? List.of() : artifacts;
+        safeArtifacts.stream()
                 .filter(Objects::nonNull)
                 .filter(artifact -> isNotEmptyCollection(artifact.parts()))
                 .forEach(
@@ -89,11 +99,11 @@ public class MessageConvertUtil {
      */
     public static Msg convertFromMessage(Message message, String agentName) {
         Msg.Builder builder = Msg.builder();
-        builder.id(message.getMessageId());
+        builder.id(message.messageId());
         builder.name(agentName);
-        builder.metadata(null != message.getMetadata() ? message.getMetadata() : Map.of());
+        builder.metadata(null != message.metadata() ? message.metadata() : Map.of());
         builder.role(MsgRole.ASSISTANT);
-        builder.content(convertFromParts(message.getParts()));
+        builder.content(convertFromParts(message.parts()));
         return builder.build();
     }
 
@@ -104,8 +114,21 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsg(List<Msg> msgs) {
-        Message.Builder builder = new Message.Builder();
-        Map<String, Object> metadata = new HashMap<>();
+        return convertFromMsg(msgs, null, Map.of());
+    }
+
+    /**
+     * Convert a list of {@link Msg} to {@link Message}.
+     *
+     * @param msgs the list of Msg
+     * @param contextId A2A context id
+     * @param requestMetadata request-level metadata to put at top-level
+     * @return the converted Message object
+     */
+    public static Message convertFromMsg(
+            List<Msg> msgs, String contextId, Map<String, Object> requestMetadata) {
+        Message.Builder builder = Message.builder();
+        Map<String, Object> metadata = new LinkedHashMap<>();
         List<Part<?>> parts = new LinkedList<>();
         msgs.stream()
                 .filter(Objects::nonNull)
@@ -119,29 +142,17 @@ public class MessageConvertUtil {
                                     msg.getContent().stream()
                                             .map(CONTENT_BLOCK_PARSER::parse)
                                             .filter(Objects::nonNull)
-                                            .peek(
-                                                    part -> {
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .MSG_ID_METADATA_KEY,
-                                                                        msg.getId());
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .SOURCE_NAME_METADATA_KEY,
-                                                                        msg.getName());
-                                                        if (msg.getRole() != null) {
-                                                            part.getMetadata()
-                                                                    .put(
-                                                                            MessageConstants
-                                                                                    .MSG_ROLE_METADATA_KEY,
-                                                                            msg.getRole().name());
-                                                        }
-                                                    })
+                                            .map(part -> withMsgMetadata(part, msg))
                                             .toList());
                         });
-        return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
+        if (requestMetadata != null && !requestMetadata.isEmpty()) {
+            metadata.putAll(requestMetadata);
+        }
+        return builder.contextId(contextId)
+                .parts(parts)
+                .metadata(metadata)
+                .role(resolveMessageRole(msgs))
+                .build();
     }
 
     private static Message.Role resolveMessageRole(List<Msg> msgs) {
@@ -156,14 +167,14 @@ public class MessageConvertUtil {
         if (roles.size() == 1) {
             return roles.get(0);
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
     }
 
     private static Message.Role convertRole(MsgRole role) {
         if (role == MsgRole.ASSISTANT || role == MsgRole.TOOL) {
-            return Message.Role.AGENT;
+            return Message.Role.ROLE_AGENT;
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
@@ -171,17 +182,23 @@ public class MessageConvertUtil {
     }
 
     private static List<ContentBlock> convertFromParts(List<Part<?>> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return List.of();
+        }
         List<ContentBlock> contentBlocks = new LinkedList<>();
         StreamingChunkAccumulator accumulator = null;
 
         for (Part<?> part : parts) {
+            if (part == null) {
+                continue;
+            }
             ContentBlock block = PART_PARSER.parse(part);
             if (block == null) {
                 continue;
             }
 
-            String kind = isStreamingChunk(part) ? getMergeableChunkKind(block) : null;
-            if (kind == null) {
+            StreamingChunkIdentity identity = streamingChunkIdentity(part, block);
+            if (identity == null) {
                 if (accumulator != null) {
                     contentBlocks.add(accumulator.build());
                     accumulator = null;
@@ -190,14 +207,13 @@ public class MessageConvertUtil {
                 continue;
             }
 
-            String msgId = getMetadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
-            if (accumulator != null && accumulator.matches(msgId, kind)) {
+            if (accumulator != null && accumulator.matches(identity)) {
                 accumulator.append(block);
             } else {
                 if (accumulator != null) {
                     contentBlocks.add(accumulator.build());
                 }
-                accumulator = new StreamingChunkAccumulator(msgId, kind, block);
+                accumulator = new StreamingChunkAccumulator(identity, block);
             }
         }
 
@@ -207,13 +223,34 @@ public class MessageConvertUtil {
         return contentBlocks;
     }
 
-    private static boolean isStreamingChunk(Part<?> part) {
-        String value = getMetadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
-        return Boolean.TRUE.toString().equalsIgnoreCase(value);
+    private static StreamingChunkIdentity streamingChunkIdentity(Part<?> part, ContentBlock block) {
+        if (!Boolean.parseBoolean(
+                metadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY))) {
+            return null;
+        }
+        String msgId = metadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+        String blockId = metadataValue(part, MessageConstants.BLOCK_ID_METADATA_KEY);
+        String source = metadataValue(part, MessageConstants.EVENT_SOURCE_METADATA_KEY);
+        String blockType = metadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        String parsedType = mergeableBlockType(block);
+        if (msgId == null
+                || blockId == null
+                || blockType == null
+                || !blockType.equals(parsedType)) {
+            return null;
+        }
+        return new StreamingChunkIdentity(msgId, blockId, source, blockType);
     }
 
-    private static String getMetadataValue(Part<?> part, String key) {
-        Map<String, Object> metadata = part.getMetadata();
+    private static String metadataValue(Part<?> part, String key) {
+        Map<String, Object> metadata = null;
+        if (part instanceof TextPart textPart) {
+            metadata = textPart.metadata();
+        } else if (part instanceof DataPart dataPart) {
+            metadata = dataPart.metadata();
+        } else if (part instanceof FilePart filePart) {
+            metadata = filePart.metadata();
+        }
         if (metadata == null) {
             return null;
         }
@@ -221,7 +258,7 @@ public class MessageConvertUtil {
         return value == null ? null : value.toString();
     }
 
-    private static String getMergeableChunkKind(ContentBlock block) {
+    private static String mergeableBlockType(ContentBlock block) {
         if (block instanceof TextBlock) {
             return MessageConstants.BlockContent.TYPE_TEXT;
         }
@@ -231,22 +268,23 @@ public class MessageConvertUtil {
         return null;
     }
 
+    private record StreamingChunkIdentity(
+            String msgId, String blockId, String source, String blockType) {}
+
     private static final class StreamingChunkAccumulator {
 
-        private final String msgId;
-
-        private final String kind;
+        private final StreamingChunkIdentity identity;
 
         private final StringBuilder text = new StringBuilder();
 
-        private StreamingChunkAccumulator(String msgId, String kind, ContentBlock block) {
-            this.msgId = msgId;
-            this.kind = kind;
-            append(block);
+        private StreamingChunkAccumulator(
+                StreamingChunkIdentity identity, ContentBlock initialBlock) {
+            this.identity = identity;
+            append(initialBlock);
         }
 
-        private boolean matches(String msgId, String kind) {
-            return Objects.equals(this.msgId, msgId) && Objects.equals(this.kind, kind);
+        private boolean matches(StreamingChunkIdentity candidate) {
+            return identity.equals(candidate);
         }
 
         private void append(ContentBlock block) {
@@ -258,7 +296,7 @@ public class MessageConvertUtil {
         }
 
         private ContentBlock build() {
-            if (MessageConstants.BlockContent.TYPE_THINKING.equals(kind)) {
+            if (MessageConstants.BlockContent.TYPE_THINKING.equals(identity.blockType())) {
                 return ThinkingBlock.builder().thinking(text.toString()).build();
             }
             return TextBlock.builder().text(text.toString()).build();
@@ -274,6 +312,166 @@ public class MessageConvertUtil {
     public static Map<String, Object> buildTypeMetadata(String type) {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
+        return metadata;
+    }
+
+    /**
+     * Convert arbitrary tool payload values to protobuf Struct-compatible values.
+     *
+     * @param value arbitrary value from tool input/output
+     * @return value supported by protobuf JSON Struct conversion
+     */
+    public static Object protobufSafeValue(Object value) {
+        if (value == null
+                || value instanceof String
+                || value instanceof Boolean
+                || value instanceof Double
+                || value instanceof Float
+                || value instanceof Integer
+                || value instanceof Long
+                || value instanceof Short
+                || value instanceof Byte) {
+            return value;
+        }
+        if (value instanceof BigDecimal || value instanceof BigInteger) {
+            return value.toString();
+        }
+        if (value instanceof byte[] bytes) {
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        if (value instanceof Enum<?> enumValue) {
+            return enumValue.name();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach(
+                    (key, mapValue) -> {
+                        if (mapValue != null) {
+                            Object safeValue = protobufSafeValue(mapValue);
+                            if (safeValue != null) {
+                                result.put(String.valueOf(key), safeValue);
+                            }
+                        }
+                    });
+            return result;
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> result = new LinkedList<>();
+            for (Object element : collection) {
+                Object safeValue = protobufSafeValue(element);
+                if (safeValue != null) {
+                    result.add(safeValue);
+                }
+            }
+            return result;
+        }
+        if (value.getClass().isArray()) {
+            List<Object> result = new LinkedList<>();
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                Object element = Array.get(value, i);
+                Object safeValue = protobufSafeValue(element);
+                if (safeValue != null) {
+                    result.add(safeValue);
+                }
+            }
+            return result;
+        }
+        String rendered = String.valueOf(value);
+        String defaultToStringPrefix = value.getClass().getName() + "@";
+        return rendered.startsWith(defaultToStringPrefix) ? null : rendered;
+    }
+
+    /**
+     * Convert map values to protobuf Struct-compatible values and force keys to strings.
+     *
+     * @param value map to convert
+     * @return protobuf-safe map
+     */
+    public static Map<String, Object> protobufSafeMap(Map<?, ?> value) {
+        if (value == null || value.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        value.forEach(
+                (key, mapValue) -> {
+                    if (mapValue != null) {
+                        Object safeValue = protobufSafeValue(mapValue);
+                        if (safeValue != null) {
+                            result.put(String.valueOf(key), safeValue);
+                        }
+                    }
+                });
+        return result;
+    }
+
+    /** Convert a typed content block to a protobuf-safe map without Java type names. */
+    public static Map<String, Object> contentBlockToProtobufSafeMap(ContentBlock block) {
+        if (block == null) {
+            return Map.of();
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> value = JsonUtils.getJsonCodec().convertValue(block, Map.class);
+            return protobufSafeMap(value);
+        } catch (RuntimeException ignored) {
+            return Map.of();
+        }
+    }
+
+    /** Restore a content block from the tool-result wire representation. */
+    public static ContentBlock contentBlockFromProtobufSafeValue(Object value) {
+        if (value instanceof ContentBlock block) {
+            return block;
+        }
+        if (value instanceof String text) {
+            return TextBlock.builder().text(text).build();
+        }
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        map.forEach((key, mapValue) -> normalized.put(String.valueOf(key), mapValue));
+        try {
+            return JsonUtils.getJsonCodec().convertValue(normalized, ContentBlock.class);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static Part<?> withMsgMetadata(Part<?> part, Msg msg) {
+        Map<String, Object> metadata = new HashMap<>(readMetadata(part));
+        if (msg.getId() != null) {
+            metadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+        }
+        if (msg.getName() != null) {
+            metadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, msg.getName());
+        }
+        if (msg.getRole() != null) {
+            metadata.put(MessageConstants.MSG_ROLE_METADATA_KEY, msg.getRole().name());
+        }
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), metadata);
+        } else if (part instanceof DataPart dataPart) {
+            return new DataPart(dataPart.data(), metadata);
+        } else if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), metadata);
+        }
+        return part;
+    }
+
+    private static Map<String, Object> readMetadata(Part<?> part) {
+        Map<String, Object> metadata = null;
+        if (part instanceof TextPart textPart) {
+            metadata = textPart.metadata();
+        } else if (part instanceof DataPart dataPart) {
+            metadata = dataPart.metadata();
+        } else if (part instanceof FilePart filePart) {
+            metadata = filePart.metadata();
+        }
+        if (metadata == null) {
+            throw new IllegalArgumentException("Part metadata must not be null");
+        }
         return metadata;
     }
 }

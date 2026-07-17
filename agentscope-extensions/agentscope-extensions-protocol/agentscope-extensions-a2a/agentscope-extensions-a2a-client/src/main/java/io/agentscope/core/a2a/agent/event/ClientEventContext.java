@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -25,11 +24,12 @@ import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.a2aproject.sdk.spec.Task;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
 /**
- * Context for handler {@link io.a2a.client.ClientEvent}.
+ * Context for handler {@link org.a2aproject.sdk.client.ClientEvent}.
  *
  * <p>One A2A task might respond multiple times, so we need a context to store the response.
  */
@@ -101,14 +101,25 @@ public class ClientEventContext {
         return terminalDelivered.get();
     }
 
+    /**
+     * Deliver the first terminal message and trigger post-reasoning exactly once.
+     *
+     * @param msg terminal response
+     * @return {@code true} when this call won the terminal race
+     */
     public boolean complete(Msg msg) {
         if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
             return false;
         }
-        sink.success(msg);
+        try {
+            sink.success(publishPostReasoning(msg));
+        } catch (Throwable error) {
+            sink.error(error);
+        }
         return true;
     }
 
+    /** Deliver the first terminal transport error. */
     public void completeExceptionally(Throwable error) {
         if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
             return;
@@ -140,7 +151,7 @@ public class ClientEventContext {
      * Trigger ReasoningChunkEvent (streaming process)
      */
     void publishReasoningChunk(Msg chunkMsg) {
-        if (hooks != null && !hooks.isEmpty()) {
+        if (!terminalDelivered.get() && hooks != null && !hooks.isEmpty()) {
             publishPreReasoning(); // If not sent Pre before, send Pre first
             ReasoningChunkEvent chunkEvent =
                     new ReasoningChunkEvent(agent, "A2A", null, chunkMsg, chunkMsg);

@@ -16,9 +16,9 @@
 
 package io.agentscope.core.a2a.server.registry;
 
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.List;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Agent Register Interface to Agent Registry.

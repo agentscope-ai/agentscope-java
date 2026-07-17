@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.TaskEvent;
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
+import org.a2aproject.sdk.client.TaskEvent;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,37 +44,23 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                 log,
                 "[{}] A2A Task {} with status {}",
                 context.getCurrentRequestId(),
-                task.getId(),
-                task.getStatus());
+                task.id(),
+                task.status());
 
-        context.publishPreReasoning();
-
-        boolean isFinal =
-                task.getStatus() != null
-                        && task.getStatus().state() != null
-                        && task.getStatus().state().isFinal();
-        if (!isFinal) {
-            LoggerUtil.debug(
-                    log,
-                    "[{}] TaskEventHandler: task state {} is not terminal, waiting for more"
-                            + " events.",
-                    context.getCurrentRequestId(),
-                    task.getStatus() != null ? task.getStatus().state() : "null");
+        TaskState state = task.status() == null ? null : task.status().state();
+        if (TaskTerminalMessageFactory.isAuthenticationRequired(state)) {
+            context.completeExceptionally(TaskTerminalMessageFactory.authenticationRequiredError());
+            return;
+        }
+        if (!TaskTerminalMessageFactory.isTerminal(state)) {
+            context.publishPreReasoning();
             return;
         }
 
-        Msg msg;
-        if (task.getStatus() != null && task.getStatus().message() != null) {
-            msg =
-                    MessageConvertUtil.convertFromMessage(
-                            task.getStatus().message(), context.getAgent().getName());
-        } else {
-            msg =
-                    MessageConvertUtil.convertFromArtifact(
-                            task.getArtifacts(), context.getAgent().getName());
-        }
-        msg = context.publishPostReasoning(msg);
-        if (!context.complete(msg)) {
+        Msg result =
+                TaskTerminalMessageFactory.create(
+                        task, task.status(), context.getAgent().getName());
+        if (!context.complete(result)) {
             LoggerUtil.debug(
                     log,
                     "[{}] TaskEventHandler: duplicate terminal event ignored.",

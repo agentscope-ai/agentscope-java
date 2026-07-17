@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Parser for {@link ToolUseBlock} to {@link DataPart}.
@@ -31,9 +31,17 @@ public class ToolUseBlockParser implements ContentBlockParser<ToolUseBlock> {
     public Part<?> parse(ToolUseBlock contentBlock) {
         Map<String, Object> metadata =
                 MessageConvertUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TOOL_USE);
-        metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
-        metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
-        metadata.putAll(contentBlock.getMetadata());
-        return new DataPart(contentBlock.getInput(), metadata);
+        if (contentBlock.getName() != null) {
+            metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
+        }
+        if (contentBlock.getId() != null) {
+            metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
+        }
+        if (contentBlock.getMetadata() != null) {
+            metadata.putAll(contentBlock.getMetadata());
+        }
+        return new DataPart(
+                MessageConvertUtil.protobufSafeValue(contentBlock.getInput()),
+                MessageConvertUtil.protobufSafeMap(metadata));
     }
 }

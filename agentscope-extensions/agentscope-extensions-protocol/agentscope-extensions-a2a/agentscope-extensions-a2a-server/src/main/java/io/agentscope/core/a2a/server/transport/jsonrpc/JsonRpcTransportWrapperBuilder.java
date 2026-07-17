@@ -16,12 +16,12 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.TransportProtocol;
+import org.a2aproject.sdk.transport.jsonrpc.handler.JSONRPCHandler;
 
 /**
  * Builder implementation for {@link JsonRpcTransportWrapper}.

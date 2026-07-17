@@ -19,24 +19,25 @@ package io.agentscope.core.a2a.server.card;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.MutualTLSSecurityScheme;
-import io.a2a.spec.SecurityScheme;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.MutualTLSSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,7 +82,7 @@ class AgentScopeAgentCardConverterTest {
         List<String> defaultOutputModes = List.of("text", "audio");
         List<AgentSkill> skills =
                 List.of(
-                        new AgentSkill.Builder()
+                        AgentSkill.builder()
                                 .id("skill1")
                                 .name("Skill 1")
                                 .description("Skill 1")
@@ -89,7 +90,9 @@ class AgentScopeAgentCardConverterTest {
                                 .build());
         Map<String, SecurityScheme> securitySchemes =
                 Map.of("basic", new MutualTLSSecurityScheme("basic"));
-        List<Map<String, List<String>>> security = List.of(Map.of("basic", List.of("read")));
+        List<Map<String, List<String>>> configSecurity = List.of(Map.of("basic", List.of("read")));
+        List<SecurityRequirement> expectedSecurity =
+                List.of(new SecurityRequirement(configSecurity.get(0)));
         String iconUrl = "https://example.com/icon.png";
         List<AgentInterface> additionalInterfaces =
                 List.of(new AgentInterface("jsonrpc", "https://example.com/rpc"));
@@ -105,7 +108,7 @@ class AgentScopeAgentCardConverterTest {
         when(configurableAgentCard.getDefaultOutputModes()).thenReturn(defaultOutputModes);
         when(configurableAgentCard.getSkills()).thenReturn(skills);
         when(configurableAgentCard.getSecuritySchemes()).thenReturn(securitySchemes);
-        when(configurableAgentCard.getSecurity()).thenReturn(security);
+        when(configurableAgentCard.getSecurity()).thenReturn(configSecurity);
         when(configurableAgentCard.getIconUrl()).thenReturn(iconUrl);
         when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(additionalInterfaces);
         when(configurableAgentCard.getPreferredTransport()).thenReturn(preferredTransport);
@@ -129,12 +132,11 @@ class AgentScopeAgentCardConverterTest {
         assertEquals(defaultOutputModes, agentCard.defaultOutputModes());
         assertEquals(skills, agentCard.skills());
         assertEquals(securitySchemes, agentCard.securitySchemes());
-        assertEquals(security, agentCard.security());
+        assertEquals(expectedSecurity, agentCard.securityRequirements());
         assertEquals(iconUrl, agentCard.iconUrl());
-        assertEquals(additionalInterfaces, agentCard.additionalInterfaces());
+        assertEquals(additionalInterfaces, agentCard.supportedInterfaces());
         assertEquals(preferredTransport, agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
-        assertFalse(agentCard.supportsAuthenticatedExtendedCard());
+        assertFalse(agentCard.capabilities().extendedAgentCard());
     }
 
     @Test
@@ -170,10 +172,9 @@ class AgentScopeAgentCardConverterTest {
         assertEquals(List.of("text"), agentCard.defaultInputModes());
         assertEquals(List.of("text"), agentCard.defaultOutputModes());
         assertEquals(List.of(), agentCard.skills()); // Empty list as default
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
         assertEquals(TransportProtocol.JSONRPC.asString(), agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
     }
 
     @Test
@@ -206,9 +207,9 @@ class AgentScopeAgentCardConverterTest {
         // Then
         assertNotNull(agentCard);
         assertTrue(agentCard.url().startsWith("https://"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        AgentInterface interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().startsWith("https://"));
     }
 
@@ -242,9 +243,9 @@ class AgentScopeAgentCardConverterTest {
         // Then
         assertNotNull(agentCard);
         assertTrue(agentCard.url().endsWith("/custom/path"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        AgentInterface interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().endsWith("/custom/path"));
     }
 
@@ -285,8 +286,12 @@ class AgentScopeAgentCardConverterTest {
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> builder.createAgentCard(configurableAgentCard, agentRunner, new HashSet<>()));
+        AgentCard agentCard =
+                builder.createAgentCard(configurableAgentCard, agentRunner, new HashSet<>());
+
+        assertNotNull(agentCard);
+        assertNull(agentCard.url());
+        assertEquals(TransportProtocol.JSONRPC.asString(), agentCard.preferredTransport());
+        assertEquals(List.of(), agentCard.supportedInterfaces());
     }
 }

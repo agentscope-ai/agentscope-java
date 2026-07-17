@@ -17,10 +17,9 @@
 package io.agentscope.core.a2a.server.utils;
 
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromMsg;
+import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.protobufSafeMap;
+import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.protobufSafeValue;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -37,6 +36,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -57,16 +62,12 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(List<Msg> msgs, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder(convertFromMsg(msgs));
+        Message.Builder builder = Message.builder(convertFromMsg(msgs));
         return builder.taskId(taskId).contextId(contextId).build();
     }
 
     /**
-     * Compact consecutive streaming delta messages that share the same message id.
-     *
-     * <p>This is intended for executor fallback paths that accumulate {@code Event} chunks. Regular
-     * conversion from user-provided message lists must keep using {@link #convertFromMsgToMessage(List, String, String)}
-     * directly so semantic message and block boundaries are preserved.
+     * Compact consecutive streaming delta messages that share the same message identity.
      *
      * @param msgs messages emitted by the streaming event pipeline
      * @return messages with consecutive text/thinking deltas merged per message id
@@ -106,14 +107,14 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(Msg msg, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
-            metadata.put(msg.getId(), msg.getMetadata());
+            metadata.put(msg.getId(), protobufSafeMap(msg.getMetadata()));
         }
         return builder.parts(convertFromContentBlocks(msg))
                 .metadata(metadata)
-                .role(Message.Role.AGENT)
+                .role(Message.Role.ROLE_AGENT)
                 .taskId(taskId)
                 .contextId(contextId)
                 .build();
@@ -130,33 +131,21 @@ public class MessageConvertUtil {
     }
 
     /**
-     * Convert content blocks in {@link Msg} to list of {@link Part}.
+     * Convert content blocks in {@link Msg} to protocol parts.
      *
-     * @param msg the Msg saved content blocks to convert
-     * @param streamingChunk whether these parts represent streaming delta chunks
-     * @return list of Part
+     * @param msg message whose content blocks should be converted
+     * @param streamingChunk whether the parts represent streaming delta chunks
+     * @return converted protocol parts
      */
     public static List<Part<?>> convertFromContentBlocks(Msg msg, boolean streamingChunk) {
-        return new LinkedList<>(
-                msg.getContent().stream()
-                        .map(CONTENT_BLOCK_PARSER::parse)
-                        .filter(Objects::nonNull)
-                        .peek(
-                                part -> {
-                                    part.getMetadata()
-                                            .put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
-                                    part.getMetadata()
-                                            .put(
-                                                    MessageConstants.SOURCE_NAME_METADATA_KEY,
-                                                    msg.getName());
-                                    if (streamingChunk) {
-                                        part.getMetadata()
-                                                .put(
-                                                        MessageConstants.STREAM_CHUNK_METADATA_KEY,
-                                                        Boolean.TRUE);
-                                    }
-                                })
-                        .toList());
+        List<Part<?>> parts = new LinkedList<>();
+        for (int blockIndex = 0; blockIndex < msg.getContent().size(); blockIndex++) {
+            Part<?> part = CONTENT_BLOCK_PARSER.parse(msg.getContent().get(blockIndex));
+            if (part != null) {
+                parts.add(withSourceMetadata(part, msg, streamingChunk, blockIndex));
+            }
+        }
+        return parts;
     }
 
     private static boolean canMergeStreamingChunk(Msg current, Msg next) {
@@ -232,7 +221,7 @@ public class MessageConvertUtil {
         Map<String, List<ContentBlock>> partsByMsgId = new HashMap<>();
         Map<String, String> msgIdToName = new HashMap<>();
         Map<String, MsgRole> msgIdToRole = new HashMap<>();
-        message.getParts().stream()
+        message.parts().stream()
                 .filter(Objects::nonNull)
                 .forEach(
                         part -> {
@@ -262,7 +251,7 @@ public class MessageConvertUtil {
                                         .name(msgIdToName.get(msgId))
                                         .role(
                                                 msgIdToRole.getOrDefault(
-                                                        msgId, convertRole(message.getRole())))
+                                                        msgId, convertRole(message.role())))
                                         .content(partsByMsgId.get(msgId))
                                         .metadata(getMsgMetadata(message, msgId))
                                         .build()));
@@ -270,28 +259,23 @@ public class MessageConvertUtil {
     }
 
     private static String getMsgId(Part<?> part) {
-        if (null == part.getMetadata()
-                || null == part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY)) {
+        Map<String, Object> metadata = getPartMetadata(part);
+        if (null == metadata.get(MessageConstants.MSG_ID_METADATA_KEY)) {
             return UUID.randomUUID().toString();
         }
-        return part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY).toString();
+        return metadata.get(MessageConstants.MSG_ID_METADATA_KEY).toString();
     }
 
     private static String getMsgName(Part<?> part) {
-        if (null == part.getMetadata()) {
+        Map<String, Object> metadata = getPartMetadata(part);
+        if (null == metadata.get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
             return null;
         }
-        if (null == part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
-            return null;
-        }
-        return part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+        return metadata.get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
     }
 
     private static MsgRole getMsgRole(Part<?> part) {
-        if (null == part.getMetadata()) {
-            return null;
-        }
-        Object role = part.getMetadata().get(MessageConstants.MSG_ROLE_METADATA_KEY);
+        Object role = getPartMetadata(part).get(MessageConstants.MSG_ROLE_METADATA_KEY);
         if (role == null) {
             return null;
         }
@@ -303,23 +287,71 @@ public class MessageConvertUtil {
     }
 
     private static MsgRole convertRole(Message.Role role) {
-        if (role == Message.Role.AGENT) {
-            return MsgRole.ASSISTANT;
-        }
-        return MsgRole.USER;
+        return role == Message.Role.ROLE_AGENT ? MsgRole.ASSISTANT : MsgRole.USER;
     }
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> getMsgMetadata(Message message, String msgId) {
-        if (null == message || null == message.getMetadata()) {
+        if (null == message || null == message.metadata()) {
             return Map.of();
         }
-        Object metadata = message.getMetadata().get(msgId);
+        Object metadata = message.metadata().get(msgId);
         if (null == metadata) {
             return Map.of();
         }
         if (metadata instanceof Map) {
             return (Map<String, Object>) metadata;
+        }
+        return Map.of();
+    }
+
+    private static Part<?> withSourceMetadata(
+            Part<?> part, Msg msg, boolean streamingChunk, int blockIndex) {
+        Map<String, Object> metadata = new HashMap<>(getPartMetadata(part));
+        if (msg.getId() != null) {
+            metadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+        }
+        if (msg.getName() != null) {
+            metadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, msg.getName());
+        }
+        if (streamingChunk) {
+            metadata.put(MessageConstants.STREAM_CHUNK_METADATA_KEY, Boolean.TRUE);
+            metadata.putIfAbsent(
+                    MessageConstants.BLOCK_ID_METADATA_KEY,
+                    streamingBlockId(msg, blockIndex, metadata));
+        }
+        metadata = protobufSafeMap(metadata);
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), metadata);
+        }
+        if (part instanceof DataPart dataPart) {
+            return new DataPart(protobufSafeValue(dataPart.data()), metadata);
+        }
+        if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), metadata);
+        }
+        return part;
+    }
+
+    private static String streamingBlockId(
+            Msg msg, int blockIndex, Map<String, Object> partMetadata) {
+        return "message="
+                + msg.getId()
+                + ";block="
+                + blockIndex
+                + ";type="
+                + partMetadata.get(MessageConstants.BLOCK_TYPE_METADATA_KEY);
+    }
+
+    private static Map<String, Object> getPartMetadata(Part<?> part) {
+        if (part instanceof TextPart textPart && textPart.metadata() != null) {
+            return textPart.metadata();
+        }
+        if (part instanceof DataPart dataPart && dataPart.metadata() != null) {
+            return dataPart.metadata();
+        }
+        if (part instanceof FilePart filePart && filePart.metadata() != null) {
+            return filePart.metadata();
         }
         return Map.of();
     }

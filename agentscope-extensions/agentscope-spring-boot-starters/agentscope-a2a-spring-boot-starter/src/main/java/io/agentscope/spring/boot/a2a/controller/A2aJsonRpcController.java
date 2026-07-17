@@ -16,13 +16,13 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
-import io.a2a.spec.JSONRPCResponse;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
 import java.util.logging.Logger;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.A2AResponse;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +36,8 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/")
 public class A2aJsonRpcController {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     Logger logger = Logger.getLogger(A2aJsonRpcController.class.getName());
 
@@ -56,10 +58,7 @@ public class A2aJsonRpcController {
             @RequestBody String body, @RequestHeader Map<String, String> header) {
         Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
-            return fluxResult
-                    .filter(each -> each instanceof JSONRPCResponse)
-                    .map(each -> (JSONRPCResponse<?>) each)
-                    .map(this::convertToSse);
+            return fluxResult.map(this::convertToSse);
         } else {
             return result;
         }
@@ -74,15 +73,24 @@ public class A2aJsonRpcController {
         return jsonRpcHandler;
     }
 
-    private ServerSentEvent<String> convertToSse(JSONRPCResponse<?> response) {
+    private ServerSentEvent<String> convertToSse(Object response) {
         try {
-            String data = Utils.OBJECT_MAPPER.writeValueAsString(response);
-            ServerSentEvent.Builder<String> builder =
-                    ServerSentEvent.<String>builder().data(data).event("jsonrpc");
-            if (response.getId() != null) {
-                builder.id(response.getId().toString());
+            if (response instanceof String data) {
+                return ServerSentEvent.<String>builder().data(data).event("jsonrpc").build();
             }
-            return builder.build();
+            if (response instanceof A2AResponse<?> a2aResponse) {
+                String data = OBJECT_MAPPER.writeValueAsString(a2aResponse);
+                ServerSentEvent.Builder<String> builder =
+                        ServerSentEvent.<String>builder().data(data).event("jsonrpc");
+                if (a2aResponse.getId() != null) {
+                    builder.id(a2aResponse.getId().toString());
+                }
+                return builder.build();
+            }
+            return ServerSentEvent.<String>builder()
+                    .data(OBJECT_MAPPER.writeValueAsString(response))
+                    .event("jsonrpc")
+                    .build();
         } catch (Exception e) {
             logger.severe("Error converting response to SSE: " + e.getMessage());
             return ServerSentEvent.<String>builder()

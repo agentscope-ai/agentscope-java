@@ -52,5 +52,14 @@ class MessageConstantsTest {
         assertNotNull(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         assertNotNull(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY);
         assertEquals("_agentscope_msg_role", MessageConstants.MSG_ROLE_METADATA_KEY);
+        assertEquals("_agentscope_stream_chunk", MessageConstants.STREAM_CHUNK_METADATA_KEY);
+        assertEquals("_agentscope_block_id", MessageConstants.BLOCK_ID_METADATA_KEY);
+        assertEquals("_agentscope_event_source", MessageConstants.EVENT_SOURCE_METADATA_KEY);
+        assertEquals(
+                "_agentscope_tool_result_state", MessageConstants.TOOL_RESULT_STATE_METADATA_KEY);
+        assertEquals("_agentscope_handoff_type", MessageConstants.HANDOFF_TYPE_METADATA_KEY);
+        assertEquals(
+                "_agentscope_tool_arguments_raw", MessageConstants.TOOL_ARGUMENTS_RAW_METADATA_KEY);
+        assertEquals("a2aTaskState", MessageConstants.A2A_TASK_STATE_METADATA_KEY);
     }
 }
