@@ -30,7 +30,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.a2a.agent.hitl.A2aHandoffType;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.a2a.server.hitl.HitlClaimRequest;
+import io.agentscope.core.a2a.server.hitl.HitlEncodingContext;
+import io.agentscope.core.a2a.server.hitl.HitlExecutionKey;
+import io.agentscope.core.a2a.server.hitl.HitlHandoffStatus;
+import io.agentscope.core.a2a.server.hitl.HitlOpenRequest;
+import io.agentscope.core.a2a.server.hitl.LocalHitlResumeCoordinator;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
@@ -52,6 +59,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.a2aproject.sdk.grpc.mapper.PartMapper;
@@ -191,7 +199,150 @@ class AgentEventA2aEncoderTest {
     }
 
     @Test
-    void authMetadataDoesNotInventA2aAuthRequired() {
+    void durableUserConfirmationEmitsCredentialFreeResolvableHandoffMetadata() {
+        LocalHitlResumeCoordinator coordinator = new LocalHitlResumeCoordinator();
+        HitlExecutionKey executionKey = new HitlExecutionKey("alice", "agent-a", "context-1");
+        AgentEventA2aEncoder encoder =
+                AgentEventA2aEncoder.streaming(
+                        context,
+                        AgentExecuteProperties.builder().build(),
+                        emitter,
+                        new HitlEncodingContext(
+                                coordinator,
+                                executionKey,
+                                "next-secret-token",
+                                Duration.ofDays(7),
+                                null));
+        ToolUseBlock tool =
+                ToolUseBlock.builder().id("call-1").name("delete").input(Map.of("id", 7)).build();
+
+        encoder.onNext(new RequireUserConfirmEvent("reply-1", List.of(tool)));
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(emitter).requiresInput(messageCaptor.capture(), eq(true));
+        Map<String, Object> metadata = messageCaptor.getValue().metadata();
+        assertEquals("user-confirm", metadata.get(MessageConstants.HANDOFF_TYPE_METADATA_KEY));
+        assertTrue(metadata.containsKey(MessageConstants.HANDOFF_ID_METADATA_KEY));
+        assertTrue(metadata.containsKey(MessageConstants.HANDOFF_EXPIRES_AT_METADATA_KEY));
+        assertEquals(
+                "call-1",
+                ((Map<?, ?>)
+                                ((List<?>)
+                                                metadata.get(
+                                                        MessageConstants
+                                                                .PENDING_TOOLS_METADATA_KEY))
+                                        .get(0))
+                        .get("toolCallId"));
+        assertFalse(messageCaptor.getValue().toString().contains("next-secret-token"));
+        assertEquals(
+                A2aHandoffType.USER_CONFIRM,
+                coordinator
+                        .get(String.valueOf(metadata.get(MessageConstants.HANDOFF_ID_METADATA_KEY)))
+                        .orElseThrow()
+                        .type());
+    }
+
+    @Test
+    void resumedTurnCanPauseAgainWithAOneTimeRotatedToken() {
+        LocalHitlResumeCoordinator coordinator = new LocalHitlResumeCoordinator();
+        HitlExecutionKey executionKey = new HitlExecutionKey("alice", "agent-a", "context-1");
+        ToolUseBlock firstTool =
+                ToolUseBlock.builder().id("call-1").name("first").input(Map.of("step", 1)).build();
+        String firstHandoff =
+                coordinator
+                        .open(
+                                new HitlOpenRequest(
+                                        "task-1",
+                                        "context-1",
+                                        executionKey,
+                                        A2aHandoffType.USER_CONFIRM,
+                                        List.of(firstTool),
+                                        "first-token",
+                                        Duration.ofDays(7),
+                                        null))
+                        .handoffId();
+        coordinator.claim(new HitlClaimRequest("task-1", "context-1", firstHandoff, "first-token"));
+        AgentEventA2aEncoder encoder =
+                AgentEventA2aEncoder.streaming(
+                        context,
+                        AgentExecuteProperties.builder().build(),
+                        emitter,
+                        new HitlEncodingContext(
+                                coordinator,
+                                executionKey,
+                                "second-token",
+                                Duration.ofDays(7),
+                                firstHandoff));
+        ToolUseBlock secondTool =
+                ToolUseBlock.builder().id("call-2").name("second").input(Map.of("step", 2)).build();
+
+        encoder.onNext(new RequireUserConfirmEvent("reply-2", List.of(secondTool)));
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(emitter).requiresInput(messageCaptor.capture(), eq(true));
+        String secondHandoff =
+                String.valueOf(
+                        messageCaptor
+                                .getValue()
+                                .metadata()
+                                .get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+        assertEquals(
+                HitlHandoffStatus.SUPERSEDED, coordinator.get(firstHandoff).orElseThrow().status());
+        assertEquals(HitlHandoffStatus.OPEN, coordinator.get(secondHandoff).orElseThrow().status());
+        assertEquals(
+                HitlHandoffStatus.CLAIMED,
+                coordinator
+                        .claim(
+                                new HitlClaimRequest(
+                                        "task-1", "context-1", secondHandoff, "second-token"))
+                        .status());
+    }
+
+    @Test
+    void resumedAgentStreamErrorRequiresRecoveryInsteadOfCommittingAReplayableFailure() {
+        LocalHitlResumeCoordinator coordinator = new LocalHitlResumeCoordinator();
+        HitlExecutionKey executionKey = new HitlExecutionKey("alice", "agent-a", "context-1");
+        String handoffId =
+                coordinator
+                        .open(
+                                new HitlOpenRequest(
+                                        "task-1",
+                                        "context-1",
+                                        executionKey,
+                                        A2aHandoffType.USER_CONFIRM,
+                                        List.of(
+                                                new ToolUseBlock(
+                                                        "call-1",
+                                                        "approval_probe",
+                                                        Map.of("value", 1))),
+                                        "resume-token-never-log",
+                                        Duration.ofDays(1),
+                                        null))
+                        .handoffId();
+        coordinator.claim(
+                new HitlClaimRequest("task-1", "context-1", handoffId, "resume-token-never-log"));
+        AgentEventA2aEncoder encoder =
+                AgentEventA2aEncoder.streaming(
+                        context,
+                        AgentExecuteProperties.builder().build(),
+                        emitter,
+                        new HitlEncodingContext(
+                                coordinator,
+                                executionKey,
+                                "next-token-never-log",
+                                Duration.ofDays(1),
+                                handoffId));
+
+        encoder.onError(new IllegalStateException("runner failed"));
+
+        verify(emitter).fail(any(Message.class));
+        assertEquals(
+                HitlHandoffStatus.RECOVERY_REQUIRED,
+                coordinator.get(handoffId).orElseThrow().status());
+    }
+
+    @Test
+    void authMetadataHasNoA2aControlEffect() {
         AgentEventA2aEncoder encoder = streamingEncoder(AgentExecuteProperties.builder().build());
         Msg result =
                 Msg.builder()
@@ -204,7 +355,7 @@ class AgentEventA2aEncoderTest {
 
         encoder.onNext(new AgentResultEvent(result));
 
-        verify(emitter, never()).requiresAuth(any(Message.class), anyBoolean());
+        verify(emitter, never()).requiresAuth(any(Message.class), eq(true));
         verify(emitter).complete();
     }
 

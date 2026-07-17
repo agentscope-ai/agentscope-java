@@ -17,11 +17,16 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.hitl.HitlDurabilityCapability;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Flux;
 
@@ -68,6 +73,21 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
         if (null != runningAgent) {
             runningAgent.agent().interrupt(runningAgent.runtimeContext());
         }
+    }
+
+    @Override
+    public HitlDurabilityCapability hitlDurabilityCapability() {
+        AgentStateStore stateStore = actualAgentStateStore().orElse(null);
+        return stateStore == null
+                        || stateStore instanceof InMemoryAgentStateStore
+                        || stateStore instanceof JsonFileAgentStateStore
+                ? HitlDurabilityCapability.LOCAL
+                : HitlDurabilityCapability.DURABLE;
+    }
+
+    @Override
+    public Optional<AgentStateStore> actualAgentStateStore() {
+        return Optional.ofNullable(buildReActAgent().getStateStore());
     }
 
     private RuntimeContext buildRuntimeContext(AgentRequestOptions options) {

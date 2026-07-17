@@ -25,13 +25,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.hitl.HitlDurabilityCapability;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -43,6 +46,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -152,6 +156,27 @@ class AgentRunnerTest {
     @DisplayName("Should create new instance with builder")
     void testCreateNewInstanceWithBuilder() {
         assertNotNull(runner);
+    }
+
+    @Test
+    @DisplayName("Should expose the Agent existing durable AgentStateStore without replacing it")
+    void testDurableStateStore() {
+        AgentStateStore stateStore = mock(AgentStateStore.class);
+        when(mockAgent.getStateStore()).thenReturn(stateStore);
+        ReActAgentWithBuilderRunner durableRunner =
+                ReActAgentWithBuilderRunner.newInstance(mockBuilder);
+
+        assertEquals(HitlDurabilityCapability.DURABLE, durableRunner.hitlDurabilityCapability());
+        assertEquals(stateStore, durableRunner.actualAgentStateStore().orElseThrow());
+
+        requestOptions.setTaskId("durable-task");
+        Flux<AgentEvent> stream = mock(Flux.class);
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(stream);
+        when(stream.doFinally(any())).thenReturn(stream);
+        assertDoesNotThrow(
+                () -> durableRunner.streamEvents(List.of(mock(Msg.class)), requestOptions));
+
+        verify(mockBuilder, never()).stateStore(any());
     }
 
     @Test

@@ -57,7 +57,6 @@ import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SubscribeToTaskRequest;
 import org.a2aproject.sdk.server.ServerCallContext;
-import org.a2aproject.sdk.server.auth.UnauthenticatedUser;
 import org.a2aproject.sdk.server.extensions.A2AExtensions;
 import org.a2aproject.sdk.spec.A2AError;
 import org.a2aproject.sdk.spec.InternalError;
@@ -122,16 +121,29 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
                     .map(this::serializeResponse)
                     .onErrorResume(
                             t -> {
-                                log.error(
-                                        "Streaming JSON-RPC request failed, method={}, id={}",
-                                        request.getMethod(),
-                                        request.getId(),
-                                        t);
+                                A2AError requestError = findA2AError(t);
+                                if (requestError == null) {
+                                    log.error(
+                                            "Streaming JSON-RPC request failed, method={}, id={}",
+                                            request.getMethod(),
+                                            request.getId(),
+                                            t);
+                                } else {
+                                    log.debug(
+                                            "Streaming JSON-RPC request rejected, method={}, id={},"
+                                                    + " code={}",
+                                            request.getMethod(),
+                                            request.getId(),
+                                            requestError.getCode());
+                                }
                                 return Flux.just(
                                         serializeResponse(
                                                 new A2AErrorResponse(
                                                         request.getId(),
-                                                        new InternalError(errorMessage(t)))));
+                                                        requestError != null
+                                                                ? requestError
+                                                                : new InternalError(
+                                                                        errorMessage(t)))));
                             });
         } catch (A2AError e) {
             return serializeResponse(new A2AErrorResponse(e));
@@ -170,8 +182,7 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         Set<String> requestedExtensions =
                 A2AExtensions.getRequestedExtensions(
                         List.of(stringValue(getHeader(headers, A2AHeaders.A2A_EXTENSIONS))));
-        return new ServerCallContext(
-                UnauthenticatedUser.INSTANCE, state, requestedExtensions, requestedVersion);
+        return new ServerCallContext(null, state, requestedExtensions, requestedVersion);
     }
 
     private A2AResponse<?> processNonStreamingRequest(
@@ -208,12 +219,12 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     private Flux<? extends A2AResponse<?>> processStreamingRequest(
             A2ARequest<?> request, ServerCallContext context) throws A2AError {
-        if (request instanceof SendStreamingMessageRequest req) {
-            jsonRpcHandler.validateRequestedTask(req.getParams().message().taskId());
-        } else if (request instanceof SubscribeToTaskRequest req) {
-            jsonRpcHandler.validateRequestedTask(req.getParams().id());
-        }
         try {
+            if (request instanceof SendStreamingMessageRequest req) {
+                jsonRpcHandler.validateRequestedTask(req.getParams().message().taskId());
+            } else if (request instanceof SubscribeToTaskRequest req) {
+                jsonRpcHandler.validateRequestedTask(req.getParams().id());
+            }
             Flow.Publisher<? extends A2AResponse<?>> publisher;
             if (request instanceof SendStreamingMessageRequest req) {
                 publisher = jsonRpcHandler.onMessageSendStream(req, context);
@@ -229,7 +240,23 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
                     request.getId());
         } catch (A2AError error) {
             return Flux.just(new A2AErrorResponse(request.getId(), error));
+        } catch (Throwable failure) {
+            return Flux.error(failure);
         }
+    }
+
+    private A2AError findA2AError(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof A2AError a2aError) {
+                return a2aError;
+            }
+            if (current == current.getCause()) {
+                break;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private Flux<? extends A2AResponse<?>> applyStreamingBackpressureBuffer(

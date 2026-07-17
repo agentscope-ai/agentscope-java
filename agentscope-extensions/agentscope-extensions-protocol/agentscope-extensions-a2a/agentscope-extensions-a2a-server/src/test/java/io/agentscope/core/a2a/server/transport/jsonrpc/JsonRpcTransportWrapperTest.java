@@ -17,10 +17,13 @@
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,6 +42,8 @@ import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageResponse;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageRequest;
 import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageResponse;
 import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.spec.A2AErrorCodes;
+import org.a2aproject.sdk.spec.InvalidParamsError;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Task;
@@ -170,6 +175,89 @@ class JsonRpcTransportWrapperTest {
         }
 
         @Test
+        @DisplayName("Should return synchronous streaming request errors as typed SSE events")
+        void testHandleSynchronousStreamingRequestErrorAsTypedEvent() {
+            doThrow(new InvalidParamsError("rejected before execution"))
+                    .when(jsonRpcHandler)
+                    .validateRequestedTask("task123");
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(1, events.size());
+            assertTrue(events.get(0).contains("\"error\""));
+            assertTrue(events.get(0).contains("\"code\":" + A2AErrorCodes.INVALID_PARAMS.code()));
+            assertTrue(events.get(0).contains("rejected before execution"));
+        }
+
+        @Test
+        @DisplayName("Should return synchronous unknown streaming failures as SSE errors")
+        void testHandleSynchronousUnknownStreamingFailureAsEvent() {
+            doThrow(new IllegalStateException("setup failed before publisher"))
+                    .when(jsonRpcHandler)
+                    .onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class));
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(1, events.size());
+            assertTrue(events.get(0).contains("\"error\""));
+            assertTrue(events.get(0).contains("\"code\":" + A2AErrorCodes.INTERNAL.code()));
+        }
+
+        @Test
+        @DisplayName("Should preserve typed A2A errors raised after streaming starts")
+        void testPreserveTypedStreamingPublisherError() {
+            SendStreamingMessageResponse response =
+                    new SendStreamingMessageResponse(
+                            "1",
+                            new TaskStatusUpdateEvent(
+                                    "task123",
+                                    new TaskStatus(TaskState.TASK_STATE_WORKING),
+                                    "context456",
+                                    Map.of()));
+            when(jsonRpcHandler.onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
+                    .thenReturn(
+                            errorAfterFirstResponsePublisher(
+                                    response,
+                                    new InvalidParamsError("rejected after subscription")));
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(2, events.size());
+            assertTrue(events.get(1).contains("\"error\""));
+            assertTrue(events.get(1).contains("\"code\":" + A2AErrorCodes.INVALID_PARAMS.code()));
+            assertTrue(events.get(1).contains("rejected after subscription"));
+        }
+
+        @Test
         @DisplayName("Should handle GetTask request")
         void testHandleGetTaskRequest() {
             when(jsonRpcHandler.onGetTask(any(GetTaskRequest.class), any(ServerCallContext.class)))
@@ -182,6 +270,28 @@ class JsonRpcTransportWrapperTest {
             String json = assertJsonResult(result);
             assertTrue(json.contains("\"result\""));
             assertTrue(json.contains("\"task123\""));
+        }
+
+        @Test
+        @DisplayName("Should not invent an AgentScope authentication context")
+        void testDoesNotInventAuthenticationContext() {
+            when(jsonRpcHandler.onMessageSend(
+                            any(SendMessageRequest.class), any(ServerCallContext.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                ServerCallContext context = invocation.getArgument(1);
+                                assertNull(context.getUser());
+                                assertFalse(context.getState().containsKey("a2aAuthentication"));
+                                return new SendMessageResponse("1", task());
+                            });
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendMessage", Map.of("userId", "alice")),
+                            Map.of("Authorization", "Bearer token"),
+                            Map.of("tenant", "internal"));
+
+            assertJsonResult(result);
         }
     }
 
@@ -305,6 +415,12 @@ class JsonRpcTransportWrapperTest {
 
     private Flow.Publisher<SendStreamingMessageResponse> errorAfterFirstResponsePublisher(
             SendStreamingMessageResponse response) {
+        return errorAfterFirstResponsePublisher(
+                response, new RuntimeException("boom after first response"));
+    }
+
+    private Flow.Publisher<SendStreamingMessageResponse> errorAfterFirstResponsePublisher(
+            SendStreamingMessageResponse response, Throwable error) {
         return subscriber ->
                 subscriber.onSubscribe(
                         new Flow.Subscription() {
@@ -318,8 +434,7 @@ class JsonRpcTransportWrapperTest {
                                 }
                                 completed = true;
                                 subscriber.onNext(response);
-                                subscriber.onError(
-                                        new RuntimeException("boom after first response"));
+                                subscriber.onError(error);
                             }
 
                             @Override

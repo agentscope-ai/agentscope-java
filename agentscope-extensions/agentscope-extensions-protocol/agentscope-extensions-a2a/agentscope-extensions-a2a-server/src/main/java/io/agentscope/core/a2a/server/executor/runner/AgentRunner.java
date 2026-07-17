@@ -16,9 +16,12 @@
 
 package io.agentscope.core.a2a.server.executor.runner;
 
+import io.agentscope.core.a2a.server.hitl.HitlDurabilityCapability;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentStateStore;
 import java.util.List;
+import java.util.Optional;
 import reactor.core.publisher.Flux;
 
 /**
@@ -63,4 +66,14 @@ public interface AgentRunner {
      * @param taskId the taskId of request needed to stop
      */
     void stop(String taskId);
+
+    /** Explicit resume capability used by durable starter validation. */
+    default HitlDurabilityCapability hitlDurabilityCapability() {
+        return HitlDurabilityCapability.UNSUPPORTED;
+    }
+
+    /** Exact AgentStateStore used by the runner, when it can prove one. */
+    default Optional<AgentStateStore> actualAgentStateStore() {
+        return Optional.empty();
+    }
 }
