@@ -16,6 +16,7 @@
 
 package io.agentscope.spring.boot.a2a.properties;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -45,6 +46,8 @@ public class A2aCommonProperties {
      * Whether A2A server response messages with some inner events and messages like TOOL_CALL.
      */
     private boolean requireInnerMessage;
+
+    private Hitl hitl = new Hitl();
 
     public A2aCommonProperties() {}
 
@@ -87,5 +90,78 @@ public class A2aCommonProperties {
 
     public void setRequireInnerMessage(boolean requireInnerMessage) {
         this.requireInnerMessage = requireInnerMessage;
+    }
+
+    public Hitl getHitl() {
+        return hitl;
+    }
+
+    public void setHitl(Hitl hitl) {
+        this.hitl = hitl == null ? new Hitl() : hitl;
+    }
+
+    /** A2A human-in-the-loop pause and resume settings. */
+    public static class Hitl {
+
+        /** Storage topology used by the A2A HITL control plane. */
+        public enum Durability {
+            LOCAL,
+            DURABLE
+        }
+
+        private boolean enabled;
+        private Durability durability = Durability.LOCAL;
+        private String coordinationProvider;
+        private Duration taskTtl = Duration.ofDays(30);
+        private Duration handoffTtl = Duration.ofDays(7);
+        private Duration executionLeaseTtl = Duration.ofMinutes(1);
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Durability getDurability() {
+            return durability;
+        }
+
+        public void setDurability(Durability durability) {
+            this.durability = durability == null ? Durability.LOCAL : durability;
+        }
+
+        public String getCoordinationProvider() {
+            return coordinationProvider;
+        }
+
+        public void setCoordinationProvider(String coordinationProvider) {
+            this.coordinationProvider = coordinationProvider;
+        }
+
+        public Duration getTaskTtl() {
+            return taskTtl;
+        }
+
+        public void setTaskTtl(Duration taskTtl) {
+            this.taskTtl = taskTtl;
+        }
+
+        public Duration getHandoffTtl() {
+            return handoffTtl;
+        }
+
+        public void setHandoffTtl(Duration handoffTtl) {
+            this.handoffTtl = handoffTtl;
+        }
+
+        public Duration getExecutionLeaseTtl() {
+            return executionLeaseTtl;
+        }
+
+        public void setExecutionLeaseTtl(Duration executionLeaseTtl) {
+            this.executionLeaseTtl = executionLeaseTtl;
+        }
     }
 }

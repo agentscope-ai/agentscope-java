@@ -22,12 +22,19 @@ import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
+import io.agentscope.core.a2a.server.hitl.A2aHitlDurabilityBinding;
+import io.agentscope.core.a2a.server.hitl.HitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
+import io.agentscope.core.a2a.server.hitl.HitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.LocalHitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.LocalHitlSessionLease;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.CustomTransportProperties;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
 import io.agentscope.spring.boot.a2a.controller.A2aJsonRpcController;
 import io.agentscope.spring.boot.a2a.controller.AgentCardController;
+import io.agentscope.spring.boot.a2a.hitl.HitlDurabilityValidator;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
@@ -35,6 +42,9 @@ import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.properties.JSONRPCProperties;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
 import java.util.List;
+import java.util.function.Supplier;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.TaskStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -85,11 +95,28 @@ public class AgentscopeA2aAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentScopeA2aServer agentScopeA2aServer(
             AgentRunner agentRunner,
+            ObjectProvider<TaskStore> taskStoreProvider,
+            ObjectProvider<HitlResumeCoordinator> coordinatorProvider,
+            ObjectProvider<HitlSessionLease> leaseProvider,
+            ObjectProvider<A2aHitlDurabilityBinding> bindingProvider,
             A2aAgentCardProperties agentCardProperties,
             A2aCommonProperties commonProperties,
             Environment environment,
             List<AgentRegistry> agentRegistries,
             List<CustomTransportProperties> transportProperties) {
+        HitlServerProperties hitlProperties = buildHitlServerProperties(commonProperties);
+        HitlComponents hitl =
+                resolveHitlComponents(
+                        hitlProperties,
+                        taskStoreProvider,
+                        coordinatorProvider,
+                        leaseProvider,
+                        bindingProvider);
+        if (hitl.binding() != null) {
+            HitlDurabilityValidator.validate(hitlProperties, agentRunner, hitl.binding());
+            hitl.binding().start();
+        }
+
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
         ConfigurableAgentCard configurableAgentCard =
                 buildConfigurableAgentCard(agentCardProperties);
@@ -97,6 +124,10 @@ public class AgentscopeA2aAutoConfiguration {
         builder.agentCard(configurableAgentCard);
         builder.deploymentProperties(deploymentProperties);
         builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
+        builder.taskStore(hitl.taskStore());
+        builder.hitlResumeCoordinator(hitl.resumeCoordinator());
+        builder.hitlSessionLease(hitl.sessionLease());
+        builder.hitlServerProperties(hitlProperties);
         transportProperties.stream()
                 .filter(CustomTransportProperties::isEnabled)
                 .forEach(
@@ -178,5 +209,100 @@ public class AgentscopeA2aAutoConfiguration {
                 .completeWithMessage(commonProperties.isCompleteWithMessage())
                 .requireInnerMessage(commonProperties.isRequireInnerMessage())
                 .build();
+    }
+
+    private HitlServerProperties buildHitlServerProperties(A2aCommonProperties commonProperties) {
+        A2aCommonProperties.Hitl hitl = commonProperties.getHitl();
+        HitlServerProperties.Durability durability =
+                hitl.getDurability() == A2aCommonProperties.Hitl.Durability.DURABLE
+                        ? HitlServerProperties.Durability.DURABLE
+                        : HitlServerProperties.Durability.LOCAL;
+        return HitlServerProperties.builder()
+                .enabled(hitl.isEnabled())
+                .durability(durability)
+                .taskTtl(hitl.getTaskTtl())
+                .handoffTtl(hitl.getHandoffTtl())
+                .executionLeaseTtl(hitl.getExecutionLeaseTtl())
+                .build();
+    }
+
+    private static HitlComponents resolveHitlComponents(
+            HitlServerProperties properties,
+            ObjectProvider<TaskStore> taskStoreProvider,
+            ObjectProvider<HitlResumeCoordinator> coordinatorProvider,
+            ObjectProvider<HitlSessionLease> leaseProvider,
+            ObjectProvider<A2aHitlDurabilityBinding> bindingProvider) {
+        if (!properties.enabled()) {
+            return HitlComponents.localDefaults();
+        }
+        if (properties.durability() == HitlServerProperties.Durability.LOCAL) {
+            return new HitlComponents(
+                    singleLocalComponent(
+                            taskStoreProvider, TaskStore.class, InMemoryTaskStore::new),
+                    singleLocalComponent(
+                            coordinatorProvider,
+                            HitlResumeCoordinator.class,
+                            LocalHitlResumeCoordinator::new),
+                    singleLocalComponent(
+                            leaseProvider, HitlSessionLease.class, LocalHitlSessionLease::new),
+                    null);
+        }
+
+        List<A2aHitlDurabilityBinding> bindings = bindingProvider.orderedStream().toList();
+        if (bindings.isEmpty()) {
+            throw new IllegalStateException(
+                    "Durable A2A HITL wiring check failed: "
+                            + HitlDurabilityValidator.missingBindingMessage());
+        }
+        if (bindings.size() != 1) {
+            throw new IllegalStateException(
+                    "Durable A2A HITL wiring check failed: Durable HITL requires exactly one "
+                            + "A2aHitlDurabilityBinding, but found "
+                            + bindings.size()
+                            + ".");
+        }
+        if (taskStoreProvider.stream().findAny().isPresent()
+                || coordinatorProvider.stream().findAny().isPresent()
+                || leaseProvider.stream().findAny().isPresent()) {
+            throw new IllegalStateException(
+                    "Durable A2A HITL wiring check failed: durable components must come only "
+                            + "from A2aHitlDurabilityBinding; remove standalone TaskStore, "
+                            + "HitlResumeCoordinator, and HitlSessionLease beans.");
+        }
+        A2aHitlDurabilityBinding binding = bindings.get(0);
+        return new HitlComponents(
+                binding.taskStore(), binding.resumeCoordinator(), binding.sessionLease(), binding);
+    }
+
+    private static <T> T singleLocalComponent(
+            ObjectProvider<T> provider, Class<T> componentType, Supplier<T> defaultSupplier) {
+        List<T> components = provider.orderedStream().toList();
+        if (components.isEmpty()) {
+            return defaultSupplier.get();
+        }
+        if (components.size() != 1) {
+            throw new IllegalStateException(
+                    "Local A2A HITL requires at most one "
+                            + componentType.getSimpleName()
+                            + ", but found "
+                            + components.size()
+                            + ".");
+        }
+        return components.get(0);
+    }
+
+    private record HitlComponents(
+            TaskStore taskStore,
+            HitlResumeCoordinator resumeCoordinator,
+            HitlSessionLease sessionLease,
+            A2aHitlDurabilityBinding binding) {
+
+        private static HitlComponents localDefaults() {
+            return new HitlComponents(
+                    new InMemoryTaskStore(),
+                    new LocalHitlResumeCoordinator(),
+                    new LocalHitlSessionLease(),
+                    null);
+        }
     }
 }
