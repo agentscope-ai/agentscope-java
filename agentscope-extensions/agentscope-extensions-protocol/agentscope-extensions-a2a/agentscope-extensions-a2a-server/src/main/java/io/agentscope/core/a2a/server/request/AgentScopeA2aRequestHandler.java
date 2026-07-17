@@ -16,9 +16,15 @@
 
 package io.agentscope.core.a2a.server.request;
 
+import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.a2a.server.hitl.HitlAdmissionTicket;
+import io.agentscope.core.a2a.server.hitl.HitlResumeRejectedException;
+import io.agentscope.core.a2a.server.hitl.HitlTurnAdmission;
 import java.lang.reflect.Field;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
+import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.events.InMemoryQueueManager;
 import org.a2aproject.sdk.server.events.MainEventBus;
@@ -33,6 +39,10 @@ import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
 import org.a2aproject.sdk.server.tasks.PushNotificationSender;
 import org.a2aproject.sdk.server.tasks.TaskStateProvider;
 import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.EventKind;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
 import org.a2aproject.sdk.spec.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +54,10 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aRequestHandler.class);
 
+    private static final String HITL_REJECTION_MESSAGE = "A2A HITL resume request was rejected";
+
+    private final HitlTurnAdmission hitlTurnAdmission;
+
     private AgentScopeA2aRequestHandler(
             AgentExecutor agentExecutor,
             TaskStore taskStore,
@@ -51,7 +65,8 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             PushNotificationConfigStore pushConfigStore,
             MainEventBusProcessor mainEventBusProcessor,
             Executor executor,
-            Executor eventConsumerExecutor) {
+            Executor eventConsumerExecutor,
+            HitlTurnAdmission hitlTurnAdmission) {
         super(
                 agentExecutor,
                 taskStore,
@@ -60,6 +75,86 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 mainEventBusProcessor,
                 executor,
                 eventConsumerExecutor);
+        this.hitlTurnAdmission = hitlTurnAdmission;
+    }
+
+    @Override
+    public EventKind onMessageSend(MessageSendParams params, ServerCallContext context) {
+        HitlAdmissionTicket ticket = prepareAdmission(params, context);
+        if (ticket == null) {
+            return super.onMessageSend(params, context);
+        }
+        try {
+            return super.onMessageSend(ticket.requestParams(), context);
+        } catch (RuntimeException | Error setupFailure) {
+            ticket.abort();
+            throw setupFailure;
+        }
+    }
+
+    @Override
+    public Flow.Publisher<StreamingEventKind> onMessageSendStream(
+            MessageSendParams params, ServerCallContext context) {
+        HitlAdmissionTicket ticket = prepareAdmission(params, context);
+        if (ticket == null) {
+            return super.onMessageSendStream(params, context);
+        }
+        try {
+            return super.onMessageSendStream(ticket.requestParams(), context);
+        } catch (RuntimeException | Error setupFailure) {
+            ticket.abort();
+            throw setupFailure;
+        }
+    }
+
+    private HitlAdmissionTicket prepareAdmission(
+            MessageSendParams params, ServerCallContext context) {
+        if (hitlTurnAdmission == null) {
+            return null;
+        }
+        HitlAdmissionTicket ticket = null;
+        try {
+            ticket = hitlTurnAdmission.admit(params, context);
+            ticket.attach(context);
+            return ticket;
+        } catch (HitlResumeRejectedException rejected) {
+            if (ticket != null) {
+                ticket.abort();
+            }
+            log.warn(
+                    "HITL admission rejected: reason={}, taskId={}, contextId={}, handoffId={}",
+                    rejected.getMessage(),
+                    safeTaskId(params),
+                    safeContextId(params),
+                    safeHandoffId(params));
+            throw new InvalidParamsError(null, HITL_REJECTION_MESSAGE, null);
+        } catch (RuntimeException | Error setupFailure) {
+            if (ticket != null) {
+                ticket.abort();
+            }
+            throw setupFailure;
+        }
+    }
+
+    private String safeTaskId(MessageSendParams params) {
+        return params == null || params.message() == null ? "" : value(params.message().taskId());
+    }
+
+    private String safeContextId(MessageSendParams params) {
+        return params == null || params.message() == null
+                ? ""
+                : value(params.message().contextId());
+    }
+
+    private String safeHandoffId(MessageSendParams params) {
+        if (params == null || params.message() == null || params.message().metadata() == null) {
+            return "";
+        }
+        return value(params.message().metadata().get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+    }
+
+    private String value(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     public static Builder builder() {
@@ -81,6 +176,8 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
         private MainEventBus mainEventBus;
 
         private MainEventBusProcessor mainEventBusProcessor;
+
+        private HitlTurnAdmission hitlTurnAdmission;
 
         public Builder agentExecutor(AgentExecutor agentExecutor) {
             this.agentExecutor = agentExecutor;
@@ -104,6 +201,11 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
 
         public Builder pushSender(PushNotificationSender pushSender) {
             this.pushSender = pushSender;
+            return this;
+        }
+
+        public Builder hitlTurnAdmission(HitlTurnAdmission hitlTurnAdmission) {
+            this.hitlTurnAdmission = hitlTurnAdmission;
             return this;
         }
 
@@ -143,7 +245,8 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                             pushConfigStore,
                             mainEventBusProcessor,
                             executor,
-                            eventConsumerExecutor);
+                            eventConsumerExecutor,
+                            hitlTurnAdmission);
             setTimeoutProperties(result);
             return result;
         }

@@ -19,7 +19,13 @@ import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.contentBlock
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.protobufSafeMap;
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.protobufSafeValue;
 
+import io.agentscope.core.a2a.agent.hitl.A2aHandoffType;
+import io.agentscope.core.a2a.agent.hitl.A2aPendingTool;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.a2a.server.hitl.HitlEncodingContext;
+import io.agentscope.core.a2a.server.hitl.HitlHandoffRecord;
+import io.agentscope.core.a2a.server.hitl.HitlHandoffStatus;
+import io.agentscope.core.a2a.server.hitl.HitlOpenRequest;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -44,6 +50,7 @@ import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -114,6 +121,7 @@ final class AgentEventA2aEncoder {
     private final AgentExecuteProperties properties;
     private final AgentEmitter emitter;
     private final boolean streaming;
+    private final HitlEncodingContext hitlContext;
     private final String artifactId = UUID.randomUUID().toString();
     private final AtomicBoolean firstArtifact = new AtomicBoolean(true);
     private final AtomicReference<TerminalState> terminal =
@@ -126,21 +134,39 @@ final class AgentEventA2aEncoder {
             RequestContext context,
             AgentExecuteProperties properties,
             AgentEmitter emitter,
-            boolean streaming) {
+            boolean streaming,
+            HitlEncodingContext hitlContext) {
         this.context = context;
         this.properties = properties;
         this.emitter = emitter;
         this.streaming = streaming;
+        this.hitlContext = hitlContext;
     }
 
     static AgentEventA2aEncoder streaming(
             RequestContext context, AgentExecuteProperties properties, AgentEmitter emitter) {
-        return new AgentEventA2aEncoder(context, properties, emitter, true);
+        return new AgentEventA2aEncoder(context, properties, emitter, true, null);
+    }
+
+    static AgentEventA2aEncoder streaming(
+            RequestContext context,
+            AgentExecuteProperties properties,
+            AgentEmitter emitter,
+            HitlEncodingContext hitlContext) {
+        return new AgentEventA2aEncoder(context, properties, emitter, true, hitlContext);
     }
 
     static AgentEventA2aEncoder blocking(
             RequestContext context, AgentExecuteProperties properties, AgentEmitter emitter) {
-        return new AgentEventA2aEncoder(context, properties, emitter, false);
+        return new AgentEventA2aEncoder(context, properties, emitter, false, null);
+    }
+
+    static AgentEventA2aEncoder blocking(
+            RequestContext context,
+            AgentExecuteProperties properties,
+            AgentEmitter emitter,
+            HitlEncodingContext hitlContext) {
+        return new AgentEventA2aEncoder(context, properties, emitter, false, hitlContext);
     }
 
     void onNext(AgentEvent event) {
@@ -228,7 +254,15 @@ final class AgentEventA2aEncoder {
         } else if (event instanceof ExternalExecutionResultEvent executionResult) {
             emitExternalResults(executionResult);
         } else if (event instanceof AgentResultEvent result) {
-            emitResult(result.getResult());
+            if (result.getResult() != null
+                    && result.getResult().getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+                emitInputRequired(
+                        result.getResult().getId(),
+                        result.getResult().getContentBlocks(ToolUseBlock.class),
+                        "external-execution");
+            } else {
+                emitResult(result.getResult());
+            }
         } else if (event instanceof RequestStopEvent stop) {
             emitCanceled(stop.getReason());
         } else if (event instanceof ExceedMaxItersEvent exceeded) {
@@ -281,7 +315,7 @@ final class AgentEventA2aEncoder {
 
     void onError(Throwable error) {
         String message = error == null ? "unknown error" : nullToEmpty(error.getMessage());
-        emitFailure("Agent stream failed: " + message);
+        emitFailure("Agent stream failed: " + message, HitlHandoffStatus.RECOVERY_REQUIRED);
     }
 
     private void emitTextDelta(AgentEvent event, String blockType, String delta) {
@@ -405,6 +439,46 @@ final class AgentEventA2aEncoder {
 
     private void emitInputRequired(
             String replyId, List<ToolUseBlock> toolCalls, String handoffType) {
+        if (hitlContext != null
+                && hitlContext.claimedHandoffId() != null
+                && !hitlContext.canOpenDurableHandoff()) {
+            throw new IllegalStateException(
+                    "A resumed HITL turn paused again without a next resume token");
+        }
+        Map<String, Object> handoffMetadata = new LinkedHashMap<>();
+        handoffMetadata.put(MessageConstants.A2A_TASK_STATE_METADATA_KEY, "input-required");
+        handoffMetadata.put(MessageConstants.HANDOFF_TYPE_METADATA_KEY, handoffType);
+        if (hitlContext != null && hitlContext.canOpenDurableHandoff()) {
+            A2aHandoffType type =
+                    "user-confirm".equals(handoffType)
+                            ? A2aHandoffType.USER_CONFIRM
+                            : A2aHandoffType.EXTERNAL_EXECUTION;
+            HitlHandoffRecord record =
+                    hitlContext
+                            .coordinator()
+                            .open(
+                                    new HitlOpenRequest(
+                                            context.getTaskId(),
+                                            context.getContextId(),
+                                            hitlContext.executionKey(),
+                                            type,
+                                            toolCalls,
+                                            hitlContext.nextResumeToken(),
+                                            hitlContext.handoffTtl(),
+                                            hitlContext.claimedHandoffId()));
+            handoffMetadata.put(MessageConstants.HANDOFF_ID_METADATA_KEY, record.handoffId());
+            handoffMetadata.put(
+                    MessageConstants.HANDOFF_EXPIRES_AT_METADATA_KEY,
+                    record.expiresAt().toString());
+            handoffMetadata.put(
+                    MessageConstants.PENDING_TOOLS_FINGERPRINT_METADATA_KEY,
+                    record.pendingFingerprint());
+            handoffMetadata.put(
+                    MessageConstants.PENDING_TOOLS_METADATA_KEY,
+                    record.pendingTools().stream()
+                            .map(AgentEventA2aEncoder::pendingToolMetadata)
+                            .toList());
+        }
         if (!tryTerminal(TerminalState.HANDOFF)) {
             return;
         }
@@ -414,14 +488,28 @@ final class AgentEventA2aEncoder {
                         .name("agent")
                         .role(MsgRole.ASSISTANT)
                         .content(toolCalls == null ? List.of() : new ArrayList<>(toolCalls))
-                        .metadata(
-                                Map.of(
-                                        MessageConstants.A2A_TASK_STATE_METADATA_KEY,
-                                        "input-required",
-                                        MessageConstants.HANDOFF_TYPE_METADATA_KEY,
-                                        handoffType))
+                        .metadata(handoffMetadata)
                         .build();
-        emitter.requiresInput(toMessage(message), true);
+        Message wire =
+                Message.builder(toMessage(message))
+                        .metadata(protobufSafeMap(handoffMetadata))
+                        .build();
+        emitter.requiresInput(wire, true);
+    }
+
+    private static Map<String, Object> pendingToolMetadata(ToolUseBlock tool) {
+        A2aPendingTool pending =
+                new A2aPendingTool(
+                        tool.getId(),
+                        tool.getName(),
+                        tool.getInput(),
+                        tool.getContent() == null || tool.getContent().isBlank()
+                                ? "Tool " + tool.getName() + " requires input"
+                                : tool.getContent());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> value =
+                io.agentscope.core.util.JsonUtils.getJsonCodec().convertValue(pending, Map.class);
+        return protobufSafeMap(value);
     }
 
     private void emitControlData(String replyId, String kind, Object data, String source) {
@@ -461,12 +549,19 @@ final class AgentEventA2aEncoder {
         }
         Message message = toMessage(result);
         if (!streaming) {
+            Message finalMessage = message;
             if (blockingParts.isEmpty()) {
-                emitter.sendMessage(message);
+                finalMessage = message;
             } else {
                 List<Part<?>> combined = new ArrayList<>(blockingParts);
                 combined.addAll(message.parts());
-                emitter.sendMessage(Message.builder(message).parts(combined).build());
+                finalMessage = Message.builder(message).parts(combined).build();
+            }
+            if (hasClaimedHandoff()) {
+                emitter.complete(finalMessage);
+                transitionClaimed(HitlHandoffStatus.COMPLETED);
+            } else {
+                emitter.sendMessage(finalMessage);
             }
             return;
         }
@@ -487,6 +582,7 @@ final class AgentEventA2aEncoder {
         } else {
             emitter.complete();
         }
+        transitionClaimed(HitlHandoffStatus.COMPLETED);
     }
 
     private boolean emitMetadataHandoff(AgentEvent event) {
@@ -512,18 +608,37 @@ final class AgentEventA2aEncoder {
             return;
         }
         emitter.cancel(textMessage("Agent execution canceled: " + nullToEmpty(reason)));
+        transitionClaimed(HitlHandoffStatus.CANCELED);
     }
 
     private void emitFailure(String reason) {
+        emitFailure(reason, HitlHandoffStatus.FAILED);
+    }
+
+    private void emitFailure(String reason, HitlHandoffStatus claimedStatus) {
         if (!tryTerminal(TerminalState.FAILED)) {
             return;
         }
         Message message = textMessage(reason);
-        if (streaming) {
+        if (streaming || hasClaimedHandoff()) {
             emitter.fail(message);
         } else {
             emitter.sendMessage(message);
         }
+        transitionClaimed(claimedStatus);
+    }
+
+    private boolean hasClaimedHandoff() {
+        return hitlContext != null && hitlContext.claimedHandoffId() != null;
+    }
+
+    private void transitionClaimed(HitlHandoffStatus target) {
+        if (hitlContext == null || hitlContext.claimedHandoffId() == null) {
+            return;
+        }
+        hitlContext
+                .coordinator()
+                .transition(hitlContext.claimedHandoffId(), HitlHandoffStatus.CLAIMED, target);
     }
 
     private void emitArtifact(List<Part<?>> parts, boolean lastChunk) {

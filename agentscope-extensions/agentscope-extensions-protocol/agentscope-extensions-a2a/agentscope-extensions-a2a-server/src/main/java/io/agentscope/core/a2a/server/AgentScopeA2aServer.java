@@ -23,6 +23,13 @@ import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
+import io.agentscope.core.a2a.server.hitl.HitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
+import io.agentscope.core.a2a.server.hitl.HitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.HitlTurnAdmission;
+import io.agentscope.core.a2a.server.hitl.LocalHitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.LocalHitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.SanitizingTaskStore;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.registry.AgentRegistryService;
 import io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler;
@@ -43,6 +50,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
 import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
 import org.a2aproject.sdk.server.tasks.PushNotificationSender;
 import org.a2aproject.sdk.server.tasks.TaskStore;
@@ -209,6 +217,12 @@ public class AgentScopeA2aServer {
 
         private AgentExecuteProperties agentExecuteProperties;
 
+        private HitlResumeCoordinator hitlResumeCoordinator;
+
+        private HitlServerProperties hitlServerProperties;
+
+        private HitlSessionLease hitlSessionLease;
+
         private Builder(AgentRunner agentRunner) {
             this.agentRunner = agentRunner;
             this.supportedTransports = new HashSet<>();
@@ -247,6 +261,24 @@ public class AgentScopeA2aServer {
          */
         public Builder taskStore(TaskStore taskStore) {
             this.taskStore = taskStore;
+            return this;
+        }
+
+        /** Set the HITL handoff lifecycle coordinator. */
+        public Builder hitlResumeCoordinator(HitlResumeCoordinator hitlResumeCoordinator) {
+            this.hitlResumeCoordinator = hitlResumeCoordinator;
+            return this;
+        }
+
+        /** Set local/durable HITL behavior and TTLs. */
+        public Builder hitlServerProperties(HitlServerProperties hitlServerProperties) {
+            this.hitlServerProperties = hitlServerProperties;
+            return this;
+        }
+
+        /** Set the lease shared by ordinary and resume turns for one logical session. */
+        public Builder hitlSessionLease(HitlSessionLease hitlSessionLease) {
+            this.hitlSessionLease = hitlSessionLease;
             return this;
         }
 
@@ -367,8 +399,41 @@ public class AgentScopeA2aServer {
             if (null == agentExecuteProperties) {
                 agentExecuteProperties = AgentExecuteProperties.builder().build();
             }
-            AgentScopeAgentExecutor agentExecutor =
-                    new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
+            if (null == hitlServerProperties) {
+                hitlServerProperties = HitlServerProperties.builder().build();
+            }
+            if (null == taskStore) {
+                taskStore = new InMemoryTaskStore();
+            }
+            AgentScopeAgentExecutor agentExecutor;
+            HitlTurnAdmission hitlTurnAdmission = null;
+            if (hitlServerProperties.enabled()) {
+                if (null == hitlResumeCoordinator) {
+                    hitlResumeCoordinator = new LocalHitlResumeCoordinator();
+                }
+                if (null == hitlSessionLease) {
+                    hitlSessionLease = new LocalHitlSessionLease();
+                }
+                if (!(taskStore instanceof SanitizingTaskStore)) {
+                    taskStore = new SanitizingTaskStore(taskStore);
+                }
+                agentExecutor =
+                        new AgentScopeAgentExecutor(
+                                agentRunner,
+                                agentExecuteProperties,
+                                hitlResumeCoordinator,
+                                hitlSessionLease,
+                                hitlServerProperties);
+                hitlTurnAdmission =
+                        new HitlTurnAdmission(
+                                agentRunner.getAgentName(),
+                                taskStore,
+                                hitlResumeCoordinator,
+                                hitlSessionLease,
+                                hitlServerProperties);
+            } else {
+                agentExecutor = new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
+            }
             AgentScopeA2aRequestHandler requestHandler =
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)
@@ -376,6 +441,7 @@ public class AgentScopeA2aServer {
                             .queueManager(queueManager)
                             .pushConfigStore(pushConfigStore)
                             .pushSender(pushSender)
+                            .hitlTurnAdmission(hitlTurnAdmission)
                             .build();
             if (null == executor) {
                 executor = Executors.newCachedThreadPool();

@@ -19,11 +19,19 @@ package io.agentscope.core.a2a.server.executor;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.hitl.HitlAdmissionTicket;
+import io.agentscope.core.a2a.server.hitl.HitlEncodingContext;
+import io.agentscope.core.a2a.server.hitl.HitlLeaseHandle;
+import io.agentscope.core.a2a.server.hitl.HitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.HitlResumeRejectedException;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
+import io.agentscope.core.a2a.server.hitl.HitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.LocalHitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.ResolvedAgentRequestMetadata;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,15 +40,11 @@ import org.a2aproject.sdk.A2A;
 import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
-import org.a2aproject.sdk.server.auth.User;
 import org.a2aproject.sdk.server.tasks.AgentEmitter;
 import org.a2aproject.sdk.spec.A2AError;
-import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskState;
 import org.a2aproject.sdk.spec.TaskStatus;
-import org.a2aproject.sdk.spec.TextPart;
-import org.a2aproject.sdk.transport.jsonrpc.context.JSONRPCContextKeys;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,10 +66,47 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private final AgentExecuteProperties agentExecuteProperties;
 
+    private final HitlResumeCoordinator hitlCoordinator;
+
+    private final HitlServerProperties hitlProperties;
+
+    private final HitlSessionLease hitlSessionLease;
+
     public AgentScopeAgentExecutor(
             AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
+        this(
+                agentRunner,
+                agentExecuteProperties,
+                null,
+                null,
+                HitlServerProperties.builder().build());
+    }
+
+    public AgentScopeAgentExecutor(
+            AgentRunner agentRunner,
+            AgentExecuteProperties agentExecuteProperties,
+            HitlResumeCoordinator hitlCoordinator,
+            HitlServerProperties hitlProperties) {
+        this(
+                agentRunner,
+                agentExecuteProperties,
+                hitlCoordinator,
+                new LocalHitlSessionLease(),
+                hitlProperties);
+    }
+
+    public AgentScopeAgentExecutor(
+            AgentRunner agentRunner,
+            AgentExecuteProperties agentExecuteProperties,
+            HitlResumeCoordinator hitlCoordinator,
+            HitlSessionLease hitlSessionLease,
+            HitlServerProperties hitlProperties) {
         this.agentRunner = agentRunner;
         this.agentExecuteProperties = agentExecuteProperties;
+        this.hitlCoordinator = hitlCoordinator;
+        this.hitlSessionLease = hitlSessionLease;
+        this.hitlProperties =
+                hitlProperties == null ? HitlServerProperties.builder().build() : hitlProperties;
         this.subscriptions = new ConcurrentHashMap<>();
     }
 
@@ -88,11 +129,32 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     @Override
     public void execute(RequestContext context, AgentEmitter emitter) throws A2AError {
+        HitlAdmissionTicket ticket = null;
         try {
+            ticket = executionTicket(context);
+            AgentRequestOptions requestOptions = ticket.request().requestOptions();
+            HitlLeaseHandle activeLease = ticket.lease();
+            if (activeLease != null) {
+                activeLease.onLost(() -> agentRunner.stop(context.getTaskId()));
+                requireLease(activeLease);
+            }
+            if (ticket.operation() == HitlAdmissionTicket.Operation.CANCEL) {
+                ticket.claimForExecution();
+                emitter.cancel();
+                ticket.completeCancel();
+                return;
+            }
             List<Msg> inputMessages =
-                    MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
-            AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
+                    ticket.preparedMessages() != null
+                            ? ticket.preparedMessages()
+                            : MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
             Flux<AgentEvent> resultFlux = agentRunner.streamEvents(inputMessages, requestOptions);
+            if (activeLease != null) {
+                resultFlux =
+                        resultFlux
+                                .doOnNext(ignored -> requireLease(activeLease))
+                                .doOnComplete(() -> requireLease(activeLease));
+            }
 
             Task task = context.getTask();
             if (task == null) {
@@ -102,135 +164,87 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 log.info("[{}] Using existing task.", task.id());
             }
             if (isBlockRequest(context)) {
-                processTaskBlocking(context, emitter, resultFlux);
+                processTaskBlocking(context, emitter, resultFlux, ticket.encodingContext());
             } else {
-                processTaskNonBlocking(context, emitter, task, resultFlux);
+                processTaskNonBlocking(
+                        context, emitter, task, resultFlux, ticket.encodingContext());
             }
             log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
+            if (ticket != null) {
+                ticket.markRecoveryRequired();
+            }
             log.error("[{}] Agent execution failed", context.getTaskId(), e);
             emitter.fail(
                     A2A.createAgentTextMessage(
                             "Agent execution failed: " + e.getMessage(),
                             context.getContextId(),
                             context.getTaskId()));
-        }
-    }
-
-    private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
-        Message message = context.getMessage();
-        AgentRequestOptions requestOptions = new AgentRequestOptions();
-        requestOptions.setTaskId(context.getTaskId());
-        requestOptions.setUserId(getUserId(context, message));
-        requestOptions.setSessionId(getSessionId(context, message));
-        requestOptions.setAgentId(getAgentId(context, message));
-        requestOptions.setMetadata(mergeMetadata(context, message));
-        requestOptions.setHeaders(getHeaders(context));
-        return requestOptions;
-    }
-
-    private String getUserId(RequestContext context, Message message) {
-        String authenticatedUser = getAuthenticatedUsername(context);
-        if (hasText(authenticatedUser)) {
-            return authenticatedUser.trim();
-        }
-        return firstText(
-                getMetadataValue(message, "userId"),
-                getMetadataValue(context, "userId"),
-                getMetadataValue(message, "username"),
-                getMetadataValue(context, "username"));
-    }
-
-    private String getSessionId(RequestContext context, Message message) {
-        return firstText(
-                message != null ? message.contextId() : "",
-                getMetadataValue(message, "sessionId"),
-                getMetadataValue(context, "sessionId"),
-                getMetadataValue(message, "threadId"),
-                getMetadataValue(context, "threadId"),
-                getMetadataValue(message, "thread_id"),
-                getMetadataValue(context, "thread_id"),
-                context.getContextId());
-    }
-
-    private String getAgentId(RequestContext context, Message message) {
-        return firstText(
-                getMetadataValue(message, "agentId"),
-                getMetadataValue(context, "agentId"),
-                getMetadataValue(message, "agent_id"),
-                getMetadataValue(context, "agent_id"));
-    }
-
-    private Map<String, Object> mergeMetadata(RequestContext context, Message message) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        if (context != null && context.getMetadata() != null) {
-            result.putAll(context.getMetadata());
-        }
-        if (message != null && message.metadata() != null) {
-            result.putAll(message.metadata());
-        }
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, String> getHeaders(RequestContext context) {
-        ServerCallContext callContext = context == null ? null : context.getCallContext();
-        Map<String, Object> state = callContext == null ? null : callContext.getState();
-        if (state == null) {
-            return Map.of();
-        }
-        Object headers = state.get(JSONRPCContextKeys.HEADERS_KEY);
-        if (!(headers instanceof Map<?, ?> headerMap)) {
-            return Map.of();
-        }
-        Map<String, String> result = new LinkedHashMap<>();
-        headerMap.forEach(
-                (key, value) -> {
-                    if (key != null && value != null) {
-                        result.put(String.valueOf(key), String.valueOf(value));
-                    }
-                });
-        return result;
-    }
-
-    private String getAuthenticatedUsername(RequestContext context) {
-        ServerCallContext callContext = context == null ? null : context.getCallContext();
-        User user = callContext == null ? null : callContext.getUser();
-        if (user != null && user.isAuthenticated() && hasText(user.getUsername())) {
-            return user.getUsername();
-        }
-        return "";
-    }
-
-    private String getMetadataValue(Message message, String key) {
-        if (message == null || message.metadata() == null) {
-            return "";
-        }
-        return stringValue(message.metadata().get(key));
-    }
-
-    private String getMetadataValue(RequestContext context, String key) {
-        if (context == null || context.getMetadata() == null) {
-            return "";
-        }
-        return stringValue(context.getMetadata().get(key));
-    }
-
-    private String firstText(String... values) {
-        for (String value : values) {
-            if (hasText(value)) {
-                return value.trim();
+        } finally {
+            if (ticket != null) {
+                ticket.closeExecution();
             }
         }
-        return "";
     }
 
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value);
+    private HitlAdmissionTicket executionTicket(RequestContext context) {
+        HitlAdmissionTicket prepared = HitlAdmissionTicket.find(context).orElse(null);
+        if (prepared == null) {
+            return legacyNormalTicket(context);
+        }
+        try {
+            return prepared.take(context);
+        } catch (RuntimeException | Error takeFailure) {
+            prepared.abort();
+            throw takeFailure;
+        }
+    }
+
+    private HitlAdmissionTicket legacyNormalTicket(RequestContext context) {
+        ResolvedAgentRequestMetadata request =
+                ResolvedAgentRequestMetadata.resolve(context, agentRunner.getAgentName());
+        if (hasText(request.operation())) {
+            throw new HitlResumeRejectedException(
+                    "HITL resume and cancel require AgentScopeA2aRequestHandler admission");
+        }
+        HitlLeaseHandle lease = null;
+        try {
+            HitlEncodingContext encodingContext = null;
+            if (hitlProperties.enabled()) {
+                lease =
+                        hitlSessionLease.acquire(
+                                request.executionKey(), hitlProperties.executionLeaseTtl());
+                requireLease(lease);
+                if (hitlCoordinator.hasOpenHandoff(request.executionKey())) {
+                    throw new HitlResumeRejectedException(
+                            "Session has an open HITL handoff; resume or cancel it first");
+                }
+                encodingContext =
+                        new HitlEncodingContext(
+                                hitlCoordinator,
+                                request.executionKey(),
+                                request.nextResumeToken(),
+                                hitlProperties.handoffTtl(),
+                                null);
+            }
+            return HitlAdmissionTicket.normal(request, encodingContext, lease, hitlCoordinator)
+                    .take(context);
+        } catch (RuntimeException failure) {
+            if (lease != null) {
+                lease.close();
+            }
+            throw failure;
+        }
     }
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private void requireLease(HitlLeaseHandle lease) {
+        if (lease == null || !lease.isValid()) {
+            throw new HitlResumeRejectedException("A2A session execution lease was lost");
+        }
     }
 
     private Task newTask(RequestContext context) {
@@ -262,9 +276,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskBlocking(
-            RequestContext context, AgentEmitter emitter, Flux<AgentEvent> resultFlux) {
+            RequestContext context,
+            AgentEmitter emitter,
+            Flux<AgentEvent> resultFlux,
+            HitlEncodingContext hitlEncodingContext) {
         AgentEventA2aEncoder encoder =
-                AgentEventA2aEncoder.blocking(context, agentExecuteProperties, emitter);
+                AgentEventA2aEncoder.blocking(
+                        context, agentExecuteProperties, emitter, hitlEncodingContext);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         applyStreamMergeIfEnabled(resultFlux, context)
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
@@ -277,39 +295,31 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, AgentEmitter emitter, Task task, Flux<AgentEvent> resultFlux) {
-        try {
-            emitter.addTask(task);
-            log.info("[{}] Starting streaming request processing", context.getTaskId());
-            processStreamingOutput(resultFlux, emitter, context);
-        } catch (Exception e) {
-            log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            emitter.fail(
-                    emitter.newAgentMessage(
-                            List.of(
-                                    new TextPart(
-                                            "Error processing streaming output: "
-                                                    + e.getMessage())),
-                            Map.of()));
-        }
+            RequestContext context,
+            AgentEmitter emitter,
+            Task task,
+            Flux<AgentEvent> resultFlux,
+            HitlEncodingContext hitlEncodingContext) {
+        emitter.addTask(task);
+        emitter.startWork();
+        log.info("[{}] Starting streaming request processing", context.getTaskId());
+        processStreamingOutput(resultFlux, emitter, context, hitlEncodingContext);
     }
 
     /**
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<AgentEvent> resultFlux, AgentEmitter emitter, RequestContext context) {
+            Flux<AgentEvent> resultFlux,
+            AgentEmitter emitter,
+            RequestContext context,
+            HitlEncodingContext hitlEncodingContext) {
         AgentEventA2aEncoder encoder =
-                AgentEventA2aEncoder.streaming(context, agentExecuteProperties, emitter);
+                AgentEventA2aEncoder.streaming(
+                        context, agentExecuteProperties, emitter, hitlEncodingContext);
         applyStreamMergeIfEnabled(resultFlux, context)
-                .doOnSubscribe(
-                        s -> {
-                            saveSubscription(emitter.getTaskId(), s);
-                            emitter.startWork();
-                        })
+                .doOnSubscribe(s -> saveSubscription(emitter.getTaskId(), s))
                 .doOnNext(encoder::onNext)
-                .doOnError(encoder::onError)
-                .onErrorComplete()
                 .doOnComplete(encoder::onComplete)
                 .doFinally(signal -> removeSubscription(emitter.getTaskId(), signal))
                 .blockLast();

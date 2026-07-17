@@ -23,10 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -34,16 +34,29 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.hitl.HitlExecutionKey;
+import io.agentscope.core.a2a.server.hitl.HitlHandoffStatus;
+import io.agentscope.core.a2a.server.hitl.HitlLeaseHandle;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
+import io.agentscope.core.a2a.server.hitl.HitlSessionLease;
+import io.agentscope.core.a2a.server.hitl.HitlTurnAdmission;
+import io.agentscope.core.a2a.server.hitl.LocalHitlResumeCoordinator;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -58,14 +71,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.a2aproject.sdk.grpc.mapper.TaskArtifactUpdateEventMapper;
 import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
-import org.a2aproject.sdk.server.auth.UnauthenticatedUser;
-import org.a2aproject.sdk.server.auth.User;
 import org.a2aproject.sdk.server.tasks.AgentEmitter;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
 import org.a2aproject.sdk.spec.A2AError;
 import org.a2aproject.sdk.spec.Artifact;
 import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MessageSendConfiguration;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Part;
 import org.a2aproject.sdk.spec.StreamingEventKind;
 import org.a2aproject.sdk.spec.Task;
@@ -79,6 +92,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -130,6 +144,178 @@ class AgentScopeAgentExecutorTest {
             when(mockContext.getConfiguration()).thenReturn(messageSendConfiguration);
         }
         return taskId;
+    }
+
+    @Test
+    @DisplayName("Should pause and resume a confirmation turn with an atomic local claim")
+    void shouldPauseAndResumeConfirmationTurnWithAtomicLocalClaim() throws A2AError {
+        LocalHitlResumeCoordinator coordinator = new LocalHitlResumeCoordinator();
+        List<HitlExecutionKey> leasedExecutionKeys = new LinkedList<>();
+        List<HitlLeaseHandle> leaseHandles = new LinkedList<>();
+        HitlSessionLease lease = mock(HitlSessionLease.class);
+        when(lease.acquire(any(HitlExecutionKey.class), any(Duration.class)))
+                .thenAnswer(
+                        invocation -> {
+                            leasedExecutionKeys.add(invocation.getArgument(0));
+                            HitlLeaseHandle handle = mock(HitlLeaseHandle.class);
+                            when(handle.isValid()).thenReturn(true);
+                            leaseHandles.add(handle);
+                            return handle;
+                        });
+        executor =
+                new AgentScopeAgentExecutor(
+                        mockAgentRunner,
+                        AgentExecuteProperties.builder().build(),
+                        coordinator,
+                        lease,
+                        HitlServerProperties.builder().enabled(true).build());
+        doMockForContext(false, true, false);
+        Message request = mockContext.getMessage();
+        when(request.metadata()).thenReturn(Map.of("userId", "alice", "agentId", "agent-a"));
+        when(mockContext.getMetadata())
+                .thenReturn(Map.of(MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY, "token-1"));
+        ToolUseBlock pending = new ToolUseBlock("call-1", "probe", Map.of("value", 1));
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenReturn(Flux.just(new RequireUserConfirmEvent("reply-1", List.of(pending))));
+
+        executor.execute(mockContext, mockEmitter);
+
+        ArgumentCaptor<Message> pausedMessage = ArgumentCaptor.forClass(Message.class);
+        verify(mockEmitter).requiresInput(pausedMessage.capture(), eq(true));
+        String handoffId =
+                String.valueOf(
+                        pausedMessage
+                                .getValue()
+                                .metadata()
+                                .get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+        clearInvocations(mockEmitter, mockAgentRunner);
+
+        when(request.metadata())
+                .thenReturn(
+                        Map.of(
+                                MessageConstants.HITL_OPERATION_METADATA_KEY,
+                                "resume",
+                                MessageConstants.HANDOFF_ID_METADATA_KEY,
+                                handoffId,
+                                MessageConstants.HITL_RESPONSES_METADATA_KEY,
+                                List.of(
+                                        Map.of(
+                                                "responseType",
+                                                "user-confirmation",
+                                                "toolCallId",
+                                                "call-1",
+                                                "approved",
+                                                true,
+                                                "modifiedInput",
+                                                Map.of("value", 2),
+                                                "permissionRules",
+                                                List.of()))));
+        when(mockContext.getMetadata())
+                .thenReturn(
+                        Map.of(
+                                MessageConstants.RESUME_TOKEN_METADATA_KEY,
+                                "token-1",
+                                MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY,
+                                "token-2"));
+        AtomicReference<List<Msg>> resumedInput = new AtomicReference<>();
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenAnswer(
+                        invocation -> {
+                            resumedInput.set(invocation.getArgument(0));
+                            return Flux.just(
+                                    new AgentResultEvent(
+                                            Msg.builder().textContent("completed").build()));
+                        });
+
+        InMemoryTaskStore taskStore = new InMemoryTaskStore();
+        taskStore.save(
+                Task.builder()
+                        .id(mockContext.getTaskId())
+                        .contextId(mockContext.getContextId())
+                        .status(new TaskStatus(TaskState.TASK_STATE_INPUT_REQUIRED))
+                        .build(),
+                false);
+        Map<String, Object> callState = new HashMap<>();
+        callState.put(A2aServerConstants.ContextKeys.IS_STREAM_KEY, false);
+        when(serverCallContext.getState()).thenReturn(callState);
+        HitlTurnAdmission admission =
+                new HitlTurnAdmission(
+                        "agent",
+                        taskStore,
+                        coordinator,
+                        lease,
+                        HitlServerProperties.builder().enabled(true).build());
+        admission
+                .admit(
+                        MessageSendParams.builder()
+                                .message(request)
+                                .metadata(mockContext.getMetadata())
+                                .build(),
+                        serverCallContext)
+                .attach(serverCallContext);
+
+        executor.execute(mockContext, mockEmitter);
+
+        @SuppressWarnings("unchecked")
+        List<ConfirmResult> confirmations =
+                (List<ConfirmResult>)
+                        resumedInput.get().get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertEquals(Map.of("value", 2), confirmations.get(0).getToolCall().getInput());
+        assertTrue(
+                resumedInput.get().get(0).getContentBlocks(ToolResultBlock.class).stream()
+                        .anyMatch(block -> block.getId().contains("confirmation_recovery_guard")));
+        assertEquals(
+                HitlHandoffStatus.COMPLETED, coordinator.get(handoffId).orElseThrow().status());
+        assertEquals(2, leasedExecutionKeys.size());
+        assertEquals(
+                leasedExecutionKeys.get(0),
+                leasedExecutionKeys.get(1),
+                "fresh-client resume must serialize on the original persisted execution key");
+        leaseHandles.forEach(handle -> verify(handle).onLost(any(Runnable.class)));
+    }
+
+    @Test
+    @DisplayName("Should stop the runner and fail the turn when the session lease is lost")
+    void shouldAbortExecutionWhenSessionLeaseIsLost() throws A2AError {
+        AtomicBoolean valid = new AtomicBoolean(true);
+        AtomicReference<Runnable> lostAction = new AtomicReference<>();
+        HitlLeaseHandle handle =
+                new HitlLeaseHandle() {
+                    @Override
+                    public void onLost(Runnable action) {
+                        lostAction.set(action);
+                    }
+
+                    @Override
+                    public boolean isValid() {
+                        return valid.get();
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+        HitlSessionLease lease = mock(HitlSessionLease.class);
+        when(lease.acquire(any(HitlExecutionKey.class), any(Duration.class))).thenReturn(handle);
+        executor =
+                new AgentScopeAgentExecutor(
+                        mockAgentRunner,
+                        AgentExecuteProperties.builder().build(),
+                        new LocalHitlResumeCoordinator(),
+                        lease,
+                        HitlServerProperties.builder().enabled(true).build());
+        String taskId = doMockForContext(false, true, false);
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenAnswer(
+                        invocation -> {
+                            valid.set(false);
+                            lostAction.get().run();
+                            return Flux.just(new TextBlockDeltaEvent("reply-1", "block-1", "text"));
+                        });
+
+        executor.execute(mockContext, mockEmitter);
+
+        verify(mockAgentRunner).stop(taskId);
+        verify(mockEmitter).sendMessage(any(Message.class));
     }
 
     @Nested
@@ -191,15 +377,11 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
-        @DisplayName("Should use SDK call-context user before metadata user")
-        void testSdkCallContextUserPrecedence() throws A2AError {
+        @DisplayName("Should ignore legacy username metadata as a userId")
+        void testLegacyUsernameDoesNotBecomeUserId() throws A2AError {
             doMockForContext(false, true, false);
-            User user = mock(User.class);
-            when(user.isAuthenticated()).thenReturn(true);
-            when(user.getUsername()).thenReturn("sdk-user");
-            when(serverCallContext.getUser()).thenReturn(user);
             Message message = mockContext.getMessage();
-            when(message.metadata()).thenReturn(Map.of("userId", "metadata-user"));
+            when(message.metadata()).thenReturn(Map.of("username", "legacy-user"));
 
             AtomicReference<AgentRequestOptions> optionsRef = new AtomicReference<>();
             doAnswer(
@@ -213,37 +395,13 @@ class AgentScopeAgentExecutorTest {
             executor.execute(mockContext, mockEmitter);
 
             assertNotNull(optionsRef.get());
-            assertEquals("sdk-user", optionsRef.get().getUserId());
+            assertNull(optionsRef.get().getUserId());
         }
 
         @Test
-        @DisplayName("Should keep metadata user when authentication is anonymous")
-        void testAnonymousAuthenticationDoesNotOverrideMetadataUser() throws A2AError {
-            doMockForContext(false, true, false);
-            when(serverCallContext.getUser()).thenReturn(UnauthenticatedUser.INSTANCE);
-            Message message = mockContext.getMessage();
-            when(message.metadata()).thenReturn(Map.of("userId", "alice"));
-
-            AtomicReference<AgentRequestOptions> optionsRef = new AtomicReference<>();
-            doAnswer(
-                            invocationOnMock -> {
-                                optionsRef.set(invocationOnMock.getArgument(1));
-                                return Flux.empty();
-                            })
-                    .when(mockAgentRunner)
-                    .streamEvents(anyList(), any(AgentRequestOptions.class));
-
-            executor.execute(mockContext, mockEmitter);
-
-            assertNotNull(optionsRef.get());
-            assertEquals("alice", optionsRef.get().getUserId());
-        }
-
-        @Test
-        @DisplayName("Should pass request headers to runner")
-        void testHeaders() throws A2AError {
+        @DisplayName("Should pass request headers to runner without authentication enrichment")
+        void testHeadersWithoutAuthenticationEnrichment() throws A2AError {
             doMockForContext(false, false, false);
-            when(serverCallContext.getUser()).thenReturn(UnauthenticatedUser.INSTANCE);
             when(serverCallContext.getState())
                     .thenReturn(
                             Map.of(
@@ -266,28 +424,6 @@ class AgentScopeAgentExecutorTest {
             AgentRequestOptions options = optionsRef.get();
             assertNotNull(options);
             assertEquals("Bearer token", options.getHeaders().get("Authorization"));
-        }
-
-        @Test
-        @DisplayName("Should use username metadata as user ID fallback")
-        void testUsernameMetadataFallbackForUserId() throws A2AError {
-            doMockForContext(false, true, false);
-            Message message = mockContext.getMessage();
-            when(message.metadata()).thenReturn(Map.of("username", "liz hen06"));
-
-            AtomicReference<AgentRequestOptions> optionsRef = new AtomicReference<>();
-            doAnswer(
-                            invocationOnMock -> {
-                                optionsRef.set(invocationOnMock.getArgument(1));
-                                return Flux.empty();
-                            })
-                    .when(mockAgentRunner)
-                    .streamEvents(anyList(), any(AgentRequestOptions.class));
-
-            executor.execute(mockContext, mockEmitter);
-
-            assertNotNull(optionsRef.get());
-            assertEquals("liz hen06", optionsRef.get().getUserId());
         }
 
         @Test
@@ -655,7 +791,7 @@ class AgentScopeAgentExecutorTest {
             String messageId = UUID.randomUUID().toString();
             List<AgentEvent> events = new LinkedList<>();
             for (int i = 0; i < 100; i++) {
-                events.add(mockTextEvent("REASONING", "x", messageId, false));
+                events.add(mockTextEvent(EventType.REASONING, "x", messageId, false));
             }
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(Flux.fromIterable(events));
@@ -675,8 +811,10 @@ class AgentScopeAgentExecutorTest {
             String messageId = UUID.randomUUID().toString();
             Flux<AgentEvent> mockFlux =
                     Flux.just(
-                            mockTextEvent("REASONING", "streaming result 1", messageId, false),
-                            mockTextEvent("REASONING", "streaming result 1 2", messageId, true));
+                            mockTextEvent(
+                                    EventType.REASONING, "streaming result 1", messageId, false),
+                            mockTextEvent(
+                                    EventType.REASONING, "streaming result 1 2", messageId, true));
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
@@ -698,7 +836,9 @@ class AgentScopeAgentExecutorTest {
             doMockForContext(true, false, false);
             String messageId = UUID.randomUUID().toString();
             Flux<AgentEvent> mockFlux =
-                    Flux.just(mockTextEvent("REASONING", "streaming result 1 2", messageId, true));
+                    Flux.just(
+                            mockTextEvent(
+                                    EventType.REASONING, "streaming result 1 2", messageId, true));
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
@@ -717,8 +857,8 @@ class AgentScopeAgentExecutorTest {
             String messageId = UUID.randomUUID().toString();
             Flux<AgentEvent> mockFlux =
                     Flux.just(
-                            mockTextEvent("SUMMARY", "summary chunk", messageId, false),
-                            mockTextEvent("SUMMARY", "summary final", messageId, true));
+                            mockTextEvent(EventType.SUMMARY, "summary chunk", messageId, false),
+                            mockTextEvent(EventType.SUMMARY, "summary final", messageId, true));
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
@@ -753,7 +893,7 @@ class AgentScopeAgentExecutorTest {
             Flux<AgentEvent> mockFlux =
                     Flux.just(
                             mockTextEvent(
-                                    "REASONING",
+                                    EventType.REASONING,
                                     "streaming result",
                                     UUID.randomUUID().toString(),
                                     true,
@@ -812,13 +952,13 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
-        @DisplayName("Should not map arbitrary auth metadata to A2A requires auth")
-        void testExecuteAgentDoesNotInventStreamingAuthRequired() throws A2AError {
+        @DisplayName("Should never map arbitrary metadata to A2A auth-required")
+        void testExecuteAgentDoesNotMapAuthRequiredMetadata() throws A2AError {
             doMockForContext(true, false, false);
             Flux<AgentEvent> mockFlux =
                     Flux.just(
                             mockTextEvent(
-                                    "REASONING",
+                                    EventType.REASONING,
                                     "需要完成授权",
                                     UUID.randomUUID().toString(),
                                     true,
@@ -829,6 +969,14 @@ class AgentScopeAgentExecutorTest {
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEmitter);
 
+            assertFalse(
+                    messageRef.get().stream()
+                            .filter(TaskStatusUpdateEvent.class::isInstance)
+                            .map(TaskStatusUpdateEvent.class::cast)
+                            .anyMatch(
+                                    event ->
+                                            TaskState.TASK_STATE_AUTH_REQUIRED.equals(
+                                                    event.status().state())));
             assertTrue(
                     messageRef.get().stream()
                             .filter(TaskStatusUpdateEvent.class::isInstance)
@@ -837,7 +985,6 @@ class AgentScopeAgentExecutorTest {
                                     event ->
                                             TaskState.TASK_STATE_COMPLETED.equals(
                                                     event.status().state())));
-            verify(mockEmitter, never()).requiresAuth(any(Message.class), anyBoolean());
         }
 
         private AtomicReference<List<StreamingEventKind>> mockStreamingEventQueueRef() {
@@ -977,6 +1124,26 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEmitter)
                     .requiresInput(any(Message.class), eq(true));
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        messageRef
+                                                .get()
+                                                .add(
+                                                        new TaskStatusUpdateEvent(
+                                                                mockEmitter.getTaskId(),
+                                                                new TaskStatus(
+                                                                        TaskState
+                                                                                .TASK_STATE_AUTH_REQUIRED,
+                                                                        invocationOnMock
+                                                                                .getArgument(0),
+                                                                        null),
+                                                                mockEmitter.getContextId(),
+                                                                Map.of()));
+                                        return null;
+                                    })
+                    .when(mockEmitter)
+                    .requiresAuth(any(Message.class), eq(true));
             return messageRef;
         }
 
@@ -1051,12 +1218,12 @@ class AgentScopeAgentExecutorTest {
         }
 
         private AgentEvent mockTextEvent(
-                String eventType, String textContent, String messageId, boolean isLast) {
+                EventType eventType, String textContent, String messageId, boolean isLast) {
             return mockTextEvent(eventType, textContent, messageId, isLast, Map.of());
         }
 
         private AgentEvent mockTextEvent(
-                String eventType,
+                EventType eventType,
                 String textContent,
                 String messageId,
                 boolean isLast,
@@ -1069,7 +1236,8 @@ class AgentScopeAgentExecutorTest {
                                 .metadata(metadata)
                                 .build());
             }
-            TextBlockDeltaEvent event = new TextBlockDeltaEvent(messageId, eventType, textContent);
+            TextBlockDeltaEvent event =
+                    new TextBlockDeltaEvent(messageId, eventType.name(), textContent);
             event.withMetadata(metadata);
             return event;
         }

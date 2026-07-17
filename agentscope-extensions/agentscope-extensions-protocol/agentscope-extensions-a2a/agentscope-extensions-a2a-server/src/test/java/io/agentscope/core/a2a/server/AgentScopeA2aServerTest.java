@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,6 +30,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.hitl.HitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
@@ -180,6 +183,41 @@ class AgentScopeA2aServerTest {
 
             assertSame(builder, result);
             assertNotNull(builder.build());
+        }
+
+        @Test
+        @DisplayName("Should set HITL coordinator and server properties")
+        void testHitlConfiguration() {
+            HitlResumeCoordinator coordinator = mock(HitlResumeCoordinator.class);
+            HitlServerProperties properties =
+                    HitlServerProperties.builder()
+                            .enabled(true)
+                            .durability(HitlServerProperties.Durability.LOCAL)
+                            .build();
+
+            AgentScopeA2aServer.Builder builder =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties);
+
+            assertSame(builder, builder.hitlResumeCoordinator(coordinator));
+            assertSame(builder, builder.hitlServerProperties(properties));
+            assertNotNull(builder.build());
+        }
+
+        @Test
+        @DisplayName("Should keep HITL admission out of the default request path")
+        void testHitlDisabledByDefault() throws Exception {
+            MockTransportWrapperBuilder.lastRequestHandler = null;
+
+            AgentScopeA2aServer.builder(agentRunner)
+                    .withTransport(TransportProperties.builder("MOCK_SUCCESS").build())
+                    .build();
+
+            RequestHandler requestHandler = MockTransportWrapperBuilder.lastRequestHandler;
+            assertNotNull(requestHandler);
+            var admissionField = requestHandler.getClass().getDeclaredField("hitlTurnAdmission");
+            admissionField.setAccessible(true);
+            assertNull(admissionField.get(requestHandler));
         }
 
         @Test
@@ -390,6 +428,8 @@ class AgentScopeA2aServerTest {
     public static class MockTransportWrapperBuilder
             implements TransportWrapperBuilder<TransportWrapper> {
 
+        private static volatile RequestHandler lastRequestHandler;
+
         @Override
         public String getTransportType() {
             return "MOCK_SUCCESS";
@@ -401,6 +441,7 @@ class AgentScopeA2aServerTest {
                 RequestHandler requestHandler,
                 Executor executor,
                 AgentCard extendedAgentCard) {
+            lastRequestHandler = requestHandler;
             return mock(TransportWrapper.class);
         }
     }
@@ -420,6 +461,7 @@ class AgentScopeA2aServerTest {
                 RequestHandler requestHandler,
                 Executor executor,
                 AgentCard extendedAgentCard) {
+            MockTransportWrapperBuilder.lastRequestHandler = requestHandler;
             return mock(TransportWrapper.class);
         }
     }
