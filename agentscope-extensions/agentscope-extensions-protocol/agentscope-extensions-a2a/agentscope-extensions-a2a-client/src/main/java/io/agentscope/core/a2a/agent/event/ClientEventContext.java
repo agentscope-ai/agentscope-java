@@ -17,14 +17,17 @@
 package io.agentscope.core.a2a.agent.event;
 
 import io.agentscope.core.a2a.agent.A2aAgent;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
@@ -44,6 +47,14 @@ public class ClientEventContext {
     private List<Hook> hooks;
 
     private Task task;
+
+    private String priorHandoffId;
+
+    private String priorHandoffTaskId;
+
+    private String priorHandoffContextId;
+
+    private final AtomicBoolean priorSnapshotWindowOpen = new AtomicBoolean(false);
 
     /**
      * Temporarily store the complete historical dialogue context at the time of this call,
@@ -97,8 +108,58 @@ public class ClientEventContext {
         this.inputMessages = inputMessages;
     }
 
+    /**
+     * Ignore the persisted input-required Task snapshot that the SDK replays before executing a
+     * resume/cancel turn. A later pause has a new handoff id and remains terminal for this turn.
+     */
+    public void ignorePriorHandoffSnapshot(String taskId, String contextId, String handoffId) {
+        this.priorHandoffTaskId = normalized(taskId);
+        this.priorHandoffContextId = normalized(contextId);
+        this.priorHandoffId = normalized(handoffId);
+        priorSnapshotWindowOpen.set(
+                priorHandoffTaskId != null
+                        && priorHandoffContextId != null
+                        && priorHandoffId != null);
+    }
+
+    boolean isPriorHandoffSnapshot(Task candidate) {
+        if (!priorSnapshotWindowOpen.compareAndSet(true, false)
+                || candidate == null
+                || !Objects.equals(priorHandoffTaskId, candidate.id())
+                || !Objects.equals(priorHandoffContextId, candidate.contextId())
+                || candidate.status() == null
+                || candidate.status().state() != TaskState.TASK_STATE_INPUT_REQUIRED) {
+            return false;
+        }
+        if (candidate.status().message() == null
+                || candidate.status().message().metadata() == null) {
+            return true;
+        }
+        return Objects.equals(
+                priorHandoffId,
+                candidate
+                        .status()
+                        .message()
+                        .metadata()
+                        .get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+    }
+
+    private static String normalized(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     public boolean isTerminalDelivered() {
         return terminalDelivered.get();
+    }
+
+    /**
+     * Close this turn after downstream cancellation without publishing lifecycle hooks or a sink
+     * terminal. Queued SDK callbacks share the same terminal gate and therefore become no-ops.
+     *
+     * @return {@code true} when cancellation won the terminal race
+     */
+    public boolean abandon() {
+        return terminalDelivered.compareAndSet(false, true);
     }
 
     /**
@@ -112,7 +173,8 @@ public class ClientEventContext {
             return false;
         }
         try {
-            sink.success(publishPostReasoning(msg));
+            Msg postHookMessage = publishPostReasoning(msg);
+            sink.success(postHookMessage);
         } catch (Throwable error) {
             sink.error(error);
         }

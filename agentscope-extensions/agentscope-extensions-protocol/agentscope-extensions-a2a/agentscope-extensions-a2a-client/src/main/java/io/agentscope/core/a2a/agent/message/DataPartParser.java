@@ -140,7 +140,8 @@ public class DataPartParser implements PartParser<DataPart> {
     }
 
     private Map<String, Object> getOriginalMetadata(DataPart part) {
-        Map<String, Object> result = new HashMap<>(part.metadata());
+        Map<String, Object> result =
+                new HashMap<>(MessageConvertUtil.stripSensitiveMetadata(part.metadata()));
         // Remove agentscope inner metadata.
         result.remove(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         result.remove(MessageConstants.TOOL_NAME_METADATA_KEY);

@@ -28,7 +28,8 @@ import org.slf4j.Logger;
 public class LoggerUtil {
 
     /**
-     * Logs detailed information of A2A client events to the log
+     * Logs only the structural type of an A2A client event. Raw SDK events can contain peer
+     * metadata and must never be handed to the logger.
      *
      * @param logger The Logger instance used for logging
      * @param event  The client event object to be logged
@@ -36,7 +37,10 @@ public class LoggerUtil {
     public static void logA2aClientEventDetail(Logger logger, ClientEvent event) {
         if (logger.isTraceEnabled()) {
             try {
-                trace(logger, "\t {}", event);
+                trace(
+                        logger,
+                        "\t eventType={}",
+                        event == null ? "null" : event.getClass().getSimpleName());
             } catch (Exception ignored) {
             }
         }

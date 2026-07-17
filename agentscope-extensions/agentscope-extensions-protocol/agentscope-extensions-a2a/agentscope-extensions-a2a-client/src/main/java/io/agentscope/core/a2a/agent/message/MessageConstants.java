@@ -66,6 +66,32 @@ public class MessageConstants {
 
     public static final String HANDOFF_TYPE_METADATA_KEY = "_agentscope_handoff_type";
 
+    public static final String HANDOFF_ID_METADATA_KEY = "_agentscope_handoff_id";
+
+    public static final String HANDOFF_EXPIRES_AT_METADATA_KEY = "_agentscope_handoff_expires_at";
+
+    public static final String PENDING_TOOLS_METADATA_KEY = "_agentscope_pending_tools";
+
+    public static final String PENDING_TOOLS_FINGERPRINT_METADATA_KEY =
+            "_agentscope_pending_tools_fingerprint";
+
+    public static final String HITL_OPERATION_METADATA_KEY = "_agentscope_hitl_operation";
+
+    public static final String HITL_RESPONSES_METADATA_KEY = "_agentscope_hitl_responses";
+
+    public static final String A2A_TASK_ID_METADATA_KEY = "_agentscope_task_id";
+
+    public static final String A2A_CONTEXT_ID_METADATA_KEY = "_agentscope_context_id";
+
+    /** Request-only current token. It must never be copied to Message, Task, hooks or logs. */
+    public static final String RESUME_TOKEN_METADATA_KEY = "_agentscope_resume_token";
+
+    /** Request-only next token. It must never be copied to Message, Task, hooks or logs. */
+    public static final String NEXT_RESUME_TOKEN_METADATA_KEY = "_agentscope_next_resume_token";
+
+    /** Client-local Msg enhancement. It must be recursively removed before wire conversion. */
+    public static final String LOCAL_HANDOFF_METADATA_KEY = "_agentscope_local_handoff";
+
     public static final String TOOL_ARGUMENTS_RAW_METADATA_KEY = "_agentscope_tool_arguments_raw";
 
     public static final String A2A_TASK_STATE_METADATA_KEY = "a2aTaskState";

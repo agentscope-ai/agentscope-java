@@ -71,6 +71,7 @@ import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.Artifact;
 import org.a2aproject.sdk.spec.CancelTaskParams;
 import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
 import org.a2aproject.sdk.spec.TaskState;
@@ -147,7 +148,7 @@ public class A2aAgentTest {
 
         doAnswer(mockSuccessMessage())
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         A2aRequestOptions requestOptions =
                 A2aRequestOptions.builder()
@@ -167,14 +168,15 @@ public class A2aAgentTest {
 
         agent.call(List.of(Msg.builder().textContent("test").build()), requestOptions).block();
 
-        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        ArgumentCaptor<MessageSendParams> messageCaptor =
+                ArgumentCaptor.forClass(MessageSendParams.class);
         ArgumentCaptor<ClientCallContext> callContextCaptor =
                 ArgumentCaptor.forClass(ClientCallContext.class);
         verify(a2aClient)
                 .sendMessage(
                         messageCaptor.capture(), anyList(), any(), callContextCaptor.capture());
 
-        Message message = messageCaptor.getValue();
+        Message message = messageCaptor.getValue().message();
         assertEquals("session-1", message.contextId());
         assertEquals("user-1", message.metadata().get("userId"));
         assertEquals("session-1", message.metadata().get("sessionId"));
@@ -206,7 +208,7 @@ public class A2aAgentTest {
         CountDownLatch taskStarted = new CountDownLatch(1);
         doAnswer(mockWaitingStopAnswer(stopFlag, taskStarted))
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
         when(a2aClient.cancelTask(any(CancelTaskParams.class), any()))
                 .then(
                         (Answer<Task>)
@@ -247,7 +249,7 @@ public class A2aAgentTest {
 
         doAnswer(mockSuccessMessage())
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         Msg result = agent.call(Msg.builder().textContent("test").build()).block();
         assertNotNull(result);
@@ -272,7 +274,7 @@ public class A2aAgentTest {
                             return null;
                         })
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         IllegalStateException error =
                 assertThrows(
@@ -300,7 +302,7 @@ public class A2aAgentTest {
 
         doAnswer(mockSuccessMessage())
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         Msg result = agent.call(Msg.builder().textContent("test").build()).block();
         assertNotNull(result);
@@ -319,7 +321,7 @@ public class A2aAgentTest {
 
         doThrow(new RuntimeException("mock exception."))
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         assertThrows(
                 RuntimeException.class,
@@ -425,7 +427,7 @@ public class A2aAgentTest {
 
         doAnswer(mockTaskResponse)
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         var streamResults =
                 agent.stream(Msg.builder().textContent("test").build()).collectList().block();
@@ -449,7 +451,7 @@ public class A2aAgentTest {
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
         when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .then(
                         (Answer<Task>)
@@ -488,7 +490,7 @@ public class A2aAgentTest {
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
         when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .thenThrow(new A2AClientException("Server not support cancel task."));
 
@@ -527,7 +529,7 @@ public class A2aAgentTest {
         final AtomicBoolean stopFlag = new AtomicBoolean(false);
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
         when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .then(
                         (Answer<Task>)
@@ -568,7 +570,7 @@ public class A2aAgentTest {
 
         doAnswer(mockSuccessMessage())
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         agent.observe(Msg.builder().textContent("observe test").build()).block();
         Msg result = agent.call(Msg.builder().textContent("test").build()).block();
@@ -674,7 +676,7 @@ public class A2aAgentTest {
 
         doAnswer(mockTaskResponse)
                 .when(a2aClient)
-                .sendMessage(any(Message.class), anyList(), any(), any());
+                .sendMessage(any(MessageSendParams.class), anyList(), any(), any());
 
         agent.stream(Msg.builder().textContent("测试触发").build()).collectList().block();
 

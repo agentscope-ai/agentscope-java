@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
+import io.agentscope.core.a2a.agent.hitl.A2aHandoff;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -82,7 +83,7 @@ public class MessageConvertUtil {
                         artifact -> {
                             builder.id(artifact.artifactId());
                             builder.name(null != agentName ? agentName : artifact.name());
-                            builder.metadata(artifact.metadata());
+                            builder.metadata(stripSensitiveMetadata(artifact.metadata()));
                             parts.addAll(artifact.parts());
                         });
         builder.role(MsgRole.ASSISTANT);
@@ -101,7 +102,7 @@ public class MessageConvertUtil {
         Msg.Builder builder = Msg.builder();
         builder.id(message.messageId());
         builder.name(agentName);
-        builder.metadata(null != message.metadata() ? message.metadata() : Map.of());
+        builder.metadata(stripSensitiveMetadata(message.metadata()));
         builder.role(MsgRole.ASSISTANT);
         builder.content(convertFromParts(message.parts()));
         return builder.build();
@@ -136,7 +137,8 @@ public class MessageConvertUtil {
                 .forEach(
                         msg -> {
                             if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
-                                metadata.put(msg.getId(), msg.getMetadata());
+                                metadata.put(
+                                        msg.getId(), stripSensitiveMetadata(msg.getMetadata()));
                             }
                             parts.addAll(
                                     msg.getContent().stream()
@@ -146,7 +148,7 @@ public class MessageConvertUtil {
                                             .toList());
                         });
         if (requestMetadata != null && !requestMetadata.isEmpty()) {
-            metadata.putAll(requestMetadata);
+            metadata.putAll(stripSensitiveMetadata(requestMetadata));
         }
         return builder.contextId(contextId)
                 .parts(parts)
@@ -192,12 +194,13 @@ public class MessageConvertUtil {
             if (part == null) {
                 continue;
             }
-            ContentBlock block = PART_PARSER.parse(part);
+            Part<?> safePart = sanitizeInboundPart(part);
+            ContentBlock block = PART_PARSER.parse(safePart);
             if (block == null) {
                 continue;
             }
 
-            StreamingChunkIdentity identity = streamingChunkIdentity(part, block);
+            StreamingChunkIdentity identity = streamingChunkIdentity(safePart, block);
             if (identity == null) {
                 if (accumulator != null) {
                     contentBlocks.add(accumulator.build());
@@ -221,6 +224,19 @@ public class MessageConvertUtil {
             contentBlocks.add(accumulator.build());
         }
         return contentBlocks;
+    }
+
+    private static Part<?> sanitizeInboundPart(Part<?> part) {
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), stripSensitiveMetadata(textPart.metadata()));
+        }
+        if (part instanceof DataPart dataPart) {
+            return new DataPart(dataPart.data(), stripSensitiveMetadata(dataPart.metadata()));
+        }
+        if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), stripSensitiveMetadata(filePart.metadata()));
+        }
+        return part;
     }
 
     private static StreamingChunkIdentity streamingChunkIdentity(Part<?> part, ContentBlock block) {
@@ -405,6 +421,76 @@ public class MessageConvertUtil {
         return result;
     }
 
+    /** Recursively remove client-local HITL credentials before Msg data reaches the wire. */
+    public static Map<String, Object> stripSensitiveMetadata(Map<?, ?> value) {
+        if (value == null || value.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        value.forEach(
+                (key, mapValue) -> {
+                    String name = String.valueOf(key);
+                    if (isSensitiveMetadataKey(name)) {
+                        return;
+                    }
+                    Object safe = stripSensitiveValue(mapValue);
+                    if (safe != null) {
+                        result.put(name, safe);
+                    }
+                });
+        return result;
+    }
+
+    private static Object stripSensitiveValue(Object value) {
+        if (value instanceof A2aHandoff) {
+            return null;
+        }
+        if (value instanceof Map<?, ?> map) {
+            if (isSerializedHandoff(map)) {
+                return null;
+            }
+            return stripSensitiveMetadata(map);
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> sanitized = new LinkedList<>();
+            for (Object item : collection) {
+                Object safe = stripSensitiveValue(item);
+                if (safe != null) {
+                    sanitized.add(safe);
+                }
+            }
+            return sanitized;
+        }
+        if (value != null && value.getClass().isArray()) {
+            List<Object> sanitized = new LinkedList<>();
+            for (int index = 0; index < Array.getLength(value); index++) {
+                Object safe = stripSensitiveValue(Array.get(value, index));
+                if (safe != null) {
+                    sanitized.add(safe);
+                }
+            }
+            return sanitized;
+        }
+        return value;
+    }
+
+    private static boolean isSensitiveMetadataKey(String key) {
+        return MessageConstants.RESUME_TOKEN_METADATA_KEY.equals(key)
+                || MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY.equals(key)
+                || MessageConstants.LOCAL_HANDOFF_METADATA_KEY.equals(key)
+                || "resumeToken".equals(key)
+                || "nextResumeToken".equals(key)
+                || "localHandoff".equals(key);
+    }
+
+    private static boolean isSerializedHandoff(Map<?, ?> value) {
+        return value.containsKey("resumeToken")
+                && value.containsKey("handoffId")
+                && value.containsKey("taskId")
+                && value.containsKey("contextId")
+                && value.containsKey("pendingTools");
+    }
+
     /** Convert a typed content block to a protobuf-safe map without Java type names. */
     public static Map<String, Object> contentBlockToProtobufSafeMap(ContentBlock block) {
         if (block == null) {
@@ -440,7 +526,7 @@ public class MessageConvertUtil {
     }
 
     private static Part<?> withMsgMetadata(Part<?> part, Msg msg) {
-        Map<String, Object> metadata = new HashMap<>(readMetadata(part));
+        Map<String, Object> metadata = new HashMap<>(stripSensitiveMetadata(readMetadata(part)));
         if (msg.getId() != null) {
             metadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
         }

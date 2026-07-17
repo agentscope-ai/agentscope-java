@@ -40,14 +40,24 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
     public void handle(TaskEvent event, ClientEventContext context) {
         Task task = event.getTask();
         context.setTask(task);
+        TaskState state = task.status() == null ? null : task.status().state();
         LoggerUtil.info(
                 log,
-                "[{}] A2A Task {} with status {}",
+                "[{}] A2A inbound event type={} taskId={} state={} final={}",
                 context.getCurrentRequestId(),
+                TaskEvent.class.getSimpleName(),
                 task.id(),
-                task.status());
+                state,
+                TaskTerminalMessageFactory.isTerminal(state));
 
-        TaskState state = task.status() == null ? null : task.status().state();
+        if (context.isPriorHandoffSnapshot(task)) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] Ignoring prior input-required Task snapshot for HITL turn.",
+                    context.getCurrentRequestId());
+            return;
+        }
+
         if (TaskTerminalMessageFactory.isAuthenticationRequired(state)) {
             context.completeExceptionally(TaskTerminalMessageFactory.authenticationRequiredError());
             return;
