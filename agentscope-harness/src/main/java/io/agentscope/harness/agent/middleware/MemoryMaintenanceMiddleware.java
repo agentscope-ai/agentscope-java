@@ -163,8 +163,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     /**
      * Fires the fire-and-forget maintenance {@code Mono} on {@code boundedElastic}, tracking its
      * {@link Disposable} in {@link #pending} until it terminates so {@link #close()} can wait for
-     * it. No-ops (and disposes immediately) once {@link #close()} has been called, so a call that
-     * races with shutdown doesn't spawn untracked work.
+     * it. No-ops once {@link #close()} has been called, so a call that races with shutdown
+     * doesn't spawn new untracked work.
      */
     private void scheduleMaintenance(RuntimeContext rc) {
         if (closed) {
@@ -188,10 +188,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                         .subscribe();
         holder[0] = d;
         pending.add(d);
-        if (closed) {
-            pending.remove(d);
-            d.dispose();
-        }
     }
 
     /**

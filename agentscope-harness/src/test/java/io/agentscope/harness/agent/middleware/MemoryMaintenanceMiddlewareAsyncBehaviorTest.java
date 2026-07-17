@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
@@ -145,6 +146,76 @@ class MemoryMaintenanceMiddlewareAsyncBehaviorTest {
         } finally {
             Hooks.resetOnErrorDropped();
         }
+    }
+
+    @Test
+    void onAgent_afterClose_doesNotScheduleNewMaintenance(@TempDir Path tmp) throws Exception {
+        WorkspaceManager wsm = new WorkspaceManager(tmp);
+        MemoryConsolidator consolidator = mock(MemoryConsolidator.class);
+        MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
+
+        // Nothing in flight, so close() returns immediately but marks the middleware closed.
+        mw.close();
+
+        AgentInput input = new AgentInput(List.of(userMsg("hi")));
+        List<AgentEvent> events =
+                mw.onAgent(
+                                (Agent) null,
+                                RuntimeContext.empty(),
+                                input,
+                                in -> Flux.<AgentEvent>empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+        assertTrue(events != null && events.isEmpty());
+
+        // Give any (incorrectly) scheduled maintenance a chance to run before asserting it
+        // didn't.
+        Thread.sleep(200);
+        verifyNoInteractions(consolidator);
+    }
+
+    @Test
+    void close_interruptedWhileWaiting_returnsPromptlyAndDisposesOutstandingRun(@TempDir Path tmp)
+            throws Exception {
+        WorkspaceManager wsm = new WorkspaceManager(tmp);
+
+        CountDownLatch consolidationStarted = new CountDownLatch(1);
+        CountDownLatch releaseConsolidation = new CountDownLatch(1);
+        MemoryConsolidator consolidator = mock(MemoryConsolidator.class);
+        when(consolidator.consolidate(any()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.<Void>fromRunnable(
+                                        () -> {
+                                            consolidationStarted.countDown();
+                                            await(releaseConsolidation);
+                                        }));
+
+        MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
+        AgentInput input = new AgentInput(List.of(userMsg("hi")));
+        mw.onAgent((Agent) null, RuntimeContext.empty(), input, in -> Flux.<AgentEvent>empty())
+                .collectList()
+                .block(Duration.ofSeconds(5));
+        assertTrue(
+                consolidationStarted.await(2, TimeUnit.SECONDS),
+                "consolidation should have started on a detached background thread");
+
+        AtomicBoolean closeReturned = new AtomicBoolean(false);
+        Thread closer =
+                new Thread(
+                        () -> {
+                            mw.close();
+                            closeReturned.set(true);
+                        });
+        closer.start();
+        Thread.sleep(50); // let close() enter its bounded poll-wait loop
+        closer.interrupt();
+        closer.join(2000);
+
+        assertFalse(closer.isAlive(), "close() should return promptly once interrupted");
+        assertTrue(closeReturned.get(), "close() should have completed on the closer thread");
+
+        releaseConsolidation.countDown();
     }
 
     private static void await(CountDownLatch latch) {
