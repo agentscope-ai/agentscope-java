@@ -16,14 +16,14 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
- * The router for {@link PartParser} according to the {@link Part#getKind()}.
+ * The router for {@link PartParser} according to the concrete {@link Part} type.
  */
 public class PartParserRouter {
 
@@ -37,10 +37,15 @@ public class PartParserRouter {
         if (null == part) {
             return null;
         }
-        return switch (part.getKind()) {
-            case TEXT -> new TextPartParser().parse((TextPart) part);
-            case FILE -> new FilePartParser().parse((FilePart) part);
-            case DATA -> new DataPartParser().parse((DataPart) part);
-        };
+        if (part instanceof TextPart textPart) {
+            return new TextPartParser().parse(textPart);
+        }
+        if (part instanceof FilePart filePart) {
+            return new FilePartParser().parse(filePart);
+        }
+        if (part instanceof DataPart dataPart) {
+            return new DataPartParser().parse(dataPart);
+        }
+        return null;
     }
 }

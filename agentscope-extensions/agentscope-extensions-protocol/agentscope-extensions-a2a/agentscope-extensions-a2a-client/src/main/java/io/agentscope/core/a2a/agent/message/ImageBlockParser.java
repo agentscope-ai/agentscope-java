@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.Part;
 import io.agentscope.core.message.ImageBlock;
+import org.a2aproject.sdk.spec.Part;
 
 /**
- * Parser for {@link ImageBlock} to {@link io.a2a.spec.FilePart}.
+ * Parser for {@link ImageBlock} to {@link org.a2aproject.sdk.spec.FilePart}.
  */
 public class ImageBlockParser extends BaseMediaBlockParser<ImageBlock> {
 

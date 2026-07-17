@@ -17,11 +17,9 @@
 package io.agentscope.core.a2a.agent.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.DataPart;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -29,6 +27,8 @@ import io.agentscope.core.message.ThinkingBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -36,128 +36,129 @@ import org.junit.jupiter.api.Test;
 class MessageConvertUtilTest {
 
     @Test
-    @DisplayName("Should merge marked streaming text chunks from artifact")
-    void shouldMergeMarkedStreamingTextChunksFromArtifact() {
-        Map<String, Object> firstMetadata = streamingMetadata("msg-1");
-        Map<String, Object> secondMetadata = streamingMetadata("msg-1");
+    @DisplayName("Should merge adjacent marked text chunks with identical stream identity")
+    void shouldMergeMarkedTextChunksWithIdenticalIdentity() {
         Artifact artifact =
-                new Artifact.Builder()
-                        .artifactId("msg-1")
-                        .name("agent")
-                        .parts(
-                                new TextPart("Hel", firstMetadata),
-                                new TextPart("lo", secondMetadata))
-                        .build();
+                artifact(
+                        new TextPart("Hel", streamingMetadata("msg-1", "block-1", "agent")),
+                        new TextPart("lo", streamingMetadata("msg-1", "block-1", "agent")));
 
         Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
 
         assertEquals(1, result.getContent().size());
-        assertInstanceOf(TextBlock.class, result.getContent().get(0));
-        assertEquals("Hello", ((TextBlock) result.getContent().get(0)).getText());
-        assertEquals("Hello", result.getTextContent());
-    }
-
-    @Test
-    @DisplayName("Should preserve unmarked text part boundaries")
-    void shouldPreserveUnmarkedTextPartBoundaries() {
-        Map<String, Object> firstMetadata = new HashMap<>();
-        firstMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, "msg-1");
-        Map<String, Object> secondMetadata = new HashMap<>();
-        secondMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, "msg-1");
-        Artifact artifact =
-                new Artifact.Builder()
-                        .artifactId("msg-1")
-                        .name("agent")
-                        .parts(
-                                new TextPart("First independent paragraph.", firstMetadata),
-                                new TextPart("Second independent paragraph.", secondMetadata))
-                        .build();
-
-        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
-
-        assertEquals(2, result.getContent().size());
-        assertInstanceOf(TextBlock.class, result.getContent().get(0));
-        assertInstanceOf(TextBlock.class, result.getContent().get(1));
         assertEquals(
-                "First independent paragraph.\nSecond independent paragraph.",
-                result.getTextContent());
+                "Hello", assertInstanceOf(TextBlock.class, result.getContent().get(0)).getText());
     }
 
     @Test
-    @DisplayName("Should flush streaming accumulator before unmarked part")
-    void shouldFlushStreamingAccumulatorBeforeUnmarkedPart() {
+    @DisplayName("Should merge adjacent top-level chunks without a source")
+    void shouldMergeTopLevelChunksWithoutSource() {
         Artifact artifact =
-                new Artifact.Builder()
-                        .artifactId("msg-1")
-                        .name("agent")
-                        .parts(
-                                new TextPart("Hel", streamingMetadata("msg-1")),
-                                new TextPart(" independent "),
-                                new TextPart("lo", streamingMetadata("msg-1")))
-                        .build();
+                artifact(
+                        new TextPart("Hel", streamingMetadata("msg-1", "block-1", null)),
+                        new TextPart("lo", streamingMetadata("msg-1", "block-1", null)));
 
         Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
 
-        assertEquals(3, result.getContent().size());
+        assertEquals(1, result.getContent().size());
+        assertEquals(
+                "Hello", assertInstanceOf(TextBlock.class, result.getContent().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should merge adjacent marked thinking chunks with identical stream identity")
+    void shouldMergeMarkedThinkingChunksWithIdenticalIdentity() {
+        Map<String, Object> first = streamingMetadata("msg-1", "block-1", "agent");
+        first.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                MessageConstants.BlockContent.TYPE_THINKING);
+        Map<String, Object> second = streamingMetadata("msg-1", "block-1", "agent");
+        second.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                MessageConstants.BlockContent.TYPE_THINKING);
+        Artifact artifact = artifact(new TextPart("thin", first), new TextPart("king", second));
+
+        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
+
+        assertEquals(1, result.getContent().size());
+        assertEquals(
+                "thinking",
+                assertInstanceOf(ThinkingBlock.class, result.getContent().get(0)).getThinking());
+    }
+
+    @Test
+    @DisplayName("Should split marked chunks when any stream identity field differs")
+    void shouldSplitMarkedChunksWhenIdentityDiffers() {
+        Artifact artifact =
+                artifact(
+                        new TextPart("A", streamingMetadata("msg-1", "block-1", "agent")),
+                        new TextPart("B", streamingMetadata("msg-2", "block-1", "agent")),
+                        new TextPart("C", streamingMetadata("msg-2", "block-2", "agent")),
+                        new TextPart("D", streamingMetadata("msg-2", "block-2", "subagent")));
+
+        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
+
+        assertEquals(4, result.getContent().size());
+        assertEquals("A\nB\nC\nD", result.getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should preserve unmarked peer parts and flush around them")
+    void shouldPreserveUnmarkedPeerPartsAndFlushAroundThem() {
+        Artifact artifact =
+                artifact(
+                        new TextPart("Hel", streamingMetadata("msg-1", "block-1", "agent")),
+                        new TextPart(" independent "),
+                        new TextPart("lo", streamingMetadata("msg-1", "block-1", "agent")),
+                        new TextPart(" third-party "),
+                        new TextPart("part"));
+
+        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
+
+        assertEquals(5, result.getContent().size());
         assertEquals("Hel", ((TextBlock) result.getContent().get(0)).getText());
         assertEquals(" independent ", ((TextBlock) result.getContent().get(1)).getText());
         assertEquals("lo", ((TextBlock) result.getContent().get(2)).getText());
+        assertEquals(" third-party ", ((TextBlock) result.getContent().get(3)).getText());
+        assertEquals("part", ((TextBlock) result.getContent().get(4)).getText());
     }
 
     @Test
-    @DisplayName("Should merge marked streaming thinking chunks")
-    void shouldMergeMarkedStreamingThinkingChunks() {
-        Map<String, Object> firstMetadata = streamingMetadata("msg-1");
-        firstMetadata.put(
-                MessageConstants.BLOCK_TYPE_METADATA_KEY,
-                MessageConstants.BlockContent.TYPE_THINKING);
-        Map<String, Object> secondMetadata = streamingMetadata("msg-1");
-        secondMetadata.put(
-                MessageConstants.BLOCK_TYPE_METADATA_KEY,
-                MessageConstants.BlockContent.TYPE_THINKING);
-        Artifact artifact =
-                new Artifact.Builder()
-                        .artifactId("msg-1")
-                        .name("agent")
-                        .parts(
-                                new TextPart("thin", firstMetadata),
-                                new TextPart("king", secondMetadata))
-                        .build();
+    @DisplayName("Should recursively sanitize metadata without leaking default Java class names")
+    void shouldRecursivelySanitizeMetadataWithoutJavaClassNames() {
+        Map<String, Object> nested = new HashMap<>();
+        nested.put("state", TestState.READY);
+        nested.put("values", List.of(TestState.READY, 7));
+        nested.put("unsupported", new Object());
+        nested.put("nullValue", null);
 
-        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
+        Map<String, Object> safe = MessageConvertUtil.protobufSafeMap(nested);
 
-        assertEquals(1, result.getContent().size());
-        ThinkingBlock thinkingBlock =
-                assertInstanceOf(ThinkingBlock.class, result.getContent().get(0));
-        assertEquals("thinking", thinkingBlock.getThinking());
+        assertEquals("READY", safe.get("state"));
+        assertEquals(List.of("READY", 7), safe.get("values"));
+        assertFalse(safe.containsKey("unsupported"));
+        assertFalse(safe.containsKey("nullValue"));
+        assertFalse(safe.toString().contains("java.lang.Object@"));
     }
 
-    @Test
-    @DisplayName("Should split streaming chunks by message id and ignore unparsable parts")
-    void shouldSplitStreamingChunksByMessageIdAndIgnoreUnparsableParts() {
-        Map<String, Object> unsupportedMetadata = streamingMetadata("msg-2");
-        unsupportedMetadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, "unsupported");
-        Artifact artifact =
-                new Artifact.Builder()
-                        .artifactId("msg-1")
-                        .name("agent")
-                        .parts(
-                                new TextPart("A", streamingMetadata("msg-1")),
-                                new TextPart("B", streamingMetadata("msg-2")),
-                                new DataPart(Map.of(), unsupportedMetadata))
-                        .build();
-
-        Msg result = MessageConvertUtil.convertFromArtifact(List.of(artifact), "agent");
-
-        assertEquals(2, result.getContent().size());
-        assertEquals("A", ((TextBlock) result.getContent().get(0)).getText());
-        assertEquals("B", ((TextBlock) result.getContent().get(1)).getText());
+    private Artifact artifact(TextPart... parts) {
+        return Artifact.builder().artifactId("artifact-1").name("agent").parts(parts).build();
     }
 
-    private Map<String, Object> streamingMetadata(String msgId) {
+    private Map<String, Object> streamingMetadata(String msgId, String blockId, String source) {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
+        metadata.put(MessageConstants.BLOCK_ID_METADATA_KEY, blockId);
+        if (source != null) {
+            metadata.put(MessageConstants.EVENT_SOURCE_METADATA_KEY, source);
+        }
         metadata.put(MessageConstants.STREAM_CHUNK_METADATA_KEY, Boolean.TRUE);
+        metadata.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY, MessageConstants.BlockContent.TYPE_TEXT);
         return metadata;
+    }
+
+    private enum TestState {
+        READY
     }
 }

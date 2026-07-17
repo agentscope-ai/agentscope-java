@@ -28,7 +28,7 @@ import reactor.core.publisher.Flux;
  * It provides methods for starting, stopping, and get messages from agents.
  *
  * <p>This interface is designed for extending actual handling logics for {@link io.agentscope.core.agent.Agent},
- * methods will use {@link Msg} as input and use {@link AgentEvent} as output.
+ * methods use {@link Msg} as input and {@link AgentEvent} as output.
  * Developers can do some pre-processing before call {@link io.agentscope.core.agent.Agent} or post-processing after
  * calling {@link io.agentscope.core.agent.Agent}.
  */
@@ -49,11 +49,11 @@ public interface AgentRunner {
     String getAgentDescription();
 
     /**
-     * Start to handle agent request with streaming output.
+     * Start to handle an agent request with the GA fine-grained event stream.
      *
-     * @param requestMessages the messages from a2a client
-     * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
-     * @return Flux of events emitted during execution
+     * @param requestMessages messages received from the A2A client
+     * @param options request-scoped task, session, user, headers, and metadata
+     * @return fine-grained events emitted during execution
      */
     Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options);
 

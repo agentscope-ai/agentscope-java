@@ -16,12 +16,6 @@
 
 package io.agentscope.core.a2a.server;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
@@ -48,6 +42,12 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -240,7 +240,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link TaskStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryTaskStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryTaskStore} by default.
          *
          * @param taskStore task store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -253,7 +253,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link QueueManager}.
          *
-         * <p> use {@link io.a2a.server.events.InMemoryQueueManager} by default.
+         * <p> use {@link org.a2aproject.sdk.server.events.InMemoryQueueManager} by default.
          *
          * @param queueManager queue manager
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -266,7 +266,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link PushNotificationConfigStore}.
          *
-         * <p> use {@link io.a2a.server.tasks.InMemoryPushNotificationConfigStore} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore} by default.
          *
          * @param pushConfigStore push notification config store
          * @return builder instance of {@link AgentScopeA2aServer}
@@ -279,7 +279,7 @@ public class AgentScopeA2aServer {
         /**
          * Set implementations of {@link PushNotificationSender}.
          *
-         * <p> use {@link io.a2a.server.tasks.BasePushNotificationSender} by default.
+         * <p> use {@link org.a2aproject.sdk.server.tasks.BasePushNotificationSender} by default.
          *
          * @param pushSender push notification sender
          * @return builder instance of {@link AgentScopeA2aServer}

@@ -16,15 +16,6 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.Client;
-import io.a2a.client.ClientBuilder;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.spec.A2AClientException;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.Message;
-import io.a2a.spec.TaskIdParams;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.a2a.agent.event.ClientEventContext;
@@ -33,6 +24,7 @@ import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
@@ -44,10 +36,22 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.function.BiConsumer;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientBuilder;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.client.transport.spi.interceptors.ClientCallContext;
+import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -95,6 +99,10 @@ public class A2aAgent extends AgentBase {
      */
     private ClientEventContext clientEventContext;
 
+    private A2aRequestOptions currentRequestOptions;
+
+    private ClientCallContext currentClientCallContext;
+
     private A2aAgent(
             String name,
             String description,
@@ -125,10 +133,26 @@ public class A2aAgent extends AgentBase {
         return Mono.defer(
                         () -> {
                             Message message =
-                                    MessageConvertUtil.convertFromMsg(memory.getMessages());
+                                    MessageConvertUtil.convertFromMsg(
+                                            memory.getMessages(),
+                                            getCurrentContextId(),
+                                            getCurrentRequestMetadata());
                             return checkInterruptedAsync().then(doExecute(message));
                         })
                 .doOnNext(this.memory::addMessage);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, RuntimeContext runtimeContext) {
+        return call(msgs, A2aRequestOptions.builder().runtimeContext(runtimeContext).build());
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, A2aRequestOptions requestOptions) {
+        return Mono.defer(
+                () -> {
+                    currentRequestOptions =
+                            requestOptions == null ? A2aRequestOptions.empty() : requestOptions;
+                    return call(msgs);
+                });
     }
 
     @Override
@@ -153,9 +177,9 @@ public class A2aAgent extends AgentBase {
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
         LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", currentRequestId);
         try {
-            String taskId = clientEventContext.getTask().getId();
-            TaskIdParams taskIdParams = new TaskIdParams(taskId);
-            a2aClient.cancelTask(taskIdParams, null);
+            String taskId = clientEventContext.getTask().id();
+            CancelTaskParams cancelTaskParams = new CancelTaskParams(taskId);
+            a2aClient.cancelTask(cancelTaskParams, currentClientCallContext);
             return Mono.just(
                     Msg.builder()
                             .content(
@@ -201,6 +225,9 @@ public class A2aAgent extends AgentBase {
                 sink -> {
                     String requestId = currentRequestId;
                     ClientEventContext eventContext = clientEventContext;
+                    currentClientCallContext = buildClientCallContext();
+                    ClientCallContext callContext = currentClientCallContext;
+                    Client client = a2aClient;
                     eventContext.setSink(sink);
                     BiConsumer<ClientEvent, AgentCard> a2aEventConsumer =
                             (event, agentCard) -> {
@@ -212,11 +239,11 @@ public class A2aAgent extends AgentBase {
                                 LoggerUtil.logA2aClientEventDetail(log, event);
                                 clientEventHandlerRouter.handle(event, eventContext);
                             };
-                    a2aClient.sendMessage(
+                    client.sendMessage(
                             message,
                             List.of(a2aEventConsumer),
-                            err -> {
-                                if (err == null) {
+                            error -> {
+                                if (error == null) {
                                     if (eventContext.isTerminalDelivered()) {
                                         return;
                                     }
@@ -229,15 +256,58 @@ public class A2aAgent extends AgentBase {
                                                     "A2A stream completed before final response."));
                                     return;
                                 }
-                                if (err instanceof CancellationException) {
+                                if (error instanceof CancellationException) {
                                     LoggerUtil.warn(
                                             log, "[{}] A2aAgent sendMessage cancelled.", requestId);
-                                    eventContext.completeExceptionally(err);
-                                    return;
                                 }
-                                eventContext.completeExceptionally(err);
-                            });
+                                eventContext.completeExceptionally(error);
+                            },
+                            callContext);
                 });
+    }
+
+    private String getCurrentContextId() {
+        RuntimeContext runtimeContext = effectiveRequestOptions().runtimeContext();
+        if (runtimeContext == null || !hasText(runtimeContext.getSessionId())) {
+            return null;
+        }
+        return runtimeContext.getSessionId().trim();
+    }
+
+    private Map<String, Object> getCurrentRequestMetadata() {
+        A2aRequestOptions requestOptions = effectiveRequestOptions();
+        Map<String, Object> metadata = new LinkedHashMap<>(a2aAgentConfig.defaultMetadata());
+        metadata.putAll(requestOptions.metadata());
+        if (hasText(requestOptions.agentId())) {
+            metadata.put("agentId", requestOptions.agentId().trim());
+        }
+        RuntimeContext runtimeContext = requestOptions.runtimeContext();
+        if (runtimeContext != null) {
+            if (hasText(runtimeContext.getSessionId())) {
+                metadata.put("sessionId", runtimeContext.getSessionId().trim());
+            }
+            if (hasText(runtimeContext.getUserId())) {
+                metadata.put("userId", runtimeContext.getUserId().trim());
+            }
+        }
+        return metadata;
+    }
+
+    private ClientCallContext buildClientCallContext() {
+        Map<String, String> headers = new LinkedHashMap<>(a2aAgentConfig.defaultHeaders());
+        headers.putAll(effectiveRequestOptions().headers());
+        if (headers.isEmpty()) {
+            return null;
+        }
+        return new ClientCallContext(Map.of(), headers);
+    }
+
+    private A2aRequestOptions effectiveRequestOptions() {
+        return currentRequestOptions == null ? A2aRequestOptions.empty() : currentRequestOptions;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private class A2aClientLifecycleHook implements Hook {
@@ -278,6 +348,8 @@ public class A2aAgent extends AgentBase {
 
         private void tryReleaseResource() {
             clientEventContext = null;
+            currentRequestOptions = null;
+            currentClientCallContext = null;
             if (null != a2aClient) {
                 a2aClient.close();
                 a2aClient = null;

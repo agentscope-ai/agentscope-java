@@ -36,6 +36,10 @@ public class MessageConstants {
         public static final String TYPE_TOOL_USE = "tool_use";
 
         public static final String TYPE_TOOL_RESULT = "tool_result";
+
+        public static final String TYPE_HINT = "hint";
+
+        public static final String TYPE_DATA = "data";
     }
 
     public static final String SOURCE_NAME_METADATA_KEY = "_agentscope_msg_source";
@@ -48,9 +52,21 @@ public class MessageConstants {
 
     public static final String STREAM_CHUNK_METADATA_KEY = "_agentscope_stream_chunk";
 
+    public static final String BLOCK_ID_METADATA_KEY = "_agentscope_block_id";
+
+    public static final String EVENT_SOURCE_METADATA_KEY = "_agentscope_event_source";
+
     public static final String TOOL_NAME_METADATA_KEY = "_agentscope_tool_name";
 
     public static final String TOOL_CALL_ID_METADATA_KEY = "_agentscope_tool_call_id";
 
     public static final String TOOL_RESULT_OUTPUT_METADATA_KEY = "_agentscope_tool_output";
+
+    public static final String TOOL_RESULT_STATE_METADATA_KEY = "_agentscope_tool_result_state";
+
+    public static final String HANDOFF_TYPE_METADATA_KEY = "_agentscope_handoff_type";
+
+    public static final String TOOL_ARGUMENTS_RAW_METADATA_KEY = "_agentscope_tool_arguments_raw";
+
+    public static final String A2A_TASK_STATE_METADATA_KEY = "a2aTaskState";
 }

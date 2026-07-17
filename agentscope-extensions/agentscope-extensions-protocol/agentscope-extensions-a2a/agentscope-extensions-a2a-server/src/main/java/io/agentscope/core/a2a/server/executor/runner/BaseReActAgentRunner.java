@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
@@ -32,7 +33,7 @@ import reactor.core.publisher.Flux;
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final Map<String, ReActAgent> agentCache;
+    private final Map<String, RunningAgent> agentCache;
 
     protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
@@ -55,17 +56,39 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
                     "Agent already exists for taskId: " + options.getTaskId());
         }
         ReActAgent agent = buildReActAgent();
-        agentCache.put(options.getTaskId(), agent);
-        return agent.streamEvents(requestMessages)
+        RuntimeContext runtimeContext = buildRuntimeContext(options);
+        agentCache.put(options.getTaskId(), new RunningAgent(agent, runtimeContext));
+        return agent.streamEvents(requestMessages, runtimeContext)
                 .doFinally(signal -> agentCache.remove(options.getTaskId()));
     }
 
     @Override
     public void stop(String taskId) {
-        ReActAgent agent = agentCache.remove(taskId);
-        if (null != agent) {
-            agent.interrupt();
+        RunningAgent runningAgent = agentCache.remove(taskId);
+        if (null != runningAgent) {
+            runningAgent.agent().interrupt(runningAgent.runtimeContext());
         }
+    }
+
+    private RuntimeContext buildRuntimeContext(AgentRequestOptions options) {
+        RuntimeContext.Builder builder = RuntimeContext.builder();
+        String sessionId = trimToNull(options.getSessionId());
+        if (sessionId != null) {
+            builder.sessionId(sessionId);
+        }
+        String userId = trimToNull(options.getUserId());
+        if (userId != null) {
+            builder.userId(userId);
+        }
+        return builder.build();
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -74,4 +97,6 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
      * @return {@link ReActAgent} instance
      */
     protected abstract ReActAgent buildReActAgent();
+
+    private record RunningAgent(ReActAgent agent, RuntimeContext runtimeContext) {}
 }

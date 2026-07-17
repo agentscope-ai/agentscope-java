@@ -18,16 +18,17 @@ package io.agentscope.core.a2a.agent.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.a2a.spec.FileContent;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.FileWithUri;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.Base64;
+import org.a2aproject.sdk.spec.FileContent;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.FileWithUri;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -134,12 +135,13 @@ class FilePartParserTest {
         ContentBlock result = parser.parse(part);
         assertNull(result);
 
-        file =
-                new FileWithBytes(
-                        null, "test.pdf", Base64.getEncoder().encodeToString("test".getBytes()));
-        part = new FilePart(file);
-        result = parser.parse(part);
-        assertNull(result);
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new FileWithBytes(
+                                null,
+                                "test.pdf",
+                                Base64.getEncoder().encodeToString("test".getBytes())));
     }
 
     @Test

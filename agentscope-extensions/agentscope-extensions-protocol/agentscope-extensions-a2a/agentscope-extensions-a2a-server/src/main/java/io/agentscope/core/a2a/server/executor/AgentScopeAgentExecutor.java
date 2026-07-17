@@ -16,46 +16,31 @@
 
 package io.agentscope.core.a2a.server.executor;
 
-import io.a2a.A2A;
-import io.a2a.server.ServerCallContext;
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.agentexecution.RequestContext;
-import io.a2a.server.events.EventQueue;
-import io.a2a.server.tasks.TaskUpdater;
-import io.a2a.spec.JSONRPCError;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TextPart;
-import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.HintBlockEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockDeltaEvent;
-import io.agentscope.core.event.ToolResultDataDeltaEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import java.util.LinkedList;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.agentexecution.RequestContext;
+import org.a2aproject.sdk.server.auth.User;
+import org.a2aproject.sdk.server.tasks.AgentEmitter;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TextPart;
+import org.a2aproject.sdk.transport.jsonrpc.context.JSONRPCContextKeys;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,15 +70,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     @Override
-    public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+    public void cancel(RequestContext context, AgentEmitter emitter) throws A2AError {
         try {
             log.info("[{}] Start to Cancel Task", context.getTaskId());
-            TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
-            taskUpdater.cancel();
-            agentRunner.stop(taskUpdater.getTaskId());
-            Subscription subscription = subscriptions.get(taskUpdater.getTaskId());
+            emitter.cancel();
+            agentRunner.stop(emitter.getTaskId());
+            Subscription subscription = subscriptions.get(emitter.getTaskId());
             if (null == subscription) {
-                log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
+                log.warn("[{}] Not found Subscription for Task.", emitter.getTaskId());
                 return;
             }
             subscription.cancel();
@@ -103,7 +87,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     @Override
-    public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+    public void execute(RequestContext context, AgentEmitter emitter) throws A2AError {
         try {
             List<Msg> inputMessages =
                     MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
@@ -112,20 +96,20 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
             Task task = context.getTask();
             if (task == null) {
-                task = newTask(context.getMessage());
-                log.info("[{}] Created new task.", task.getId());
+                task = newTask(context);
+                log.info("[{}] Created new task.", task.id());
             } else {
-                log.info("[{}] Using existing task.", task.getId());
+                log.info("[{}] Using existing task.", task.id());
             }
             if (isBlockRequest(context)) {
-                processTaskBlocking(context, eventQueue, task, resultFlux);
+                processTaskBlocking(context, emitter, resultFlux);
             } else {
-                processTaskNonBlocking(context, eventQueue, task, resultFlux);
+                processTaskNonBlocking(context, emitter, task, resultFlux);
             }
             log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
             log.error("[{}] Agent execution failed", context.getTaskId(), e);
-            eventQueue.enqueueEvent(
+            emitter.fail(
                     A2A.createAgentTextMessage(
                             "Agent execution failed: " + e.getMessage(),
                             context.getContextId(),
@@ -134,90 +118,179 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
-        Message message = context.getParams().message();
+        Message message = context.getMessage();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
-        requestOptions.setUserId(getUserId(message));
-        requestOptions.setSessionId(getSessionId(message));
+        requestOptions.setUserId(getUserId(context, message));
+        requestOptions.setSessionId(getSessionId(context, message));
+        requestOptions.setAgentId(getAgentId(context, message));
+        requestOptions.setMetadata(mergeMetadata(context, message));
+        requestOptions.setHeaders(getHeaders(context));
         return requestOptions;
     }
 
-    private String getUserId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("userId")) {
-            return String.valueOf(message.getMetadata().get("userId"));
+    private String getUserId(RequestContext context, Message message) {
+        String authenticatedUser = getAuthenticatedUsername(context);
+        if (hasText(authenticatedUser)) {
+            return authenticatedUser.trim();
+        }
+        return firstText(
+                getMetadataValue(message, "userId"),
+                getMetadataValue(context, "userId"),
+                getMetadataValue(message, "username"),
+                getMetadataValue(context, "username"));
+    }
+
+    private String getSessionId(RequestContext context, Message message) {
+        return firstText(
+                message != null ? message.contextId() : "",
+                getMetadataValue(message, "sessionId"),
+                getMetadataValue(context, "sessionId"),
+                getMetadataValue(message, "threadId"),
+                getMetadataValue(context, "threadId"),
+                getMetadataValue(message, "thread_id"),
+                getMetadataValue(context, "thread_id"),
+                context.getContextId());
+    }
+
+    private String getAgentId(RequestContext context, Message message) {
+        return firstText(
+                getMetadataValue(message, "agentId"),
+                getMetadataValue(context, "agentId"),
+                getMetadataValue(message, "agent_id"),
+                getMetadataValue(context, "agent_id"));
+    }
+
+    private Map<String, Object> mergeMetadata(RequestContext context, Message message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (context != null && context.getMetadata() != null) {
+            result.putAll(context.getMetadata());
+        }
+        if (message != null && message.metadata() != null) {
+            result.putAll(message.metadata());
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> getHeaders(RequestContext context) {
+        ServerCallContext callContext = context == null ? null : context.getCallContext();
+        Map<String, Object> state = callContext == null ? null : callContext.getState();
+        if (state == null) {
+            return Map.of();
+        }
+        Object headers = state.get(JSONRPCContextKeys.HEADERS_KEY);
+        if (!(headers instanceof Map<?, ?> headerMap)) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        headerMap.forEach(
+                (key, value) -> {
+                    if (key != null && value != null) {
+                        result.put(String.valueOf(key), String.valueOf(value));
+                    }
+                });
+        return result;
+    }
+
+    private String getAuthenticatedUsername(RequestContext context) {
+        ServerCallContext callContext = context == null ? null : context.getCallContext();
+        User user = callContext == null ? null : callContext.getUser();
+        if (user != null && user.isAuthenticated() && hasText(user.getUsername())) {
+            return user.getUsername();
         }
         return "";
     }
 
-    private String getSessionId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
-            return String.valueOf(message.getMetadata().get("sessionId"));
+    private String getMetadataValue(Message message, String key) {
+        if (message == null || message.metadata() == null) {
+            return "";
+        }
+        return stringValue(message.metadata().get(key));
+    }
+
+    private String getMetadataValue(RequestContext context, String key) {
+        if (context == null || context.getMetadata() == null) {
+            return "";
+        }
+        return stringValue(context.getMetadata().get(key));
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
         }
         return "";
     }
 
-    private Task newTask(Message request) {
-        String contextId = request.getContextId();
-        String taskId = request.getTaskId();
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private Task newTask(RequestContext context) {
         return new Task(
-                taskId,
-                contextId,
-                new TaskStatus(TaskState.SUBMITTED),
+                context.getTaskId(),
+                context.getContextId(),
+                new TaskStatus(TaskState.TASK_STATE_SUBMITTED),
                 null,
-                List.of(request),
+                context.getMessage() == null ? List.of() : List.of(context.getMessage()),
                 null);
     }
 
     private boolean isBlockRequest(RequestContext context) {
         // Streaming request must non-block.
         ServerCallContext callContext = context.getCallContext();
+        Map<String, Object> state = callContext == null ? null : callContext.getState();
         Object isStreaming =
-                callContext
-                        .getState()
-                        .getOrDefault(A2aServerConstants.ContextKeys.IS_STREAM_KEY, Boolean.FALSE);
+                state == null
+                        ? Boolean.FALSE
+                        : state.getOrDefault(
+                                A2aServerConstants.ContextKeys.IS_STREAM_KEY, Boolean.FALSE);
         if (Boolean.TRUE.equals(isStreaming)) {
             return false;
         }
-        if (null == context.getParams().configuration()) {
+        if (null == context.getConfiguration()) {
             return true;
         }
-        return Boolean.TRUE.equals(context.getParams().configuration().blocking());
+        return !Boolean.TRUE.equals(context.getConfiguration().returnImmediately());
     }
 
     private void processTaskBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
-        BlockingFluxEventHandler eventHandler =
-                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+            RequestContext context, AgentEmitter emitter, Flux<AgentEvent> resultFlux) {
+        AgentEventA2aEncoder encoder =
+                AgentEventA2aEncoder.blocking(context, agentExecuteProperties, emitter);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
-        resultFlux
+        applyStreamMergeIfEnabled(resultFlux, context)
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
-                .doOnNext(eventHandler::doOnNext)
-                .doOnComplete(eventHandler::doOnComplete)
-                .doOnError(eventHandler::doOnError)
+                .doOnNext(encoder::onNext)
+                .doOnError(encoder::onError)
+                .onErrorComplete()
+                .doOnComplete(encoder::onComplete)
                 .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
                 .blockLast();
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
-        TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
+            RequestContext context, AgentEmitter emitter, Task task, Flux<AgentEvent> resultFlux) {
         try {
-            eventQueue.enqueueEvent(task);
+            emitter.addTask(task);
             log.info("[{}] Starting streaming request processing", context.getTaskId());
-            processStreamingOutput(resultFlux, taskUpdater, context);
+            processStreamingOutput(resultFlux, emitter, context);
         } catch (Exception e) {
             log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            try {
-                taskUpdater.fail(
-                        taskUpdater.newAgentMessage(
-                                List.of(
-                                        new TextPart(
-                                                "Error processing streaming output: "
-                                                        + e.getMessage())),
-                                Map.of()));
-            } catch (IllegalStateException ignored) {
-                // doOnError already transitioned the task to a terminal state; nothing to do.
-            }
+            emitter.fail(
+                    emitter.newAgentMessage(
+                            List.of(
+                                    new TextPart(
+                                            "Error processing streaming output: "
+                                                    + e.getMessage())),
+                            Map.of()));
         }
     }
 
@@ -225,20 +298,54 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<AgentEvent> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
-        StreamingFluxEventHandler eventHandler =
-                new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
-        resultFlux
+            Flux<AgentEvent> resultFlux, AgentEmitter emitter, RequestContext context) {
+        AgentEventA2aEncoder encoder =
+                AgentEventA2aEncoder.streaming(context, agentExecuteProperties, emitter);
+        applyStreamMergeIfEnabled(resultFlux, context)
                 .doOnSubscribe(
                         s -> {
-                            saveSubscription(taskUpdater.getTaskId(), s);
-                            taskUpdater.startWork();
+                            saveSubscription(emitter.getTaskId(), s);
+                            emitter.startWork();
                         })
-                .doOnNext(eventHandler::doOnNext)
-                .doOnComplete(eventHandler::doOnComplete)
-                .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(taskUpdater.getTaskId(), signal))
+                .doOnNext(encoder::onNext)
+                .doOnError(encoder::onError)
+                .onErrorComplete()
+                .doOnComplete(encoder::onComplete)
+                .doFinally(signal -> removeSubscription(emitter.getTaskId(), signal))
                 .blockLast();
+    }
+
+    private Flux<AgentEvent> applyStreamMergeIfEnabled(
+            Flux<AgentEvent> resultFlux, RequestContext context) {
+        if (!agentExecuteProperties.isStreamMergeEnabled()) {
+            return resultFlux;
+        }
+        int maxSize = Math.max(1, agentExecuteProperties.getStreamMergeMaxSize());
+        long intervalMs = Math.max(1L, agentExecuteProperties.getStreamMergeIntervalMs());
+        log.info(
+                "[{}] A2A stream merge enabled: intervalMs={}, maxSize={}",
+                context.getTaskId(),
+                intervalMs,
+                maxSize);
+        AtomicInteger windowIndex = new AtomicInteger(0);
+        return AgentEventStreamMergeOperator.merge(
+                resultFlux,
+                maxSize,
+                Duration.ofMillis(intervalMs),
+                window -> {
+                    int index = windowIndex.incrementAndGet();
+                    if (window.reducedEvents() > 0 || window.hitMaxSize()) {
+                        log.info(
+                                "[{}] A2A stream merge window: index={}, inputEvents={},"
+                                        + " outputEvents={}, reducedEvents={}, hitMaxSize={}",
+                                context.getTaskId(),
+                                index,
+                                window.inputEvents(),
+                                window.outputEvents(),
+                                window.reducedEvents(),
+                                window.hitMaxSize());
+                    }
+                });
     }
 
     private void saveSubscription(String taskId, Subscription subscription) {
@@ -249,247 +356,5 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private void removeSubscription(String taskId, SignalType signal) {
         log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
         subscriptions.remove(taskId);
-    }
-
-    private abstract static class BaseFluxEventHandler {
-
-        protected final RequestContext context;
-
-        protected final List<Msg> accumulatedOutput;
-
-        protected final AgentExecuteProperties executeProperties;
-
-        private final Set<AgentEventType> requiredEventTypes;
-
-        private BaseFluxEventHandler(
-                RequestContext context, AgentExecuteProperties executeProperties) {
-            this.context = context;
-            this.executeProperties = executeProperties;
-            this.accumulatedOutput = new LinkedList<>();
-            this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
-        }
-
-        private Set<AgentEventType> generateRequiredEventTypes(
-                AgentExecuteProperties executeProperties) {
-            if (executeProperties.isRequireInnerMessage()) {
-                return Set.of(
-                        AgentEventType.TEXT_BLOCK_DELTA,
-                        AgentEventType.THINKING_BLOCK_DELTA,
-                        AgentEventType.TOOL_RESULT_TEXT_DELTA,
-                        AgentEventType.TOOL_RESULT_DATA_DELTA,
-                        AgentEventType.HINT_BLOCK);
-            }
-            return Set.of(AgentEventType.TEXT_BLOCK_DELTA, AgentEventType.THINKING_BLOCK_DELTA);
-        }
-
-        /**
-         * Template for Flux doOnNext to handle event.
-         *
-         * @param output output event from agent stream execute.
-         */
-        void doOnNext(AgentEvent output) {
-            LoggerUtil.debug(
-                    log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
-            Msg responseMessage = convertToResponseMessage(output);
-            if (responseMessage != null) {
-                accumulatedOutput.add(responseMessage);
-            }
-            handleEvent(output, responseMessage);
-        }
-
-        /**
-         * Handle agent execute complete with Flux doOnComplete.
-         */
-        abstract void doOnComplete();
-
-        /**
-         * Handle agent execute error with Flux doOnError.
-         *
-         * @param t the error during Flux execution
-         */
-        void doOnError(Throwable t) {
-            log.error("[{}] Handle Agent execute error: ", context.getTaskId(), t);
-            String errorMessage = "Handle Agent execute error: " + t.getMessage();
-            sendErrorMessage(
-                    A2A.createAgentTextMessage(
-                            errorMessage, context.getContextId(), context.getTaskId()));
-        }
-
-        /**
-         * Determines whether the given event should not be sent as a response to the A2A client,
-         * for example, lifecycle events or inner events disabled by configuration.
-         *
-         * @param output agent output event
-         * @return {@code true} if the event should not be responded to, otherwise {@code false}.
-         */
-        protected boolean isNoResponseEvent(AgentEvent output) {
-            return !requiredEventTypes.contains(output.getType());
-        }
-
-        private Msg convertToResponseMessage(AgentEvent output) {
-            if (isNoResponseEvent(output)) {
-                return null;
-            }
-            if (output instanceof TextBlockDeltaEvent event) {
-                return assistantMessage(
-                        event.getReplyId(), TextBlock.builder().text(event.getDelta()).build());
-            }
-            if (output instanceof ThinkingBlockDeltaEvent event) {
-                return assistantMessage(
-                        event.getReplyId(),
-                        ThinkingBlock.builder().thinking(event.getDelta()).build());
-            }
-            if (output instanceof ToolResultTextDeltaEvent event) {
-                return toolResultMessage(
-                        event.getReplyId(),
-                        new ToolResultBlock(
-                                event.getToolCallId(),
-                                event.getToolCallName(),
-                                TextBlock.builder().text(event.getDelta()).build()));
-            }
-            if (output instanceof ToolResultDataDeltaEvent event) {
-                ContentBlock data = event.getData();
-                if (data == null) {
-                    return null;
-                }
-                return toolResultMessage(
-                        event.getReplyId(),
-                        new ToolResultBlock(event.getToolCallId(), event.getToolCallName(), data));
-            }
-            if (output instanceof HintBlockEvent event) {
-                return assistantMessage(
-                        event.getReplyId(), TextBlock.builder().text(event.getHint()).build());
-            }
-            return null;
-        }
-
-        private Msg assistantMessage(String replyId, ContentBlock contentBlock) {
-            return Msg.builder().id(replyId).role(MsgRole.ASSISTANT).content(contentBlock).build();
-        }
-
-        private Msg toolResultMessage(String replyId, ToolResultBlock toolResultBlock) {
-            return Msg.builder().id(replyId).role(MsgRole.TOOL).content(toolResultBlock).build();
-        }
-
-        /**
-         * Handle the event.
-         *
-         * @param output output event from agent stream execute.
-         * @param responseMessage converted response message, or {@code null} if the event should
-         *     not be sent to the A2A client.
-         */
-        protected abstract void handleEvent(AgentEvent output, Msg responseMessage);
-
-        /**
-         * Send error message to A2A Client.
-         *
-         * @param errorMessage error message to send to A2A Client.
-         */
-        protected abstract void sendErrorMessage(Message errorMessage);
-    }
-
-    private static class BlockingFluxEventHandler extends BaseFluxEventHandler {
-
-        private final AtomicReference<Message> resultMessageRef;
-
-        private final EventQueue eventQueue;
-
-        private BlockingFluxEventHandler(
-                RequestContext context,
-                AgentExecuteProperties executeProperties,
-                EventQueue eventQueue) {
-            super(context, executeProperties);
-            this.eventQueue = eventQueue;
-            this.resultMessageRef = new AtomicReference<>();
-        }
-
-        @Override
-        void doOnComplete() {
-            log.info(
-                    "[{}] Process agent output for blocking request completed.",
-                    context.getTaskId());
-            Message resultMessage =
-                    null != resultMessageRef.get()
-                            ? resultMessageRef.get()
-                            : MessageConvertUtil.convertFromMsgToMessage(
-                                    MessageConvertUtil.compactStreamingChunks(accumulatedOutput),
-                                    context.getTaskId(),
-                                    context.getContextId());
-            eventQueue.enqueueEvent(resultMessage);
-        }
-
-        @Override
-        protected void handleEvent(AgentEvent output, Msg responseMessage) {
-            if (!(output instanceof AgentResultEvent resultEvent)) {
-                // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
-                // according to properties.
-                return;
-            }
-            Msg outputMessage = resultEvent.getResult();
-            Message message =
-                    MessageConvertUtil.convertFromMsgToMessage(
-                            outputMessage, context.getTaskId(), context.getContextId());
-            resultMessageRef.set(message);
-        }
-
-        @Override
-        protected void sendErrorMessage(Message errorMessage) {
-            eventQueue.enqueueEvent(errorMessage);
-        }
-    }
-
-    private static class StreamingFluxEventHandler extends BaseFluxEventHandler {
-
-        private final TaskUpdater taskUpdater;
-
-        private final String artifactId;
-
-        private final AtomicBoolean isFirstArtifact;
-
-        private StreamingFluxEventHandler(
-                RequestContext context,
-                AgentExecuteProperties executeProperties,
-                TaskUpdater taskUpdater) {
-            super(context, executeProperties);
-            this.taskUpdater = taskUpdater;
-            this.artifactId = UUID.randomUUID().toString();
-            this.isFirstArtifact = new AtomicBoolean(true);
-        }
-
-        @Override
-        void doOnComplete() {
-            log.info(
-                    "[{}] Process agent output for non-blocking request completed.",
-                    taskUpdater.getTaskId());
-            Message completeMessage =
-                    executeProperties.isCompleteWithMessage()
-                            ? MessageConvertUtil.convertFromMsgToMessage(
-                                    MessageConvertUtil.compactStreamingChunks(accumulatedOutput),
-                                    taskUpdater.getTaskId(),
-                                    taskUpdater.getContextId())
-                            : null;
-            taskUpdater.complete(completeMessage);
-        }
-
-        @Override
-        protected void handleEvent(AgentEvent output, Msg responseMessage) {
-            if (responseMessage == null) {
-                return;
-            }
-            List<Part<?>> responseParts =
-                    MessageConvertUtil.convertFromContentBlocks(responseMessage, true);
-            taskUpdater.addArtifact(
-                    responseParts,
-                    artifactId,
-                    "agent-response",
-                    responseMessage.getMetadata(),
-                    !isFirstArtifact.getAndSet(false),
-                    false);
-        }
-
-        @Override
-        protected void sendErrorMessage(Message errorMessage) {
-            taskUpdater.fail(errorMessage);
-        }
     }
 }
