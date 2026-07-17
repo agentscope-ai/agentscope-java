@@ -23,6 +23,14 @@ import org.junit.jupiter.api.Test;
 class CredentialsTest {
 
     @Test
+    void atlasCloudCredentialThrowsOnGetChatModelClass() {
+        AtlasCloudCredential c = AtlasCloudCredential.builder().apiKey("atlas-key").build();
+        assertEquals(AtlasCloudCredential.DEFAULT_BASE_URL, c.getBaseUrl());
+        assertEquals("atlascloud_credential", c.getType());
+        assertThrows(UnsupportedOperationException.class, c::getChatModelClass);
+    }
+
+    @Test
     void deepSeekCredentialThrowsOnGetChatModelClass() {
         DeepSeekCredential c = DeepSeekCredential.builder().apiKey("ds-key").build();
         assertEquals(DeepSeekCredential.DEFAULT_BASE_URL, c.getBaseUrl());
@@ -45,6 +53,7 @@ class CredentialsTest {
 
     @Test
     void allCredentialsRequireNonNullApiKey() {
+        assertThrows(NullPointerException.class, () -> AtlasCloudCredential.builder().build());
         assertThrows(NullPointerException.class, () -> DeepSeekCredential.builder().build());
         assertThrows(NullPointerException.class, () -> KimiCredential.builder().build());
         assertThrows(NullPointerException.class, () -> XAICredential.builder().build());

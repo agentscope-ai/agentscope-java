@@ -218,7 +218,7 @@ A **Chat Model** is the LLM driving conversation and tool calling, with input an
 | Gemini | `GeminiChatModel` | Google Gemini; multi-modal |
 | Ollama | `OllamaChatModel` | Locally hosted LLMs; credential optional |
 
-Provider credential classes live with their model extension modules, for example `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
+Provider credential classes live with their model extension modules, for example `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `AtlasCloudCredential`, `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
 
 ### Creating a chat model
 
@@ -290,6 +290,10 @@ Common builder fields:
 | `defaultOptions` | `GenerateOptions` | Provider-specific options (`temperature`, `maxTokens`, `thinkingBudget`, `parallelToolCalls`, …) |
 | `formatter` | `Formatter` | Override the default message formatter |
 | `baseUrl` | `String` | Custom service endpoint (e.g. an OpenAI-compatible proxy) |
+
+Atlas Cloud can be used through the OpenAI model extension by setting
+`baseUrl("https://api.atlascloud.ai/v1")`, `apiKey(System.getenv("ATLASCLOUD_API_KEY"))`,
+and an Atlas Cloud model ID such as `qwen/qwen3.5-flash`.
 
 ### Calling a chat model
 
