@@ -221,6 +221,7 @@ HarnessAgent.builder()
 
 - 超过 80K 字符触发
 - 上下文里只保留首尾各约 2K 字符 + 一行"完整内容见 `{path}`"
+- 全文默认写入相对于工作区的 `large_tool_results` 目录
 - 默认排除 `read_file`（避免回读完又被卸载）
 
 需要自己定阈值或卸载根目录用 `ToolResultEvictionConfig.builder()...build()`。

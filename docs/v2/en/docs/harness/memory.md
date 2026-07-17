@@ -221,6 +221,7 @@ Defaults:
 
 - Triggered at 80K characters
 - Keeps ~2K chars at head + tail + a line "full content at `{path}`"
+- Stores full output under the workspace-relative `large_tool_results` directory
 - `read_file` is excluded by default (to avoid re-offloading what was just read back)
 
 Customize threshold or destination via `ToolResultEvictionConfig.builder()...build()`.
