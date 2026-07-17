@@ -35,6 +35,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.legacy.ToolkitState;
+import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +78,63 @@ class ReActAgentPerSessionStateTest {
                 .model(new NoopModel())
                 .stateStore(store)
                 .build();
+    }
+
+    @Test
+    @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
+    void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "u1",
+                "persisted-empty",
+                "agent_state",
+                AgentState.builder().userId("u1").sessionId("persisted-empty").build());
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "fresh").getToolContext().getActivatedGroups());
+        assertTrue(
+                agent.getAgentState("u1", "persisted-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "An explicitly persisted empty group list must remain empty");
+    }
+
+    @Test
+    @DisplayName("legacy empty tool groups remain explicitly empty")
+    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertTrue(
+                agent.getAgentState("u1", "legacy-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
     }
 
     @Test

@@ -2399,10 +2399,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
             }
 
-            if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                // Always opt out of core's auto-install; harness owns the skill middleware.
-                inner.dynamicSkillsEnabled(false);
-
+            if (!orderedSkillRepos.isEmpty()) {
                 io.agentscope.harness.agent.skill.runtime.MarketplaceStager stager =
                         resolvedWorkspace != null
                                 ? new io.agentscope.harness.agent.skill.runtime.MarketplaceStager(
@@ -2438,14 +2435,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
 
                 HarnessSkillMiddleware skillMiddleware =
-                        new HarnessSkillMiddleware(
-                                orderedSkillRepos,
-                                agentToolkit,
-                                skillFilter,
-                                visibilityFilter,
-                                stager,
-                                shellPolicy);
+                        disableDynamicSkills
+                                ? HarnessSkillMiddleware.frozen(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy)
+                                : new HarnessSkillMiddleware(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy);
                 inner.middleware(skillMiddleware);
+
+                // Harness owns both the live and frozen repository paths.
+                inner.dynamicSkillsEnabled(false);
 
                 // Wire pre-start staging so sandbox projection picks up .skills-cache content
                 // that MarketplaceStager materialises from database-backed repositories.
@@ -2454,8 +2462,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             skillMiddleware::prestageMarketplaceSkills);
                 }
             } else if (disableDynamicSkills) {
-                // Suppress core's auto-install so the static SkillBox fallback (constructed
-                // below by staticSkillBoxFromRepos) remains the only skill source.
+                // No composed repositories exist, but preserve the explicit core opt-out.
                 inner.dynamicSkillsEnabled(false);
             }
 
