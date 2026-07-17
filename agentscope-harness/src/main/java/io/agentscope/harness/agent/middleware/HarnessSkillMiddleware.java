@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -71,7 +70,7 @@ import reactor.core.publisher.Mono;
  * constructor-injected intermediate toolkit is not the same instance as the agent's live toolkit.
  */
 @SuppressWarnings("deprecation")
-public class HarnessSkillMiddleware implements MiddlewareBase {
+public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 
@@ -143,6 +142,31 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     /** Visible for tests / introspection. */
     public SkillRuntime runtime() {
         return runtime;
+    }
+
+    /**
+     * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
+     * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
+     * the staged content in the same call. Safe to call multiple times — staging is idempotent
+     * (content-hash guarded).
+     *
+     * @param ctx the per-call runtime context
+     */
+    public void prestageMarketplaceSkills(RuntimeContext ctx) {
+        if (stager == null) {
+            return;
+        }
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
+        Map<String, RepoBound> merged = mergeRepositories(ctx);
+        if (merged.isEmpty()) {
+            return;
+        }
+        List<RepoBound> visible = applyVisibility(merged.values(), ctx);
+        if (!visible.isEmpty()) {
+            stager.stage(visible, sourceNamespaces);
+        }
     }
 
     @Override

@@ -17,14 +17,14 @@ package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -45,7 +45,7 @@ import java.nio.file.Paths;
  * <pre>
  *   toolkit.createSkillToolGroup("analysis-tools", "Data analysis tools", false, "data-analysis");
  *   toolkit.registration().tool(new AnalysisTools()).group("analysis-tools").apply();
- *   // Agent loads the "data-analysis" SKILL.md → "analysis-tools" group becomes active
+ *   // Agent loads "data-analysis" SKILL.md → "analysis-tools" group becomes active via activateOnSkill
  * </pre>
  *
  * <p><b>Skill file structure (SKILLS_DIR/data-analysis/SKILL.md):</b>
@@ -80,9 +80,10 @@ public class SkillWithToolGroupExample {
     private static final String ACTIVATING_SKILL = "data-analysis";
 
     /**
-     * Name of the tool group bound to the skill.
+     * Name of the tool group bound to the skill. Can be any name — the group is activated
+     * automatically when the skill matching {@code activateOnSkill} is loaded.
      */
-    private static final String TOOL_GROUP = "skill-tools";
+    private static final String TOOL_GROUP = "data-analysis-tools";
 
     /**
      * Runs the skill-with-tool-group example.

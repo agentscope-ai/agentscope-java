@@ -20,7 +20,7 @@
  * <p>{@link io.agentscope.core.credential.CredentialBase} carries the {@code id} field and exposes
  * {@code getChatModelClass()} (the consuming {@link io.agentscope.core.model.ChatModelBase}
  * subclass) plus {@code listModels()} (model catalog discovery). Concrete subclasses cover
- * Anthropic, OpenAI, DashScope, Gemini, Ollama, DeepSeek, Kimi, and xAI. Credentials whose Java
+ * DeepSeek, Kimi, and xAI. Credentials whose Java
  * model class is not yet implemented throw {@link UnsupportedOperationException} from {@code
  * getChatModelClass()} while still round-tripping through JSON for storage compatibility.
  */

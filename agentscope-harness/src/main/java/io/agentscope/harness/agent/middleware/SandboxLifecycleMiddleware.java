@@ -16,13 +16,13 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
  * the agent call result is always returned to the caller even if sandbox cleanup fails.
  */
-public class SandboxLifecycleMiddleware implements MiddlewareBase {
+public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxLifecycleMiddleware.class);
 
@@ -56,11 +56,24 @@ public class SandboxLifecycleMiddleware implements MiddlewareBase {
     private final SandboxBackedFilesystem filesystemProxy;
     private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
             new AtomicReference<>();
+    private volatile Consumer<RuntimeContext> beforeStartCallback;
 
     public SandboxLifecycleMiddleware(
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
         this.sandboxManager = sandboxManager;
         this.filesystemProxy = filesystemProxy;
+    }
+
+    /**
+     * Registers a callback that runs after the sandbox session is acquired but before
+     * {@link io.agentscope.harness.agent.sandbox.Sandbox#start()} applies workspace projection.
+     * This allows callers to materialise resources on the host workspace (e.g.
+     * {@code .skills-cache/}) so that projection picks them up in the same call.
+     *
+     * @param callback receives the per-call {@link RuntimeContext}; may be {@code null} to clear
+     */
+    public void setBeforeStartCallback(Consumer<RuntimeContext> callback) {
+        this.beforeStartCallback = callback;
     }
 
     /**
@@ -79,6 +92,18 @@ public class SandboxLifecycleMiddleware implements MiddlewareBase {
             return;
         }
         try {
+            Consumer<RuntimeContext> cb = beforeStartCallback;
+            if (cb != null) {
+                try {
+                    cb.accept(ctx);
+                } catch (Exception e) {
+                    log.warn(
+                            "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
+                                    + " start: {}",
+                            e.getMessage(),
+                            e);
+                }
+            }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {

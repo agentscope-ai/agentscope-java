@@ -386,3 +386,53 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 :::{tip}
 若只是简单的「主→备」回退，`ReActAgent.Builder` 直接暴露了 `fallbackModel(...)` 与 `maxRetries(...)`，无需自己写 middleware。
 :::
+
+### 全部工具被拒绝时停止 agent
+
+当用户通过 HITL 拒绝了一轮推理产出的全部工具调用时，agent 默认会继续下一轮推理（向后兼容）。如果希望在这种场景下停止 agent，可以编写一个 `onActing` middleware 观察 `AllToolsDeniedEvent` 并发出 `RequestStopEvent`：
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
+import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.function.Function;
+import reactor.core.publisher.Flux;
+
+public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Flux<AgentEvent> onActing(
+            Agent agent, RuntimeContext ctx, ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
+        return next.apply(input)
+                .flatMap(event -> {
+                    if (event instanceof AllToolsDeniedEvent) {
+                        return Flux.just(
+                                event,
+                                new RequestStopEvent(
+                                        "All tools denied by user",
+                                        GenerateReason.ALL_TOOLS_DENIED));
+                    }
+                    return Flux.just(event);
+                });
+    }
+}
+```
+
+装配后，agent 在所有工具被拒绝时会立即停止，返回 `GenerateReason.ALL_TOOLS_DENIED`：
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("guarded")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .middlewares(List.of(new StopOnAllDeniedMiddleware()))
+                .build();
+```

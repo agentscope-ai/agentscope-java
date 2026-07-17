@@ -30,6 +30,10 @@ public abstract class ChatModelBase implements Model {
 
     private int contextWindowSize;
 
+    private Boolean nativeStructuredOutput;
+
+    private Boolean nativeStructuredOutputWithTools;
+
     @Override
     public int getContextWindowSize() {
         return contextWindowSize;
@@ -37,6 +41,26 @@ public abstract class ChatModelBase implements Model {
 
     protected void setContextWindowSize(int contextWindowSize) {
         this.contextWindowSize = contextWindowSize;
+    }
+
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return nativeStructuredOutput != null ? nativeStructuredOutput : false;
+    }
+
+    protected void setNativeStructuredOutput(boolean nativeStructuredOutput) {
+        this.nativeStructuredOutput = nativeStructuredOutput;
+    }
+
+    @Override
+    public boolean supportsNativeStructuredOutputWithTools() {
+        return nativeStructuredOutputWithTools != null
+                ? nativeStructuredOutputWithTools
+                : supportsNativeStructuredOutput();
+    }
+
+    protected void setNativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+        this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
     }
 
     /**

@@ -30,6 +30,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -49,8 +50,8 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
-import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
@@ -83,6 +84,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -140,6 +142,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
@@ -162,7 +165,9 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
- * // Create a model
+ * import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+ *
+ * // Create a model (requires dependency: agentscope-extensions-model-dashscope)
  * DashScopeChatModel model = DashScopeChatModel.builder()
  *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
  *     .modelName("qwen-plus")
@@ -536,18 +541,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected Msg seedSystemMsg(Object callExectution) {
+    protected Mono<Msg> seedSystemMsg(Object callExectution) {
         RuntimeContext rc =
                 callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
         String base = sysPrompt != null ? sysPrompt.trim() : "";
-        String prompt = applySystemPromptMiddlewares(base, rc);
-        if (prompt == null || prompt.isEmpty()) {
-            return null;
-        }
-        return SystemMessage.builder()
-                .name("system")
-                .content(TextBlock.builder().text(prompt).build())
-                .build();
+        return applySystemPromptMiddlewares(base, rc)
+                .filter(prompt -> !prompt.isEmpty())
+                .map(
+                        prompt ->
+                                SystemMessage.builder()
+                                        .name("system")
+                                        .content(TextBlock.builder().text(prompt).build())
+                                        .build());
     }
 
     @Override
@@ -555,13 +560,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    private String applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
+    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
         if (middlewares.isEmpty()) {
-            return prompt;
+            return Mono.just(prompt);
         }
-        // Only build a reactive chain if at least one middleware overrides onSystemPrompt
-        // (the default implementation is identity). This avoids an unnecessary block() call
-        // which would fail on non-blocking schedulers (e.g. Reactor parallel scheduler).
         boolean hasOverride = false;
         for (MiddlewareBase mw : middlewares) {
             try {
@@ -582,13 +584,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
         if (!hasOverride) {
-            return prompt;
+            return Mono.just(prompt);
         }
         Mono<String> result = Mono.just(prompt);
         for (MiddlewareBase mw : middlewares) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
-        return result.block();
+        return result;
     }
 
     @Override
@@ -846,28 +848,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // filtered out by callInternal before reaching the caller.
                                     boolean isSubagentBusPath =
                                             subscriberCtx.hasKey(SubagentEventBus.CONTEXT_KEY);
-                                    lifecycle
-                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
-                                            .contextWrite(
-                                                    c ->
-                                                            isSubagentBusPath
-                                                                    ? c
-                                                                    : c.put(
-                                                                            AgentEventEmitter
-                                                                                    .CONTEXT_KEY,
-                                                                            (AgentEventEmitter)
-                                                                                    sink::next))
-                                            .doFinally(
-                                                    signal -> {
-                                                        sink.next(new AgentEndEvent(replyId));
-                                                        sink.complete();
-                                                    })
-                                            .contextWrite(subscriberCtx)
-                                            .subscribe(
-                                                    finalMsg ->
-                                                            sink.next(
-                                                                    new AgentResultEvent(finalMsg)),
-                                                    sink::error);
+                                    Disposable lifecycleDisposable =
+                                            lifecycle
+                                                    .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                                    .contextWrite(
+                                                            c ->
+                                                                    isSubagentBusPath
+                                                                            ? c
+                                                                            : c.put(
+                                                                                    AgentEventEmitter
+                                                                                            .CONTEXT_KEY,
+                                                                                    (AgentEventEmitter)
+                                                                                            sink
+                                                                                                    ::next))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new AgentEndEvent(replyId));
+                                                                sink.complete();
+                                                            })
+                                                    .contextWrite(subscriberCtx)
+                                                    .subscribe(
+                                                            finalMsg ->
+                                                                    sink.next(
+                                                                            new AgentResultEvent(
+                                                                                    finalMsg)),
+                                                            sink::error);
+                                    sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
         return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
@@ -1026,8 +1033,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        if (model.supportsNativeStructuredOutput()) {
-            return doNativeStructuredCall(msgs, jsonSchema);
+        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
+        boolean useNative =
+                hasTools
+                        ? model.supportsNativeStructuredOutputWithTools()
+                        : model.supportsNativeStructuredOutput();
+        if (useNative) {
+            return doNativeStructuredCall(msgs, jsonSchema)
+                    .onErrorResume(
+                            e -> {
+                                log.warn(
+                                        "Native structured output failed ({}) — falling back to"
+                                                + " synthetic tool path",
+                                        e.getMessage() != null
+                                                ? e.getMessage()
+                                                : e.getClass().getSimpleName());
+                                return doFallbackStructuredCall(msgs, jsonSchema);
+                            });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
     }
@@ -1064,11 +1086,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .strict(true)
                                             .build());
 
+                    int contextSizeBefore = scope.state.contextMutable().size();
+
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
+                                    })
+                            .doOnError(
+                                    e -> {
+                                        List<Msg> ctx = scope.state.contextMutable();
+                                        while (ctx.size() > contextSizeBefore) {
+                                            ctx.remove(ctx.size() - 1);
+                                        }
+                                        scope.nativeResponseFormat = null;
                                     });
                 });
     }
@@ -1187,6 +1219,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private ChatUsage collectAggregatedUsage(AgentState agentState) {
         int totalInput = 0;
         int totalOutput = 0;
+        int totalCached = 0;
         double totalTime = 0;
         boolean hasUsage = false;
         for (Msg msg : agentState.getContext()) {
@@ -1196,6 +1229,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     hasUsage = true;
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
+                    totalCached += usage.getCachedTokens();
                     totalTime += usage.getTime();
                 }
             }
@@ -1204,6 +1238,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ? ChatUsage.builder()
                         .inputTokens(totalInput)
                         .outputTokens(totalOutput)
+                        .cachedTokens(totalCached)
                         .time(totalTime)
                         .build()
                 : null;
@@ -1716,6 +1751,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return ToolResultBlock.builder()
                     .id(toolId)
                     .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                    .state(ToolResultState.ERROR)
                     .build();
         }
 
@@ -1898,7 +1934,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         event.getEffectiveGenerateOptions() != null
                                                 ? event.getEffectiveGenerateOptions()
                                                 : buildGenerateOptions();
-                                if (nativeResponseFormat != null) {
+                                if (nativeResponseFormat != null && soTool == null) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
@@ -1943,10 +1979,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         new ReasoningInput(
                                                                 modelInput, tools, options));
                                 // Track any RequestStopEvent emitted by middlewares while still
-                                // exhausting the stream (publishEvent already fires on each event).
+                                // exhausting the stream. Publish at the outer reasoning boundary
+                                // so events added by onReasoning middlewares are forwarded too.
                                 AtomicReference<RequestStopEvent> stopRequested =
                                         new AtomicReference<>();
-                                return stream.doOnNext(
+                                return stream.doOnNext(this::publishEvent)
+                                        .doOnNext(
                                                 ev -> {
                                                     if (ev instanceof RequestStopEvent rs) {
                                                         stopRequested.compareAndSet(null, rs);
@@ -2083,64 +2121,56 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, model))
-                    .doOnNext(this::publishEvent);
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
         }
 
         private Flux<AgentEvent> modelCallStream(
                 ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
-            AtomicBoolean textStarted = new AtomicBoolean(false);
-            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-            Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
+            ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireReasoningChunk(
-                                                            msg,
-                                                            context,
-                                                            mci.model().getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireReasoningChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            mci.model()
+                                                                                    .getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            emitBlockEvents(
-                                                    block,
-                                                    replyId,
-                                                    context,
-                                                    textStarted,
-                                                    thinkingStarted,
-                                                    withToolEvents
-                                                            ? startedToolCalls
-                                                            : new ConcurrentHashMap<>(),
-                                                    events);
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            emitBlockEvents(
+                                                                    block,
+                                                                    context,
+                                                                    blockLifecycle,
+                                                                    withToolEvents,
+                                                                    events);
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
-                                if (textStarted.get()) {
-                                    events.add(new TextBlockEndEvent(replyId, "text"));
-                                }
-                                if (thinkingStarted.get()) {
-                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                                }
-                                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
-                                    events.add(
-                                            new ToolCallEndEvent(
-                                                    replyId, tc.getKey(), tc.getValue()));
-                                }
+                                blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
                             });
@@ -2150,43 +2180,106 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private void emitBlockEvents(
                 ContentBlock block,
-                String replyId,
                 ReasoningContext context,
-                AtomicBoolean textStarted,
-                AtomicBoolean thinkingStarted,
-                Map<String, String> startedToolCalls,
+                ModelCallBlockLifecycle blockLifecycle,
+                boolean withToolEvents,
                 List<AgentEvent> events) {
 
             if (block instanceof TextBlock tb) {
-                if (textStarted.compareAndSet(false, true)) {
-                    events.add(new TextBlockStartEvent(replyId, "text"));
-                }
+                blockLifecycle.startText(events);
                 if (tb.getText() != null && !tb.getText().isEmpty()) {
-                    events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
+                    events.add(
+                            new TextBlockDeltaEvent(blockLifecycle.replyId, "text", tb.getText()));
                 }
             } else if (block instanceof ThinkingBlock tb) {
-                if (thinkingStarted.compareAndSet(false, true)) {
-                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
-                }
+                blockLifecycle.startThinking(events);
                 if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
-                    events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
+                    events.add(
+                            new ThinkingBlockDeltaEvent(
+                                    blockLifecycle.replyId, "thinking", tb.getThinking()));
                 }
-            } else if (block instanceof ToolUseBlock tub) {
+            } else if (withToolEvents && block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
                 String toolName = tub.getName();
-                if (toolId != null && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
-                    if (toolName != null && !toolName.startsWith("__")) {
-                        events.add(new ToolCallStartEvent(replyId, toolId, toolName));
-                    }
-                }
+                blockLifecycle.startToolCall(toolId, toolName, events);
                 if (tub.getContent() != null && !tub.getContent().isEmpty()) {
                     events.add(
                             new ToolCallDeltaEvent(
-                                    replyId,
+                                    blockLifecycle.replyId,
                                     toolId != null ? toolId : "",
                                     toolName,
                                     tub.getContent()));
                 }
+            }
+        }
+
+        /**
+         * Tracks block lifecycle within one model-call subscription.
+         *
+         * <p>The model stream is consumed through {@code concatMap}, but the state holders keep the
+         * previous thread-safe shape because model providers may deliver chunk content
+         * unpredictably. This helper only changes when pending end events are flushed; it does not
+         * change the block identity or event payloads.
+         */
+        private final class ModelCallBlockLifecycle {
+            private final String replyId;
+            private final AtomicBoolean textStarted = new AtomicBoolean(false);
+            private final AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            private final Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
+
+            private ModelCallBlockLifecycle(String replyId) {
+                this.replyId = replyId;
+            }
+
+            private void startText(List<AgentEvent> events) {
+                flushThinking(events);
+                if (textStarted.compareAndSet(false, true)) {
+                    events.add(new TextBlockStartEvent(replyId, "text"));
+                }
+            }
+
+            private void startThinking(List<AgentEvent> events) {
+                if (thinkingStarted.compareAndSet(false, true)) {
+                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+                }
+            }
+
+            private void startToolCall(String toolId, String toolName, List<AgentEvent> events) {
+                if (toolId == null || startedToolCalls.containsKey(toolId)) {
+                    return;
+                }
+                flushText(events);
+                flushThinking(events);
+                flushAllToolCalls(events);
+                boolean visibleTool = toolName != null && !toolName.startsWith("__");
+                if (visibleTool && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
+                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                }
+            }
+
+            private void flushText(List<AgentEvent> events) {
+                if (textStarted.compareAndSet(true, false)) {
+                    events.add(new TextBlockEndEvent(replyId, "text"));
+                }
+            }
+
+            private void flushThinking(List<AgentEvent> events) {
+                if (thinkingStarted.compareAndSet(true, false)) {
+                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                }
+            }
+
+            private void flushAllToolCalls(List<AgentEvent> events) {
+                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
+                    events.add(new ToolCallEndEvent(replyId, tc.getKey(), tc.getValue()));
+                }
+                startedToolCalls.clear();
+            }
+
+            private void flushAll(List<AgentEvent> events) {
+                flushText(events);
+                flushThinking(events);
+                flushAllToolCalls(events);
             }
         }
 
@@ -2219,6 +2312,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
 
             if (pendingToolCalls.isEmpty()) {
+                List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
+                if (!recentToolCalls.isEmpty() && allRecentToolCallsDenied(recentToolCalls)) {
+                    return emitAllToolsDeniedThroughMiddleware(recentToolCalls, iter);
+                }
                 return executeIteration(iter + 1);
             }
 
@@ -2256,6 +2353,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // collected.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
+                                    if (rs.getGenerateReason()
+                                            == GenerateReason.PERMISSION_ASKING) {
+                                        Msg lastAssistant = findLastAssistantMsg();
+                                        if (lastAssistant != null) {
+                                            return Mono.just(
+                                                    lastAssistant.withGenerateReason(
+                                                            GenerateReason.PERMISSION_ASKING));
+                                        }
+                                    }
                                     Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
                                     return Mono.just(stopMsg);
                                 }
@@ -2501,47 +2607,60 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             hookDispatcher
                                                                     .fireActingChunk(
                                                                             toolUse, chunk, toolkit)
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
                                                                     .subscribe();
                                                         });
 
-                                                executeToolCalls(approved)
-                                                        .contextWrite(ctx -> ctx.putAll(parentCtx))
-                                                        .subscribe(
-                                                                results -> {
-                                                                    List<
-                                                                                    Map.Entry<
+                                                Disposable toolCallsDisposable =
+                                                        executeToolCalls(approved)
+                                                                .contextWrite(
+                                                                        ctx ->
+                                                                                ctx.putAll(
+                                                                                        parentCtx))
+                                                                .subscribe(
+                                                                        results -> {
+                                                                            List<
+                                                                                            Map
+                                                                                                            .Entry<
+                                                                                                    ToolUseBlock,
+                                                                                                    ToolResultBlock>>
+                                                                                    merged =
+                                                                                            new ArrayList<>(
+                                                                                                    deniedEntries);
+                                                                            merged.addAll(results);
+                                                                            resultHolder.set(
+                                                                                    merged);
+                                                                            for (Map.Entry<
                                                                                             ToolUseBlock,
-                                                                                            ToolResultBlock>>
-                                                                            merged =
-                                                                                    new ArrayList<>(
-                                                                                            deniedEntries);
-                                                                    merged.addAll(results);
-                                                                    resultHolder.set(merged);
-                                                                    for (Map.Entry<
-                                                                                    ToolUseBlock,
-                                                                                    ToolResultBlock>
-                                                                            entry : results) {
-                                                                        emitToolResultDelta(
-                                                                                sink,
-                                                                                replyId,
-                                                                                entry,
-                                                                                chunkedToolIds);
-                                                                        ToolResultState state =
-                                                                                determineToolResultState(
-                                                                                        entry
-                                                                                                .getValue());
-                                                                        sink.next(
-                                                                                new ToolResultEndEvent(
+                                                                                            ToolResultBlock>
+                                                                                    entry :
+                                                                                            results) {
+                                                                                emitToolResultDelta(
+                                                                                        sink,
                                                                                         replyId,
-                                                                                        entry.getKey()
-                                                                                                .getId(),
-                                                                                        entry.getKey()
-                                                                                                .getName(),
-                                                                                        state));
-                                                                    }
-                                                                    sink.complete();
-                                                                },
-                                                                sink::error);
+                                                                                        entry,
+                                                                                        chunkedToolIds);
+                                                                                ToolResultState
+                                                                                        state =
+                                                                                                determineToolResultState(
+                                                                                                        entry
+                                                                                                                .getValue());
+                                                                                sink.next(
+                                                                                        new ToolResultEndEvent(
+                                                                                                replyId,
+                                                                                                entry.getKey()
+                                                                                                        .getId(),
+                                                                                                entry.getKey()
+                                                                                                        .getName(),
+                                                                                                state));
+                                                                            }
+                                                                            sink.complete();
+                                                                        },
+                                                                        sink::error);
+                                                sink.onCancel(toolCallsDisposable);
                                             }));
 
             return deniedEvents.concatWith(approvedEvents);
@@ -2876,10 +2995,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             ToolUseBlock toolUse = entry.getKey();
             ToolResultBlock result = entry.getValue();
 
-            Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
+            // FIX: determine the final state and update ToolResultBlock before
+            // adding to contextMutable(), so that history queries via
+            // agent.getAgentState(ctx).contextMutable() reflect the correct
+            // final state instead of always showing RUNNING.
+            ToolResultState finalState = determineToolResultState(result);
+            ToolResultBlock updatedResult = result.withState(finalState);
+
+            Msg toolMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
 
             return hookDispatcher
-                    .firePostActing(toolUse, result, toolkit, toolMsg)
+                    .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
                                 if (soTool != null
@@ -2927,11 +3054,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messageList = prepareSummaryMessages();
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
+            Model summaryModel = modelForCall();
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
                     .firePreSummary(
-                            messageList, generateOptions, model.getModelName(), maxIters, systemMsg)
+                            messageList,
+                            generateOptions,
+                            summaryModel.getModelName(),
+                            maxIters,
+                            systemMsg)
                     .flatMap(
                             preSummaryEvent -> {
                                 List<Msg> effectiveMessages =
@@ -2941,7 +3073,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 GenerateOptions effectiveOptions =
                                         preSummaryEvent.getEffectiveGenerateOptions();
 
-                                return summaryStream(context, effectiveMessages, effectiveOptions)
+                                return summaryStream(
+                                                context,
+                                                effectiveMessages,
+                                                effectiveOptions,
+                                                summaryModel)
                                         .then(
                                                 Mono.defer(
                                                         () ->
@@ -2954,7 +3090,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 .firePostSummary(
                                                                         msg,
                                                                         effectiveOptions,
-                                                                        model.getModelName())
+                                                                        summaryModel.getModelName())
                                                                 .map(
                                                                         postEvent -> {
                                                                             Msg finalMsg =
@@ -2980,10 +3116,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param context   reasoning context for chunk accumulation
          * @param messages  the messages to send to the model
          * @param options   generation options
+         * @param model     the model used for this summary call
          * @return event stream from the summary model call
          */
         Flux<AgentEvent> summaryStream(
-                ReasoningContext context, List<Msg> messages, GenerateOptions options) {
+                ReasoningContext context,
+                List<Msg> messages,
+                GenerateOptions options,
+                Model model) {
 
             Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
                     mci -> summaryModelCallStream(context, mci, options);
@@ -3002,68 +3142,72 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
-            AtomicBoolean textStarted = new AtomicBoolean(false);
-            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
-                                    chunk -> {
-                                        List<Msg> chunkMsgs = context.processChunk(chunk);
-                                        for (Msg msg : chunkMsgs) {
-                                            hookDispatcher
-                                                    .fireSummaryChunk(
-                                                            msg,
-                                                            context,
-                                                            hookOptions,
-                                                            model.getModelName())
-                                                    .subscribe();
-                                        }
+                                    chunk ->
+                                            Flux.deferContextual(
+                                                    parentCtx -> {
+                                                        List<Msg> chunkMsgs =
+                                                                context.processChunk(chunk);
+                                                        for (Msg msg : chunkMsgs) {
+                                                            hookDispatcher
+                                                                    .fireSummaryChunk(
+                                                                            msg,
+                                                                            context,
+                                                                            hookOptions,
+                                                                            mci.model()
+                                                                                    .getModelName())
+                                                                    .contextWrite(
+                                                                            ctx ->
+                                                                                    ctx.putAll(
+                                                                                            parentCtx))
+                                                                    .subscribe();
+                                                        }
 
-                                        List<AgentEvent> events = new ArrayList<>();
-                                        for (ContentBlock block : chunk.getContent()) {
-                                            if (block instanceof TextBlock tb) {
-                                                if (textStarted.compareAndSet(false, true)) {
-                                                    events.add(
-                                                            new TextBlockStartEvent(
-                                                                    replyId, "text"));
-                                                }
-                                                if (tb.getText() != null
-                                                        && !tb.getText().isEmpty()) {
-                                                    events.add(
-                                                            new TextBlockDeltaEvent(
-                                                                    replyId, "text", tb.getText()));
-                                                }
-                                            } else if (block instanceof ThinkingBlock tb) {
-                                                if (thinkingStarted.compareAndSet(false, true)) {
-                                                    events.add(
-                                                            new ThinkingBlockStartEvent(
-                                                                    replyId, "thinking"));
-                                                }
-                                                if (tb.getThinking() != null
-                                                        && !tb.getThinking().isEmpty()) {
-                                                    events.add(
-                                                            new ThinkingBlockDeltaEvent(
-                                                                    replyId,
-                                                                    "thinking",
-                                                                    tb.getThinking()));
-                                                }
-                                            }
-                                        }
-                                        return Flux.fromIterable(events);
-                                    });
+                                                        List<AgentEvent> events = new ArrayList<>();
+                                                        for (ContentBlock block :
+                                                                chunk.getContent()) {
+                                                            if (block instanceof TextBlock tb) {
+                                                                blockLifecycle.startText(events);
+                                                                if (tb.getText() != null
+                                                                        && !tb.getText()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new TextBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "text",
+                                                                                    tb.getText()));
+                                                                }
+                                                            } else if (block
+                                                                    instanceof ThinkingBlock tb) {
+                                                                blockLifecycle.startThinking(
+                                                                        events);
+                                                                if (tb.getThinking() != null
+                                                                        && !tb.getThinking()
+                                                                                .isEmpty()) {
+                                                                    events.add(
+                                                                            new ThinkingBlockDeltaEvent(
+                                                                                    blockLifecycle
+                                                                                            .replyId,
+                                                                                    "thinking",
+                                                                                    tb
+                                                                                            .getThinking()));
+                                                                }
+                                                            }
+                                                        }
+                                                        return Flux.fromIterable(events);
+                                                    }));
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
-                                if (textStarted.get()) {
-                                    events.add(new TextBlockEndEvent(replyId, "text"));
-                                }
-                                if (thinkingStarted.get()) {
-                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                                }
+                                blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
                             });
@@ -3146,6 +3290,78 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // If there are tool calls (even non-existent ones), continue to acting phase
             // where ToolExecutor will return "Tool not found" error for the model to see
             return toolCalls.isEmpty();
+        }
+
+        /**
+         * Check whether every tool call in the given list has a DENIED result in context.
+         */
+        private boolean allRecentToolCallsDenied(List<ToolUseBlock> recentToolCalls) {
+            Set<String> toolIds =
+                    recentToolCalls.stream().map(ToolUseBlock::getId).collect(Collectors.toSet());
+
+            Map<String, ToolResultState> resultStates = new HashMap<>();
+            for (Msg m : state.contextMutable()) {
+                for (ToolResultBlock r : m.getContentBlocks(ToolResultBlock.class)) {
+                    if (toolIds.contains(r.getId())) {
+                        resultStates.put(r.getId(), r.getState());
+                    }
+                }
+            }
+
+            return toolIds.size() == resultStates.size()
+                    && resultStates.values().stream().allMatch(s -> s == ToolResultState.DENIED);
+        }
+
+        /**
+         * Build an onActing middleware chain that emits {@link AllToolsDeniedEvent}, giving
+         * middlewares the opportunity to emit a {@link RequestStopEvent}. If a stop is requested,
+         * the agent returns immediately; otherwise it continues to the next iteration.
+         */
+        private Mono<Msg> emitAllToolsDeniedThroughMiddleware(
+                List<ToolUseBlock> deniedToolCalls, int iter) {
+            AtomicReference<RequestStopEvent> stopRef = new AtomicReference<>();
+
+            Function<ActingInput, Flux<AgentEvent>> core =
+                    ai -> Flux.just(new AllToolsDeniedEvent(ai.toolCalls()));
+
+            Flux<AgentEvent> stream =
+                    MiddlewareChain.build(
+                                    middlewares,
+                                    ReActAgent.this,
+                                    rc,
+                                    MiddlewareBase::onActing,
+                                    core)
+                            .apply(new ActingInput(deniedToolCalls));
+
+            return stream.doOnNext(
+                            ev -> {
+                                if (ev instanceof RequestStopEvent rs) {
+                                    stopRef.compareAndSet(null, rs);
+                                }
+                            })
+                    .then(
+                            Mono.defer(
+                                    () -> {
+                                        RequestStopEvent rs = stopRef.get();
+                                        if (rs != null) {
+                                            Msg lastMsg = findLastAssistantMsg();
+                                            GenerateReason reason =
+                                                    rs.getGenerateReason() != null
+                                                            ? rs.getGenerateReason()
+                                                            : GenerateReason.ALL_TOOLS_DENIED;
+                                            if (lastMsg != null) {
+                                                return Mono.just(
+                                                        lastMsg.withGenerateReason(reason));
+                                            }
+                                            return Mono.just(
+                                                    Msg.builder()
+                                                            .role(MsgRole.ASSISTANT)
+                                                            .textContent("")
+                                                            .generateReason(reason)
+                                                            .build());
+                                        }
+                                        return executeIteration(iter + 1);
+                                    }));
         }
 
         /**
@@ -3246,6 +3462,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Start with user-configured generateOptions if available
         GenerateOptions baseOptions = generateOptions;
 
+        // Layer the agent-level retry budget underneath explicit per-call settings.
+        if (modelConfig != null) {
+            GenerateOptions retryBudgetOptions =
+                    GenerateOptions.builder()
+                            .executionConfig(
+                                    ExecutionConfig.builder()
+                                            .maxAttempts(modelConfig.maxRetries())
+                                            .build())
+                            .build();
+            baseOptions = GenerateOptions.mergeOptions(baseOptions, retryBudgetOptions);
+        }
+
         // If modelExecutionConfig is set, merge it into the options
         if (modelExecutionConfig != null) {
             GenerateOptions execConfigOptions =
@@ -3254,6 +3482,51 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
+    }
+
+    private Model modelForCall() {
+        Model fallbackModel = modelConfig.fallbackModel();
+        if (fallbackModel == null) {
+            return model;
+        }
+
+        AtomicReference<Model> activeModel = new AtomicReference<>(model);
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                return primaryFlux.switchOnFirst(
+                        (signal, flux) -> {
+                            if (signal.isOnError()) {
+                                Throwable error = signal.getThrowable();
+                                activeModel.set(fallbackModel);
+                                log.warn(
+                                        "Primary model {} failed, switching to fallback {}",
+                                        model.getModelName(),
+                                        fallbackModel.getModelName(),
+                                        error);
+                                return fallbackModel.stream(messages, tools, options);
+                            }
+                            return flux;
+                        });
+            }
+
+            @Override
+            public String getModelName() {
+                return activeModel.get().getModelName();
+            }
+
+            @Override
+            public boolean supportsNativeStructuredOutput() {
+                return activeModel.get().supportsNativeStructuredOutput();
+            }
+
+            @Override
+            public int getContextWindowSize() {
+                return activeModel.get().getContextWindowSize();
+            }
+        };
     }
 
     @Override
@@ -3279,7 +3552,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .content(TextBlock.builder().text(recoveryText).build())
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);
-                    return Mono.just(recoveryMsg);
+                    return saveStateToSession(scope)
+                            .thenReturn(recoveryMsg)
+                            .onErrorResume(
+                                    e -> {
+                                        log.warn(
+                                                "Failed to save agent state after user interrupt",
+                                                e);
+                                        return Mono.just(recoveryMsg);
+                                    });
                 });
     }
 
@@ -3675,11 +3956,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Configures the model from a string id resolved via {@link ModelRegistry}: a named
-         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
-         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
-         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
-         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
-         * etc.).
+         * registration ({@link ModelRegistry#register(String, Model)}) or an extension provider
+         * pattern such as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code
+         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}.
+         * Extension modules read API keys from their standard environment variables when auto-created.
          *
          * @param modelId registry id or {@code provider:model} string
          * @return this builder
@@ -4064,7 +4344,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
          *     should prefer {@link #skillRepository(AgentSkillRepository)}.
          */
-        @Deprecated(forRemoval = true, since = "2.0.0")
+        @Deprecated(since = "2.0.0")
         public Builder skillBox(SkillBox skillBox) {
             this.skillBox = skillBox;
             return this;
@@ -4167,6 +4447,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             b.model = agent.getModel();
             b.maxIters = agent.getMaxIters();
             b.generateOptions = agent.getGenerateOptions();
+            ModelConfig srcModelConfig = agent.getModelConfig();
+            if (srcModelConfig != null) {
+                b.flatMaxRetries = srcModelConfig.maxRetries();
+                b.flatFallbackModel = srcModelConfig.fallbackModel();
+            }
             b.toolkit = agent.getToolkit().copy();
             return b;
         }

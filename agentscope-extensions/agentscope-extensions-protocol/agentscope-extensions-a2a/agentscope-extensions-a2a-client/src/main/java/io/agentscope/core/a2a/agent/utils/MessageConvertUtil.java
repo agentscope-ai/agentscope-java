@@ -25,6 +25,8 @@ import io.agentscope.core.a2a.agent.message.PartParserRouter;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -62,7 +64,7 @@ public class MessageConvertUtil {
      */
     public static Msg convertFromArtifact(List<Artifact> artifacts, String agentName) {
         Msg.Builder builder = Msg.builder();
-        List<ContentBlock> contentBlocks = new LinkedList<>();
+        List<Part<?>> parts = new LinkedList<>();
         artifacts.stream()
                 .filter(Objects::nonNull)
                 .filter(artifact -> isNotEmptyCollection(artifact.parts()))
@@ -71,10 +73,10 @@ public class MessageConvertUtil {
                             builder.id(artifact.artifactId());
                             builder.name(null != agentName ? agentName : artifact.name());
                             builder.metadata(artifact.metadata());
-                            contentBlocks.addAll(convertFromParts(artifact.parts()));
+                            parts.addAll(artifact.parts());
                         });
         builder.role(MsgRole.ASSISTANT);
-        builder.content(contentBlocks);
+        builder.content(convertFromParts(parts));
         return builder.build();
     }
 
@@ -129,10 +131,39 @@ public class MessageConvertUtil {
                                                                         MessageConstants
                                                                                 .SOURCE_NAME_METADATA_KEY,
                                                                         msg.getName());
+                                                        if (msg.getRole() != null) {
+                                                            part.getMetadata()
+                                                                    .put(
+                                                                            MessageConstants
+                                                                                    .MSG_ROLE_METADATA_KEY,
+                                                                            msg.getRole().name());
+                                                        }
                                                     })
                                             .toList());
                         });
-        return builder.parts(parts).metadata(metadata).role(Message.Role.USER).build();
+        return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
+    }
+
+    private static Message.Role resolveMessageRole(List<Msg> msgs) {
+        List<Message.Role> roles =
+                msgs.stream()
+                        .filter(Objects::nonNull)
+                        .map(Msg::getRole)
+                        .filter(Objects::nonNull)
+                        .map(MessageConvertUtil::convertRole)
+                        .distinct()
+                        .toList();
+        if (roles.size() == 1) {
+            return roles.get(0);
+        }
+        return Message.Role.USER;
+    }
+
+    private static Message.Role convertRole(MsgRole role) {
+        if (role == MsgRole.ASSISTANT || role == MsgRole.TOOL) {
+            return Message.Role.AGENT;
+        }
+        return Message.Role.USER;
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
@@ -140,7 +171,98 @@ public class MessageConvertUtil {
     }
 
     private static List<ContentBlock> convertFromParts(List<Part<?>> parts) {
-        return parts.stream().map(PART_PARSER::parse).filter(Objects::nonNull).toList();
+        List<ContentBlock> contentBlocks = new LinkedList<>();
+        StreamingChunkAccumulator accumulator = null;
+
+        for (Part<?> part : parts) {
+            ContentBlock block = PART_PARSER.parse(part);
+            if (block == null) {
+                continue;
+            }
+
+            String kind = isStreamingChunk(part) ? getMergeableChunkKind(block) : null;
+            if (kind == null) {
+                if (accumulator != null) {
+                    contentBlocks.add(accumulator.build());
+                    accumulator = null;
+                }
+                contentBlocks.add(block);
+                continue;
+            }
+
+            String msgId = getMetadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+            if (accumulator != null && accumulator.matches(msgId, kind)) {
+                accumulator.append(block);
+            } else {
+                if (accumulator != null) {
+                    contentBlocks.add(accumulator.build());
+                }
+                accumulator = new StreamingChunkAccumulator(msgId, kind, block);
+            }
+        }
+
+        if (accumulator != null) {
+            contentBlocks.add(accumulator.build());
+        }
+        return contentBlocks;
+    }
+
+    private static boolean isStreamingChunk(Part<?> part) {
+        String value = getMetadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
+        return Boolean.TRUE.toString().equalsIgnoreCase(value);
+    }
+
+    private static String getMetadataValue(Part<?> part, String key) {
+        Map<String, Object> metadata = part.getMetadata();
+        if (metadata == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        return value == null ? null : value.toString();
+    }
+
+    private static String getMergeableChunkKind(ContentBlock block) {
+        if (block instanceof TextBlock) {
+            return MessageConstants.BlockContent.TYPE_TEXT;
+        }
+        if (block instanceof ThinkingBlock) {
+            return MessageConstants.BlockContent.TYPE_THINKING;
+        }
+        return null;
+    }
+
+    private static final class StreamingChunkAccumulator {
+
+        private final String msgId;
+
+        private final String kind;
+
+        private final StringBuilder text = new StringBuilder();
+
+        private StreamingChunkAccumulator(String msgId, String kind, ContentBlock block) {
+            this.msgId = msgId;
+            this.kind = kind;
+            append(block);
+        }
+
+        private boolean matches(String msgId, String kind) {
+            return Objects.equals(this.msgId, msgId) && Objects.equals(this.kind, kind);
+        }
+
+        private void append(ContentBlock block) {
+            if (block instanceof TextBlock textBlock) {
+                text.append(textBlock.getText());
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                text.append(thinkingBlock.getThinking());
+            }
+        }
+
+        private ContentBlock build() {
+            if (MessageConstants.BlockContent.TYPE_THINKING.equals(kind)) {
+                return ThinkingBlock.builder().thinking(text.toString()).build();
+            }
+            return TextBlock.builder().text(text.toString()).build();
+        }
     }
 
     /**

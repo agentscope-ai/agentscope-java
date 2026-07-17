@@ -32,13 +32,13 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -64,6 +64,7 @@ import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.HarnessRuntimeMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
@@ -1023,6 +1024,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
         final Set<Hook> hooks = new LinkedHashSet<>();
+        final List<MiddlewareBase> middlewares = new ArrayList<>();
 
         // ---- Harness orchestration fields ----
 
@@ -1138,7 +1140,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *           (the same {@link PermissionContextState} is reused; it carries the rules registered
          *           on the source engine)</td></tr>
          *   <tr><td>Extension surface</td>
-         *       <td>{@code middlewares}</td><td>{@code agent.getMiddlewares()} appended as-is</td></tr>
+         *       <td>{@code middlewares}</td><td>{@code agent.getMiddlewares()} copied, excluding
+         *           harness runtime middlewares</td></tr>
          *   <tr><td>Legacy extension</td>
          *       <td>{@code hooks}</td><td>{@code agent.getHooks()} appended as-is ({@link Hook}
          *           itself is {@code @Deprecated(forRemoval=true)}; prefer middlewares for new
@@ -1253,7 +1256,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Extension chains. Middlewares are the v2 surface; hooks remain for v1 carry-over.
             List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
             if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
-                b.middlewares(srcMiddlewares);
+                b.middlewares(filterCopyableMiddlewares(srcMiddlewares));
             }
             List<Hook> srcHooks = agent.getHooks();
             if (srcHooks != null && !srcHooks.isEmpty()) {
@@ -1351,13 +1354,34 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder middleware(MiddlewareBase middleware) {
-            inner.middleware(middleware);
+            if (middleware != null) {
+                middlewares.add(middleware);
+                inner.middleware(middleware);
+            }
             return this;
         }
 
-        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
-            inner.middlewares(middlewares);
+        public Builder middlewares(List<? extends MiddlewareBase> middlewareList) {
+            if (middlewareList != null) {
+                for (MiddlewareBase middleware : middlewareList) {
+                    middleware(middleware);
+                }
+            }
             return this;
+        }
+
+        private static List<MiddlewareBase> filterCopyableMiddlewares(
+                List<MiddlewareBase> middlewares) {
+            // Keep only observable registrations from the source agent.
+            List<MiddlewareBase> copyable = new ArrayList<>(middlewares.size());
+            for (MiddlewareBase middleware : middlewares) {
+                if (middleware != null
+                        && !(middleware instanceof HarnessRuntimeMiddleware)
+                        && !(middleware instanceof GracefulShutdownMiddleware)) {
+                    copyable.add(middleware);
+                }
+            }
+            return copyable;
         }
 
         public Builder stateStore(AgentStateStore stateStore) {
@@ -2197,8 +2221,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new AsyncToolMiddleware(messageBus, asyncToolTimeout, asyncToolRegistry));
             }
             if (messageBus != null) {
+                TaskRepository waitTaskRepo = null;
+                if (capturedSubagentMw instanceof SubagentsMiddleware sm) {
+                    waitTaskRepo = sm.getTaskRepository();
+                } else if (capturedSubagentMw instanceof DynamicSubagentsMiddleware dsm) {
+                    waitTaskRepo = dsm.getTaskRepository();
+                }
                 agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(messageBus));
+                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(
+                                messageBus, waitTaskRepo));
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
@@ -2251,7 +2282,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 planModeManager,
                                 toolName -> {
                                     AgentTool t = roToolkit.getTool(toolName);
-                                    return t instanceof ToolBase tb && tb.isReadOnly();
+                                    return t != null && t.isReadOnly();
                                 },
                                 planExtraAllowed));
             }
@@ -2406,14 +2437,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 }
 
-                inner.middleware(
+                HarnessSkillMiddleware skillMiddleware =
                         new HarnessSkillMiddleware(
                                 orderedSkillRepos,
                                 agentToolkit,
                                 skillFilter,
                                 visibilityFilter,
                                 stager,
-                                shellPolicy));
+                                shellPolicy);
+                inner.middleware(skillMiddleware);
+
+                // Wire pre-start staging so sandbox projection picks up .skills-cache content
+                // that MarketplaceStager materialises from database-backed repositories.
+                if (sandboxLifecycleMw != null && stager != null) {
+                    sandboxLifecycleMw.setBeforeStartCallback(
+                            skillMiddleware::prestageMarketplaceSkills);
+                }
             } else if (disableDynamicSkills) {
                 // Suppress core's auto-install so the static SkillBox fallback (constructed
                 // below by staticSkillBoxFromRepos) remains the only skill source.

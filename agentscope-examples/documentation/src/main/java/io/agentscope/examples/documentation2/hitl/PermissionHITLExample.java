@@ -16,11 +16,13 @@
 package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
@@ -28,6 +30,11 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 
 /**
@@ -154,18 +161,36 @@ public class PermissionHITLExample {
                 System.out.println(
                         "\n[HITL] The agent wants to execute a tool that requires your approval.");
                 System.out.println("[HITL] Pending operations:");
-                result.getContent().forEach(block -> System.out.println("  - " + block));
-                System.out.print("[HITL] Allow? (yes/no): ");
 
+                // Extract ASKING ToolUseBlocks from the returned Msg
+                List<ToolUseBlock> askingTools =
+                        result.getContent().stream()
+                                .filter(b -> b instanceof ToolUseBlock)
+                                .map(ToolUseBlock.class::cast)
+                                .filter(t -> t.getState() == ToolCallState.ASKING)
+                                .toList();
+                askingTools.forEach(
+                        t -> System.out.println("  - " + t.getName() + " " + t.getInput()));
+
+                System.out.print("[HITL] Allow? (yes/no): ");
                 String decision = scanner.hasNextLine() ? scanner.nextLine().trim() : "no";
                 boolean approved =
                         "yes".equalsIgnoreCase(decision) || "y".equalsIgnoreCase(decision);
 
-                // Resume the agent with the user's decision
-                String resumeText =
-                        approved ? "yes, proceed with the operation" : "no, cancel the operation";
-                Msg resumeMsg = new UserMessage("user", resumeText);
-                Msg finalResult = agent.call(java.util.List.of(resumeMsg)).block();
+                // Build ConfirmResult from the extracted ToolUseBlocks and resume
+                List<ConfirmResult> confirmResults =
+                        askingTools.stream().map(t -> new ConfirmResult(approved, t)).toList();
+                Map<String, Object> meta = new HashMap<>();
+                meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+                Msg resumeMsg =
+                        Msg.builder()
+                                .name("user")
+                                .role(MsgRole.USER)
+                                .textContent(approved ? "approved" : "denied")
+                                .metadata(meta)
+                                .build();
+
+                Msg finalResult = agent.call(List.of(resumeMsg)).block();
                 System.out.println(
                         "\nAgent: "
                                 + (finalResult != null ? finalResult.getTextContent() : "(null)"));

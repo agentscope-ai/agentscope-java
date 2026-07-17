@@ -24,6 +24,10 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
+import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,12 +35,18 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ReActAgent's summarizing functionality.
@@ -685,6 +695,56 @@ class ReActAgentSummarizingTest {
                 0L, toolId2NonToolRoleCount, "toolId2 should not have non-TOOL result messages");
     }
 
+    @Test
+    @DisplayName("Should report fallback model name in summary hooks")
+    void testSummaryHooksUseFallbackModelName() {
+        List<String> seenModelNames = new CopyOnWriteArrayList<>();
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreSummaryEvent pre) {
+                            seenModelNames.add("pre:" + pre.getModelName());
+                        } else if (event instanceof PostSummaryEvent post) {
+                            seenModelNames.add("post:" + post.getModelName());
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(new ThrowingModel("Primary summary model failed"))
+                        .fallbackModel(
+                                new StaticModel("Fallback summary output", "FallbackSummaryModel"))
+                        .toolkit(new MockToolkit())
+                        .hook(captureHook)
+                        .maxIters(1)
+                        .build();
+
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id("call_summary_fallback")
+                                                .input(Map.of("query", "weather"))
+                                                .build()))
+                        .build();
+        agent.getAgentState().contextMutable().add(pendingAssistantMsg);
+
+        Msg response = invokeSummarizing(agent);
+        assertNotNull(response, "Summary response should not be null");
+        assertEquals("Fallback summary output", TestUtils.extractTextContent(response));
+        assertEquals(
+                List.of("pre:primary-summary-model", "post:FallbackSummaryModel"), seenModelNames);
+    }
+
     private static Msg invokeSummarizing(ReActAgent agent) {
         try {
             // Create a CallExecution for the default session via activateSlotForContext(null)
@@ -701,6 +761,51 @@ class ReActAgentSummarizingTest {
             return mono.block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         } catch (Exception e) {
             throw new RuntimeException("Failed to invoke summarizing()", e);
+        }
+    }
+
+    private static final class ThrowingModel implements Model {
+        private final String errorMessage;
+
+        private ThrowingModel(String errorMessage) {
+            this.errorMessage = errorMessage;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(new RuntimeException(errorMessage));
+        }
+
+        @Override
+        public String getModelName() {
+            return "primary-summary-model";
+        }
+    }
+
+    private static final class StaticModel implements Model {
+        private final String responseText;
+        private final String modelName;
+
+        private StaticModel(String responseText, String modelName) {
+            this.responseText = responseText;
+            this.modelName = modelName;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .id("msg_summary")
+                            .content(List.of(TextBlock.builder().text(responseText).build()))
+                            .usage(new ChatUsage(10, 20, 30))
+                            .build());
+        }
+
+        @Override
+        public String getModelName() {
+            return modelName;
         }
     }
 }

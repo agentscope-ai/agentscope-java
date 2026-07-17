@@ -55,7 +55,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * Simple subagent tool for agent-internal use. Much lighter than {@code SessionsTool}:
@@ -356,7 +358,8 @@ public class AgentSpawnTool {
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
-                                                                capturedTask)
+                                                                capturedTask,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
@@ -521,7 +524,8 @@ public class AgentSpawnTool {
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
-                                                                capturedMessage)
+                                                                capturedMessage,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {
@@ -630,7 +634,7 @@ public class AgentSpawnTool {
                                         .withSource(sourcePath));
 
                         return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt)
+                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
@@ -655,7 +659,8 @@ public class AgentSpawnTool {
                                         userId,
                                         prompt,
                                         childSource,
-                                        StreamOptions.defaults())
+                                        StreamOptions.defaults(),
+                                        parentCtx)
                                 .doOnNext(
                                         e -> {
                                             log.debug(
@@ -673,11 +678,12 @@ public class AgentSpawnTool {
                                         Mono.defer(
                                                 () ->
                                                         agentManager.invokeAgent(
-                                                                agent, sessionId, userId, prompt)));
+                                                                agent, sessionId, userId, prompt,
+                                                                parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt);
+                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -716,16 +722,40 @@ public class AgentSpawnTool {
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
 
-                                    execLocalSync(
-                                                    agent,
-                                                    sessionId,
-                                                    userId,
-                                                    task,
-                                                    spawned,
-                                                    runtimeContext)
-                                            .contextWrite(
-                                                    c -> reactor.util.context.Context.of(parentCtx))
-                                            .subscribe(
+                                    Mono<Msg> inner =
+                                            execLocalSync(
+                                                            agent,
+                                                            sessionId,
+                                                            userId,
+                                                            task,
+                                                            spawned,
+                                                            runtimeContext)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    reactor.util.context.Context.of(
+                                                                            parentCtx))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                // Parent subscription was
+                                                                // cancelled (outer Mono.timeout,
+                                                                // user stop, or upstream Reactor
+                                                                // cancel). The fire-and-forget
+                                                                // subscribe below detaches the
+                                                                // inner execution from the parent
+                                                                // lifecycle, so without this
+                                                                // doFinally the sub-agent would
+                                                                // keep running as an orphan and
+                                                                // the eventual sink.success(...)
+                                                                // would be a no-op on the
+                                                                // already-cancelled sink.
+                                                                if (signal == SignalType.CANCEL) {
+                                                                    interruptAgent(
+                                                                            agent, runtimeContext);
+                                                                }
+                                                            });
+
+                                    Disposable innerSub =
+                                            inner.subscribe(
                                                     bridge::complete,
                                                     bridge::completeExceptionally,
                                                     () -> {
@@ -758,7 +788,33 @@ public class AgentSpawnTool {
                                                                     + textOf(msg));
                                                 }
                                             });
+
+                                    // Propagate parent cancellation to the inner fire-and-forget
+                                    // subscription. Without this, doFinally(CANCEL) above never
+                                    // fires because the inner is subscribed independently of the
+                                    // parent Mono.create sink.
+                                    sink.onCancel(innerSub);
                                 }));
+    }
+
+    /**
+     * Interrupts the sub-agent's reasoning loop when its parent tool-call subscription is
+     * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
+     * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
+     *
+     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
+     * implementations are no-ops here; their inner execution will still be disposed by the caller's
+     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     */
+    private void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            log.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
+                            + " subscription was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
+        }
     }
 
     /**
@@ -1090,7 +1146,8 @@ public class AgentSpawnTool {
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
-                                                                capturedTask)
+                                                                capturedTask,
+                                                                runtimeContext)
                                                         .block();
                                         return reply != null ? reply.getTextContent() : "";
                                     } catch (RuntimeException e) {

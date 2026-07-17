@@ -187,7 +187,7 @@ public class Fabric8KubernetesPodRuntime {
         }
         try {
             Integer code = uploadExit.get(TAR_TIMEOUT_SECONDS + 10L, TimeUnit.SECONDS);
-            if (code == null || code != 0) {
+            if (code != null && code != 0) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
                         "archive upload failed (exit="

@@ -94,6 +94,7 @@ public final class SubagentDeclaration {
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
     private final List<String> tools;
+    private final List<String> skills;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
     private final String url;
@@ -117,6 +118,7 @@ public final class SubagentDeclaration {
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
+        this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
     }
@@ -274,6 +276,10 @@ public final class SubagentDeclaration {
         return tools;
     }
 
+    public List<String> getSkills() {
+        return skills;
+    }
+
     /** Returns {@code true} when this declaration targets a remote task HTTP server. */
     public boolean isRemote() {
         return url != null && !url.isBlank();
@@ -321,6 +327,7 @@ public final class SubagentDeclaration {
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
         private List<String> tools;
+        private List<String> skills;
         private String url;
         private Map<String, String> headers;
 
@@ -486,6 +493,11 @@ public final class SubagentDeclaration {
          */
         public Builder tools(List<String> tools) {
             this.tools = tools;
+            return this;
+        }
+
+        public Builder skills(List<String> skills) {
+            this.skills = skills;
             return this;
         }
 

@@ -17,14 +17,14 @@ package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -46,7 +46,7 @@ public class AgentSkillExample {
      * Set this to the absolute path of your skills directory before running.
      */
     private static final String SKILLS_DIR =
-            "agentscope-examples/documentation/quickstart/src/main/resources/skills";
+            "agentscope-examples/documentation/src/main/resources/skills";
 
     /**
      * Output directory where the agent may write new skill files during the demo.

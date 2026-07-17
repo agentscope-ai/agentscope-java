@@ -170,13 +170,13 @@ workspace/
 
 This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 
-`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
+`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem.md) you configure — so per-user skill isolation is decoupled from the storage backend:
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
 - **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
 - **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
 
-Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem#how-multi-user-isolation-works).
+Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem.md#how-multi-user-isolation-works).
 
 ## Conflict resolution
 
@@ -332,7 +332,7 @@ If two repositories report the same `getSource()`, the second is auto-suffixed (
 
 ## Running skills in a sandbox
 
-In [sandbox mode](./filesystem#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
+In [sandbox mode](./filesystem.md#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
 
 ### Which skills end up in the sandbox
 
@@ -391,7 +391,7 @@ That command runs in the container and reads exactly the file that was projected
 
 ### Persisting script side effects across calls
 
-If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
+If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem.md#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
 
 ### Note: reading SKILL.md doesn't need the sandbox
 
@@ -413,6 +413,6 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 ## Related Pages
 
-- [Workspace](./workspace) — overall layout of `skills/`
-- [Filesystem](./filesystem) — multi-tenant isolation and per-user bucketing
-- [Architecture](./architecture) — how the skill set is rebuilt each reasoning step
+- [Workspace](./workspace.md) — overall layout of `skills/`
+- [Filesystem](./filesystem.md) — multi-tenant isolation and per-user bucketing
+- [Architecture](./architecture.md) — how the skill set is rebuilt each reasoning step
