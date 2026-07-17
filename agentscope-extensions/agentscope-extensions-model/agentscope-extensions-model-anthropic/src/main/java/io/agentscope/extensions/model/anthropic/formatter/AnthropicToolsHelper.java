@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static com.anthropic.models.messages.ToolChoice.ofAny;
 import static com.anthropic.models.messages.ToolChoice.ofAuto;
+import static com.anthropic.models.messages.ToolChoice.ofNone;
 import static com.anthropic.models.messages.ToolChoice.ofTool;
 
 import com.anthropic.core.JsonValue;
@@ -25,6 +26,7 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolChoiceAny;
 import com.anthropic.models.messages.ToolChoiceAuto;
+import com.anthropic.models.messages.ToolChoiceNone;
 import com.anthropic.models.messages.ToolChoiceTool;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -67,9 +69,18 @@ public class AnthropicToolsHelper {
             builder.addTool(tool);
         }
 
-        // Apply tool choice if specified
-        if (options != null && options.getToolChoice() != null) {
-            applyToolChoice(builder, options.getToolChoice());
+        // Resolve effective parallelToolCalls and toolChoice
+        Boolean parallelToolCalls = options != null ? options.getParallelToolCalls() : null;
+        ToolChoice toolChoice = options != null ? options.getToolChoice() : null;
+
+        if (toolChoice != null) {
+            // Explicit tool choice — pass parallelToolCalls along
+            applyToolChoice(builder, toolChoice, parallelToolCalls);
+        } else if (parallelToolCalls != null) {
+            // No explicit tool choice, but parallelToolCalls is set —
+            // Anthropic requires disable_parallel_tool_use to be inside a tool_choice object,
+            // so we create an implicit Auto with disableParallelToolUse
+            applyToolChoice(builder, new ToolChoice.Auto(), parallelToolCalls);
         }
     }
 
@@ -87,23 +98,50 @@ public class AnthropicToolsHelper {
 
     /**
      * Apply tool choice to the builder.
+     *
+     * <p>Anthropic has no top-level {@code parallel_tool_calls} field. Instead, parallel tool
+     * use is controlled via the {@code disable_parallel_tool_use} sub-field inside the {@code
+     * tool_choice} object. The mapping is {@code disable_parallel_tool_use = !parallelToolCalls}.
+     * {@link ToolChoiceNone} does not support this sub-field, so it is ignored in that case.
+     *
+     * @param parallelToolCalls the effective {@code parallelToolCalls} option, or {@code null} to
+     *     leave Anthropic's default behavior unchanged
      */
     private static void applyToolChoice(
-            MessageCreateParams.Builder builder, ToolChoice toolChoice) {
+            MessageCreateParams.Builder builder, ToolChoice toolChoice, Boolean parallelToolCalls) {
+        boolean disableParallel = parallelToolCalls != null && !parallelToolCalls;
+
         if (toolChoice instanceof ToolChoice.Auto) {
-            builder.toolChoice(ofAuto(ToolChoiceAuto.builder().build()));
+            ToolChoiceAuto.Builder tcBuilder = ToolChoiceAuto.builder();
+            if (parallelToolCalls != null) {
+                tcBuilder.disableParallelToolUse(disableParallel);
+            }
+            builder.toolChoice(ofAuto(tcBuilder.build()));
         } else if (toolChoice instanceof ToolChoice.None) {
-            // Anthropic doesn't have None, use Any instead
-            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
+            // ToolChoiceNone does not support disable_parallel_tool_use
+            if (parallelToolCalls != null && disableParallel) {
+                log.debug(
+                        "disable_parallel_tool_use is not supported with ToolChoice.None,"
+                                + " ignoring");
+            }
+            builder.toolChoice(ofNone(ToolChoiceNone.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Required) {
             // Anthropic doesn't have a direct "required" option, use "any" which forces tool
             // use
             log.warn(
                     "Anthropic API doesn't support ToolChoice.Required directly, using 'any'"
                             + " instead");
-            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
+            ToolChoiceAny.Builder tcBuilder = ToolChoiceAny.builder();
+            if (parallelToolCalls != null) {
+                tcBuilder.disableParallelToolUse(disableParallel);
+            }
+            builder.toolChoice(ofAny(tcBuilder.build()));
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            builder.toolChoice(ofTool(ToolChoiceTool.builder().name(specific.toolName()).build()));
+            ToolChoiceTool.Builder tcBuilder = ToolChoiceTool.builder().name(specific.toolName());
+            if (parallelToolCalls != null) {
+                tcBuilder.disableParallelToolUse(disableParallel);
+            }
+            builder.toolChoice(ofTool(tcBuilder.build()));
         } else {
             log.warn("Unknown tool choice type: {}", toolChoice);
         }
