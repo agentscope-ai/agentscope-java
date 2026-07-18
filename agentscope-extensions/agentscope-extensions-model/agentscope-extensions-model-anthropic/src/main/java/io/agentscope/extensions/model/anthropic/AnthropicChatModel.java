@@ -164,7 +164,8 @@ public class AnthropicChatModel extends ChatModelBase {
 
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
-                                List<MessageParam> formattedMessages = formatter.format(messages);
+                                List<MessageParam> formattedMessages =
+                                        formatter.format(messages, options, defaultOptions);
                                 for (MessageParam param : formattedMessages) {
                                     paramsBuilder.addMessage(param);
                                 }

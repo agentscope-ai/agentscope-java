@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,8 +64,37 @@ public class AnthropicMessageConverter {
      * @param toolResultConverter Function to convert tool result blocks to strings
      */
     public AnthropicMessageConverter(Function<List<ContentBlock>, String> toolResultConverter) {
-        this.mediaConverter = new AnthropicMediaConverter();
-        this.toolResultConverter = toolResultConverter;
+        this(toolResultConverter, CitationMode.DISABLED);
+    }
+
+    /**
+     * Create an AnthropicMessageConverter with citation mode.
+     *
+     * @param toolResultConverter Function to convert tool result blocks to strings
+     * @param citationMode whether PDF documents should enable native citations
+     */
+    AnthropicMessageConverter(
+            Function<List<ContentBlock>, String> toolResultConverter, CitationMode citationMode) {
+        this.mediaConverter = new AnthropicMediaConverter(citationMode);
+        this.toolResultConverter = Objects.requireNonNull(toolResultConverter);
+    }
+
+    /**
+     * Convert an image or data block to an Anthropic content block param.
+     *
+     * @param block the content block to convert
+     * @return Anthropic content block param
+     * @throws Exception if conversion fails
+     */
+    ContentBlockParam convertMediaBlock(ContentBlock block) throws Exception {
+        if (block instanceof ImageBlock imageBlock) {
+            return ContentBlockParam.ofImage(mediaConverter.convertImageBlock(imageBlock));
+        }
+        if (block instanceof DataBlock dataBlock) {
+            return mediaConverter.convertDataBlockContent(dataBlock);
+        }
+        throw new IllegalArgumentException(
+                "Unsupported media block: " + block.getClass().getSimpleName());
     }
 
     /**
@@ -79,7 +109,6 @@ public class AnthropicMessageConverter {
 
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
-            boolean isFirstMessage = (i == 0);
 
             if (msg.getRole() == MsgRole.ASSISTANT
                     && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
@@ -107,7 +136,7 @@ public class AnthropicMessageConverter {
 
                 // Add regular content if present
                 if (!nonToolBlocks.isEmpty()) {
-                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks, i == 0);
+                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks);
                     if (regularMsg != null) {
                         result.add(regularMsg);
                     }
@@ -118,7 +147,7 @@ public class AnthropicMessageConverter {
                     result.add(convertToolResult(toolResult));
                 }
             } else {
-                MessageParam param = convertMessageContent(msg, msg.getContent(), isFirstMessage);
+                MessageParam param = convertMessageContent(msg, msg.getContent());
                 if (param != null) {
                     result.add(param);
                 }
@@ -223,8 +252,7 @@ public class AnthropicMessageConverter {
             }
             assistantBlocks.add(toolUse);
 
-            MessageParam assistantParam =
-                    convertMessageContent(assistantMsg, assistantBlocks, false);
+            MessageParam assistantParam = convertMessageContent(assistantMsg, assistantBlocks);
             if (assistantParam != null) {
                 converted.add(assistantParam);
             }
@@ -242,16 +270,13 @@ public class AnthropicMessageConverter {
     /**
      * Convert message content to MessageParam.
      */
-    private MessageParam convertMessageContent(
-            Msg msg, List<ContentBlock> blocks, boolean isFirstMessage) {
-        Role role = convertRole(msg.getRole(), isFirstMessage);
+    private MessageParam convertMessageContent(Msg msg, List<ContentBlock> blocks) {
+        Role role = convertRole(msg.getRole());
         List<ContentBlockParam> contentBlocks = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(ContentBlockParam.ofText(convertTextBlock(tb)));
             } else if (block instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
@@ -280,8 +305,8 @@ public class AnthropicMessageConverter {
                 }
             } else if (block instanceof DataBlock db) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    ContentBlockParam converted = mediaConverter.convertDataBlockContent(db);
+                    contentBlocks.add(converted);
                 } catch (Exception e) {
                     log.warn("Failed to process DataBlock: {}", e.getMessage());
                     contentBlocks.add(
@@ -337,9 +362,7 @@ public class AnthropicMessageConverter {
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(ToolResultBlockParam.Content.Block.ofText(convertTextBlock(tb)));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -349,8 +372,17 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            ContentBlockParam converted =
+                                    mediaConverter.convertDataBlockContent(db);
+                            if (converted.isImage()) {
+                                blocks.add(
+                                        ToolResultBlockParam.Content.Block.ofImage(
+                                                converted.asImage()));
+                            } else if (converted.isDocument()) {
+                                blocks.add(
+                                        ToolResultBlockParam.Content.Block.ofDocument(
+                                                converted.asDocument()));
+                            }
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
                         }
@@ -386,17 +418,25 @@ public class AnthropicMessageConverter {
                 .build();
     }
 
+    private TextBlockParam convertTextBlock(TextBlock textBlock) {
+        TextBlockParam.Builder builder = TextBlockParam.builder().text(textBlock.getText());
+        var citations = AnthropicCitationConverter.convertToParams(textBlock.getCitations());
+        if (!citations.isEmpty()) {
+            builder.citations(citations);
+        }
+        return builder.build();
+    }
+
     /**
-     * Convert AgentScope MsgRole to Anthropic Role. Important: Anthropic only allows the first
-     * message to be system. Non-first system messages are converted to user.
+     * Convert AgentScope MsgRole to Anthropic Role. System messages are converted to USER role
+     * because Anthropic uses the system parameter instead of system messages.
      */
-    private Role convertRole(MsgRole msgRole, boolean isFirstMessage) {
+    private Role convertRole(MsgRole msgRole) {
         return switch (msgRole) {
-            case SYSTEM -> isFirstMessage ? Role.USER : Role.USER; // Anthropic uses user for
-            // system messages
+            case SYSTEM -> Role.USER;
             case USER -> Role.USER;
             case ASSISTANT -> Role.ASSISTANT;
-            case TOOL -> Role.USER; // Tool results are always user messages
+            case TOOL -> Role.USER;
         };
     }
 

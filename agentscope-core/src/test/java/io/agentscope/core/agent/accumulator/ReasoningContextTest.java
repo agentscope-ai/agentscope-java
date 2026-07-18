@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -332,5 +333,50 @@ class ReasoningContextTest {
 
         // Verify text is accumulated correctly
         assertEquals("Let me check the weather for you.", context.getAccumulatedText());
+    }
+
+    @Test
+    @DisplayName("Should preserve cited text block boundaries in final message")
+    void testCitedTextBlockBoundariesPreserved() {
+        Citation.PageLocation citation =
+                new Citation.PageLocation("source", 0, "guide.pdf", null, 2, 3);
+
+        TextBlock intro =
+                TextBlock.builder().text("According to the guide, ").providerBlockIndex(0L).build();
+        TextBlock cited =
+                TextBlock.builder().text("the feature is supported").providerBlockIndex(1L).build();
+        TextBlock citationDelta =
+                TextBlock.builder().citations(List.of(citation)).providerBlockIndex(1L).build();
+        TextBlock ending = TextBlock.builder().text(".").providerBlockIndex(2L).build();
+
+        context.processChunk(
+                ChatResponse.builder()
+                        .id("msg-cited")
+                        .content(List.of(intro, cited, citationDelta, ending))
+                        .build());
+
+        Msg finalMessage = context.buildFinalMessage();
+        List<TextBlock> textBlocks = finalMessage.getContentBlocks(TextBlock.class);
+
+        assertEquals(3, textBlocks.size());
+        assertEquals("According to the guide, ", textBlocks.get(0).getText());
+        assertEquals("the feature is supported", textBlocks.get(1).getText());
+        assertEquals(List.of(citation), textBlocks.get(1).getCitations());
+        assertEquals(".", textBlocks.get(2).getText());
+        assertNull(textBlocks.get(1).getProviderBlockIndex());
+    }
+
+    @Test
+    @DisplayName("Should aggregate uncited text into a single block")
+    void testUncitedTextAggregatedIntoSingleBlock() {
+        TextBlock first = TextBlock.builder().text("Hello ").providerBlockIndex(0L).build();
+        TextBlock second = TextBlock.builder().text("world").providerBlockIndex(1L).build();
+
+        context.processChunk(
+                ChatResponse.builder().id("msg-uncited").content(List.of(first, second)).build());
+
+        TextBlock aggregated = (TextBlock) context.buildFinalMessage().getFirstContentBlock();
+
+        assertEquals("Hello world", aggregated.getText());
     }
 }
