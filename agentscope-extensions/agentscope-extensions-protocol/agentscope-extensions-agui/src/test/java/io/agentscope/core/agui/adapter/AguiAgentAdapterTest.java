@@ -136,48 +136,6 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testRunKeepsBlankUserIdFromForwardedProps() {
-        ArgumentCaptor<RuntimeContext> contextCaptor =
-                ArgumentCaptor.forClass(RuntimeContext.class);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
-                .thenReturn(Flux.empty());
-
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-blank-user")
-                        .runId("run-blank-user")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
-                        .forwardedProps(Map.of(AguiAgentAdapter.FORWARDED_PROP_USER_ID_KEY, "   "))
-                        .build();
-
-        adapter.run(input).collectList().block();
-
-        RuntimeContext context = contextCaptor.getValue();
-        assertEquals("   ", context.getUserId());
-    }
-
-    @Test
-    void testRunKeepsEmptyUserIdFromForwardedProps() {
-        ArgumentCaptor<RuntimeContext> contextCaptor =
-                ArgumentCaptor.forClass(RuntimeContext.class);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
-                .thenReturn(Flux.empty());
-
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-empty-user")
-                        .runId("run-empty-user")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
-                        .forwardedProps(Map.of(AguiAgentAdapter.FORWARDED_PROP_USER_ID_KEY, ""))
-                        .build();
-
-        adapter.run(input).collectList().block();
-
-        RuntimeContext context = contextCaptor.getValue();
-        assertEquals("", context.getUserId());
-    }
-
-    @Test
     void testRunInjectsRunInputIntoRuntimeContext() {
         ArgumentCaptor<RuntimeContext> contextCaptor =
                 ArgumentCaptor.forClass(RuntimeContext.class);

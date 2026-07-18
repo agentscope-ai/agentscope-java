@@ -161,10 +161,9 @@ public class AguiAgentAdapter {
     }
 
     private RuntimeContext buildRuntimeContext(RunAgentInput input) {
-        Object userId = input.getForwardedProp(FORWARDED_PROP_USER_ID_KEY);
         return RuntimeContext.builder()
                 .sessionId(input.getThreadId())
-                .userId(userId == null ? null : userId.toString())
+                .userId(normalizeUserId(input.getForwardedProp(FORWARDED_PROP_USER_ID_KEY)))
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
@@ -174,6 +173,18 @@ public class AguiAgentAdapter {
                 .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
                 .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
                 .build();
+    }
+
+    private static String normalizeUserId(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String userId = value.toString();
+        if (userId == null) {
+            return null;
+        }
+        userId = userId.trim();
+        return userId.isEmpty() ? null : userId;
     }
 
     private ToolInjection injectFrontendTools(RunAgentInput input) {
