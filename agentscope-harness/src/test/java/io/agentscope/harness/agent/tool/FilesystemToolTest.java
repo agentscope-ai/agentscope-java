@@ -23,13 +23,21 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Unit tests for {@link FilesystemTool}. */
 class FilesystemToolTest {
@@ -84,5 +92,30 @@ class FilesystemToolTest {
 
         assertTrue(result.contains("[DIR]"));
         verify(filesystem).ls(RT, "memory");
+    }
+
+    @Test
+    void readFile_readsSharedMarketplaceSkillResourceWithUserNamespace(@TempDir Path workspace)
+            throws IOException {
+        Path resource = workspace.resolve(".skills-cache/market/docx/docx-js.md");
+        Files.createDirectories(resource.getParent());
+        Files.writeString(resource, "shared resource", StandardCharsets.UTF_8);
+
+        LocalFilesystem localFilesystem =
+                new LocalFilesystem(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.empty(),
+                        10,
+                        rc -> List.of(rc.getUserId()));
+        FilesystemTool namespacedTool =
+                new FilesystemTool(localFilesystem, WorkspacePathNormalizer.of("/workspace"));
+        RuntimeContext userContext = RuntimeContext.builder().userId("alice").build();
+
+        String result =
+                namespacedTool.readFile(
+                        userContext, "/workspace/.skills-cache/market/docx/docx-js.md", 0, 0);
+
+        assertTrue(result.contains("shared resource"));
     }
 }
