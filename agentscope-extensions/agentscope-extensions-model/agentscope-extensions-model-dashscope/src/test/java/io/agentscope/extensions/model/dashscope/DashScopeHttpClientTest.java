@@ -647,7 +647,10 @@ class DashScopeHttpClientTest {
                                         && dashScopeHttpException.getErrorCode().equals(errorCode)
                                         && dashScopeHttpException
                                                 .getMessage()
-                                                .equals("DashScope API error: " + errorMessage))
+                                                .equals("DashScope API error: " + errorMessage)
+                                        && dashScopeHttpException
+                                                .getResponseBody()
+                                                .contains("\"request_id\":\"request_id_123\""))
                 .verify();
     }
 
