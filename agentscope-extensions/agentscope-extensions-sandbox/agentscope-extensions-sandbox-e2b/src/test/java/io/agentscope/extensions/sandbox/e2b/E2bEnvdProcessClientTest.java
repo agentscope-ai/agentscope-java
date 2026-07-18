@@ -19,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.protobuf.ByteString;
@@ -37,7 +39,13 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
+import okhttp3.Call;
 import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
 
 class E2bEnvdProcessClientTest {
@@ -456,6 +464,132 @@ class E2bEnvdProcessClientTest {
 
         assertEquals(1, exit);
         assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    // ---- filesystem REST API tests ----
+
+    @Test
+    void uploadFileViaRestApiSendsMultipartPost() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(ResponseBody.create("", MediaType.get("application/json")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        client.uploadFile(state, "/tmp/test.txt", "data".getBytes());
+
+        verify(mockHttp).newCall(any());
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void uploadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(500)
+                        .message("Internal Server Error")
+                        .body(ResponseBody.create("server error", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.uploadFile(state, "/tmp/test.txt", "data".getBytes()));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("500"));
+    }
+
+    @Test
+    void downloadFileViaRestApiReturnsBytes() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        byte[] content = "hello world".getBytes(StandardCharsets.UTF_8);
+        Response okResponse =
+                new Response.Builder()
+                        .code(200)
+                        .message("OK")
+                        .body(
+                                ResponseBody.create(
+                                        content, MediaType.get("application/octet-stream")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        byte[] result = client.downloadFile(state, "/tmp/test.txt");
+
+        assertArrayEquals(content, result);
+        verify(mockHttp).newCall(any());
+        verify(mockCall).execute();
+    }
+
+    @Test
+    void downloadFileViaRestApiThrowsOnHttpError() throws Exception {
+        OkHttpClient mockHttp = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        when(mockHttp.newCall(any())).thenReturn(mockCall);
+        Response okResponse =
+                new Response.Builder()
+                        .code(404)
+                        .message("Not Found")
+                        .body(ResponseBody.create("not found", MediaType.get("text/plain")))
+                        .request(new Request.Builder().url("https://sandbox.e2b.app").build())
+                        .protocol(Protocol.HTTP_1_1)
+                        .build();
+        when(mockCall.execute()).thenReturn(okResponse);
+
+        E2bSandboxClientOptions opt = options(E2bCodec.JSON);
+        opt.setHttpClient(mockHttp);
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(opt);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("e2b.app");
+        when(state.getSandboxId()).thenReturn("test-id");
+
+        SandboxException.SandboxRuntimeException ex =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> client.downloadFile(state, "/tmp/nonexistent.txt"));
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("404"));
     }
 
     private static int drainStartStream(
