@@ -231,14 +231,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                 + " the project (overlay copy-on-write).\n");
             }
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
-            sb.append("My operating system is: ")
-                    .append(System.getProperty("os.name"))
-                    .append(" ")
-                    .append(System.getProperty("os.version"))
-                    .append("\n");
-            sb.append("Temporary files directory: ")
-                    .append(System.getProperty("java.io.tmpdir"))
-                    .append("\n");
+            appendHostPlatformInfo(
+                    sb,
+                    System.getProperty("os.name") + " " + System.getProperty("os.version"),
+                    System.getProperty("java.io.tmpdir"));
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
             sb.append("Sandbox root: ")
@@ -253,18 +249,15 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             + " upload/download tools to move files across the boundary. Anything"
                             + " you create here is isolated and does not persist on the host unless"
                             + " explicitly synced.\n");
-            sb.append("My operating system is: ")
-                    .append(
-                            querySandbox(
-                                    sandbox,
-                                    rc,
-                                    "cat /etc/os-release 2>/dev/null | grep ^PRETTY_NAME | cut -d="
-                                            + " -f2 | tr -d '\"'",
-                                    querySandbox(sandbox, rc, "uname -srm", "Linux")))
-                    .append("\n");
-            sb.append("Temporary files directory: ")
-                    .append(querySandbox(sandbox, rc, "echo \"${TMPDIR:-/tmp}\"", "/tmp"))
-                    .append("\n");
+            appendHostPlatformInfo(
+                    sb,
+                    querySandbox(
+                            sandbox,
+                            rc,
+                            "cat /etc/os-release 2>/dev/null | grep ^PRETTY_NAME | cut -d="
+                                    + " -f2 | tr -d '\"'",
+                            querySandbox(sandbox, rc, "uname -srm", "Linux")),
+                    querySandbox(sandbox, rc, "echo \"${TMPDIR:-/tmp}\"", "/tmp"));
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")
                     .append(workspace.toAbsolutePath())
@@ -273,14 +266,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     "Runtime data (MEMORY.md, sessions, tasks, skills) lives in a shared remote"
                             + " store, not on the local host. Reads of project-authored template"
                             + " files fall back to the workspace template root above.\n");
-            sb.append("My operating system is: ")
-                    .append(System.getProperty("os.name"))
-                    .append(" ")
-                    .append(System.getProperty("os.version"))
-                    .append("\n");
-            sb.append("Temporary files directory: ")
-                    .append(System.getProperty("java.io.tmpdir"))
-                    .append("\n");
+            appendHostPlatformInfo(
+                    sb,
+                    System.getProperty("os.name") + " " + System.getProperty("os.version"),
+                    System.getProperty("java.io.tmpdir"));
         } else {
             sb.append("Your working directory is: ")
                     .append(workspace.toAbsolutePath())
@@ -288,14 +277,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append(
                     "Treat this directory as the single global workspace for file operations"
                             + " unless explicitly instructed otherwise.\n");
-            sb.append("My operating system is: ")
-                    .append(System.getProperty("os.name"))
-                    .append(" ")
-                    .append(System.getProperty("os.version"))
-                    .append("\n");
-            sb.append("Temporary files directory: ")
-                    .append(System.getProperty("java.io.tmpdir"))
-                    .append("\n");
+            appendHostPlatformInfo(
+                    sb,
+                    System.getProperty("os.name") + " " + System.getProperty("os.version"),
+                    System.getProperty("java.io.tmpdir"));
         }
         sb.append(
                 "AGENTS.md defines persona and local conventions — honor them when consistent"
@@ -321,6 +306,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             // fall through
         }
         return fallback;
+    }
+
+    private static void appendHostPlatformInfo(StringBuilder sb, String osInfo, String tmpdir) {
+        sb.append("My operating system is: ").append(osInfo).append("\n");
+        sb.append("Temporary files directory: ").append(tmpdir).append("\n");
     }
 
     /**
