@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -145,13 +146,24 @@ class ReActAgentPerSessionStateTest {
         assertEquals(
                 "I noticed that you have interrupted me. What can I do for you?",
                 reply.getTextContent());
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
 
         ReActAgent reborn = agent(store);
-        List<String> texts = allText(reborn.getAgentState("u1", "sessA"));
+        AgentState restoredState = reborn.getAgentState("u1", "sessA");
+        List<String> texts = allText(restoredState);
         assertTrue(texts.contains("hello"), "user input should remain in persisted session state");
         assertTrue(
                 texts.contains("I noticed that you have interrupted me. What can I do for you?"),
                 "interrupt recovery message should be persisted to the state store");
+        Msg restoredRecovery =
+                restoredState.getContext().stream()
+                        .filter(
+                                msg ->
+                                        "I noticed that you have interrupted me. What can I do for you?"
+                                                .equals(msg.getTextContent()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
     private static final class DelayedFirstChunkModel extends ChatModelBase {
