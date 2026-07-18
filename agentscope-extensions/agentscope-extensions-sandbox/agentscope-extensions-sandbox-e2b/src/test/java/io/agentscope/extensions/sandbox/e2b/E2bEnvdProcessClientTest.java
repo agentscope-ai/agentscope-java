@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
@@ -33,6 +35,7 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 import okhttp3.MediaType;
 import org.junit.jupiter.api.Test;
@@ -48,7 +51,7 @@ class E2bEnvdProcessClientTest {
         assertEquals(MediaType.get("application/connect+json"), client.connectMediaType());
         assertEquals(0x00, envelope[0] & 0xFF);
         int len = ByteBuffer.wrap(envelope, 1, 4).order(ByteOrder.BIG_ENDIAN).getInt();
-        byte[] payload = java.util.Arrays.copyOfRange(envelope, 5, 5 + len);
+        byte[] payload = Arrays.copyOfRange(envelope, 5, 5 + len);
         String json = new String(payload, StandardCharsets.UTF_8);
         assertEquals(
                 "{\"process\":{\"cmd\":\"/bin/bash\",\"args\":[\"-l\",\"-c\","
@@ -65,7 +68,7 @@ class E2bEnvdProcessClientTest {
 
         assertEquals(MediaType.get("application/connect+proto"), client.connectMediaType());
         int len = ByteBuffer.wrap(envelope, 1, 4).order(ByteOrder.BIG_ENDIAN).getInt();
-        byte[] payload = java.util.Arrays.copyOfRange(envelope, 5, 5 + len);
+        byte[] payload = Arrays.copyOfRange(envelope, 5, 5 + len);
         assertArrayEquals(expected.toByteArray(), payload);
     }
 
@@ -168,6 +171,31 @@ class E2bEnvdProcessClientTest {
         DynamicMessage event =
                 DynamicMessage.newBuilder(processEventDesc)
                         .setField(processEventDesc.findFieldByName("data"), data)
+                        .build();
+        Descriptors.Descriptor startResponseDesc = fd.findMessageTypeByName("StartResponse");
+        return DynamicMessage.newBuilder(startResponseDesc)
+                .setField(startResponseDesc.findFieldByName("event"), event)
+                .build();
+    }
+
+    private static DynamicMessage endEventResponse(
+            E2bEnvdProcessClient client, Integer exitCode, String error) {
+        Descriptors.FileDescriptor fd = client.fileDescriptor();
+        Descriptors.Descriptor processEventDesc = fd.findMessageTypeByName("ProcessEvent");
+        Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
+
+        DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
+        if (exitCode != null) {
+            endBuilder.setField(endDesc.findFieldByName("exit_code"), exitCode);
+        }
+        if (error != null) {
+            endBuilder.setField(endDesc.findFieldByName("error"), error);
+        }
+        DynamicMessage end = endBuilder.build();
+
+        DynamicMessage event =
+                DynamicMessage.newBuilder(processEventDesc)
+                        .setField(processEventDesc.findFieldByName("end"), end)
                         .build();
         Descriptors.Descriptor startResponseDesc = fd.findMessageTypeByName("StartResponse");
         return DynamicMessage.newBuilder(startResponseDesc)
@@ -302,6 +330,134 @@ class E2bEnvdProcessClientTest {
         assertEquals(3, exit);
     }
 
+    // ---- PROTO codec tests ----
+
+    @Test
+    void protoCodecDrainStartStream() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.PROTO));
+        DynamicMessage dataResp = dataResponse(client, "hello\n", null);
+        byte[] frame = concatFrames(connectFrame(dataResp.toByteArray()), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(Integer.MIN_VALUE, exit);
+        assertEquals("hello\n", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void protoCodecDrainStartStreamWithEndEvent() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.PROTO));
+        DynamicMessage dataResp = dataResponse(client, null, "err\n");
+        DynamicMessage endResp = endEventResponse(client, 42, "oops");
+        byte[] frame =
+                concatFrames(
+                        connectFrame(dataResp.toByteArray()),
+                        connectFrame(endResp.toByteArray()),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(42, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertTrue(stderr.toString(StandardCharsets.UTF_8).contains("oops"));
+    }
+
+    @Test
+    void protoCodecDrainStartStreamWithEndOnly() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.PROTO));
+        DynamicMessage endResp = endEventResponse(client, 7, null);
+        byte[] frame = concatFrames(connectFrame(endResp.toByteArray()), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(7, exit);
+        assertEquals("", stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
+    // ---- drainStartStream edge cases ----
+
+    @Test
+    void illegalFrameLengthThrowsIOException() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = new byte[5];
+        frame[0] = 0x00;
+        ByteBuffer.wrap(frame, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(64 * 1024 * 1024 + 1);
+
+        IOException ex =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        frame,
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+        assertTrue(ex.getMessage().contains("Invalid connect frame length"));
+    }
+
+    @Test
+    void truncatedFrameDataBreaks() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame = new byte[10];
+        frame[0] = 0x00;
+        ByteBuffer.wrap(frame, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(100);
+        System.arraycopy("hello".getBytes(StandardCharsets.UTF_8), 0, frame, 5, 5);
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(Integer.MIN_VALUE, exit);
+    }
+
+    @Test
+    void zeroLengthFrameIsSkipped() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                concatFrames(
+                        envelope(0x00, new byte[0]),
+                        connectFrame(endEventJson(99, null)),
+                        endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(99, exit);
+    }
+
+    // ---- parseJsonStartResponse edge cases ----
+
+    @Test
+    void jsonCodecNonIntegerExitCodeIsIgnored() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        String json = "{\"event\":{\"end\":{\"exitCode\":\"abc\"}}}";
+        byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        // exitCode defaults to 0 (proto3 default) when not convertible to int
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(0, exit);
+    }
+
+    @Test
+    void jsonCodecNonTextualErrorIsIgnored() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        String json = "{\"event\":{\"end\":{\"exitCode\":1,\"error\":123}}}";
+        byte[] frame = concatFrames(connectFrame(json), endStreamFrame("{}"));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        int exit = drainStartStream(client, frame, stdout, stderr);
+
+        assertEquals(1, exit);
+        assertEquals("", stderr.toString(StandardCharsets.UTF_8));
+    }
+
     private static int drainStartStream(
             E2bEnvdProcessClient client,
             byte[] connectFrame,
@@ -336,7 +492,11 @@ class E2bEnvdProcessClientTest {
     }
 
     private static byte[] connectFrame(String json) {
-        return envelope(0x00, json.getBytes(StandardCharsets.UTF_8));
+        return E2bEnvdProcessClient.encodeUnaryEnvelope(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] connectFrame(byte[] payload) {
+        return envelope(0x00, payload);
     }
 
     private static byte[] endStreamFrame(String json) {
@@ -414,5 +574,65 @@ class E2bEnvdProcessClientTest {
         E2bSandboxClientOptions options = new E2bSandboxClientOptions();
         options.setCodec(codec);
         return options;
+    }
+
+    // ---- static utility method tests ----
+
+    @Test
+    void filesystemHostWithCustomDomain() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod(
+                        "filesystemHost", E2bSandboxState.class);
+        method.setAccessible(true);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn("custom.com");
+
+        String result = (String) method.invoke(null, state);
+        assertEquals("https://sandbox.custom.com", result);
+    }
+
+    @Test
+    void filesystemHostWithDefaultDomain() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod(
+                        "filesystemHost", E2bSandboxState.class);
+        method.setAccessible(true);
+
+        E2bSandboxState state = mock(E2bSandboxState.class);
+        when(state.getSandboxDomain()).thenReturn(null);
+
+        String result = (String) method.invoke(null, state);
+        assertEquals("https://sandbox.e2b.app", result);
+    }
+
+    @Test
+    void filenameFromPathWithSlashReturnsBasename() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "/home/user/file.txt");
+        assertEquals("file.txt", result);
+    }
+
+    @Test
+    void filenameFromPathWithoutSlashReturnsInput() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "file.txt");
+        assertEquals("file.txt", result);
+    }
+
+    @Test
+    void filenameFromPathWithTrailingSlashReturnsEmpty() throws Exception {
+        Method method =
+                E2bEnvdProcessClient.class.getDeclaredMethod("filenameFromPath", String.class);
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(null, "/home/");
+        assertEquals("", result);
     }
 }
