@@ -16,6 +16,7 @@
 package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,11 +24,14 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodList;
+import io.fabric8.kubernetes.api.model.PodSecurityContextBuilder;
+import io.fabric8.kubernetes.api.model.SecurityContextBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.ContainerResource;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
@@ -129,6 +133,97 @@ class Fabric8KubernetesPodRuntimeTest {
         Pod created = podCaptor.getValue();
         List<EnvVar> envVars = created.getSpec().getContainers().get(0).getEnv();
         assertTrue(envVars == null || envVars.isEmpty());
+    }
+
+    @Test
+    void ensurePodReady_appliesSecurityContextsFromOptions() throws Exception {
+        opts.setContainerSecurityContext(
+                new SecurityContextBuilder()
+                        .withRunAsNonRoot(true)
+                        .withAllowPrivilegeEscalation(false)
+                        .build());
+        opts.setPodSecurityContext(
+                new PodSecurityContextBuilder().withRunAsUser(1001L).withFsGroup(1001L).build());
+
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("test-session-id-secctx");
+        state.setNamespace("default");
+        state.setContainerName("workspace");
+        state.setImage("ubuntu:22.04");
+        state.setWorkspaceRoot("/workspace");
+
+        ArgumentCaptor<Pod> podCaptor = ArgumentCaptor.forClass(Pod.class);
+        doReturn(podResource).when(inNamespace).resource(podCaptor.capture());
+
+        runtime.ensurePodReady(state);
+
+        Pod created = podCaptor.getValue();
+        assertEquals(1001L, created.getSpec().getSecurityContext().getRunAsUser());
+        assertEquals(1001L, created.getSpec().getSecurityContext().getFsGroup());
+        assertTrue(created.getSpec().getContainers().get(0).getSecurityContext().getRunAsNonRoot());
+        assertEquals(
+                false,
+                created.getSpec()
+                        .getContainers()
+                        .get(0)
+                        .getSecurityContext()
+                        .getAllowPrivilegeEscalation());
+    }
+
+    @Test
+    void clientCreate_mergesSecurityContextsIntoRuntimeOptions() throws Exception {
+        KubernetesSandboxClientOptions callOptions = new KubernetesSandboxClientOptions();
+        callOptions.setKubernetesClient(kc);
+        callOptions.setContainerSecurityContext(
+                new SecurityContextBuilder().withRunAsNonRoot(true).build());
+        callOptions.setPodSecurityContext(
+                new PodSecurityContextBuilder().withRunAsUser(1001L).build());
+
+        ArgumentCaptor<Pod> podCaptor = ArgumentCaptor.forClass(Pod.class);
+        doReturn(podResource).when(inNamespace).resource(podCaptor.capture());
+        ContainerResource container = mock(ContainerResource.class);
+        ExecWatch execWatch = mock(ExecWatch.class);
+        ContainerResource writingOut = mock(ContainerResource.class);
+        ContainerResource writingErr = mock(ContainerResource.class);
+        doReturn(container).when(podResource).inContainer(anyString());
+        doReturn(writingOut).when(container).writingOutput(any(ByteArrayOutputStream.class));
+        doReturn(writingErr).when(writingOut).writingError(any(ByteArrayOutputStream.class));
+        doReturn(execWatch).when(writingErr).exec(anyString(), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
+
+        Sandbox sandbox =
+                new KubernetesSandboxClient().create(new WorkspaceSpec(), null, callOptions);
+        sandbox.start();
+
+        Pod created = podCaptor.getValue();
+        assertEquals(1001L, created.getSpec().getSecurityContext().getRunAsUser());
+        assertTrue(created.getSpec().getContainers().get(0).getSecurityContext().getRunAsNonRoot());
+    }
+
+    @Test
+    void clientCreate_withoutSecurityContextsLeavesPodSecurityContextsUnset() throws Exception {
+        KubernetesSandboxClientOptions callOptions = new KubernetesSandboxClientOptions();
+        callOptions.setKubernetesClient(kc);
+
+        ArgumentCaptor<Pod> podCaptor = ArgumentCaptor.forClass(Pod.class);
+        doReturn(podResource).when(inNamespace).resource(podCaptor.capture());
+        ContainerResource container = mock(ContainerResource.class);
+        ExecWatch execWatch = mock(ExecWatch.class);
+        ContainerResource writingOut = mock(ContainerResource.class);
+        ContainerResource writingErr = mock(ContainerResource.class);
+        doReturn(container).when(podResource).inContainer(anyString());
+        doReturn(writingOut).when(container).writingOutput(any(ByteArrayOutputStream.class));
+        doReturn(writingErr).when(writingOut).writingError(any(ByteArrayOutputStream.class));
+        doReturn(execWatch).when(writingErr).exec(anyString(), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(0)).when(execWatch).exitCode();
+
+        Sandbox sandbox =
+                new KubernetesSandboxClient().create(new WorkspaceSpec(), null, callOptions);
+        sandbox.start();
+
+        Pod created = podCaptor.getValue();
+        assertNull(created.getSpec().getSecurityContext());
+        assertNull(created.getSpec().getContainers().get(0).getSecurityContext());
     }
 
     @Test

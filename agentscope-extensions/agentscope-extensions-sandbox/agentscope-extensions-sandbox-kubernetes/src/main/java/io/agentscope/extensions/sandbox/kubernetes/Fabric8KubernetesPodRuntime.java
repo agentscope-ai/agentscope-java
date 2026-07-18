@@ -245,6 +245,9 @@ public class Fabric8KubernetesPodRuntime {
                         .withImage(state.getImage())
                         .withCommand("sh", "-c")
                         .withArgs("while true; do sleep 3600; done");
+        if (templateOptions.getContainerSecurityContext() != null) {
+            cb.withSecurityContext(templateOptions.getContainerSecurityContext());
+        }
 
         if (templateOptions.getCpuRequest() != null || templateOptions.getMemoryRequest() != null) {
             ResourceRequirementsBuilder rb = new ResourceRequirementsBuilder();
@@ -312,6 +315,9 @@ public class Fabric8KubernetesPodRuntime {
         }
 
         PodSpecBuilder specBuilder = new PodSpecBuilder().withRestartPolicy("Always");
+        if (templateOptions.getPodSecurityContext() != null) {
+            specBuilder.withSecurityContext(templateOptions.getPodSecurityContext());
+        }
         for (Volume v : bindVolumes) {
             specBuilder.addToVolumes(v);
         }
