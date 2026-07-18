@@ -234,6 +234,56 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertMalformedAnthropicThinkingMetadataFallsBackToText() {
+        List<Map<String, Object>> malformedMetadata =
+                List.of(
+                        Map.of(
+                                "anthropicThinkingBlock:invalid",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        "Reasoning",
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        42,
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of("type", "thinking", "thinking", "Reasoning")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of("type", "redacted_thinking", "data", 42)));
+
+        for (Map<String, Object> metadata : malformedMetadata) {
+            Msg msg =
+                    Msg.builder()
+                            .name("Assistant")
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    ThinkingBlock.builder()
+                                            .thinking("Fallback reasoning")
+                                            .metadata(metadata)
+                                            .build())
+                            .build();
+
+            List<ContentBlockParam> blocks =
+                    converter.convert(List.of(msg)).get(0).content().asBlockParams();
+
+            assertEquals(1, blocks.size());
+            assertTrue(blocks.get(0).isText());
+            assertEquals("Fallback reasoning", blocks.get(0).asText().text());
+        }
+    }
+
+    @Test
     void testConvertToolUseBlock() {
         Map<String, Object> input = Map.of("query", "test");
         Msg msg =

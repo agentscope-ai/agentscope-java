@@ -43,10 +43,10 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 ```
 
 Setting `thinkingBudget` enables Anthropic extended thinking with the corresponding
-`budget_tokens` value. For models that support manual thinking budgets, the budget must be lower
-than `maxTokens`. Anthropic extended thinking is incompatible with custom `temperature`, `topK`,
-and forced tool choice settings; consult the Anthropic model documentation for model-specific
-requirements.
+`budget_tokens` value. For models that support manual thinking budgets, the budget normally must be
+lower than `maxTokens`; interleaved thinking with tools is an exception. Anthropic extended thinking
+is incompatible with custom `temperature`, `topK`, and forced tool choice settings; consult the
+Anthropic model documentation for model-specific requirements.
 
 ## Spring Boot
 

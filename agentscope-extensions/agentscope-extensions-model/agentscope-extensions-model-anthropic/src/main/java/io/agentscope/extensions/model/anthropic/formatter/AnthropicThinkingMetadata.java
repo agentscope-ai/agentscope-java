@@ -52,21 +52,24 @@ final class AnthropicThinkingMetadata {
             return List.of();
         }
 
-        List<Map.Entry<Long, Object>> storedBlocks =
-                block.getMetadata().entrySet().stream()
-                        .filter(
-                                entry ->
-                                        entry.getKey() != null
-                                                && entry.getKey().startsWith(KEY_PREFIX))
-                        .map(
-                                entry ->
-                                        Map.entry(
-                                                Long.parseLong(
-                                                        entry.getKey()
-                                                                .substring(KEY_PREFIX.length())),
-                                                entry.getValue()))
-                        .sorted(Comparator.comparingLong(Map.Entry::getKey))
-                        .toList();
+        List<Map.Entry<Long, Object>> storedBlocks = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : block.getMetadata().entrySet()) {
+            String key = entry.getKey();
+            if (key == null || !key.startsWith(KEY_PREFIX)) {
+                continue;
+            }
+
+            try {
+                long index = Long.parseLong(key.substring(KEY_PREFIX.length()));
+                if (entry.getValue() == null) {
+                    return List.of();
+                }
+                storedBlocks.add(Map.entry(index, entry.getValue()));
+            } catch (NumberFormatException e) {
+                return List.of();
+            }
+        }
+        storedBlocks.sort(Comparator.comparingLong(Map.Entry::getKey));
 
         List<ContentBlockParam> result = new ArrayList<>(storedBlocks.size());
         for (Map.Entry<Long, Object> storedBlock : storedBlocks) {
@@ -85,16 +88,20 @@ final class AnthropicThinkingMetadata {
         }
 
         if ("thinking".equals(map.get("type"))) {
+            if (!(map.get("thinking") instanceof String thinking)
+                    || !(map.get("signature") instanceof String signature)) {
+                return null;
+            }
             return ContentBlockParam.ofThinking(
-                    ThinkingBlockParam.builder()
-                            .thinking((String) map.get("thinking"))
-                            .signature((String) map.get("signature"))
-                            .build());
+                    ThinkingBlockParam.builder().thinking(thinking).signature(signature).build());
         }
 
         if ("redacted_thinking".equals(map.get("type"))) {
+            if (!(map.get("data") instanceof String data)) {
+                return null;
+            }
             return ContentBlockParam.ofRedactedThinking(
-                    RedactedThinkingBlockParam.builder().data((String) map.get("data")).build());
+                    RedactedThinkingBlockParam.builder().data(data).build());
         }
 
         return null;
