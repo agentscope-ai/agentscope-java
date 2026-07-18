@@ -53,12 +53,14 @@ public class ShellExecuteTool {
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Optional relative path from workspace root. Must not start"
-                                            + " with /, ~, or ..(e.g., ., src).",
+                                    "Working directory (relative to workspace root, optional)",
                             required = false)
                     String workingDirectory,
-            @ToolParam(name = "timeout", description = "Timeout in seconds (default: 30)")
-                    int timeout) {
+            @ToolParam(
+                            name = "timeout",
+                            description = "Timeout in seconds (default: 30)",
+                            required = false)
+                    Integer timeout) {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
@@ -69,8 +71,8 @@ public class ShellExecuteTool {
             effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
         }
 
-        ExecuteResponse result =
-                sandbox.execute(runtimeContext, effectiveCommand, timeout > 0 ? timeout : 30);
+        int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
+        ExecuteResponse result = sandbox.execute(runtimeContext, effectiveCommand, timeoutSeconds);
 
         StringBuilder sb = new StringBuilder();
         sb.append("Exit code: ").append(result.exitCode()).append("\n");
