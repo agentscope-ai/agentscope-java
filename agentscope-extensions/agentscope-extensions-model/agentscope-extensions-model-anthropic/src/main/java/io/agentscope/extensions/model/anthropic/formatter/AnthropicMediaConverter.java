@@ -65,8 +65,9 @@ public class AnthropicMediaConverter {
 
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
-            MediaUtils.validateImageExtension(url);
-            String mediaType = MediaUtils.determineMediaType(url);
+            String mediaPath = isFileUri(url) ? Path.of(URI.create(url)).toString() : url;
+            MediaUtils.validateImageExtension(mediaPath);
+            String mediaType = MediaUtils.determineMediaType(mediaPath);
             return convertUrlImage(url, mediaType != null ? mediaType : "image/png");
         } else if (source instanceof Base64Source base64Source) {
             String mediaType = base64Source.getMediaType();

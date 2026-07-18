@@ -375,8 +375,9 @@ class ReasoningContextTest {
         context.processChunk(
                 ChatResponse.builder().id("msg-uncited").content(List.of(first, second)).build());
 
-        TextBlock aggregated = (TextBlock) context.buildFinalMessage().getFirstContentBlock();
+        List<TextBlock> textBlocks = context.buildFinalMessage().getContentBlocks(TextBlock.class);
 
-        assertEquals("Hello world", aggregated.getText());
+        assertEquals(1, textBlocks.size());
+        assertEquals("Hello world", textBlocks.get(0).getText());
     }
 }
