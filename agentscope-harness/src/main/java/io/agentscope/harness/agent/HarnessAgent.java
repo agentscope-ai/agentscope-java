@@ -2046,6 +2046,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxLifecycleMiddleware sandboxLifecycleMw = null;
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
+            // bus/registry are process-scoped infrastructure; keep them on the pre-sandbox
+            // filesystem so they are never routed through SandboxBackedFilesystem
+            AbstractFilesystem busFilesystem = filesystem;
             if (sandboxFilesystemSpec != null) {
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 filesystem = capturedSandboxFs;
@@ -2097,16 +2100,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
             // If not set explicitly or via DistributedStore, fall back to workspace-backed
-            // implementations that use the same AbstractFilesystem as the rest of the agent.
-            if (messageBus == null && filesystem != null) {
+            // implementations. Use busFilesystem (pre-sandbox) so these process-scoped components
+            // are never accidentally routed through SandboxBackedFilesystem.
+            if (messageBus == null && busFilesystem != null) {
                 messageBus =
                         new io.agentscope.harness.agent.bus.WorkspaceMessageBus(
-                                filesystem, ".agentscope/bus");
+                                busFilesystem, ".agentscope/bus");
             }
-            if (asyncToolRegistry == null && filesystem != null) {
+            if (asyncToolRegistry == null && busFilesystem != null) {
                 asyncToolRegistry =
                         new io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry(
-                                filesystem, ".agentscope/bus/async-tools");
+                                busFilesystem, ".agentscope/bus/async-tools");
             }
 
             // ---- Middlewares ----
