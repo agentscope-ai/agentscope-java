@@ -17,6 +17,7 @@ package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -31,11 +32,11 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.Toolkit;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -66,20 +67,15 @@ import reactor.core.scheduler.Schedulers;
 @DisplayName("SubAgentTool timeout+retry: interrupt stops agent loop")
 class SubAgentToolTimeoutRetryIntegrationTest {
 
-    private Path tmpFile;
-
-    @AfterEach
-    void cleanup() throws Exception {
-        if (tmpFile != null) Files.deleteIfExists(tmpFile);
-    }
-
     @Test
     @DisplayName("Agent loop stops after interrupt — no further LLM or tool calls")
     @Timeout(30)
     void oldAgentIsStopped() throws Exception {
-        tmpFile = Files.createTempFile("agent_bg_", ".log");
+        // Latch signals when slow_tool has finished its work (or was interrupted).
+        CountDownLatch toolFinished = new CountDownLatch(1);
+        AtomicInteger toolInvocations = new AtomicInteger(0);
 
-        // ---- slow_tool: sleeps 4s, then writes one line to file ----
+        // ---- slow_tool: sleeps 4s, increments counter, signals latch ----
         AgentTool slowTool =
                 new AgentTool() {
                     @Override
@@ -89,7 +85,7 @@ class SubAgentToolTimeoutRetryIntegrationTest {
 
                     @Override
                     public String getDescription() {
-                        return "Sleeps 4s then writes a line to file.";
+                        return "Sleeps 4s then increments counter.";
                     }
 
                     @Override
@@ -103,9 +99,11 @@ class SubAgentToolTimeoutRetryIntegrationTest {
                                         () -> {
                                             try {
                                                 Thread.sleep(4_000);
-                                                Files.writeString(
-                                                        tmpFile, "slow_tool round done\n");
-                                            } catch (Exception ignored) {
+                                                toolInvocations.incrementAndGet();
+                                            } catch (InterruptedException e) {
+                                                Thread.currentThread().interrupt();
+                                            } finally {
+                                                toolFinished.countDown();
                                             }
                                         })
                                 .subscribeOn(Schedulers.boundedElastic())
@@ -116,15 +114,11 @@ class SubAgentToolTimeoutRetryIntegrationTest {
                     }
                 };
 
-        // ---- slow agent: MockModel returns a tool call, then (if loop continues)
-        //      more tool calls. With interrupt, only the first call happens. ----
+        // ---- slow agent: MockModel returns a tool call every time.
+        //      With interrupt: checkInterrupted() fires → loop stops → model called only once. ----
         Toolkit slowTk = new Toolkit();
         slowTk.registerTool(slowTool);
 
-        // The model returns a tool call every time it is invoked.
-        // Without interrupt, the agent would call the model again after each tool
-        // returns → infinite tool calls → file grows unboundedly.
-        // With interrupt: checkInterrupted() fires → loop stops → model called only once.
         MockModel slowModel = MockModel.withToolCall("slow_tool", "call_1", Map.of());
 
         ReActAgent slowSpy =
@@ -188,6 +182,25 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         verify(slowSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
         verify(fastSpy, never()).interrupt(any(RuntimeContext.class));
 
+        // ---- proof #2: wait for slow_tool to complete (latch-based, no fixed sleep) ----
+        assertTrue(
+                toolFinished.await(10, TimeUnit.SECONDS),
+                "slow_tool should have completed (or been interrupted) within 10s");
+
+        // ---- proof #3: slow_tool ran at most once ----
+        int invocations = toolInvocations.get();
+        assertTrue(
+                invocations <= 1,
+                "Expected at most 1 tool invocation, got %d".formatted(invocations));
+
+        // ---- proof #4: wait 2 more seconds → counter unchanged (loop is dead) ----
+        Thread.sleep(2_000);
+        int invocationsAfter = toolInvocations.get();
+        assertEquals(
+                invocations,
+                invocationsAfter,
+                "Invocations should be frozen at %d. Agent loop did not restart."
+                        .formatted(invocations));
         // ---- proof #2: cancellation propagates to the inner tool execution ----
         // Since sink.onCancel(lifecycleDisposable) properly disposes the inner
         // subscription, slow_tool's Thread.sleep is interrupted before it can
@@ -208,9 +221,6 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         assertEquals(0, fileLinesAfter, "File should remain empty. Agent loop did not restart.");
 
         // ---- proof #5: MockModel was called exactly once ----
-        // If interrupt didn't work, the agent loop would call reasoning() again
-        // after slow_tool returned → model.stream() would be called a second time
-        // → getCallCount() would be >= 2.
         assertEquals(
                 1,
                 slowModel.getCallCount(),
