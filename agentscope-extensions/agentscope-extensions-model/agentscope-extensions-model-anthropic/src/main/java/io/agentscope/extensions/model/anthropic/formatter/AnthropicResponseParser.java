@@ -52,6 +52,7 @@ public class AnthropicResponseParser {
 
         // Process content blocks
         for (int index = 0; index < message.content().size(); index++) {
+            final int blockIndex = index;
             var block = message.content().get(index);
             // Text block
             block.text()
@@ -79,27 +80,32 @@ public class AnthropicResponseParser {
                             });
 
             // Thinking block (extended thinking)
-            if (block.thinking().isPresent()) {
-                var thinking = block.thinking().get();
-                contentBlocks.add(
-                        ThinkingBlock.builder()
-                                .thinking(thinking.thinking())
-                                .metadata(
-                                        AnthropicThinkingMetadata.thinking(
-                                                index, thinking.thinking(), thinking.signature()))
-                                .build());
-            }
+            block.thinking()
+                    .ifPresent(
+                            thinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .thinking(thinking.thinking())
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata.thinking(
+                                                                    blockIndex,
+                                                                    thinking.thinking(),
+                                                                    thinking.signature()))
+                                                    .build()));
 
             // Redacted thinking block
-            if (block.redactedThinking().isPresent()) {
-                var redactedThinking = block.redactedThinking().get();
-                contentBlocks.add(
-                        ThinkingBlock.builder()
-                                .metadata(
-                                        AnthropicThinkingMetadata.redactedThinking(
-                                                index, redactedThinking.data()))
-                                .build());
-            }
+            block.redactedThinking()
+                    .ifPresent(
+                            redactedThinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata
+                                                                    .redactedThinking(
+                                                                            blockIndex,
+                                                                            redactedThinking
+                                                                                    .data()))
+                                                    .build()));
         }
 
         // Parse usage
