@@ -397,9 +397,11 @@ public class PostgresBaseStore implements BaseStore {
         }
 
         /**
-         * Sets an optional PostgreSQL schema. When unset, SQL uses the unqualified table name for
-         * backwards compatibility. The schema is created when {@link #initializeSchema(boolean)}
-         * is enabled.
+         * Sets the PostgreSQL schema name to use. If not set, SQL uses the unqualified table name
+         * for backwards compatibility.
+         *
+         * <p>The provided schema name must be non-null, non-blank, and match {@code [A-Za-z_][A-Za-z0-9_]*}.
+         * The schema is created when {@link #initializeSchema(boolean)} is enabled.
          */
         public Builder schemaName(String schemaName) {
             this.schemaName = validateIdentifier(schemaName, "schemaName");
@@ -407,9 +409,10 @@ public class PostgresBaseStore implements BaseStore {
         }
 
         /**
-         * Overrides the table name. Must match the regex {@code [A-Za-z_][A-Za-z0-9_]*}; this is
-         * the only place a table identifier ever flows into the SQL string verbatim, so the
-         * validation here is the SQL-injection guard.
+         * Overrides the table name. Identifiers must match the regex {@code [A-Za-z_][A-Za-z0-9_]*}.
+         *
+         * <p>Schema and table identifiers are embedded into SQL (identifier quoting is used when a
+         * schema is configured), so validation here is the SQL-injection guard.
          */
         public Builder tableName(String tableName) {
             this.tableName = validateIdentifier(tableName, "tableName");
