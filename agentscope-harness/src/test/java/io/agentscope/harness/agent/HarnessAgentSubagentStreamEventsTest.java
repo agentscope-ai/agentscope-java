@@ -61,6 +61,7 @@ class HarnessAgentSubagentStreamEventsTest {
     @TempDir Path stateHome;
 
     private String previousStateHome;
+    private HarnessAgent parent;
 
     @BeforeEach
     void overrideStateHome() {
@@ -69,11 +70,17 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     @AfterEach
-    void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+    void tearDown() {
+        try {
+            if (parent != null) {
+                parent.close();
+            }
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 
@@ -141,7 +148,7 @@ class HarnessAgentSubagentStreamEventsTest {
                                 stopChunk("c1", "research complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -214,7 +221,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "formatted")))
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -281,7 +288,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -347,7 +354,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "helped")))
                 .thenReturn(Flux.just(stopChunk("p2", "done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)

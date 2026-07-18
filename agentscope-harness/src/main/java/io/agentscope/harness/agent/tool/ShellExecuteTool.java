@@ -26,7 +26,9 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
  */
 public class ShellExecuteTool {
 
-    /** Registered tool name (derived from the {@link #execute} method name). */
+    /**
+     * Registered tool name (derived from the {@link #execute} method name).
+     */
     public static final String NAME = "execute";
 
     private final AbstractSandboxFilesystem sandbox;
@@ -37,12 +39,14 @@ public class ShellExecuteTool {
 
     /**
      * @param runtimeContext per-call agent runtime injected by the framework (not an LLM argument);
-     *     may be {@code null} when no merged context is available
+     *                       may be {@code null} when no merged context is available
      */
     @Tool(
             description =
                     "Execute a shell command. Use for git, npm, build, test, and other terminal"
-                            + " operations. Returns combined output and exit code.")
+                        + " operations. Returns combined output and exit code. If a dedicated tool"
+                        + " exists (e.g., read_file, write_file), you MUST use it instead of shell"
+                        + " commands.")
     public String execute(
             RuntimeContext runtimeContext,
             @ToolParam(name = "command", description = "Shell command to execute") String command,

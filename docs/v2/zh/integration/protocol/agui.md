@@ -50,7 +50,7 @@ Flux<AguiEvent> events = adapter.run(runAgentInput);
 
 ## 与 Spring Boot 集成
 
-通常做法是写一个 `@PostMapping("/ag-ui")` 把 `RunAgentInput` 映射到 `Flux<AguiEvent>` 并以 SSE 响应。也可以使用 `agentscope-spring-boot-starter-agui` 自动注册控制器。
+通常做法是写一个 `@PostMapping("/ag-ui")` 把 `RunAgentInput` 映射到 `Flux<AguiEvent>` 并以 SSE 响应。也可以使用 `agentscope-agui-spring-boot-starter` 自动注册控制器。
 
 ## 常用配置
 
