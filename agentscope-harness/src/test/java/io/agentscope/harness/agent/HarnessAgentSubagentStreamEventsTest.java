@@ -61,6 +61,7 @@ class HarnessAgentSubagentStreamEventsTest {
     @TempDir Path stateHome;
 
     private String previousStateHome;
+    private HarnessAgent parent;
 
     @BeforeEach
     void overrideStateHome() {
@@ -69,11 +70,17 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     @AfterEach
-    void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+    void tearDown() {
+        try {
+            if (parent != null) {
+                parent.close();
+            }
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 
@@ -141,50 +148,50 @@ class HarnessAgentSubagentStreamEventsTest {
                                 stopChunk("c1", "research complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        try (HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build()) {
-            RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-stream-events").build();
+                        .build();
 
-            List<AgentEvent> events =
-                    parent.streamEvents(
-                                    List.of(
-                                            Msg.builder()
-                                                    .role(MsgRole.USER)
-                                                    .textContent("start")
-                                                    .build()),
-                                    ctx)
-                            .collectList()
-                            .block();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-stream-events").build();
 
-            assertNotNull(events);
-            assertFalse(events.isEmpty());
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                ctx)
+                        .collectList()
+                        .block();
 
-            // Child events: source != null, contains childId
-            List<AgentEvent> childEvents =
-                    events.stream().filter(e -> e.getSource() != null).collect(Collectors.toList());
-            assertFalse(
-                    childEvents.isEmpty(),
-                    "expected child events with source tag; got types: "
-                            + events.stream()
-                                    .map(e -> e.getType() + "(src=" + e.getSource() + ")")
-                                    .collect(Collectors.joining(", ")));
+        assertNotNull(events);
+        assertFalse(events.isEmpty());
 
-            for (AgentEvent childEvent : childEvents) {
-                assertTrue(
-                        childEvent.getSource().contains(childId),
-                        "source should contain childId; got: " + childEvent.getSource());
-            }
+        // Child events: source != null, contains childId
+        List<AgentEvent> childEvents =
+                events.stream().filter(e -> e.getSource() != null).collect(Collectors.toList());
+        assertFalse(
+                childEvents.isEmpty(),
+                "expected child events with source tag; got types: "
+                        + events.stream()
+                                .map(e -> e.getType() + "(src=" + e.getSource() + ")")
+                                .collect(Collectors.joining(", ")));
 
-            // Parent events: source == null
+        for (AgentEvent childEvent : childEvents) {
             assertTrue(
-                    events.stream().anyMatch(e -> e.getSource() == null),
-                    "expected at least one parent event with source == null");
+                    childEvent.getSource().contains(childId),
+                    "source should contain childId; got: " + childEvent.getSource());
         }
+
+        // Parent events: source == null
+        assertTrue(
+                events.stream().anyMatch(e -> e.getSource() == null),
+                "expected at least one parent event with source == null");
     }
 
     // -----------------------------------------------------------------
@@ -214,48 +221,44 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "formatted")))
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        try (HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build()) {
-            List<AgentEvent> events =
-                    parent.streamEvents(
-                                    List.of(
-                                            Msg.builder()
-                                                    .role(MsgRole.USER)
-                                                    .textContent("go")
-                                                    .build()),
-                                    RuntimeContext.builder().sessionId("sess-bookends").build())
-                            .collectList()
-                            .block();
+                        .build();
 
-            assertNotNull(events);
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-bookends").build())
+                        .collectList()
+                        .block();
 
-            // Child AGENT_START with source
-            List<AgentEvent> childStarts =
-                    events.stream()
-                            .filter(
-                                    e ->
-                                            e.getType() == AgentEventType.AGENT_START
-                                                    && e.getSource() != null)
-                            .collect(Collectors.toList());
-            assertFalse(childStarts.isEmpty(), "expected child AGENT_START with source");
-            assertTrue(childStarts.get(0).getSource().contains(childId));
+        assertNotNull(events);
 
-            // Child AGENT_END with source
-            List<AgentEvent> childEnds =
-                    events.stream()
-                            .filter(
-                                    e ->
-                                            e.getType() == AgentEventType.AGENT_END
-                                                    && e.getSource() != null)
-                            .collect(Collectors.toList());
-            assertFalse(childEnds.isEmpty(), "expected child AGENT_END with source");
-            assertTrue(childEnds.get(0).getSource().contains(childId));
-        }
+        // Child AGENT_START with source
+        List<AgentEvent> childStarts =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e.getType() == AgentEventType.AGENT_START
+                                                && e.getSource() != null)
+                        .collect(Collectors.toList());
+        assertFalse(childStarts.isEmpty(), "expected child AGENT_START with source");
+        assertTrue(childStarts.get(0).getSource().contains(childId));
+
+        // Child AGENT_END with source
+        List<AgentEvent> childEnds =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e.getType() == AgentEventType.AGENT_END
+                                                && e.getSource() != null)
+                        .collect(Collectors.toList());
+        assertFalse(childEnds.isEmpty(), "expected child AGENT_END with source");
+        assertTrue(childEnds.get(0).getSource().contains(childId));
     }
 
     // -----------------------------------------------------------------
@@ -285,47 +288,43 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        try (HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build()) {
-            List<AgentEvent> events =
-                    parent.streamEvents(
-                                    List.of(
-                                            Msg.builder()
-                                                    .role(MsgRole.USER)
-                                                    .textContent("go")
-                                                    .build()),
-                                    RuntimeContext.builder().sessionId("sess-order").build())
-                            .collectList()
-                            .block();
+                        .build();
 
-            assertNotNull(events);
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-order").build())
+                        .collectList()
+                        .block();
 
-            // First event should be parent AGENT_START (source == null)
-            assertEquals(AgentEventType.AGENT_START, events.get(0).getType());
-            assertNull(events.get(0).getSource(), "first event should be parent AGENT_START");
+        assertNotNull(events);
 
-            // Last event should be parent AGENT_END (source == null)
-            AgentEvent lastEvent = events.get(events.size() - 1);
-            assertEquals(AgentEventType.AGENT_END, lastEvent.getType());
-            assertNull(lastEvent.getSource(), "last event should be parent AGENT_END");
+        // First event should be parent AGENT_START (source == null)
+        assertEquals(AgentEventType.AGENT_START, events.get(0).getType());
+        assertNull(events.get(0).getSource(), "first event should be parent AGENT_START");
 
-            // Child events should appear between first and last
-            int firstChildIdx =
-                    events.stream()
-                            .filter(e -> e.getSource() != null)
-                            .mapToInt(events::indexOf)
-                            .min()
-                            .orElse(-1);
-            assertTrue(firstChildIdx > 0, "child events should appear after parent AGENT_START");
-            assertTrue(
-                    firstChildIdx < events.size() - 1,
-                    "child events should appear before parent AGENT_END");
-        }
+        // Last event should be parent AGENT_END (source == null)
+        AgentEvent lastEvent = events.get(events.size() - 1);
+        assertEquals(AgentEventType.AGENT_END, lastEvent.getType());
+        assertNull(lastEvent.getSource(), "last event should be parent AGENT_END");
+
+        // Child events should appear between first and last
+        int firstChildIdx =
+                events.stream()
+                        .filter(e -> e.getSource() != null)
+                        .mapToInt(events::indexOf)
+                        .min()
+                        .orElse(-1);
+        assertTrue(firstChildIdx > 0, "child events should appear after parent AGENT_START");
+        assertTrue(
+                firstChildIdx < events.size() - 1,
+                "child events should appear before parent AGENT_END");
     }
 
     // -----------------------------------------------------------------
@@ -355,37 +354,33 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "helped")))
                 .thenReturn(Flux.just(stopChunk("p2", "done")));
 
-        try (HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build()) {
-            List<AgentEvent> events =
-                    parent.streamEvents(
-                                    List.of(
-                                            Msg.builder()
-                                                    .role(MsgRole.USER)
-                                                    .textContent("go")
-                                                    .build()),
-                                    RuntimeContext.builder().sessionId("sess-null-source").build())
-                            .collectList()
-                            .block();
+                        .build();
 
-            assertNotNull(events);
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-null-source").build())
+                        .collectList()
+                        .block();
 
-            List<AgentEvent> parentEvents =
-                    events.stream().filter(e -> e.getSource() == null).collect(Collectors.toList());
-            assertFalse(parentEvents.isEmpty());
+        assertNotNull(events);
 
-            // Parent AGENT_START and AGENT_END should both have null source
-            assertTrue(
-                    parentEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_START),
-                    "parent AGENT_START should have null source");
-            assertTrue(
-                    parentEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_END),
-                    "parent AGENT_END should have null source");
-        }
+        List<AgentEvent> parentEvents =
+                events.stream().filter(e -> e.getSource() == null).collect(Collectors.toList());
+        assertFalse(parentEvents.isEmpty());
+
+        // Parent AGENT_START and AGENT_END should both have null source
+        assertTrue(
+                parentEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_START),
+                "parent AGENT_START should have null source");
+        assertTrue(
+                parentEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_END),
+                "parent AGENT_END should have null source");
     }
 }

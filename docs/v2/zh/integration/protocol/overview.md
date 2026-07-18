@@ -8,7 +8,7 @@ AgentScope 在 Java 侧提供了多种"让 Agent 与外部交互"的协议适配
 | [AG-UI](agui.md) | [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) | 把 Agent 的事件流标准化输出给前端 UI |
 | [Agent Protocol](agent-protocol.md) | [Agent Protocol](https://agentprotocol.ai/) | HTTP 标准接口，方便其他系统提交"任务"给 Agent |
 
-> 还有 [Chat Completions Web](../ecosystem/chat-completions-web)：把 Agent 包装成 OpenAI Chat Completions 兼容接口，让现有客户端可以直接接入。
+> 还有 [Chat Completions Web](../ecosystem/chat-completions-web.md)：把 Agent 包装成 OpenAI Chat Completions 兼容接口，让现有客户端可以直接接入。
 
 ## 怎么选
 

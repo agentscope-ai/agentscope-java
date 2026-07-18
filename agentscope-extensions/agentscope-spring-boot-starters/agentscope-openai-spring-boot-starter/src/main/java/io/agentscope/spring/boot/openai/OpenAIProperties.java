@@ -45,6 +45,9 @@ public class OpenAIProperties {
 
     /**
      * OpenAI API key.
+     *
+     * <p>Optional: some OpenAI-compatible providers (for example free model endpoints)
+     * do not require an API key. Leave unset for those providers.
      */
     private String apiKey;
 
