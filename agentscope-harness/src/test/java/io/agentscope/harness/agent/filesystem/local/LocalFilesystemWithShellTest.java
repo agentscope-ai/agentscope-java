@@ -34,4 +34,11 @@ class LocalFilesystemWithShellTest {
     void outputCharset_usesUtf8OnNonWindowsSystems() {
         assertEquals(StandardCharsets.UTF_8, LocalFilesystemWithShell.outputCharset("Linux"));
     }
+
+    @Test
+    void outputCharset_fallsBackToDefaultWhenWindowsNativeEncodingIsUnavailable() {
+        assertEquals(
+                Charset.defaultCharset(),
+                LocalFilesystemWithShell.outputCharset("Windows 10", null));
+    }
 }
