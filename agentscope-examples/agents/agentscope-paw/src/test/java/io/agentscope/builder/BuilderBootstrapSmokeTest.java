@@ -47,40 +47,42 @@ class BuilderBootstrapSmokeTest {
     @Test
     void singleAgent_chatUiChannel() throws Exception {
         Model model = stubModel("single-agent-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main").description("main"))
                         .mainAgent("main")
-                        .build();
-
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("Hello from test").block();
-        assertTrue(reply.getTextContent().contains("single-agent-reply"));
+                        .build()) {
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("Hello from test").block();
+            assertTrue(reply.getTextContent().contains("single-agent-reply"));
+        }
     }
 
     @Test
     void singleAgent_chatUiChannel_perPeer() throws Exception {
         Model model = stubModel("per-peer-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main"))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
+            ChannelConfig perPeerConfig =
+                    ChannelConfig.builder(ChatUiChannel.CHANNEL_ID)
+                            .dmScope(DmScope.PER_PEER)
+                            .build();
+            ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
 
-        ChannelConfig perPeerConfig =
-                ChannelConfig.builder(ChatUiChannel.CHANNEL_ID).dmScope(DmScope.PER_PEER).build();
-        ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
-
-        Msg reply1 = chat.send("alice", "Hi!").block();
-        Msg reply2 = chat.send("bob", "Hi!").block();
-        assertTrue(reply1.getTextContent().contains("per-peer-reply"));
-        assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+            Msg reply1 = chat.send("alice", "Hi!").block();
+            Msg reply2 = chat.send("bob", "Hi!").block();
+            assertTrue(reply1.getTextContent().contains("per-peer-reply"));
+            assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+        }
     }
 
     @Test
@@ -88,7 +90,7 @@ class BuilderBootstrapSmokeTest {
         Model mainModel = stubModel("from-main");
         Model supportModel = stubModel("from-support");
 
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
@@ -96,11 +98,11 @@ class BuilderBootstrapSmokeTest {
                         .configureAgent("main", b -> b.name("main-agent").model(mainModel))
                         .configureAgent("support", b -> b.name("support-agent").model(supportModel))
                         .mainAgent("main")
-                        .build();
-
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("hello").block();
-        assertTrue(reply.getTextContent().contains("from-main"));
+                        .build()) {
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("hello").block();
+            assertTrue(reply.getTextContent().contains("from-main"));
+        }
     }
 
     private static Model stubModel(String assistantText) {
