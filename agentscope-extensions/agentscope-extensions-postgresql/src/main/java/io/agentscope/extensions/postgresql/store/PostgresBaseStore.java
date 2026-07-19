@@ -107,7 +107,7 @@ public class PostgresBaseStore implements BaseStore {
             VALUES (?, ?, ?, 1, ?)
             ON CONFLICT (namespace_path, item_key) DO UPDATE SET
                 value_json = EXCLUDED.value_json,
-                version    = %1$s.version + 1,,
+                version    = %1$s.version + 1,
                 updated_at = EXCLUDED.updated_at
             """;
 

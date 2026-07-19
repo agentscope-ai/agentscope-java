@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -24,8 +25,10 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -84,5 +87,27 @@ class FilesystemToolTest {
 
         assertTrue(result.contains("[DIR]"));
         verify(filesystem).ls(RT, "memory");
+    }
+
+    @Test
+    void readFile_omittedOffsetAndLimit_defaultToZero() {
+        when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))
+                .thenReturn(ReadResult.success(new FileData("hello", "utf-8")));
+
+        String result = tool.readFile(RT, "f.txt", null, null);
+
+        assertEquals("hello", result);
+        verify(filesystem).read(RT, "f.txt", 0, 0);
+    }
+
+    @Test
+    void readFile_explicitOffsetAndLimit_arePassedThrough() {
+        when(filesystem.read(eq(RT), eq("f.txt"), eq(2), eq(5)))
+                .thenReturn(ReadResult.success(new FileData("world", "utf-8")));
+
+        String result = tool.readFile(RT, "f.txt", 2, 5);
+
+        assertEquals("world", result);
+        verify(filesystem).read(RT, "f.txt", 2, 5);
     }
 }
