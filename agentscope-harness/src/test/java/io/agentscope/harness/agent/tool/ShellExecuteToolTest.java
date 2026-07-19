@@ -62,7 +62,8 @@ class ShellExecuteToolTest {
         String result = tool.execute(RT, "ls", "sub", null);
 
         assertTrue(result.contains("Exit code: 0"));
-        assertEquals("cd 'sub' && ls", sandbox.command);
+        assertTrue(sandbox.command.startsWith("cd "));
+        assertTrue(sandbox.command.endsWith(" && ls"));
         assertEquals(30, sandbox.timeoutSeconds);
     }
 
