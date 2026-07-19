@@ -129,9 +129,9 @@ public class FirstAgent {
                 .name("assistant")
                 .sysPrompt("你是一个有用的 AI 助手。")
                 // ModelRegistry 按字符串解析，自动读取对应环境变量
-                // （如 OPENAI_API_KEY）。
+                // （如 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）。
                 // 示例："openai:gpt-4.1"、"openai:o3"、
-                // "deepseek:deepseek-chat"、"dashscope:qwen-plus"、
+                // "deepseek:deepseek-v4-flash"、"dashscope:qwen-plus"、
                 // "anthropic:claude-sonnet-4-5"、"ollama:llama3"
                 .model("dashscope:qwen-plus")
                 // 也可以直接传入 ChatModel 对象：

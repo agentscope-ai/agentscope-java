@@ -336,6 +336,21 @@ parts:
   chapters:
   - file: v2/en/integration/overview
     title: Overview
+  - file: v2/en/integration/model/index
+    title: Model Providers
+    sections:
+    - file: v2/en/integration/model/openai
+      title: OpenAI
+    - file: v2/en/integration/model/deepseek
+      title: DeepSeek
+    - file: v2/en/integration/model/dashscope
+      title: DashScope
+    - file: v2/en/integration/model/gemini
+      title: Gemini
+    - file: v2/en/integration/model/anthropic
+      title: Anthropic
+    - file: v2/en/integration/model/ollama
+      title: Ollama
   - file: v2/en/integration/memory/index
     title: Memory
     sections:
@@ -494,6 +509,21 @@ parts:
   chapters:
   - file: v2/zh/integration/overview
     title: 概览
+  - file: v2/zh/integration/model/index
+    title: 模型提供商
+    sections:
+    - file: v2/zh/integration/model/openai
+      title: OpenAI
+    - file: v2/zh/integration/model/deepseek
+      title: DeepSeek
+    - file: v2/zh/integration/model/dashscope
+      title: DashScope
+    - file: v2/zh/integration/model/gemini
+      title: Gemini
+    - file: v2/zh/integration/model/anthropic
+      title: Anthropic
+    - file: v2/zh/integration/model/ollama
+      title: Ollama
   - file: v2/zh/integration/memory/index
     title: 记忆
     sections:

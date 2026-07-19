@@ -15,6 +15,192 @@
  */
 package io.agentscope.extensions.model.openai.compat.deepseek;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
-public class DeepSeekFormatter extends OpenAIChatFormatter {}
+/**
+ * Formatter for DeepSeek Chat models (deepseek-v4-flash, deepseek-v4-pro).
+ *
+ * <p>DeepSeek API has the following specific requirements:
+ * <ul>
+ *   <li>System/user/assistant {@code name} fields are allowed</li>
+ *   <li>System messages are allowed</li>
+ *   <li>Omits strict parameter in tool definitions</li>
+ *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
+ * </ul>
+ *
+ * <p>Usage:
+ * <pre>{@code
+ * OpenAIChatModel.builder()
+ *     .formatter(new DeepSeekFormatter())
+ *     .modelName("deepseek-v4-flash")
+ *     .baseUrl("https://api.deepseek.com")
+ *     .apiKey(apiKey)
+ *     .build();
+ * }</pre>
+ *
+ * @see <a href="https://api-docs.deepseek.com/guides/thinking_mode#tool-calls">DeepSeek Thinking Mode</a>
+ */
+public class DeepSeekFormatter extends OpenAIChatFormatter {
+
+    private final boolean appendEmptyUserIfEndsWithAssistant;
+
+    public DeepSeekFormatter() {
+        this(false);
+    }
+
+    /**
+     * Create a DeepSeek formatter with optional empty user message appending.
+     *
+     * @param appendEmptyUserIfEndsWithAssistant if true, append an empty user message when the
+     *     conversation ends with an assistant message to avoid API errors
+     */
+    public DeepSeekFormatter(boolean appendEmptyUserIfEndsWithAssistant) {
+        super();
+        this.appendEmptyUserIfEndsWithAssistant = appendEmptyUserIfEndsWithAssistant;
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
+        List<OpenAIMessage> messages = super.doFormat(msgs);
+        messages = applyDeepSeekFixes(messages);
+        if (appendEmptyUserIfEndsWithAssistant) {
+            messages = appendEmptyUserIfNeeded(messages);
+        }
+        return messages;
+    }
+
+    @Override
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        if (msg.getRole() == MsgRole.SYSTEM && !msg.hasContentBlocks(ToolResultBlock.class)) {
+            return convertSystemMessage(msg);
+        }
+        return super.convertMessage(msg, hasMedia);
+    }
+
+    @Override
+    protected boolean supportsStrict() {
+        return false;
+    }
+
+    private OpenAIMessage convertSystemMessage(Msg msg) {
+        String content = extractTextContent(msg);
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role("system").content(content != null ? content : "");
+        if (msg.getName() != null) {
+            builder.name(msg.getName());
+        }
+        return builder.build();
+    }
+
+    /**
+     * Apply DeepSeek-specific message format fixes.
+     *
+     * <p>DeepSeek API requires:
+     * <ul>
+     *   <li>System and name fields preserved</li>
+     *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
+     *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
+     * </ul>
+     *
+     * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
+     *
+     * @param messages the original OpenAI messages
+     * @return the fixed messages for DeepSeek API
+     */
+    static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
+        int lastUserIndex = findLastUserIndex(messages);
+        boolean thinkingMode = messages.stream().anyMatch(m -> m.getReasoningContent() != null);
+        boolean[] segHasTool = thinkingMode ? computeSegmentToolFlags(messages) : null;
+
+        List<OpenAIMessage> result = new ArrayList<>(messages.size());
+        for (int i = 0; i < messages.size(); i++) {
+            boolean isCurrentTurn = i >= lastUserIndex;
+            boolean needReasoning =
+                    thinkingMode
+                            ? (isCurrentTurn || (segHasTool != null && segHasTool[i]))
+                            : isCurrentTurn;
+            result.add(fixMessage(messages.get(i), needReasoning));
+        }
+        return result;
+    }
+
+    /**
+     * Scans messages in a single pass to identify segments (between consecutive
+     * user messages) that contain tool calls. Messages within such segments
+     * are flagged to preserve their reasoning_content.
+     */
+    private static boolean[] computeSegmentToolFlags(List<OpenAIMessage> messages) {
+        boolean[] flags = new boolean[messages.size()];
+        int prevUser = -1;
+        for (int i = 0; i <= messages.size(); i++) {
+            if (i == messages.size() || "user".equals(messages.get(i).getRole())) {
+                if (prevUser >= 0) {
+                    // Check if segment (prevUser, i) has any tool call
+                    boolean hasTool = false;
+                    for (int j = prevUser + 1; j < i && !hasTool; j++) {
+                        OpenAIMessage m = messages.get(j);
+                        hasTool = m.getToolCalls() != null && !m.getToolCalls().isEmpty();
+                    }
+                    if (hasTool) {
+                        for (int j = prevUser + 1; j < i; j++) {
+                            flags[j] = true;
+                        }
+                    }
+                }
+                prevUser = i;
+            }
+        }
+        return flags;
+    }
+
+    /**
+     * Append an empty user message if the conversation ends with an assistant message.
+     *
+     * <p>Some DeepSeek API scenarios require the conversation to not end with an assistant message.
+     *
+     * @param messages the messages to check
+     * @return messages with an empty user message appended if needed
+     */
+    static List<OpenAIMessage> appendEmptyUserIfNeeded(List<OpenAIMessage> messages) {
+        if (messages.isEmpty()
+                || !"assistant".equals(messages.get(messages.size() - 1).getRole())) {
+            return messages;
+        }
+        List<OpenAIMessage> result = new ArrayList<>(messages);
+        result.add(OpenAIMessage.builder().role("user").content("").build());
+        return result;
+    }
+
+    private static int findLastUserIndex(List<OpenAIMessage> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if ("user".equals(messages.get(i).getRole())) {
+                return i;
+            }
+        }
+        return 0; // No user message found, treat all as current turn
+    }
+
+    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean needReasoning) {
+        boolean hasReasoning = msg.getReasoningContent() != null;
+        // needReasoning is determined by applyDeepSeekFixes:
+        // true = current turn, or segment had tool calls in thinking mode
+        boolean shouldRemoveReasoning = hasReasoning && !needReasoning;
+
+        if (!shouldRemoveReasoning) {
+            return msg;
+        }
+        OpenAIMessage result = new OpenAIMessage();
+        result.setRole(msg.getRole());
+        result.setContent(msg.getContent());
+        result.setName(msg.getName());
+        result.setToolCalls(msg.getToolCalls());
+        result.setToolCallId(msg.getToolCallId());
+        return result;
+    }
+}

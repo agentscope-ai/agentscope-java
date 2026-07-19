@@ -129,9 +129,10 @@ public class FirstAgent {
                 .name("assistant")
                 .sysPrompt("You are a helpful AI assistant.")
                 // ModelRegistry resolves the string and reads the matching
-                // API-key env var (e.g. OPENAI_API_KEY) automatically.
+                // API-key env var (e.g. OPENAI_API_KEY or DEEPSEEK_API_KEY)
+                // automatically.
                 // Examples: "openai:gpt-4.1", "openai:o3",
-                // "deepseek:deepseek-chat", "dashscope:qwen-plus",
+                // "deepseek:deepseek-v4-flash", "dashscope:qwen-plus",
                 // "anthropic:claude-sonnet-4-7", "ollama:llama3"
                 .model("dashscope:qwen-plus")
                 // Or pass a ChatModel object directly:
