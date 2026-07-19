@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -93,6 +95,17 @@ public class AguiRequestProcessor {
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId);
 
+        // The AG-UI adapter consumes the 2.0 fine-grained event stream, which is only exposed by
+        // ReActAgent. Resolve and cast accordingly; fail clearly for unsupported agent types.
+        if (!(agent instanceof ReActAgent reactAgent)) {
+            throw new AguiException(
+                    "Agent '"
+                            + agentId
+                            + "' is not a ReActAgent and does not support the AG-UI"
+                            + " 2.0 event stream (streamEvents). Only ReActAgent instances can be"
+                            + " adapted to the AG-UI protocol.");
+        }
+
         // Determine effective input based on server-side memory
         RunAgentInput effectiveInput = input;
         if (agentResolver.hasMemory(threadId)) {
@@ -103,7 +116,7 @@ public class AguiRequestProcessor {
         }
 
         // Create adapter and run
-        AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
+        AguiAgentAdapter adapter = new AguiAgentAdapter(reactAgent, config);
         Flux<AguiEvent> events = adapter.run(effectiveInput);
 
         return new ProcessResult(agent, events);

@@ -1,6 +1,6 @@
 # AG-UI
 
-`agentscope-extensions-agui` 把 AgentScope 的事件流转成 [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) 事件，让前端 UI（Vercel AG-UI、自研 Chat UI 等）可以直接渲染 Agent 的运行过程，包括文本、工具调用、思考内容（ThinkingBlock）。
+`agentscope-extensions-agui` 消费 `ReActAgent.streamEvents(...)` 提供的 2.0 细粒度事件流，并把它转成 [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) 事件，让前端 UI（Vercel AG-UI、自研 Chat UI 等）可以直接渲染 Agent 的运行过程，包括文本、工具调用、思考内容（ThinkingBlock）。
 
 ## 何时使用
 
@@ -31,22 +31,22 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
+AguiAgentAdapter adapter = new AguiAgentAdapter(reactAgent, config);
 
 // 前端通过 SSE 拿到的事件
 Flux<AguiEvent> events = adapter.run(runAgentInput);
 ```
 
-`runAgentInput` 由前端传过来（含 `threadId`、`runId`、`messages` 等），适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
+`reactAgent` 必须是 `ReActAgent`——适配器通过 `ReActAgent.streamEvents(...)` 消费其 2.0 细粒度事件流。`runAgentInput` 由前端传过来（含 `threadId`、`runId`、`messages` 等），适配器内部完成消息转换、调用 `streamEvents`，再把得到的 `AgentEvent` 映射到 AG-UI。
 
 ## 事件映射
 
-| AgentScope 事件 / 块 | AG-UI 事件 |
+| AgentScope `AgentEvent` | AG-UI 事件 |
 | --- | --- |
-| `EventType.REASONING / SUMMARY` 中的 `TextBlock` | `TEXT_MESSAGE_*` |
-| `EventType.REASONING / SUMMARY` 中的 `ThinkingBlock` | `REASONING_*`（需 `enableReasoning=true`） |
-| `ToolUseBlock` | `TOOL_CALL_START` |
-| `EventType.TOOL_RESULT` | `TOOL_CALL_END` |
+| `TextBlockStartEvent` / `TextBlockDeltaEvent` / `TextBlockEndEvent` | `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` |
+| `ThinkingBlockStartEvent` / `ThinkingBlockDeltaEvent` / `ThinkingBlockEndEvent` | `REASONING_MESSAGE_START` / `REASONING_MESSAGE_CONTENT` / `REASONING_MESSAGE_END`（需 `enableReasoning=true`） |
+| `ToolCallStartEvent` / `ToolCallDeltaEvent` / `ToolCallEndEvent` | `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` |
+| `ToolResultStartEvent` / `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` / `ToolResultEndEvent` | `TOOL_CALL_RESULT`（按工具调用缓冲；若该工具调用未显式开启，会防御性地补发 `TOOL_CALL_START` / `TOOL_CALL_END`） |
 
 ## 与 Spring Boot 集成
 

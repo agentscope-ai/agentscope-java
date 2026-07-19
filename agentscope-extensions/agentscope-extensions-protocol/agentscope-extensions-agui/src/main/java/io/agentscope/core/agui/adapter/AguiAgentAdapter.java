@@ -15,22 +15,30 @@
  */
 package io.agentscope.core.agui.adapter;
 
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -39,6 +47,7 @@ import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,15 +61,18 @@ import reactor.core.publisher.Flux;
  * Adapter that bridges AgentScope agents to the AG-UI protocol.
  *
  * <p>This adapter converts AG-UI protocol inputs to AgentScope messages,
- * invokes the agent, and converts the streaming events back to AG-UI events.
+ * invokes the agent via the 2.0 fine-grained event stream {@link
+ * ReActAgent#streamEvents(List, RuntimeContext)}, and converts the resulting
+ * {@link AgentEvent}s back to AG-UI events.
  *
  * <p><b>Event Mapping:</b>
  * <ul>
- *   <li>AgentScope REASONING/SUMMARY events → AG-UI TEXT_MESSAGE_* events (for TextBlock)</li>
- *   <li>AgentScope REASONING/SUMMARY events → AG-UI REASONING_* events (for
- *       ThinkingBlock, when enabled)</li>
- *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
- *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
+ *   <li>TextBlockStart/Delta/EndEvent → AG-UI TEXT_MESSAGE_START/CONTENT/END events</li>
+ *   <li>ThinkingBlockStart/Delta/EndEvent → AG-UI REASONING_MESSAGE_START/CONTENT/END events
+ *       (when reasoning is enabled)</li>
+ *   <li>ToolCallStart/Delta/EndEvent → AG-UI TOOL_CALL_START/ARGS/END events</li>
+ *   <li>ToolResultStart/TextDelta/DataDelta/EndEvent → buffered AG-UI TOOL_CALL_RESULT event
+ *       (with a defensive TOOL_CALL_START/END when needed)</li>
  * </ul>
  *
  * <p><b>Reasoning Support:</b>
@@ -80,7 +92,7 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
 
-    private final Agent agent;
+    private final ReActAgent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
     private final AguiToolConverter toolConverter;
@@ -88,10 +100,10 @@ public class AguiAgentAdapter {
     /**
      * Creates a new AguiAgentAdapter.
      *
-     * @param agent The agent to adapt
+     * @param agent The agent to adapt (must be a {@link ReActAgent} exposing the 2.0 event stream)
      * @param config The adapter configuration
      */
-    public AguiAgentAdapter(Agent agent, AguiAdapterConfig config) {
+    public AguiAgentAdapter(ReActAgent agent, AguiAdapterConfig config) {
         this.agent = Objects.requireNonNull(agent, "agent cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
@@ -101,8 +113,8 @@ public class AguiAgentAdapter {
     /**
      * Run the agent with AG-UI protocol input.
      *
-     * <p>This method converts the input messages, invokes the agent's streaming API,
-     * and emits AG-UI protocol events.
+     * <p>This method converts the input messages, invokes the agent's fine-grained event stream
+     * API, and emits AG-UI protocol events.
      *
      * @param input The AG-UI run input
      * @return A Flux of AG-UI events
@@ -116,29 +128,21 @@ public class AguiAgentAdapter {
                     // Convert AG-UI messages to AgentScope messages
                     List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-                    // Create stream options - use incremental mode for true streaming
-                    StreamOptions options =
-                            StreamOptions.builder()
-                                    .eventTypes(EventType.ALL)
-                                    .incremental(true)
-                                    .build();
-
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
                     RuntimeContext runtimeContext = buildRuntimeContext(input);
                     ToolInjection toolInjection = ToolInjection.empty();
-                    Flux<Event> agentEvents;
+                    Flux<AgentEvent> agentEvents;
                     try {
                         toolInjection = injectFrontendTools(input);
-                        agentEvents = agent.stream(msgs, options, runtimeContext);
-                        if (agentEvents == null) {
-                            agentEvents = agent.stream(msgs, options);
-                        }
-                        agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+                        agentEvents =
+                                Objects.requireNonNull(
+                                        agent.streamEvents(msgs, runtimeContext),
+                                        "agent stream is null");
                     } catch (Throwable error) {
                         toolInjection.close();
                         return Flux.concat(
-                                Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                Flux.just(new AguiEvent.RunStarted(threadId, runId, null, input)),
                                 errorEvents(threadId, runId, error));
                     }
 
@@ -151,7 +155,7 @@ public class AguiAgentAdapter {
                                     // Stream agent events and convert to AG-UI events
                                     // Use concatMapIterable to preserve strict event ordering
                                     agentEvents.concatMapIterable(
-                                            event -> convertEvent(event, state)),
+                                            event -> convertAgentEvent(event, state)),
                                     // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> finishRun(state)))
                             .doFinally(signalType -> activeToolInjection.close())
@@ -226,169 +230,143 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * Convert an AgentScope event to AG-UI events.
+     * Convert a 2.0 AgentEvent to AG-UI events.
+     *
+     * <p>The fine-grained event stream already carries start/delta/end markers, so this method
+     * maps each event type directly without relying on an {@code isLast} flag.
      *
      * @param event The AgentScope event
      * @param state The conversion state
      * @return List of AG-UI events
      */
-    private List<AguiEvent> convertEvent(Event event, EventConversionState state) {
+    private List<AguiEvent> convertAgentEvent(AgentEvent event, EventConversionState state) {
         List<AguiEvent> events = new ArrayList<>();
-        Msg msg = event.getMessage();
-        EventType type = event.getType();
+        String tid = state.threadId;
+        String rid = state.runId;
 
-        if (type == EventType.REASONING || type == EventType.SUMMARY) {
-            // Handle reasoning/summary events - convert to text messages and tool calls
-            for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock textBlock) {
-                    String text = textBlock.getText();
-                    if (text != null && !text.isEmpty()) {
-                        String messageId = msg.getId();
-
-                        // Start message if not started
-                        if (!state.hasStartedMessage(messageId)) {
-                            events.add(
-                                    new AguiEvent.TextMessageStart(
-                                            state.threadId, state.runId, messageId, "assistant"));
-                            state.startMessage(messageId);
-                        }
-
-                        if (!event.isLast()) {
-                            // In incremental mode, text is already the delta
-                            events.add(
-                                    new AguiEvent.TextMessageContent(
-                                            state.threadId, state.runId, messageId, text));
-                        } else {
-                            // End message if this is the last event
-                            if (!state.hasEndedMessage(messageId)) {
-                                events.add(
-                                        new AguiEvent.TextMessageEnd(
-                                                state.threadId, state.runId, messageId));
-                                state.endMessage(messageId);
-                            }
-                        }
-                    }
-                } else if (block instanceof ThinkingBlock thinkingBlock) {
-                    // Handle thinking blocks - convert to REASONING_* events (only if enabled)
-                    // According to AG-UI Reasoning draft: https://docs.ag-ui.com/drafts/reasoning
-                    if (config.isEnableReasoning()) {
-                        String thinking = thinkingBlock.getThinking();
-                        if (thinking != null && !thinking.isEmpty()) {
-                            String messageId = msg.getId();
-
-                            // Start reasoning message if not started
-                            if (!state.hasStartedReasoningMessage(messageId)) {
-                                events.add(
-                                        new AguiEvent.ReasoningMessageStart(
-                                                state.threadId,
-                                                state.runId,
-                                                messageId,
-                                                "reasoning"));
-                                state.startReasoningMessage(messageId);
-                            }
-
-                            if (!event.isLast()) {
-                                // In incremental mode, thinking is already the delta
-                                events.add(
-                                        new AguiEvent.ReasoningMessageContent(
-                                                state.threadId, state.runId, messageId, thinking));
-                            } else {
-                                // End reasoning message if this is the last event
-                                events.add(
-                                        new AguiEvent.ReasoningMessageEnd(
-                                                state.threadId, state.runId, messageId));
-                                state.endReasoningMessage(messageId);
-                            }
-                        }
-                    }
-                    // If reasoning is disabled, ThinkingBlock content is ignored (backward
-                    // compatibility)
-                } else if (block instanceof ToolUseBlock toolUse) {
-                    // End any active text message before starting tool call
-                    if (state.hasActiveTextMessage()) {
-                        String activeMessageId = state.getCurrentTextMessageId();
-                        events.add(
-                                new AguiEvent.TextMessageEnd(
-                                        state.threadId, state.runId, activeMessageId));
-                        state.endMessage(activeMessageId);
-                    }
-
-                    // End any active reasoning message before starting tool call
-                    if (state.hasActiveReasoningMessage()) {
-                        String activeReasoningMessageId = state.getCurrentReasoningMessageId();
-                        events.add(
-                                new AguiEvent.ReasoningMessageEnd(
-                                        state.threadId, state.runId, activeReasoningMessageId));
-                        state.endReasoningMessage(activeReasoningMessageId);
-                    }
-
-                    // Emit tool call start
-                    String toolCallId = toolUse.getId();
-                    if (toolCallId == null) {
-                        toolCallId = UUID.randomUUID().toString();
-                    }
-
-                    if (!state.hasStartedToolCall(toolCallId)) {
-                        events.add(
-                                new AguiEvent.ToolCallStart(
-                                        state.threadId,
-                                        state.runId,
-                                        toolCallId,
-                                        toolUse.getName()));
-                        state.startToolCall(toolCallId);
-                    }
-
-                    // Emit tool call args if enabled
-                    if (config.isEmitToolCallArgs() && !event.isLast()) {
-                        String args = toolUse.getContent();
-                        if (args != null && !args.isEmpty()) {
-                            events.add(
-                                    new AguiEvent.ToolCallArgs(
-                                            state.threadId, state.runId, toolCallId, args));
-                        }
-                    }
-                }
+        if (event instanceof TextBlockStartEvent e) {
+            String messageId = e.getReplyId();
+            if (!state.hasStartedMessage(messageId)) {
+                events.add(new AguiEvent.TextMessageStart(tid, rid, messageId, "assistant"));
+                state.startMessage(messageId);
             }
-        } else if (type == EventType.TOOL_RESULT && event.isLast()) {
-            // Handle tool results
-            for (ContentBlock block : msg.getContent()) {
-                if (block instanceof ToolResultBlock toolResult) {
-                    String toolCallId = toolResult.getId();
-                    if (toolCallId == null) {
-                        toolCallId = UUID.randomUUID().toString();
-                    }
-
-                    String result = extractToolResultText(toolResult);
-
-                    boolean hasStarted = state.hasStartedToolCall(toolCallId);
-                    if (!hasStarted) {
-                        String toolName = toolResult.getName();
-                        if (toolName == null || toolName.isBlank()) {
-                            toolName = "unknown";
-                        }
-                        events.add(
-                                new AguiEvent.ToolCallStart(
-                                        state.threadId, state.runId, toolCallId, toolName));
-                        state.startToolCall(toolCallId);
-                    }
-
-                    // Ensure ToolCallEnd is emitted to close arguments phase
-                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
-
+        } else if (event instanceof TextBlockDeltaEvent e) {
+            String delta = e.getDelta();
+            if (delta != null && !delta.isEmpty()) {
+                events.add(new AguiEvent.TextMessageContent(tid, rid, e.getReplyId(), delta));
+            }
+        } else if (event instanceof TextBlockEndEvent e) {
+            String messageId = e.getReplyId();
+            if (!state.hasEndedMessage(messageId)) {
+                events.add(new AguiEvent.TextMessageEnd(tid, rid, messageId));
+                state.endMessage(messageId);
+            }
+        } else if (event instanceof ThinkingBlockStartEvent e) {
+            if (config.isEnableReasoning()) {
+                String messageId = e.getReplyId();
+                if (!state.hasStartedReasoningMessage(messageId)) {
                     events.add(
-                            new AguiEvent.ToolCallResult(
-                                    state.threadId,
-                                    state.runId,
-                                    toolCallId,
-                                    result,
-                                    "tool",
-                                    msg.getId()));
-                    state.endToolCall(toolCallId);
+                            new AguiEvent.ReasoningMessageStart(tid, rid, messageId, "reasoning"));
+                    state.startReasoningMessage(messageId);
                 }
             }
+        } else if (event instanceof ThinkingBlockDeltaEvent e) {
+            if (config.isEnableReasoning()) {
+                String delta = e.getDelta();
+                if (delta != null && !delta.isEmpty()) {
+                    events.add(
+                            new AguiEvent.ReasoningMessageContent(tid, rid, e.getReplyId(), delta));
+                }
+            }
+        } else if (event instanceof ThinkingBlockEndEvent e) {
+            if (config.isEnableReasoning()) {
+                String messageId = e.getReplyId();
+                if (!state.hasEndedReasoningMessage(messageId)) {
+                    events.add(new AguiEvent.ReasoningMessageEnd(tid, rid, messageId));
+                    state.endReasoningMessage(messageId);
+                }
+            }
+        } else if (event instanceof ToolCallStartEvent e) {
+            // Close any active text/reasoning message before starting a tool call
+            closeActiveMessages(state, events);
+            String toolCallId = e.getToolCallId();
+            if (toolCallId == null) {
+                toolCallId = UUID.randomUUID().toString();
+            }
+            if (!state.hasStartedToolCall(toolCallId)) {
+                events.add(new AguiEvent.ToolCallStart(tid, rid, toolCallId, e.getToolCallName()));
+                state.startToolCall(toolCallId);
+            }
+        } else if (event instanceof ToolCallDeltaEvent e) {
+            if (config.isEmitToolCallArgs()) {
+                String delta = e.getDelta();
+                if (delta != null && !delta.isEmpty()) {
+                    events.add(new AguiEvent.ToolCallArgs(tid, rid, e.getToolCallId(), delta));
+                }
+            }
+        } else if (event instanceof ToolCallEndEvent e) {
+            String toolCallId = e.getToolCallId();
+            if (!state.hasEndedToolCall(toolCallId)) {
+                events.add(new AguiEvent.ToolCallEnd(tid, rid, toolCallId));
+                state.endToolCall(toolCallId);
+            }
+        } else if (event instanceof ToolResultStartEvent e) {
+            // Close any active text/reasoning message before the tool result phase
+            closeActiveMessages(state, events);
+            String toolCallId = e.getToolCallId();
+            if (!state.hasStartedToolCall(toolCallId)) {
+                String toolName = e.getToolCallName();
+                if (toolName == null || toolName.isBlank()) {
+                    toolName = "unknown";
+                }
+                events.add(new AguiEvent.ToolCallStart(tid, rid, toolCallId, toolName));
+                state.startToolCall(toolCallId);
+            }
+            state.getToolResultBuffer(toolCallId);
+        } else if (event instanceof ToolResultTextDeltaEvent e) {
+            String delta = e.getDelta();
+            if (delta != null && !delta.isEmpty()) {
+                state.appendToolResult(e.getToolCallId(), delta);
+            }
+        } else if (event instanceof ToolResultDataDeltaEvent e) {
+            String text = serializeContentBlock(e.getData());
+            if (text != null && !text.isEmpty()) {
+                state.appendToolResult(e.getToolCallId(), text);
+            }
+        } else if (event instanceof ToolResultEndEvent e) {
+            String toolCallId = e.getToolCallId();
+            // Ensure ToolCallEnd is emitted to close the arguments phase
+            if (!state.hasEndedToolCall(toolCallId)) {
+                events.add(new AguiEvent.ToolCallEnd(tid, rid, toolCallId));
+                state.endToolCall(toolCallId);
+            }
+            String result = state.consumeToolResult(toolCallId);
+            events.add(
+                    new AguiEvent.ToolCallResult(
+                            tid, rid, toolCallId, result, "tool", e.getReplyId()));
         }
+        // AgentStartEvent/AgentEndEvent/AgentResultEvent/ModelCallStart/End/Custom/SubagentExposed
+        // and other lifecycle events are intentionally ignored: the adapter emits RUN_STARTED /
+        // RUN_FINISHED itself.
 
         return events;
+    }
+
+    /**
+     * Close any still-active text or reasoning message, ensuring AG-UI ordering constraints are
+     * respected before a tool call or tool result phase begins.
+     */
+    private void closeActiveMessages(EventConversionState state, List<AguiEvent> events) {
+        if (state.hasActiveTextMessage()) {
+            String messageId = state.getCurrentTextMessageId();
+            events.add(new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
+            state.endMessage(messageId);
+        }
+        if (state.hasActiveReasoningMessage()) {
+            String messageId = state.getCurrentReasoningMessageId();
+            events.add(new AguiEvent.ReasoningMessageEnd(state.threadId, state.runId, messageId));
+            state.endReasoningMessage(messageId);
+        }
     }
 
     /**
@@ -407,18 +385,18 @@ public class AguiAgentAdapter {
             }
         }
 
-        // End any tool calls that weren't properly ended
-        for (String toolCallId : state.getStartedToolCalls()) {
-            if (!state.hasEndedToolCall(toolCallId)) {
-                events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
-            }
-        }
-
         // End any reasoning messages that weren't properly ended
         for (String messageId : state.getStartedReasoningMessages()) {
             if (!state.hasEndedReasoningMessage(messageId)) {
                 events.add(
                         new AguiEvent.ReasoningMessageEnd(state.threadId, state.runId, messageId));
+            }
+        }
+
+        // End any tool calls that weren't properly ended
+        for (String toolCallId : state.getStartedToolCalls()) {
+            if (!state.hasEndedToolCall(toolCallId)) {
+                events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
             }
         }
 
@@ -429,43 +407,22 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * Extract text content from a tool result block.
+     * Serialize a content block to a textual representation for tool result emission.
      *
-     * @param toolResult The tool result block
+     * @param data The content block
      * @return The text content, or null if not present
      */
-    private String extractToolResultText(ToolResultBlock toolResult) {
-        if (toolResult.getOutput() == null || toolResult.getOutput().isEmpty()) {
+    private String serializeContentBlock(ContentBlock data) {
+        if (data == null) {
             return null;
         }
-
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock output : toolResult.getOutput()) {
-            if (output instanceof TextBlock textBlock) {
-                if (!sb.isEmpty()) {
-                    sb.append("\n");
-                }
-                sb.append(textBlock.getText());
-            }
-        }
-
-        return !sb.isEmpty() ? sb.toString() : null;
-    }
-
-    /**
-     * Serialize tool arguments to JSON string.
-     *
-     * @param input The tool input map
-     * @return JSON string representation
-     */
-    private String serializeToolArgs(Map<String, Object> input) {
-        if (input == null || input.isEmpty()) {
-            return "{}";
+        if (data instanceof TextBlock textBlock) {
+            return textBlock.getText();
         }
         try {
-            return JsonUtils.getJsonCodec().toJson(input);
+            return JsonUtils.getJsonCodec().toJson(data);
         } catch (JsonException e) {
-            return "{}";
+            return null;
         }
     }
 
@@ -534,6 +491,7 @@ public class AguiAgentAdapter {
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
         private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
         private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
+        private final Map<String, StringBuilder> toolResultBuffers = new HashMap<>();
         private String currentTextMessageId = null;
         private String currentReasoningMessageId = null;
 
@@ -625,6 +583,31 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedReasoningMessages() {
             return startedReasoningMessages;
+        }
+
+        /**
+         * Returns the (lazily created) string buffer accumulating tool result text for the given
+         * tool call id.
+         */
+        StringBuilder getToolResultBuffer(String toolCallId) {
+            return toolResultBuffers.computeIfAbsent(toolCallId, k -> new StringBuilder());
+        }
+
+        /** Appends text to the tool result buffer for the given tool call id. */
+        void appendToolResult(String toolCallId, String text) {
+            getToolResultBuffer(toolCallId).append(text);
+        }
+
+        /**
+         * Returns the accumulated tool result text for the given tool call id and removes the
+         * buffer. Returns {@code null} if no text was accumulated.
+         */
+        String consumeToolResult(String toolCallId) {
+            StringBuilder buffer = toolResultBuffers.remove(toolCallId);
+            if (buffer == null || buffer.isEmpty()) {
+                return null;
+            }
+            return buffer.toString();
         }
     }
 }
