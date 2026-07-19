@@ -44,9 +44,11 @@ import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -1591,6 +1593,532 @@ class AguiAgentAdapterTest {
         assertFalse(
                 hasReasoningMessageContent,
                 "Should NOT have ReasoningMessageContent for null thinking");
+    }
+
+    // --- mapErrorCode branch coverage ---
+
+    @Test
+    void testRunEmitsTimeoutErrorCode() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.error(new java.util.concurrent.TimeoutException()));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-timeout")
+                        .runId("run-timeout")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.RunError runError =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(runError);
+        assertEquals("TIMEOUT_ERROR", runError.code());
+    }
+
+    @Test
+    void testRunEmitsInterruptedErrorCode() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.error(new InterruptedException()));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-interrupted")
+                        .runId("run-interrupted")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.RunError runError =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(runError);
+        assertEquals("INTERRUPTED_ERROR", runError.code());
+    }
+
+    @Test
+    void testRunEmitsInvalidInputErrorCodeForIllegalArgument() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.error(new IllegalArgumentException()));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-arg")
+                        .runId("run-arg")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.RunError runError =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(runError);
+        assertEquals("INVALID_INPUT_ERROR", runError.code());
+    }
+
+    @Test
+    void testRunEmitsInvalidInputErrorCodeForIllegalState() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.error(new IllegalStateException()));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-state")
+                        .runId("run-state")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.RunError runError =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(runError);
+        assertEquals("INVALID_INPUT_ERROR", runError.code());
+    }
+
+    // --- ToolResultDataDeltaEvent coverage ---
+
+    @Test
+    void testToolResultDataDeltaEventWithTextBlock() {
+        TextBlock textBlock = TextBlock.builder().text("result data").build();
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ToolResultStartEvent("msg-tr1", "tc-1", "tool"),
+                                new ToolResultDataDeltaEvent("msg-tr1", "tc-1", "tool", textBlock),
+                                new ToolResultEndEvent(
+                                        "msg-tr1", "tc-1", "tool", ToolResultState.SUCCESS)));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.ToolCallResult toolResult =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallResult)
+                        .map(e -> (AguiEvent.ToolCallResult) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResult, "Should have ToolCallResult");
+        assertTrue(
+                toolResult.content().contains("result data"),
+                "Should contain serialized text block data");
+    }
+
+    // --- finishRun pending end branches ---
+
+    @Test
+    void testFinishRunEmitsPendingTextMessageEnd() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new TextBlockStartEvent("msg-pending", "b1")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long textEndCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageEnd end = (AguiEvent.TextMessageEnd) e;
+                                    return "msg-pending".equals(end.messageId());
+                                })
+                        .count();
+        assertEquals(1, textEndCount, "Should have TextMessageEnd from finishRun");
+    }
+
+    @Test
+    void testFinishRunEmitsPendingReasoningMessageEnd() {
+        AguiAdapterConfig reasoningConfig =
+                AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter reasoningAdapter = new AguiAgentAdapter(mockAgent, reasoningConfig);
+
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new ThinkingBlockStartEvent("msg-reasoning", "b1")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = reasoningAdapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long endCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageEnd)
+                        .filter(
+                                e -> {
+                                    AguiEvent.ReasoningMessageEnd end =
+                                            (AguiEvent.ReasoningMessageEnd) e;
+                                    return "msg-reasoning".equals(end.messageId());
+                                })
+                        .count();
+        assertEquals(1, endCount, "Should have ReasoningMessageEnd from finishRun");
+    }
+
+    @Test
+    void testFinishRunEmitsPendingToolCallEnd() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new ToolCallStartEvent("msg-tc", "tc-pending", "tool")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long toolEndCount = events.stream().filter(e -> e instanceof AguiEvent.ToolCallEnd).count();
+        assertEquals(1, toolEndCount, "Should have ToolCallEnd from finishRun");
+    }
+
+    // --- duplicate event skip branches ---
+
+    @Test
+    void testDuplicateTextBlockStartNotEmitted() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new TextBlockStartEvent("msg-dup", "b1"),
+                                new TextBlockStartEvent("msg-dup", "b2")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long startCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageStart s = (AguiEvent.TextMessageStart) e;
+                                    return "msg-dup".equals(s.messageId());
+                                })
+                        .count();
+        assertEquals(1, startCount, "Should only emit 1 TextMessageStart for duplicate");
+    }
+
+    @Test
+    void testDuplicateTextBlockEndNotEmitted() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new TextBlockStartEvent("msg-dup", "b1"),
+                                new TextBlockEndEvent("msg-dup", "b1"),
+                                new TextBlockEndEvent("msg-dup", "b2")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long endCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageEnd end = (AguiEvent.TextMessageEnd) e;
+                                    return "msg-dup".equals(end.messageId());
+                                })
+                        .count();
+        assertEquals(1, endCount, "Should only emit 1 TextMessageEnd for duplicate");
+    }
+
+    @Test
+    void testDuplicateThinkingBlockStartNotEmitted() {
+        AguiAdapterConfig reasoningConfig =
+                AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter reasoningAdapter = new AguiAgentAdapter(mockAgent, reasoningConfig);
+
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ThinkingBlockStartEvent("msg-reasoning", "b1"),
+                                new ThinkingBlockStartEvent("msg-reasoning", "b2")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = reasoningAdapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long startCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
+                        .filter(
+                                e -> {
+                                    AguiEvent.ReasoningMessageStart s =
+                                            (AguiEvent.ReasoningMessageStart) e;
+                                    return "msg-reasoning".equals(s.messageId());
+                                })
+                        .count();
+        assertEquals(1, startCount, "Should only emit 1 ReasoningMessageStart for duplicate");
+    }
+
+    @Test
+    void testDuplicateThinkingBlockEndNotEmitted() {
+        AguiAdapterConfig reasoningConfig =
+                AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter reasoningAdapter = new AguiAgentAdapter(mockAgent, reasoningConfig);
+
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ThinkingBlockStartEvent("msg-reasoning", "b1"),
+                                new ThinkingBlockDeltaEvent("msg-reasoning", "b1", "thinking"),
+                                new ThinkingBlockEndEvent("msg-reasoning", "b1"),
+                                new ThinkingBlockEndEvent("msg-reasoning", "b1")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = reasoningAdapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long endCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageEnd)
+                        .filter(
+                                e -> {
+                                    AguiEvent.ReasoningMessageEnd end =
+                                            (AguiEvent.ReasoningMessageEnd) e;
+                                    return "msg-reasoning".equals(end.messageId());
+                                })
+                        .count();
+        assertEquals(1, endCount, "Should only emit 1 ReasoningMessageEnd for duplicate");
+    }
+
+    @Test
+    void testDuplicateToolCallEndNotEmitted() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ToolCallStartEvent("msg-tc", "tc-dup", "tool"),
+                                new ToolCallEndEvent("msg-tc", "tc-dup", "tool"),
+                                new ToolCallEndEvent("msg-tc", "tc-dup", "tool")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long toolEndCount = events.stream().filter(e -> e instanceof AguiEvent.ToolCallEnd).count();
+        assertEquals(1, toolEndCount, "Should only emit 1 ToolCallEnd for duplicate");
+    }
+
+    // --- ToolResultStart with empty/null toolName ---
+
+    @Test
+    void testToolResultStartWithNullToolNameUsesUnknown() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ToolResultStartEvent("msg-tr1", "tc-1", null),
+                                new ToolResultEndEvent(
+                                        "msg-tr1", "tc-1", null, ToolResultState.SUCCESS)));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.ToolCallStart toolStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolStart, "Should backfill ToolCallStart for tool result");
+        assertEquals("tc-1", toolStart.toolCallId());
+        assertEquals("unknown", toolStart.toolCallName(), "Null toolName should become 'unknown'");
+    }
+
+    // --- Empty delta branches ---
+
+    @Test
+    void testTextBlockDeltaEmptyStringEmitsNoContent() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new TextBlockStartEvent("msg-empty", "b1"),
+                                new TextBlockDeltaEvent("msg-empty", "b1", ""),
+                                new TextBlockEndEvent("msg-empty", "b1")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        long contentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
+        assertEquals(0, contentCount, "Should not emit empty TextMessageContent");
+    }
+
+    @Test
+    void testToolCallDeltaEmptyStringEmitsNoArgs() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ToolCallStartEvent("msg-tc1", "tc-1", "test_tool"),
+                                new ToolCallDeltaEvent("msg-tc1", "tc-1", "test_tool", ""),
+                                new ToolCallEndEvent("msg-tc1", "tc-1", "test_tool")));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        boolean hasToolArgs = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallArgs);
+        assertFalse(hasToolArgs, "Should NOT have ToolCallArgs when delta is empty string");
+    }
+
+    @Test
+    void testToolResultTextDeltaEmptyStringNotAppended() {
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ToolResultStartEvent("msg-tr1", "tc-1", "tool"),
+                                new ToolResultTextDeltaEvent("msg-tr1", "tc-1", "tool", ""),
+                                new ToolResultTextDeltaEvent("msg-tr1", "tc-1", "tool", "real"),
+                                new ToolResultEndEvent(
+                                        "msg-tr1", "tc-1", "tool", ToolResultState.SUCCESS)));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.ToolCallResult toolResult =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallResult)
+                        .map(e -> (AguiEvent.ToolCallResult) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResult);
+        assertEquals(
+                "real",
+                toolResult.content(),
+                "Empty string delta should not be appended, only 'real' expected");
+    }
+
+    // --- Error with tools triggers close() path ---
+
+    @Test
+    void testRunWithToolsAndStreamExceptionCleansUpToolkit() {
+        Toolkit toolkit = new Toolkit();
+        when(mockAgent.getToolkit()).thenReturn(toolkit);
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenThrow(new RuntimeException("Tool error"));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-err-tools")
+                        .runId("run-err-tools")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .tools(List.of(frontendTool("frontend_lookup")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.RunError runError =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.RunError)
+                        .map(e -> (AguiEvent.RunError) e)
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(runError, "Should have RunError");
+
+        // Toolkit should be cleaned up (frontend tool removed)
+        assertNull(toolkit.getTool("frontend_lookup"));
     }
 
     private static AguiTool frontendTool(String name) {
