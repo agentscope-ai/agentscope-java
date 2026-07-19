@@ -3550,6 +3550,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             AssistantMessage.builder()
                                     .name(getName())
                                     .content(TextBlock.builder().text(recoveryText).build())
+                                    .generateReason(GenerateReason.INTERRUPTED)
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);
                     return saveStateToSession(scope)

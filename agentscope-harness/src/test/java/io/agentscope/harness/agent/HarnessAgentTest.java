@@ -37,6 +37,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -61,6 +62,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -888,6 +890,57 @@ class HarnessAgentTest {
                 workspace.normalize(),
                 child.getWorkspaceManager().getWorkspace().normalize(),
                 "general-purpose must share mainWorkspace");
+    }
+
+    // =========================================================================
+    // declared subagent execution-config inheritance (issue #2230)
+    // =========================================================================
+
+    /**
+     * A declared subagent must inherit the parent agent's {@code toolExecutionConfig} and {@code
+     * modelExecutionConfig}. Before the fix, {@code buildDeclaredFactory} never propagated them, so
+     * a declared subagent silently fell back to {@link ExecutionConfig} defaults (e.g. the
+     * 5-minute tool timeout), ignoring a longer timeout configured on the main agent.
+     */
+    @Test
+    void declaredSubagent_inheritsExecutionConfigsFromParent() throws Exception {
+        Files.createDirectories(workspace);
+
+        ExecutionConfig toolExec =
+                ExecutionConfig.builder().timeout(Duration.ofHours(1)).maxAttempts(2).build();
+        ExecutionConfig modelExec =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(3)).maxAttempts(4).build();
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("worker")
+                        .description("declared worker")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .toolExecutionConfig(toolExec)
+                        .modelExecutionConfig(modelExec)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream().filter(e -> "worker".equals(e.name())).findFirst().orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
+        ReActAgent delegate = child.getDelegate();
+
+        assertSame(
+                toolExec,
+                delegate.getToolExecutionConfig(),
+                "declared subagent must inherit parent toolExecutionConfig");
+        assertSame(
+                modelExec,
+                delegate.getModelExecutionConfig(),
+                "declared subagent must inherit parent modelExecutionConfig");
     }
 
     // =========================================================================
