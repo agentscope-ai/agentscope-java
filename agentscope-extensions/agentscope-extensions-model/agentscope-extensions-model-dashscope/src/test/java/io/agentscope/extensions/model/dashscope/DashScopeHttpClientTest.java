@@ -655,6 +655,19 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testStreamIgnoresMalformedSseData() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: malformed-json\\n\\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+
+        StepVerifier.create(client.stream(request, null, null, null)).verifyComplete();
+    }
+
+    @Test
     void testHeaderOverride() throws Exception {
         mockServer.enqueue(
                 new MockResponse()
