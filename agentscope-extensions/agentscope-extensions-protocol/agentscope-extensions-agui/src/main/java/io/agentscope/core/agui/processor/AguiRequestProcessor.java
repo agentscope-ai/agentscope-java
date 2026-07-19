@@ -106,6 +106,8 @@ public class AguiRequestProcessor {
         AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
         Flux<AguiEvent> events = adapter.run(effectiveInput);
 
+        events.subscribe(System.out::println);
+
         return new ProcessResult(agent, events);
     }
 

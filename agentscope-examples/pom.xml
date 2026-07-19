@@ -33,6 +33,7 @@
 
     <modules>
         <module>documentation</module>
+        <module>agui</module>
         <module>agents/agentscope-builder</module>
         <module>agents/agentscope-paw</module>
         <module>agents/agentscope-dataagent</module>
