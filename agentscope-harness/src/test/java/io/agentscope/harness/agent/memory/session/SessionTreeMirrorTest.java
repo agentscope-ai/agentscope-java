@@ -204,7 +204,9 @@ class SessionTreeMirrorTest {
     //  Helper
     // -----------------------------------------------------------------------
 
-    private static void awaitMirror() throws InterruptedException {
-        TimeUnit.MILLISECONDS.sleep(300);
+    private static void awaitMirror() {
+        assertTrue(
+                SessionTree.awaitPendingMirrors(5, TimeUnit.SECONDS),
+                "session-tree-mirror should drain within timeout");
     }
 }

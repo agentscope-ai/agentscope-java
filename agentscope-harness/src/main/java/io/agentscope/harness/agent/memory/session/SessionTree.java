@@ -34,8 +34,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -471,6 +475,38 @@ public class SessionTree {
      * Fetches the remote copy of {@code file} and parses it as JSONL session entries.
      * Returns an empty list if no filesystem is configured or the remote read fails.
      */
+
+    /**
+     * Blocks until all previously scheduled remote mirror tasks have finished (or the timeout
+     * elapses). Safe to call from {@code HarnessAgent.close()} / test teardown so that background
+     * {@code session-tree-mirror} uploads cannot race JUnit {@code @TempDir} cleanup.
+     *
+     * <p>Because {@link #MIRROR_EXECUTOR} is a single-thread FIFO queue, submitting a no-op and
+     * waiting for it drains every mirror task scheduled before this call.
+     *
+     * @param timeout maximum time to wait
+     * @param unit timeout unit
+     * @return {@code true} if the queue drained in time; {@code false} on timeout/interrupt
+     */
+    public static boolean awaitPendingMirrors(long timeout, TimeUnit unit) {
+        Future<?> drain = MIRROR_EXECUTOR.submit(() -> {});
+        try {
+            drain.get(timeout, unit);
+            return true;
+        } catch (TimeoutException e) {
+            log.warn("Timed out waiting for session-tree-mirror drain after {} {}", timeout, unit);
+            drain.cancel(false);
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for session-tree-mirror drain");
+            return false;
+        } catch (ExecutionException e) {
+            log.warn("session-tree-mirror drain task failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
     private List<SessionEntry> pullRemoteEntries(Path file) {
         if (filesystem == null || workspaceRoot == null) {
             return List.of();
