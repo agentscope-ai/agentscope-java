@@ -13,57 +13,40 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.agentscope.extensions.model.openai.compat.minimax;
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
-import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import io.agentscope.extensions.model.openai.formatter.OpenAIMultiAgentFormatter;
 
-/**
- * Formatter for MiniMax OpenAI-compatible chat completions.
- *
- * <p>MiniMax <a href="https://platform.minimaxi.com/docs/api-reference/text-chat-openai">Chat
- * Completions API</a>.
- */
-public class MiniMaxFormatter extends OpenAIChatFormatter {
+/** Multi-agent formatter for MiniMax OpenAI-compatible chat completions. */
+public class MiniMaxMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
-    private static final String PARAM_REASONING_SPLIT = "reasoning_split";
+    public MiniMaxMultiAgentFormatter() {
+        super();
+    }
+
+    public MiniMaxMultiAgentFormatter(String conversationHistoryPrompt) {
+        super(conversationHistoryPrompt);
+    }
 
     @Override
     public void applyOptions(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Apply before super so additionalBodyParam can override the MiniMax default.
-        applyReasoningSplit(request);
+        MiniMaxFormatter.applyReasoningSplit(request);
         super.applyOptions(request, options, defaultOptions);
     }
 
     @Override
     protected void applyMaxTokens(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
-        applyMiniMaxMaxTokens(
+        MiniMaxFormatter.applyMiniMaxMaxTokens(
                 request,
                 getOptionOrDefault(
                         options, defaultOptions, GenerateOptions::getMaxCompletionTokens),
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens));
-    }
-
-    static void applyReasoningSplit(OpenAIRequest request) {
-        // Split MiniMax thinking content into OpenAI-compatible reasoning fields so the shared
-        // OpenAIResponseParser can convert it to ThinkingBlock.
-        request.addExtraParam(PARAM_REASONING_SPLIT, true);
-    }
-
-    static void applyMiniMaxMaxTokens(
-            OpenAIRequest request, Integer maxCompletionTokens, Integer maxTokens) {
-        if (maxCompletionTokens != null) {
-            request.setMaxCompletionTokens(maxCompletionTokens);
-            return;
-        }
-
-        if (maxTokens != null) {
-            // MiniMax deprecates max_tokens in favor of max_completion_tokens.
-            request.setMaxCompletionTokens(maxTokens);
-        }
     }
 
     @Override
