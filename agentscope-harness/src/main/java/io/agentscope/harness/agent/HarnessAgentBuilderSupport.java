@@ -388,6 +388,12 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final GenerateOptions capturedGenOpts = b.generateOptions;
+        // See buildGeneralPurposeFactory: propagate the parent's model/tool execution configs so
+        // declared subagents honor the parent's timeouts. Without this they fall back to
+        // ExecutionConfig defaults (e.g. the 5-minute tool timeout), ignoring a longer timeout
+        // configured on the main agent.
+        final ExecutionConfig capturedModelExec = b.modelExecutionConfig;
+        final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         // Snapshot of main agent's Local filesystem configuration. ISOLATED subagents get a
         // fresh spec carrying the same project / additionalRoots / mode so PathPolicy stays in
         // sync; without this, every isolated subagent would default to project=${user.dir} and
@@ -463,6 +469,9 @@ final class HarnessAgentBuilderSupport {
             if (capturedStateStore != null) {
                 sub.stateStore(capturedStateStore);
             }
+
+            if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
+            if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
