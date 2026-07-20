@@ -48,8 +48,22 @@ class KimiModelProviderTest {
         assertTrue(provider.supports("kimi:kimi-k2.6"));
         assertTrue(provider.supports("kimi:moonshot-v1-8k"));
         assertFalse(provider.supports("kimi:"));
+        // Whitespace-only model names must not be treated as supported
+        assertFalse(provider.supports("kimi: "));
+        assertFalse(provider.supports("kimi:   "));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports(null));
+    }
+
+    @Test
+    void createTrimsModelName() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-kimi-key").build();
+
+        Model model = provider.create("kimi: kimi-k3", context);
+
+        assertEquals("kimi-k3", model.getModelName());
     }
 
     @Test
@@ -57,6 +71,7 @@ class KimiModelProviderTest {
         KimiModelProvider provider = new KimiModelProvider();
 
         assertThrows(IllegalArgumentException.class, () -> provider.create("kimi:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("kimi: "));
         assertThrows(IllegalArgumentException.class, () -> provider.create("kimi-k3"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
