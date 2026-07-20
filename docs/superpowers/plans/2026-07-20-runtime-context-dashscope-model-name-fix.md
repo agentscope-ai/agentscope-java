@@ -49,12 +49,13 @@ class RuntimeContextExampleTest {
 
 - [ ] **Step 2: Run the test to verify it fails for the current source**
 
-Run from `agentscope-examples/documentation` with Java 17:
+Run from the repository root with Java 17 so the local SNAPSHOT BOMs are resolved in the reactor:
 
 ```bash
 JAVA17_HOME=$(/usr/libexec/java_home -v 17)
 JAVA_HOME="$JAVA17_HOME" PATH="$JAVA17_HOME/bin:$PATH" \
-  mvn -Dtest=RuntimeContextExampleTest test
+  mvn -pl agentscope-examples/documentation -am \
+      -Dtest=RuntimeContextExampleTest -DfailIfNoTests=false test
 ```
 
 Expected: one assertion failure because the source currently contains
