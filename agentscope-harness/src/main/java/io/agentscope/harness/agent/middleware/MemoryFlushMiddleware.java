@@ -76,6 +76,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
+    private final String agentId;
 
     /**
      * Process-wide per-isolation-key flush timestamps. Static so that the throttle window
@@ -109,7 +110,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 model,
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
-                IsolationScope.USER);
+                IsolationScope.USER,
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -117,7 +119,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger) {
-        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER);
+        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER, null);
     }
 
     public MemoryFlushMiddleware(
@@ -126,6 +128,26 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope) {
+        this(workspaceManager, model, flushPrompt, flushTrigger, isolationScope, null);
+    }
+
+    /**
+     * Creates a memory flush middleware with a stable agent namespace for session paths.
+     *
+     * @param workspaceManager workspace manager used for memory and session IO
+     * @param model model used to extract long-term memories
+     * @param flushPrompt prompt used for memory extraction
+     * @param flushTrigger policy controlling memory extraction frequency
+     * @param isolationScope identity dimension used for flush throttling
+     * @param agentId stable agent namespace; falls back to the runtime agent name when blank
+     */
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            String agentId) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -133,6 +155,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.agentId = agentId != null && !agentId.isBlank() ? agentId : null;
     }
 
     @Override
@@ -184,14 +207,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             flushMono = Mono.empty();
         }
 
-        String agentId = agent.getName();
+        String effectiveAgentId = agentId != null ? agentId : agent.getName();
         String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
         Mono<Void> offloadMono =
                 Mono.fromRunnable(
                                 () ->
                                         flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId))
+                                                rc, messages, effectiveAgentId, sessionId))
                         .then()
                         .doOnSuccess(v -> log.debug("Message offload completed"))
                         .onErrorResume(

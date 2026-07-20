@@ -154,6 +154,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
     private final ReActAgent delegate;
+    private final String namespaceAgentId;
     private final WorkspaceManager workspaceManager;
     private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
     private final WorkspaceIndex ownedWorkspaceIndex;
@@ -186,6 +187,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private HarnessAgent(
             ReActAgent delegate,
+            String namespaceAgentId,
             WorkspaceManager workspaceManager,
             BiFunction<String, String, WorkspaceManager> workspaceFactory,
             WorkspaceIndex ownedWorkspaceIndex,
@@ -203,6 +205,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer) {
         this.delegate = delegate;
+        this.namespaceAgentId = namespaceAgentId;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
@@ -911,7 +914,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return Mono.error(
                     new RuntimeException("Context overflow: context is empty, cannot compact"));
         }
-        String agentId = getName();
         String sessionId =
                 effective != null && effective.getSessionId() != null
                         ? effective.getSessionId()
@@ -931,7 +933,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         effective != null ? effective : RuntimeContext.empty(),
                         allMsgs,
                         forceConfig,
-                        agentId,
+                        namespaceAgentId,
                         sessionId)
                 .flatMap(
                         opt -> {
@@ -2143,7 +2145,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryModel,
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
-                                effectiveIsolationScope));
+                                effectiveIsolationScope,
+                                resolvedAgentId));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -2170,7 +2173,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionModel, compactionConfig, resolvedAgentId);
                     inner.middleware(compactionHook);
                 }
             }
@@ -2478,6 +2482,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             return new HarnessAgent(
                     delegate,
+                    resolvedAgentId,
                     wsManager,
                     workspaceFactoryFn,
                     workspaceIndex,
