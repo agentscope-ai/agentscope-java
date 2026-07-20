@@ -25,12 +25,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
@@ -71,9 +71,11 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testRunFallsBackToLegacyStreamForGenericAgent() {
-        ArgumentCaptor<StreamOptions> optionsCaptor = ArgumentCaptor.forClass(StreamOptions.class);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.empty());
+    void testRunInjectsRunInputIntoRuntimeContext() {
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), contextCaptor.capture()))
+                .thenReturn(Flux.empty());
 
         RunAgentInput input =
                 RunAgentInput.builder()
@@ -88,16 +90,23 @@ class AguiAgentAdapterTest {
 
         adapter.run(input).collectList().block();
 
-        verify(mockAgent).stream(anyList(), optionsCaptor.capture());
-        StreamOptions options = optionsCaptor.getValue();
-        assertTrue(options.isIncremental());
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("thread-ctx", context.getSessionId());
+        assertSame(input, context.get(RunAgentInput.class));
+        assertEquals("thread-ctx", context.get("agui.threadId"));
+        assertEquals("run-ctx", context.get("agui.runId"));
+        assertSame(input.getMessages(), context.get("agui.messages"));
+        assertSame(input.getTools(), context.get("agui.tools"));
+        assertSame(input.getContext(), context.get("agui.context"));
+        assertSame(input.getState(), context.get("agui.state"));
+        assertSame(input.getForwardedProps(), context.get("agui.forwardedProps"));
     }
 
     @Test
     void testRunRegistersFrontendToolsForRunAndCleansUp() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             assertInstanceOf(
@@ -125,7 +134,7 @@ class AguiAgentAdapterTest {
         SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
         toolkit.registerAgentTool(existingTool);
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             assertInstanceOf(
@@ -151,7 +160,8 @@ class AguiAgentAdapterTest {
     void testRunDoesNotRegisterFrontendToolsWhenAgentOnly() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.empty());
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
 
         AguiAgentAdapter agentOnlyAdapter =
                 new AguiAgentAdapter(
@@ -174,7 +184,7 @@ class AguiAgentAdapterTest {
 
     @Test
     void testRunEmitsErrorEventsWhenStreamThrowsBeforeReturningFlux() {
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenThrow(new RuntimeException());
 
         RunAgentInput input =
@@ -198,7 +208,8 @@ class AguiAgentAdapterTest {
     @Test
     void testRunIgnoresFrontendToolsWhenAgentHasNoToolkit() {
         when(mockAgent.getToolkit()).thenReturn(null);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.empty());
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
 
         RunAgentInput input =
                 RunAgentInput.builder()
@@ -220,7 +231,7 @@ class AguiAgentAdapterTest {
     void testRunUsesFrontendPriorityWhenToolMergeModeIsNull() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             assertInstanceOf(
@@ -252,7 +263,7 @@ class AguiAgentAdapterTest {
         toolkit.registerAgentTool(existingTool);
         toolkit.registerAgentTool(existingSharedTool);
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             assertNull(toolkit.getTool("agent_lookup"));
@@ -292,7 +303,7 @@ class AguiAgentAdapterTest {
     void testRunWithFrontendOnlySkipsToolNameThatNoLongerResolves() {
         Toolkit toolkit = new GhostToolNameToolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             assertInstanceOf(
@@ -326,7 +337,7 @@ class AguiAgentAdapterTest {
         SchemaOnlyTool replacementTool = schemaOnlyTool("shared_lookup");
         toolkit.registerAgentTool(existingTool);
         when(mockAgent.getToolkit()).thenReturn(toolkit);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+        when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             toolkit.registerAgentTool(replacementTool);

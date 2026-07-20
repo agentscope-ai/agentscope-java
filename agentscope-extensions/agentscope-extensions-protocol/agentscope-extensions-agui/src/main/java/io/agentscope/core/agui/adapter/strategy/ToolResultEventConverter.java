@@ -36,19 +36,14 @@ final class ToolResultEventConverter implements AgentEventConverter {
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         if (event instanceof ToolResultTextDeltaEvent textDelta) {
-            context.appendToolResultText(
-                    context.idOrGenerated(textDelta.getToolCallId()), textDelta.getDelta());
+            context.appendToolResultText(textDelta.getToolCallId(), textDelta.getDelta());
         } else if (event instanceof ToolResultDataDeltaEvent dataDelta) {
-            context.appendToolResultData(
-                    context.idOrGenerated(dataDelta.getToolCallId()), dataDelta.getData());
+            context.appendToolResultData(dataDelta.getToolCallId(), dataDelta.getData());
         } else if (event instanceof ToolResultStartEvent start) {
-            context.beginToolResult(context.idOrGenerated(start.getToolCallId()));
+            context.beginToolResult(start.getToolCallId());
         } else {
             ToolResultEndEvent end = (ToolResultEndEvent) event;
-            context.endToolResult(
-                    end.getReplyId(),
-                    context.idOrGenerated(end.getToolCallId()),
-                    end.getToolCallName());
+            context.endToolResult(end.getReplyId(), end.getToolCallId());
         }
     }
 }

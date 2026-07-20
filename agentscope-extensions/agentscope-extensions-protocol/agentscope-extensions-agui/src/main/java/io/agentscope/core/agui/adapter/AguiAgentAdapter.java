@@ -195,8 +195,11 @@ public class AguiAgentAdapter {
 
         // fallback 1.x
         EventConversionState state = new EventConversionState(threadId, runId);
-        Flux<Event> events =
-                Objects.requireNonNull(agent.stream(msgs, options), "agent stream is null");
+        Flux<Event> events = agent.stream(msgs, options, runtimeContext);
+        if (events == null) {
+            events = agent.stream(msgs, options);
+        }
+        Objects.requireNonNull(events, "agent stream is null");
         return new AgentStream(
                 events.concatMapIterable(event -> convertEvent(event, state)),
                 () -> finishRun(state),

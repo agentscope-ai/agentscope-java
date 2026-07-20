@@ -28,9 +28,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AguiStreamContext {
+
+    // CopilotKit will merge reasoning and text with the same messageId, adding suffixes to the
+    // reasoning to distinguish them
+    public static final String REASONING_MESSAGE_ID_SUFFIX = "-reasoning";
+
+    private static final Logger logger = LoggerFactory.getLogger(AguiStreamContext.class);
 
     private final String threadId;
     private final String runId;
@@ -46,8 +53,8 @@ public class AguiStreamContext {
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
     private String currentReasoningMessageId;
-    private final Map<String, String> toolCallNames = new LinkedHashMap<>();
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
+    private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
@@ -82,8 +89,7 @@ public class AguiStreamContext {
     }
 
     public void startTextMessage(String messageId) {
-        if (!startedTextMessages.contains(messageId)) {
-            startedTextMessages.add(messageId);
+        if (startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
         }
         currentTextMessageId = messageId;
@@ -117,103 +123,113 @@ public class AguiStreamContext {
     }
 
     public void startReasoningMessage(String messageId) {
-        if (!config.isEnableReasoning()) {
-            return;
+        String reasoningMessageId = reasoningMessageId(messageId);
+        if (startedReasoningMessages.add(reasoningMessageId)) {
+            emit(
+                    new AguiEvent.ReasoningMessageStart(
+                            threadId, runId, reasoningMessageId, "reasoning"));
         }
-        if (!startedReasoningMessages.contains(messageId)) {
-            startedReasoningMessages.add(messageId);
-            emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
-        }
-        currentReasoningMessageId = messageId;
+        currentReasoningMessageId = reasoningMessageId;
     }
 
     public void appendReasoningDelta(String messageId, String delta) {
-        if (!config.isEnableReasoning()) {
-            return;
-        }
         if (delta != null && !delta.isEmpty()) {
             startReasoningMessage(messageId);
-            emit(new AguiEvent.ReasoningMessageContent(threadId, runId, messageId, delta));
+            emit(
+                    new AguiEvent.ReasoningMessageContent(
+                            threadId, runId, reasoningMessageId(messageId), delta));
         }
     }
 
     public void closeActiveReasoningMessage() {
-        if (!config.isEnableReasoning() || currentReasoningMessageId == null) {
+        if (currentReasoningMessageId == null) {
             return;
         }
         closeReasoningMessage(currentReasoningMessageId);
     }
 
     public void closeReasoningMessage(String messageId) {
-        if (messageId == null
-                || !startedReasoningMessages.contains(messageId)
-                || endedReasoningMessages.contains(messageId)) {
+        String reasoningMessageId = reasoningMessageId(messageId);
+        if (reasoningMessageId == null
+                || !startedReasoningMessages.contains(reasoningMessageId)
+                || endedReasoningMessages.contains(reasoningMessageId)) {
             return;
         }
-        endedReasoningMessages.add(messageId);
-        if (Objects.equals(messageId, currentReasoningMessageId)) {
+        endedReasoningMessages.add(reasoningMessageId);
+        if (Objects.equals(reasoningMessageId, currentReasoningMessageId)) {
             currentReasoningMessageId = null;
         }
-        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, messageId));
-    }
-
-    public void recordToolCall(String toolCallId, String toolCallName) {
-        rememberToolCallName(toolCallId, toolCallName);
+        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, reasoningMessageId));
     }
 
     public void startToolCall(String toolCallId, String toolCallName) {
-        if (!startedToolCalls.contains(toolCallId)) {
-            startedToolCalls.add(toolCallId);
-            rememberToolCallName(toolCallId, toolCallName);
+        if (isBlank(toolCallId)) {
+            warnMissingToolCallId("ToolCallStartEvent");
+            return;
+        }
+        if (startedToolCalls.add(toolCallId)) {
             emit(
                     new AguiEvent.ToolCallStart(
-                            threadId, runId, toolCallId, toolCallNames.get(toolCallId)));
+                            threadId, runId, toolCallId, normalizeToolCallName(toolCallName)));
         }
     }
 
-    public void appendToolCallArgs(String toolCallId, String toolCallName, String delta) {
-        recordToolCall(toolCallId, toolCallName);
-        if (config.isEmitToolCallArgs() && delta != null && !delta.isEmpty()) {
-            startToolCall(toolCallId, toolCallName);
+    public void appendToolCallArgs(String toolCallId, String delta) {
+        if (!hasStartedToolCall(toolCallId, "ToolCallDeltaEvent")) {
+            return;
+        }
+        if (delta != null && !delta.isEmpty()) {
             emit(new AguiEvent.ToolCallArgs(threadId, runId, toolCallId, delta));
         }
     }
 
-    public void endToolCall(String toolCallId, String toolCallName) {
-        if (!startedToolCalls.contains(toolCallId)) {
-            startToolCall(toolCallId, toolCallName);
+    public void endToolCall(String toolCallId) {
+        if (!hasStartedToolCall(toolCallId, "ToolCallEndEvent")) {
+            return;
         }
-        if (!endedToolCalls.contains(toolCallId)) {
-            endedToolCalls.add(toolCallId);
+        if (endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
     }
 
     public void beginToolResult(String toolCallId) {
+        if (!hasStartedToolCall(toolCallId, "ToolResultStartEvent")) {
+            return;
+        }
         toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
     }
 
     public void appendToolResultText(String toolCallId, String delta) {
-        beginToolResult(toolCallId);
+        if (!hasStartedToolCall(toolCallId, "ToolResultTextDeltaEvent")) {
+            return;
+        }
         if (delta != null && !delta.isEmpty()) {
-            toolResultContent.get(toolCallId).append(delta);
+            toolResultBuffer(toolCallId).append(delta);
         }
     }
 
     public void appendToolResultData(String toolCallId, ContentBlock data) {
-        beginToolResult(toolCallId);
+        if (!hasStartedToolCall(toolCallId, "ToolResultDataDeltaEvent")) {
+            return;
+        }
         if (data == null) {
             return;
         }
-        StringBuilder buffer = toolResultContent.get(toolCallId);
+        StringBuilder buffer = toolResultBuffer(toolCallId);
         if (!buffer.isEmpty()) {
             buffer.append("\n");
         }
         buffer.append(serialize(data));
     }
 
-    public void endToolResult(String replyId, String toolCallId, String toolCallName) {
-        endToolCall(toolCallId, toolCallName);
+    public void endToolResult(String replyId, String toolCallId) {
+        if (!hasStartedToolCall(toolCallId, "ToolResultEndEvent")) {
+            return;
+        }
+        if (endedToolCalls.add(toolCallId)) {
+            emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
+        }
+
         StringBuilder content = toolResultContent.remove(toolCallId);
         emit(
                 new AguiEvent.ToolCallResult(
@@ -229,30 +245,35 @@ public class AguiStreamContext {
         pendingEvents.clear();
         closeActiveTextMessage();
         closeActiveReasoningMessage();
-        // Enforce full lifecycle (START -> END) for recorded but not-yet-started tool calls,
-        // preventing orphaned states in lazy-start / abort scenarios.
-        Set<String> toolCallIds = new LinkedHashSet<>(toolCallNames.keySet());
-        toolCallIds.addAll(startedToolCalls);
-        for (String toolCallId : toolCallIds) {
+        for (String toolCallId : startedToolCalls) {
             if (!endedToolCalls.contains(toolCallId)) {
-                endToolCall(toolCallId, toolCallNames.get(toolCallId));
+                endToolCall(toolCallId);
             }
         }
         return drainEvents();
     }
 
-    public String idOrGenerated(String id) {
-        return id != null && !id.isBlank() ? id : UUID.randomUUID().toString();
+    private boolean hasStartedToolCall(String toolCallId, String eventName) {
+        if (isBlank(toolCallId)) {
+            warnMissingToolCallId(eventName);
+            return false;
+        }
+        return startedToolCalls.contains(toolCallId);
     }
 
-    private void rememberToolCallName(String toolCallId, String toolCallName) {
-        String normalizedName =
-                toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
-        String existingName = toolCallNames.get(toolCallId);
-        if (existingName == null
-                || ("unknown".equals(existingName) && !"unknown".equals(normalizedName))) {
-            toolCallNames.put(toolCallId, normalizedName);
+    private StringBuilder toolResultBuffer(String toolCallId) {
+        return toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
+    }
+
+    private static String normalizeToolCallName(String toolCallName) {
+        return toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
+    }
+
+    private static String reasoningMessageId(String messageId) {
+        if (messageId.endsWith(REASONING_MESSAGE_ID_SUFFIX)) {
+            return messageId;
         }
+        return messageId + REASONING_MESSAGE_ID_SUFFIX;
     }
 
     private static String serialize(ContentBlock data) {
@@ -264,5 +285,19 @@ public class AguiStreamContext {
         } catch (JsonException e) {
             return data.toString();
         }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private void warnMissingToolCallId(String eventName) {
+        if (!warnedMissingToolCallIdOperations.add(eventName)) {
+            return;
+        }
+        logger.warn(
+                "Ignoring {}: null/blank toolCallId. Upstream must supply a stable toolCallId per"
+                        + " AG-UI protocol.",
+                eventName);
     }
 }

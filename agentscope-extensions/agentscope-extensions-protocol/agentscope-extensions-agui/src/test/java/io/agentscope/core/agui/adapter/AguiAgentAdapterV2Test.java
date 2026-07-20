@@ -24,14 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.model.AguiMessage;
@@ -113,24 +110,6 @@ class AguiAgentAdapterV2Test {
     }
 
     @Test
-    void testRunFallsBackToLegacyStreamForGenericAgent() {
-        Agent agent = mock(Agent.class);
-        when(agent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.empty());
-
-        List<AguiEvent> events =
-                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
-                        .run(input())
-                        .collectList()
-                        .block();
-
-        assertNotNull(events);
-        verify(agent).stream(anyList(), any(StreamOptions.class));
-        verify(agent, never()).stream(
-                anyList(), any(StreamOptions.class), any(RuntimeContext.class));
-        assertEquals(List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
-    }
-
-    @Test
     void testTextBlockEventsConvertToAguiTextMessageEvents() {
         List<AguiEvent> events =
                 runReActEvents(
@@ -182,6 +161,45 @@ class AguiAgentAdapterV2Test {
                         AguiEventType.REASONING_MESSAGE_END,
                         AguiEventType.RUN_FINISHED),
                 types(events));
+        AguiEvent.ReasoningMessageStart start =
+                assertInstanceOf(AguiEvent.ReasoningMessageStart.class, events.get(1));
+        AguiEvent.ReasoningMessageContent content =
+                assertInstanceOf(AguiEvent.ReasoningMessageContent.class, events.get(2));
+        AguiEvent.ReasoningMessageEnd end =
+                assertInstanceOf(AguiEvent.ReasoningMessageEnd.class, events.get(3));
+        String expectedMessageId = "reply-thinking" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX;
+        assertEquals(expectedMessageId, start.messageId());
+        assertEquals(expectedMessageId, content.messageId());
+        assertEquals(expectedMessageId, end.messageId());
+    }
+
+    @Test
+    void testTextAndReasoningUseDifferentMessageIdsForSameReply() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        AguiAdapterConfig.builder().enableReasoning(true).build(),
+                        new ThinkingBlockDeltaEvent("reply-shared", "thinking-1", "think"),
+                        new ThinkingBlockEndEvent("reply-shared", "thinking-1"),
+                        new TextBlockDeltaEvent("reply-shared", "text-1", "answer"),
+                        new TextBlockEndEvent("reply-shared", "text-1"));
+
+        AguiEvent.ReasoningMessageContent reasoningContent =
+                events.stream()
+                        .filter(AguiEvent.ReasoningMessageContent.class::isInstance)
+                        .map(AguiEvent.ReasoningMessageContent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        AguiEvent.TextMessageContent textContent =
+                events.stream()
+                        .filter(AguiEvent.TextMessageContent.class::isInstance)
+                        .map(AguiEvent.TextMessageContent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+
+        assertEquals("reply-shared", textContent.messageId());
+        assertEquals(
+                "reply-shared" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX,
+                reasoningContent.messageId());
     }
 
     @Test
@@ -227,6 +245,8 @@ class AguiAgentAdapterV2Test {
     void testToolResultDataDeltaContributesToToolCallResult() {
         List<AguiEvent> events =
                 runReActEvents(
+                        new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                        new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
                         new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
                         new ToolResultDataDeltaEvent(
                                 "reply-tool",
@@ -312,6 +332,67 @@ class AguiAgentAdapterV2Test {
     }
 
     @Test
+    void testToolCallDeltaWithoutStartIsIgnored() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        new ToolCallDeltaEvent("reply-tool", "tool-1", "__fragment__", "{\"q\""));
+
+        assertEquals(List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+    }
+
+    @Test
+    void testFragmentToolCallDeltaForStartedToolAppendsArgs() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                        new ToolCallDeltaEvent(
+                                "reply-tool", "tool-1", "__fragment__", ":\"agent\"}"),
+                        new ToolCallEndEvent("reply-tool", "tool-1", "lookup"));
+
+        assertEquals(
+                List.of(
+                        AguiEventType.RUN_STARTED,
+                        AguiEventType.TOOL_CALL_START,
+                        AguiEventType.TOOL_CALL_ARGS,
+                        AguiEventType.TOOL_CALL_END,
+                        AguiEventType.RUN_FINISHED),
+                types(events));
+    }
+
+    @Test
+    void testToolCallEventsWithoutStableIdAreIgnored() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        new ToolCallStartEvent("reply-tool", null, "lookup"),
+                        new ToolCallDeltaEvent("reply-tool", "", "lookup", "{\"q\""),
+                        new ToolCallEndEvent("reply-tool", null, "lookup"));
+
+        assertEquals(List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+    }
+
+    @Test
+    void testToolResultEventsWithoutStableIdAreIgnored() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        new ToolResultStartEvent("reply-tool", null, "lookup"),
+                        new ToolResultTextDeltaEvent("reply-tool", "", "lookup", "ignored"),
+                        new ToolResultEndEvent("reply-tool", null, "lookup", null));
+
+        assertEquals(List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+    }
+
+    @Test
+    void testToolResultEventsWithoutStartedToolCallAreIgnored() {
+        List<AguiEvent> events =
+                runReActEvents(
+                        new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
+                        new ToolResultTextDeltaEvent("reply-tool", "tool-1", "lookup", "ignored"),
+                        new ToolResultEndEvent("reply-tool", "tool-1", "lookup", null));
+
+        assertEquals(List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+    }
+
+    @Test
     void testRunEmitsErrorEventsWhenStreamEventsThrowsBeforeReturningFlux() {
         ReActAgent agent = mock(ReActAgent.class);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
@@ -388,6 +469,7 @@ class AguiAgentAdapterV2Test {
                 runReActFlux(
                         Flux.concat(
                                 Flux.just(
+                                        new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
                                         new ToolCallDeltaEvent(
                                                 "reply-tool", "tool-1", "lookup", "{\"q\"")),
                                 Flux.error(new RuntimeException("boom"))));
