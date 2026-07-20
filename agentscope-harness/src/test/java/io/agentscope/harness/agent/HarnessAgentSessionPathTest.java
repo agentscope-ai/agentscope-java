@@ -23,16 +23,26 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -93,6 +103,80 @@ class HarnessAgentSessionPathTest {
         assertUsesConfiguredAgentId();
     }
 
+    @Test
+    void memoryOffloadLegacyConstructorFallsBackToAgentName() {
+        Msg msg = message("m1", MsgRole.USER, "hello");
+        AgentState state = AgentState.builder().context(List.of(msg)).build();
+        RuntimeContext rc =
+                RuntimeContext.builder().sessionId(SESSION_ID).agentState(state).build();
+        Agent agent = mock(Agent.class);
+        when(agent.getName()).thenReturn(AGENT_NAME);
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            MemoryFlushMiddleware middleware =
+                    new MemoryFlushMiddleware(
+                            workspaceManager,
+                            successfulModel("unused"),
+                            MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
+                            MemoryConfig.FlushTrigger.never(),
+                            IsolationScope.USER);
+            middleware
+                    .onAgent(
+                            agent,
+                            rc,
+                            new AgentInput(List.of(msg)),
+                            ignored -> Flux.<AgentEvent>empty())
+                    .blockLast();
+        }
+
+        assertUsesAgentName();
+    }
+
+    @Test
+    void memoryConvenienceConstructorsRemainBackwardCompatible() {
+        assertNotNull(new MemoryFlushMiddleware(null, null));
+        assertNotNull(
+                new MemoryFlushMiddleware(
+                        null,
+                        null,
+                        MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
+                        MemoryConfig.FlushTrigger.never()));
+    }
+
+    @Test
+    void compactionLegacyConstructorFallsBackToAgentName() {
+        List<Msg> messages =
+                List.of(
+                        message("m1", MsgRole.USER, "first"),
+                        message("m2", MsgRole.ASSISTANT, "second"));
+        AgentState state = AgentState.builder().context(messages).build();
+        RuntimeContext rc =
+                RuntimeContext.builder().sessionId(SESSION_ID).agentState(state).build();
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.getName()).thenReturn(AGENT_NAME);
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerMessages(2)
+                        .keepMessages(1)
+                        .keepTokens(0)
+                        .flushBeforeCompact(false)
+                        .build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            CompactionMiddleware middleware =
+                    new CompactionMiddleware(workspaceManager, successfulModel("summary"), config);
+            middleware
+                    .onReasoning(
+                            agent,
+                            rc,
+                            new ReasoningInput(messages, List.of(), null),
+                            ignored -> Flux.<AgentEvent>empty())
+                    .blockLast();
+        }
+
+        assertUsesAgentName();
+    }
+
     private HarnessAgent.Builder baseBuilder(Model model) {
         return HarnessAgent.builder()
                 .name(AGENT_NAME)
@@ -110,6 +194,11 @@ class HarnessAgentSessionPathTest {
     private void assertUsesConfiguredAgentId() {
         assertTrue(Files.exists(sessionPath(AGENT_ID)));
         assertFalse(Files.exists(sessionPath(AGENT_NAME)));
+    }
+
+    private void assertUsesAgentName() {
+        assertTrue(Files.exists(sessionPath(AGENT_NAME)));
+        assertFalse(Files.exists(sessionPath(AGENT_ID)));
     }
 
     private Path sessionPath(String agentId) {
