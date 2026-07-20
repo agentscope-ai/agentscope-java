@@ -50,7 +50,7 @@ The front end provides `runAgentInput` (containing `threadId`, `runId`, `message
 
 ## Spring Boot integration
 
-The typical wire-up is a `@PostMapping("/ag-ui")` returning the `Flux<AguiEvent>` as SSE. Alternatively, use `agentscope-spring-boot-starter-agui` to register the controller automatically.
+The typical wire-up is a `@PostMapping("/ag-ui")` returning the `Flux<AguiEvent>` as SSE. Alternatively, use `agentscope-agui-spring-boot-starter` to register the controller automatically.
 
 ## Common configuration
 
