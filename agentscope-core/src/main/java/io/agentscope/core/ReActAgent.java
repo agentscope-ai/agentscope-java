@@ -319,6 +319,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
         if (this.stateStore != null) {
+            // Capture the store in a final local so the saver lambda does not capture the
+            // enclosing `this`. Together with unbindStateSaver() in close(), this keeps each
+            // stateSavers entry from pinning the entire agent object graph (model/HttpClient,
+            // toolkit, stateCache) even if an entry is somehow left behind.
+            final AgentStateStore stateSaverStore = this.stateStore;
             shutdownManager.bindStateSaver(
                     this,
                     // The saver receives the precise per-(userId, sessionId) AgentState bound to
@@ -326,7 +331,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // interrupted request, so persist that session directly rather than the
                     // instance "last-active" CallExecution (which is wrong under concurrency).
                     agentState ->
-                            stateStore.save(
+                            stateSaverStore.save(
                                     agentState.getUserId(),
                                     agentState.getSessionId(),
                                     "agent_state",
@@ -3823,8 +3828,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     public void close() {
-        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
-        // additional resources here.
+        // Release the shutdown state-saver registered in the constructor so short-lived agent
+        // instances can be garbage-collected rather than pinned by GracefulShutdownManager's
+        // process-wide singleton map. HarnessAgent.close() delegates here via delegate.close(),
+        // so this covers wrapped agents as well.
+        shutdownManager.unbindStateSaver(this);
     }
 
     // ==================== Builder ====================
