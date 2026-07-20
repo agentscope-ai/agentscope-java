@@ -35,10 +35,13 @@ import io.agentscope.core.responses.model.ResponsesTextConfig;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Converts Responses request input into AgentScope messages. */
 public class ResponsesInputConverter {
 
+    private static final Logger log = LoggerFactory.getLogger(ResponsesInputConverter.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
@@ -156,6 +159,11 @@ public class ResponsesInputConverter {
         if (type != null && !"message".equals(type)) {
             // New official Responses item types can arrive before AgentScope has a native block for
             // them. Preserve the raw JSON as text so context is not silently dropped.
+            log.warn(
+                    "Unsupported Responses input item type '{}' at {}; preserving it as opaque"
+                            + " text",
+                    type,
+                    param);
             messages.add(opaqueItemMessage(item, type));
             return;
         }
@@ -398,6 +406,10 @@ public class ResponsesInputConverter {
         try {
             return OBJECT_MAPPER.writeValueAsString(node);
         } catch (JsonProcessingException e) {
+            log.debug(
+                    "Failed to serialize Responses function call arguments; using an empty JSON"
+                            + " object",
+                    e);
             return "{}";
         }
     }
@@ -417,7 +429,11 @@ public class ResponsesInputConverter {
                 return Map.of();
             }
             return OBJECT_MAPPER.convertValue(parsed, new TypeReference<>() {});
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
+            log.debug(
+                    "Failed to parse Responses function call arguments; using an empty argument"
+                            + " map",
+                    e);
             return Map.of();
         }
     }

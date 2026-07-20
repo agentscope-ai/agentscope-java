@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.Disposable;
 
 /**
@@ -77,11 +78,12 @@ public class ResponsesStateService {
             effectiveInput.addAll(outputItems(previous.response()));
         }
 
-        String conversationId = resolveConversationId(request.getConversation());
-        if (conversationId != null) {
+        ConversationResolution conversation = resolveConversation(request.getConversation());
+        String conversationId = conversation.id();
+        if (conversationId != null && !conversation.pending()) {
             // Conversation items are appended before current input so the latest user message stays
             // last in the model context.
-            effectiveInput.addAll(conversationRecord(conversationId).items());
+            effectiveInput.addAll(conversationItemsSnapshot(conversationId));
         }
 
         effectiveInput.addAll(currentInputItems);
@@ -91,7 +93,23 @@ public class ResponsesStateService {
         if (conversationId != null) {
             effectiveRequest.setConversation(conversationId);
         }
-        return new PreparedRequest(effectiveRequest, currentInputItems, conversationId);
+        return new PreparedRequest(
+                effectiveRequest, currentInputItems, conversationId, conversation.pending());
+    }
+
+    /** Persist an auto-allocated conversation after the prepared input has passed validation. */
+    public void commitConversation(PreparedRequest prepared) {
+        if (prepared == null
+                || !prepared.pendingConversation()
+                || prepared.conversationId() == null) {
+            return;
+        }
+        ResponsesConversation conversation = new ResponsesConversation();
+        conversation.setId(prepared.conversationId());
+        conversation.setCreatedAt(Instant.now().getEpochSecond());
+        conversations.putIfAbsent(
+                conversation.getId(),
+                new StoredConversation(conversation, synchronizedItems(List.of())));
     }
 
     /**
@@ -123,7 +141,8 @@ public class ResponsesStateService {
                                     ? withItemIds(prepared.currentInputItems())
                                     : List.of(),
                             prepared != null ? prepared.conversationId() : null,
-                            null));
+                            null,
+                            true));
         }
         return response;
     }
@@ -133,7 +152,7 @@ public class ResponsesStateService {
      *
      * @param response Queued response placeholder
      * @param prepared Prepared request metadata
-     * @param task Running background subscription, if already available
+     * @param task Stable holder for the running background subscription
      */
     public void saveBackground(
             ResponsesResponse response, PreparedRequest prepared, Disposable task) {
@@ -143,24 +162,49 @@ public class ResponsesStateService {
                         response,
                         prepared != null ? withItemIds(prepared.currentInputItems()) : List.of(),
                         prepared != null ? prepared.conversationId() : null,
-                        task));
+                        task,
+                        false));
     }
 
     /**
-     * Attach the background subscription after the queued response has already been stored.
+     * Store a terminal background result unless the response was already canceled or deleted.
      *
-     * @param responseId Response ID
-     * @param task Running background subscription
+     * @param response Completed or failed background response
+     * @param prepared Prepared request metadata
+     * @return The same response object
      */
-    public void attachBackgroundTask(String responseId, Disposable task) {
-        responses.computeIfPresent(
-                responseId,
-                (id, stored) ->
-                        new StoredResponse(
-                                stored.response(),
-                                stored.inputItems(),
-                                stored.conversationId(),
-                                task));
+    public ResponsesResponse completeBackground(
+            ResponsesResponse response, PreparedRequest prepared) {
+        if (response == null) {
+            return null;
+        }
+        if (prepared != null && prepared.conversationId() != null) {
+            response.setConversation(prepared.conversationId());
+        }
+
+        AtomicReference<StoredResponse> completed = new AtomicReference<>();
+        responses.compute(
+                response.getId(),
+                (id, stored) -> {
+                    if (stored == null || stored.terminal()) {
+                        return stored;
+                    }
+                    StoredResponse terminal =
+                            new StoredResponse(
+                                    response,
+                                    stored.inputItems(),
+                                    stored.conversationId(),
+                                    stored.backgroundTask(),
+                                    true);
+                    completed.set(terminal);
+                    return terminal;
+                });
+
+        if (completed.get() != null && prepared != null && prepared.conversationId() != null) {
+            appendConversationItems(
+                    prepared.conversationId(), prepared.currentInputItems(), outputItems(response));
+        }
+        return response;
     }
 
     /**
@@ -180,12 +224,18 @@ public class ResponsesStateService {
      * @return Deletion status
      */
     public ResponsesDeletionStatus deleteResponse(String responseId) {
-        StoredResponse removed = responses.remove(responseId);
-        if (removed == null) {
+        AtomicReference<StoredResponse> removed = new AtomicReference<>();
+        responses.compute(
+                responseId,
+                (id, stored) -> {
+                    removed.set(stored);
+                    return null;
+                });
+        if (removed.get() == null) {
             throw notFound("Response not found: " + responseId, "response_id");
         }
-        if (removed.backgroundTask() != null && !removed.backgroundTask().isDisposed()) {
-            removed.backgroundTask().dispose();
+        if (removed.get().backgroundTask() != null) {
+            removed.get().backgroundTask().dispose();
         }
         return new ResponsesDeletionStatus(responseId, "response.deleted", true);
     }
@@ -201,12 +251,31 @@ public class ResponsesStateService {
      * @return Canceled response
      */
     public ResponsesResponse cancelResponse(String responseId) {
-        StoredResponse stored = responseRecord(responseId);
-        if (stored.backgroundTask() != null && !stored.backgroundTask().isDisposed()) {
-            stored.backgroundTask().dispose();
+        AtomicReference<StoredResponse> cancelled = new AtomicReference<>();
+        responses.compute(
+                responseId,
+                (id, stored) -> {
+                    if (stored == null) {
+                        return null;
+                    }
+                    stored.response().setStatus("cancelled");
+                    StoredResponse terminal =
+                            new StoredResponse(
+                                    stored.response(),
+                                    stored.inputItems(),
+                                    stored.conversationId(),
+                                    stored.backgroundTask(),
+                                    true);
+                    cancelled.set(terminal);
+                    return terminal;
+                });
+        if (cancelled.get() == null) {
+            throw notFound("Response not found: " + responseId, "response_id");
         }
-        stored.response().setStatus("cancelled");
-        return stored.response();
+        if (cancelled.get().backgroundTask() != null) {
+            cancelled.get().backgroundTask().dispose();
+        }
+        return cancelled.get().response();
     }
 
     /**
@@ -257,8 +326,8 @@ public class ResponsesStateService {
         }
         List<Object> items =
                 request != null && request.getItems() != null
-                        ? withItemIds(request.getItems())
-                        : new ArrayList<>();
+                        ? synchronizedItems(withItemIds(request.getItems()))
+                        : synchronizedItems(List.of());
         conversations.put(conversation.getId(), new StoredConversation(conversation, items));
         return conversation;
     }
@@ -314,7 +383,10 @@ public class ResponsesStateService {
      */
     public ResponsesList<Object> listConversationItems(
             String conversationId, String after, Integer limit, String order) {
-        return page(conversationRecord(conversationId).items(), after, limit, order);
+        List<Object> items = conversationRecord(conversationId).items();
+        synchronized (items) {
+            return page(items, after, limit, order);
+        }
     }
 
     /**
@@ -328,7 +400,9 @@ public class ResponsesStateService {
             String conversationId, List<Object> items) {
         StoredConversation stored = conversationRecord(conversationId);
         List<Object> created = withItemIds(items != null ? items : List.of());
-        stored.items().addAll(created);
+        synchronized (stored.items()) {
+            stored.items().addAll(created);
+        }
         return new ResponsesList<>(created);
     }
 
@@ -340,10 +414,14 @@ public class ResponsesStateService {
      * @return Stored item
      */
     public Object retrieveConversationItem(String conversationId, String itemId) {
-        return conversationRecord(conversationId).items().stream()
-                .filter(item -> itemId.equals(itemId(item)))
-                .findFirst()
-                .orElseThrow(() -> notFound("Conversation item not found: " + itemId, "item_id"));
+        List<Object> items = conversationRecord(conversationId).items();
+        synchronized (items) {
+            return items.stream()
+                    .filter(item -> itemId.equals(itemId(item)))
+                    .findFirst()
+                    .orElseThrow(
+                            () -> notFound("Conversation item not found: " + itemId, "item_id"));
+        }
     }
 
     /**
@@ -355,7 +433,10 @@ public class ResponsesStateService {
      */
     public ResponsesDeletionStatus deleteConversationItem(String conversationId, String itemId) {
         StoredConversation stored = conversationRecord(conversationId);
-        boolean removed = stored.items().removeIf(item -> itemId.equals(itemId(item)));
+        boolean removed;
+        synchronized (stored.items()) {
+            removed = stored.items().removeIf(item -> itemId.equals(itemId(item)));
+        }
         if (!removed) {
             throw notFound("Conversation item not found: " + itemId, "item_id");
         }
@@ -365,8 +446,23 @@ public class ResponsesStateService {
     private void appendConversationItems(
             String conversationId, List<Object> inputItems, List<Object> outputItems) {
         StoredConversation stored = conversationRecord(conversationId);
-        stored.items().addAll(withItemIds(inputItems));
-        stored.items().addAll(withItemIds(outputItems));
+        List<Object> input = withItemIds(inputItems);
+        List<Object> output = withItemIds(outputItems);
+        synchronized (stored.items()) {
+            stored.items().addAll(input);
+            stored.items().addAll(output);
+        }
+    }
+
+    private List<Object> conversationItemsSnapshot(String conversationId) {
+        List<Object> items = conversationRecord(conversationId).items();
+        synchronized (items) {
+            return new ArrayList<>(items);
+        }
+    }
+
+    private List<Object> synchronizedItems(List<Object> items) {
+        return Collections.synchronizedList(new ArrayList<>(items));
     }
 
     private ResponsesList<Object> page(
@@ -401,31 +497,32 @@ public class ResponsesStateService {
                 new ArrayList<>(ordered.subList(start, end)), end < ordered.size());
     }
 
-    private String resolveConversationId(Object conversation) {
+    private ConversationResolution resolveConversation(Object conversation) {
         if (conversation == null || OBJECT_MAPPER.valueToTree(conversation).isNull()) {
-            return null;
+            return new ConversationResolution(null, false);
         }
         JsonNode node = OBJECT_MAPPER.valueToTree(conversation);
         if (node.isTextual()) {
             String value = node.asText();
             if ("none".equals(value)) {
-                return null;
+                return new ConversationResolution(null, false);
             }
             if ("auto".equals(value)) {
-                // "auto" asks the service to allocate a new conversation for this request.
-                return createConversation(null).getId();
+                // Allocate the ID now, but persist only after the effective input is validated.
+                return new ConversationResolution("conv_" + UUID.randomUUID(), true);
             }
             conversationRecord(value);
-            return value;
+            return new ConversationResolution(value, false);
         }
         if (node.isObject()) {
             String id = node.hasNonNull("id") ? node.get("id").asText() : null;
             if (id == null || id.isBlank() || "auto".equals(id)) {
-                // Object-shaped conversation payloads may omit an ID. Treat that as auto-create.
-                return createConversation(null).getId();
+                // Object-shaped conversation payloads may omit an ID. Treat that as auto-create,
+                // but defer persistence until validation succeeds.
+                return new ConversationResolution("conv_" + UUID.randomUUID(), true);
             }
             conversationRecord(id);
-            return id;
+            return new ConversationResolution(id, false);
         }
         throw ResponsesValidationException.invalid(
                 "conversation must be a string or object", "conversation");
@@ -553,13 +650,25 @@ public class ResponsesStateService {
     }
 
     public record PreparedRequest(
-            ResponsesRequest request, List<Object> currentInputItems, String conversationId) {}
+            ResponsesRequest request,
+            List<Object> currentInputItems,
+            String conversationId,
+            boolean pendingConversation) {
+
+        public PreparedRequest(
+                ResponsesRequest request, List<Object> currentInputItems, String conversationId) {
+            this(request, currentInputItems, conversationId, false);
+        }
+    }
 
     private record StoredResponse(
             ResponsesResponse response,
             List<Object> inputItems,
             String conversationId,
-            Disposable backgroundTask) {}
+            Disposable backgroundTask,
+            boolean terminal) {}
 
     private record StoredConversation(ResponsesConversation conversation, List<Object> items) {}
+
+    private record ConversationResolution(String id, boolean pending) {}
 }

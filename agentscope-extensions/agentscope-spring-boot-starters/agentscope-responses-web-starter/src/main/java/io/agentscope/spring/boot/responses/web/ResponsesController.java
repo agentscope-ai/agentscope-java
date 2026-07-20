@@ -53,8 +53,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HTTP controller exposing a Responses API compatible with OpenAI's standard.
@@ -152,8 +154,9 @@ public class ResponsesController {
     public Object createResponse(@Valid @RequestBody ResponsesRequest request) {
         String responseId = responseId();
         try {
-            PreparedRequest prepared = stateService.prepare(request);
-            ResponsesConversionResult conversion = inputConverter.convert(prepared.request());
+            PreparedConversion preparedConversion = prepareRequest(request);
+            PreparedRequest prepared = preparedConversion.prepared();
+            ResponsesConversionResult conversion = preparedConversion.conversion();
             if (Boolean.TRUE.equals(prepared.request().getStream())) {
                 Flux<ServerSentEvent<String>> stream =
                         createResponseStream(prepared.request(), conversion, responseId, prepared);
@@ -192,8 +195,9 @@ public class ResponsesController {
     public Object createResponseStream(@Valid @RequestBody ResponsesRequest request) {
         String responseId = responseId();
         try {
-            PreparedRequest prepared = stateService.prepare(request);
-            ResponsesConversionResult conversion = inputConverter.convert(prepared.request());
+            PreparedConversion preparedConversion = prepareRequest(request);
+            PreparedRequest prepared = preparedConversion.prepared();
+            ResponsesConversionResult conversion = preparedConversion.conversion();
             return ResponseEntity.ok()
                     .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
                     .body(
@@ -318,9 +322,14 @@ public class ResponsesController {
     public Object compactResponseInput(@Valid @RequestBody ResponsesRequest request) {
         String responseId = responseId();
         try {
-            PreparedRequest prepared = stateService.prepare(request);
+            if (request != null && Boolean.TRUE.equals(request.getBackground())) {
+                throw ResponsesValidationException.unsupported(
+                        "background is not supported for response compaction", "background");
+            }
+            PreparedConversion preparedConversion = prepareRequest(request);
+            PreparedRequest prepared = preparedConversion.prepared();
             prepared.request().setStream(false);
-            ResponsesConversionResult conversion = inputConverter.convert(prepared.request());
+            ResponsesConversionResult conversion = preparedConversion.conversion();
             return createNonStreamingResponse(prepared.request(), conversion, responseId)
                     .map(response -> stateService.save(response, prepared));
         } catch (ResponsesValidationException e) {
@@ -437,15 +446,15 @@ public class ResponsesController {
         queued.setStore(true);
         queued.setOutput(List.of());
         queued.setOutputText("");
-        stateService.saveBackground(queued, prepared, null);
-
-        // Store the subscription separately so /cancel can dispose it while the model call is still
-        // running.
-        Disposable task =
-                createNonStreamingResponse(request, conversion, responseId)
-                        .map(response -> stateService.save(response, prepared))
+        Disposable.Swap task = Disposables.swap();
+        stateService.saveBackground(queued, prepared, task);
+        Disposable subscription =
+                Mono.defer(() -> createNonStreamingResponse(request, conversion, responseId))
+                        .map(response -> stateService.completeBackground(response, prepared))
+                        .doFinally(signal -> task.dispose())
+                        .subscribeOn(Schedulers.boundedElastic())
                         .subscribe();
-        stateService.attachBackgroundTask(responseId, task);
+        task.update(subscription);
         return Mono.just(queued);
     }
 
@@ -477,6 +486,13 @@ public class ResponsesController {
         return agent;
     }
 
+    private PreparedConversion prepareRequest(ResponsesRequest request) {
+        PreparedRequest prepared = stateService.prepare(request);
+        ResponsesConversionResult conversion = inputConverter.convert(prepared.request());
+        stateService.commitConversation(prepared);
+        return new PreparedConversion(prepared, conversion);
+    }
+
     private String responseId() {
         return "resp_" + UUID.randomUUID();
     }
@@ -486,4 +502,7 @@ public class ResponsesController {
                 ? org.springframework.http.HttpStatus.NOT_FOUND
                 : org.springframework.http.HttpStatus.BAD_REQUEST;
     }
+
+    private record PreparedConversion(
+            PreparedRequest prepared, ResponsesConversionResult conversion) {}
 }

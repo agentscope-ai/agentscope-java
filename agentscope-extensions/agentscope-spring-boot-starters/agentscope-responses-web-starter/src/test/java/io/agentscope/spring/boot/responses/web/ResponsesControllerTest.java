@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -41,6 +43,7 @@ import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
 import io.agentscope.core.responses.converter.ResponsesGenerationOptionsConverter;
 import io.agentscope.core.responses.converter.ResponsesInputConverter;
 import io.agentscope.core.responses.converter.ResponsesToolConverter;
+import io.agentscope.core.responses.model.ResponsesErrorResponse;
 import io.agentscope.core.responses.model.ResponsesList;
 import io.agentscope.core.responses.model.ResponsesRequest;
 import io.agentscope.core.responses.model.ResponsesResponse;
@@ -52,6 +55,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -70,6 +76,7 @@ class ResponsesControllerTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private ObjectProvider<ReActAgent> agentProvider;
+    private ResponsesStateService stateService;
     private ResponsesController controller;
 
     @BeforeEach
@@ -79,7 +86,7 @@ class ResponsesControllerTest {
         ResponsesResponseBuilder responseBuilder = new ResponsesResponseBuilder();
         ResponsesStreamingService streamingService =
                 new ResponsesStreamingService(new ResponsesStreamingAdapter(responseBuilder));
-        ResponsesStateService stateService = new ResponsesStateService();
+        stateService = spy(new ResponsesStateService());
         agentProvider = mock(ObjectProvider.class);
         controller =
                 new ResponsesController(
@@ -137,6 +144,54 @@ class ResponsesControllerTest {
     }
 
     @Test
+    void shouldNotCommitAutoConversationWhenInputConversionFails() throws Exception {
+        Object response =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": [{
+                                    "type": "message",
+                                    "role": "unsupported",
+                                    "content": "Hello"
+                                  }]
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(stateService, never()).commitConversation(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldCommitAutoConversationAfterInputConversionSucceeds() throws Exception {
+        prepareTextAgent("Hello back");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "conversation": "auto",
+                                                  "input": "Hello"
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getConversation()).isInstanceOf(String.class);
+        String conversationId = (String) response.getConversation();
+        assertThat(conversationId).startsWith("conv_");
+        assertThat(stateService.retrieveConversation(conversationId).getId())
+                .isEqualTo(conversationId);
+        verify(stateService).commitConversation(any());
+    }
+
+    @Test
     void shouldReturnNotFoundForUnknownPreviousResponseIdFromSseEndpoint() throws Exception {
         Object response =
                 controller.createResponseStream(
@@ -149,8 +204,7 @@ class ResponsesControllerTest {
                                 """));
 
         assertThat(response).isInstanceOf(ResponseEntity.class);
-        assertThat(((ResponseEntity<?>) response).getStatusCode())
-                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         verifyNoInteractions(agentProvider);
     }
 
@@ -224,6 +278,57 @@ class ResponsesControllerTest {
     }
 
     @Test
+    void shouldNotRunBlockingBackgroundCallOnRequestThread() throws Exception {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        when(agent.getHooks()).thenAnswer(invocation -> new ArrayList<>());
+        CountDownLatch callStarted = new CountDownLatch(1);
+        CountDownLatch releaseCall = new CountDownLatch(1);
+        when(agent.call(anyList()))
+                .thenAnswer(
+                        invocation -> {
+                            callStarted.countDown();
+                            assertThat(releaseCall.await(2, TimeUnit.SECONDS)).isTrue();
+                            return Mono.just(assistantText("Background answer"));
+                        });
+
+        CompletableFuture<ResponsesResponse> queuedFuture =
+                CompletableFuture.supplyAsync(
+                        () -> {
+                            try {
+                                return responseMono(
+                                                controller.createResponse(
+                                                        request(
+                                                                """
+                                                                {
+                                                                  "input": "Run later",
+                                                                  "background": true
+                                                                }
+                                                                """)))
+                                        .block();
+                            } catch (Exception e) {
+                                throw new AssertionError(e);
+                            }
+                        });
+
+        try {
+            ResponsesResponse queued = queuedFuture.get(1, TimeUnit.SECONDS);
+            assertThat(queued).isNotNull();
+            assertThat(queued.getStatus()).isEqualTo("queued");
+            assertThat(callStarted.await(2, TimeUnit.SECONDS)).isTrue();
+
+            ResponseEntity<?> running =
+                    (ResponseEntity<?>) controller.retrieveResponse(queued.getId());
+            assertThat(((ResponsesResponse) running.getBody()).getStatus()).isEqualTo("queued");
+
+            releaseCall.countDown();
+            assertThat(awaitOutputText(queued.getId(), "Background answer")).isTrue();
+        } finally {
+            releaseCall.countDown();
+        }
+    }
+
+    @Test
     void shouldReturnStoredResponseInputItems() throws Exception {
         prepareTextAgent("Stored");
 
@@ -264,6 +369,28 @@ class ResponsesControllerTest {
     }
 
     @Test
+    void shouldRejectBackgroundResponseCompaction() throws Exception {
+        Object result =
+                controller.compactResponseInput(
+                        request(
+                                """
+                                {
+                                  "input": "Summarize this context",
+                                  "background": true
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> response = (ResponseEntity<?>) result;
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("unsupported_parameter");
+        assertThat(error.getError().getParam()).isEqualTo("background");
+        verify(stateService, never()).prepare(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
     void shouldReturnNotFoundForUnknownPreviousResponseIdWhenCompacting() throws Exception {
         Object response =
                 controller.compactResponseInput(
@@ -276,8 +403,7 @@ class ResponsesControllerTest {
                                 """));
 
         assertThat(response).isInstanceOf(ResponseEntity.class);
-        assertThat(((ResponseEntity<?>) response).getStatusCode())
-                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         verifyNoInteractions(agentProvider);
     }
 
@@ -396,6 +522,19 @@ class ResponsesControllerTest {
 
     private ResponsesRequest request(String json) throws Exception {
         return OBJECT_MAPPER.readValue(json, ResponsesRequest.class);
+    }
+
+    private boolean awaitOutputText(String responseId, String outputText)
+            throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            ResponseEntity<?> result = (ResponseEntity<?>) controller.retrieveResponse(responseId);
+            ResponsesResponse response = (ResponsesResponse) result.getBody();
+            if (outputText.equals(response.getOutputText())) {
+                return true;
+            }
+            TimeUnit.MILLISECONDS.sleep(50);
+        }
+        return false;
     }
 
     @SuppressWarnings("unchecked")

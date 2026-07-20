@@ -100,6 +100,31 @@ class ResponsesStreamingAdapterTest {
     }
 
     @Test
+    void shouldKeepStreamingStateIndependentForEachSubscription() {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(
+                        Flux.just(
+                                new Event(EventType.REASONING, assistantText("Hel"), false),
+                                new Event(EventType.REASONING, assistantText("lo"), false),
+                                new Event(EventType.REASONING, assistantText("Hello"), true)));
+
+        Flux<ResponsesStreamEvent> stream =
+                adapter.stream(agent, List.of(userText("Hello")), request(), "resp_repeat");
+
+        List<ResponsesStreamEvent> first = stream.collectList().block();
+        List<ResponsesStreamEvent> second = stream.collectList().block();
+
+        assertNotNull(first);
+        assertNotNull(second);
+        assertEquals(
+                first.stream().map(ResponsesStreamEvent::getType).toList(),
+                second.stream().map(ResponsesStreamEvent::getType).toList());
+        assertEquals("Hello", first.get(first.size() - 1).getResponse().getOutputText());
+        assertEquals("Hello", second.get(second.size() - 1).getResponse().getOutputText());
+    }
+
+    @Test
     void shouldConvertToolUseEventsToFunctionCallOutputItems() {
         ReActAgent agent = mock(ReActAgent.class);
         Msg toolCall =
@@ -152,6 +177,36 @@ class ResponsesStreamingAdapterTest {
                         .orElseThrow();
         assertEquals("{\"city\":\"Hangzhou\"}", argumentsDelta.getDelta());
         assertEquals("resp_456", argumentsDelta.getResponseId());
+    }
+
+    @Test
+    void shouldEmitTextBeforeToolUseFromTheSameEvent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg reply =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("Checking").build(),
+                                ToolUseBlock.builder()
+                                        .id("call_mixed")
+                                        .name("lookup")
+                                        .input(Map.of("query", "AgentScope"))
+                                        .build())
+                        .build();
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(new Event(EventType.REASONING, reply, true)));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(agent, List.of(userText("Lookup")), request(), "resp_mixed")
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        List<String> eventTypes = events.stream().map(ResponsesStreamEvent::getType).toList();
+        assertTrue(
+                eventTypes.indexOf("response.output_text.delta")
+                        < eventTypes.indexOf("response.function_call_arguments.done"));
+        assertEquals(2, events.get(events.size() - 1).getResponse().getOutput().size());
     }
 
     @Test

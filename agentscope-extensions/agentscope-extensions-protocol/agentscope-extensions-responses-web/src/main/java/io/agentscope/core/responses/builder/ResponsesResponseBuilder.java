@@ -187,7 +187,7 @@ public class ResponsesResponseBuilder {
         response.setStatus(status);
         response.setModel(request != null ? request.getModel() : null);
         response.setInstructions(request != null ? request.getInstructions() : null);
-        response.setStore(request == null || !Boolean.FALSE.equals(request.getStore()));
+        response.setStore(request != null || Boolean.TRUE.equals(request.getStore()));
         response.setPreviousResponseId(request != null ? request.getPreviousResponseId() : null);
         response.setConversation(request != null ? request.getConversation() : null);
         response.setBackground(request != null ? request.getBackground() : null);

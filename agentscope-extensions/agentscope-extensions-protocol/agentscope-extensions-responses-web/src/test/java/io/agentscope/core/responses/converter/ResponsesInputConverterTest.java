@@ -147,6 +147,28 @@ class ResponsesInputConverterTest {
     }
 
     @Test
+    void shouldFallbackToEmptyMapForMalformedFunctionArguments() throws Exception {
+        ResponsesConversionResult result =
+                converter.convert(
+                        request(
+                                """
+                                {
+                                  "input": [{
+                                    "type": "function_call",
+                                    "call_id": "call_bad",
+                                    "name": "broken_tool",
+                                    "arguments": "{not-json"
+                                  }]
+                                }
+                                """));
+
+        ToolUseBlock toolUse =
+                assertInstanceOf(ToolUseBlock.class, result.messages().get(0).getContent().get(0));
+        assertTrue(toolUse.getInput().isEmpty());
+        assertEquals("{not-json", toolUse.getContent());
+    }
+
+    @Test
     void shouldExposeJsonSchemaFormat() throws Exception {
         ResponsesConversionResult result =
                 converter.convert(

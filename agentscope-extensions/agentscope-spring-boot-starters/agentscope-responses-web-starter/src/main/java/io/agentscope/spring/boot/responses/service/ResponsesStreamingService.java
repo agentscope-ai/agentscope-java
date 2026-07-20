@@ -79,7 +79,8 @@ public class ResponsesStreamingService {
      */
     public Flux<ServerSentEvent<String>> streamAsSse(
             ReActAgent agent, List<Msg> messages, ResponsesRequest request, String responseId) {
-        return streamingAdapter.stream(agent, messages, request, responseId).map(this::toSse);
+        return toSseStream(
+                streamingAdapter.stream(agent, messages, request, responseId), request, responseId);
     }
 
     /**
@@ -101,8 +102,11 @@ public class ResponsesStreamingService {
             JsonNode structuredOutputSchema,
             ResponsesRequest request,
             String responseId) {
-        return streamingAdapter.stream(agent, messages, structuredOutputSchema, request, responseId)
-                .map(this::toSse);
+        return toSseStream(
+                streamingAdapter.stream(
+                        agent, messages, structuredOutputSchema, request, responseId),
+                request,
+                responseId);
     }
 
     /**
@@ -126,9 +130,12 @@ public class ResponsesStreamingService {
             ResponsesRequest request,
             String responseId,
             Consumer<ResponsesStreamEvent> eventConsumer) {
-        return streamingAdapter.stream(agent, messages, structuredOutputSchema, request, responseId)
-                .doOnNext(eventConsumer)
-                .map(this::toSse);
+        return toSseStream(
+                streamingAdapter.stream(
+                                agent, messages, structuredOutputSchema, request, responseId)
+                        .doOnNext(eventConsumer),
+                request,
+                responseId);
     }
 
     /**
@@ -141,15 +148,27 @@ public class ResponsesStreamingService {
      */
     public ServerSentEvent<String> createErrorSseEvent(
             Throwable error, ResponsesRequest request, String responseId) {
-        return toSse(streamingAdapter.createFailedEvent(error, request, responseId));
+        return failedSse(streamingAdapter.createFailedEvent(error, request, responseId));
     }
 
     /**
      * Convert a Responses stream event to a Spring SSE event.
      *
-     * @param event The Responses stream event to serialize
+     * @param events The Responses stream event to serialize
      * @return SSE event with the Responses event name and JSON data
      */
+    private Flux<ServerSentEvent<String>> toSseStream(
+            Flux<ResponsesStreamEvent> events, ResponsesRequest request, String responseId) {
+        return events.map(this::toSse)
+                .onErrorResume(
+                        StreamSerializationException.class,
+                        error ->
+                                Flux.just(
+                                        failedSse(
+                                                streamingAdapter.createFailedEvent(
+                                                        error.getCause(), request, responseId))));
+    }
+
     private ServerSentEvent<String> toSse(ResponsesStreamEvent event) {
         try {
             return ServerSentEvent.<String>builder()
@@ -157,10 +176,32 @@ public class ResponsesStreamingService {
                     .data(OBJECT_MAPPER.writeValueAsString(event))
                     .build();
         } catch (JsonProcessingException e) {
+            throw new StreamSerializationException(e);
+        }
+    }
+
+    private ServerSentEvent<String> failedSse(ResponsesStreamEvent event) {
+        try {
             return ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"error\":\"Serialization error\"}")
+                    .event(event.getType())
+                    .data(OBJECT_MAPPER.writeValueAsString(event))
                     .build();
+        } catch (JsonProcessingException e) {
+            return ServerSentEvent.<String>builder()
+                    .event("response.failed")
+                    .data(
+                            "{\"type\":\"response.failed\","
+                                    + "\"error\":{\"type\":\"invalid_request_error\","
+                                    + "\"code\":\"runtime_error\","
+                                    + "\"message\":\"Serialization error\"}}")
+                    .build();
+        }
+    }
+
+    private static class StreamSerializationException extends RuntimeException {
+
+        StreamSerializationException(JsonProcessingException cause) {
+            super(cause);
         }
     }
 }

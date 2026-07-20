@@ -39,9 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 
 /**
@@ -110,6 +107,16 @@ public class ResponsesStreamingAdapter {
             JsonNode structuredOutputSchema,
             ResponsesRequest request,
             String responseId) {
+        return Flux.defer(
+                () -> createStream(agent, messages, structuredOutputSchema, request, responseId));
+    }
+
+    private Flux<ResponsesStreamEvent> createStream(
+            ReActAgent agent,
+            List<Msg> messages,
+            JsonNode structuredOutputSchema,
+            ResponsesRequest request,
+            String responseId) {
         boolean structuredStream = structuredOutputSchema != null;
         StreamOptions options =
                 StreamOptions.builder()
@@ -121,15 +128,7 @@ public class ResponsesStreamingAdapter {
         ResponsesResponse inProgress =
                 responseBuilder.baseResponse(request, responseId, "in_progress");
 
-        AtomicBoolean hasTextItem = new AtomicBoolean(false);
-        AtomicBoolean hasTextDone = new AtomicBoolean(false);
-        AtomicBoolean hasSeenIncrementalReasoning = new AtomicBoolean(false);
-        AtomicInteger nextOutputIndex = new AtomicInteger(0);
-        AtomicInteger textOutputIndex = new AtomicInteger(-1);
-        AtomicReference<Msg> terminalMessage = new AtomicReference<>();
-        Map<Integer, ResponsesOutputItem> completedOutput = new TreeMap<>();
-        StringBuilder accumulatedText = new StringBuilder();
-        String messageId = messageId(responseId);
+        StreamingState state = new StreamingState(messageId(responseId));
 
         // AgentScope incremental streams often include a final accumulated REASONING event. Track
         // whether we saw true deltas so the final accumulated text is not duplicated.
@@ -141,51 +140,13 @@ public class ResponsesStreamingAdapter {
                                     if (event.getType() == EventType.REASONING
                                             && !event.isLast()
                                             && !text(event.getMessage()).isEmpty()) {
-                                        hasSeenIncrementalReasoning.set(true);
+                                        state.hasSeenIncrementalReasoning = true;
                                     }
                                 })
-                        .concatMap(
-                                event ->
-                                        convertEvent(
-                                                event,
-                                                nextOutputIndex,
-                                                textOutputIndex,
-                                                messageId,
-                                                hasTextItem,
-                                                hasTextDone,
-                                                hasSeenIncrementalReasoning,
-                                                accumulatedText,
-                                                completedOutput,
-                                                terminalMessage,
-                                                structuredStream));
+                        .concatMap(event -> convertEvent(event, state, structuredStream));
 
         Flux<ResponsesStreamEvent> completion =
-                Flux.defer(
-                        () -> {
-                            List<ResponsesStreamEvent> events = new ArrayList<>();
-                            // If the model ended without an explicit terminal text event, close
-                            // the open content part before sending response.completed.
-                            if (hasTextItem.get() && !hasTextDone.get()) {
-                                events.addAll(
-                                        completeTextEvents(
-                                                textOutputIndex.get(),
-                                                messageId,
-                                                accumulatedText.toString(),
-                                                completedOutput,
-                                                hasTextDone));
-                            }
-                            ResponsesResponse completed =
-                                    responseBuilder.buildStreamingCompletedResponse(
-                                            request,
-                                            responseId,
-                                            new ArrayList<>(completedOutput.values()),
-                                            accumulatedText.toString(),
-                                            terminalMessage.get());
-                            events.add(
-                                    ResponsesStreamEvent.responseEvent(
-                                            "response.completed", completed));
-                            return Flux.fromIterable(events);
-                        });
+                Flux.defer(() -> Flux.fromIterable(completionEvents(request, responseId, state)));
 
         Flux<ResponsesStreamEvent> events =
                 Flux.concat(
@@ -223,59 +184,73 @@ public class ResponsesStreamingAdapter {
     }
 
     private Flux<ResponsesStreamEvent> convertEvent(
-            Event event,
-            AtomicInteger nextOutputIndex,
-            AtomicInteger textOutputIndex,
-            String messageId,
-            AtomicBoolean hasTextItem,
-            AtomicBoolean hasTextDone,
-            AtomicBoolean hasSeenIncrementalReasoning,
-            StringBuilder accumulatedText,
-            Map<Integer, ResponsesOutputItem> completedOutput,
-            AtomicReference<Msg> terminalMessage,
-            boolean structuredStream) {
+            Event event, StreamingState state, boolean structuredStream) {
         Msg msg = event.getMessage();
         if (msg == null) {
             return Flux.empty();
         }
         if (event.isLast()) {
-            terminalMessage.set(msg);
+            state.terminalMessage = msg;
         }
 
         if (structuredStream && event.getType() == EventType.AGENT_RESULT) {
             // Structured output streaming does not expose partial schema objects from AgentScope;
             // emit the final structured payload as a single output_text delta.
-            return Flux.fromIterable(
-                    structuredOutputEvents(
-                            msg,
-                            nextOutputIndex,
-                            textOutputIndex,
-                            messageId,
-                            hasTextItem,
-                            accumulatedText,
-                            completedOutput,
-                            hasTextDone));
+            return Flux.fromIterable(structuredOutputEvents(msg, state));
         }
 
         if (msg.getContent() == null) {
             return Flux.empty();
         }
 
+        List<ResponsesStreamEvent> events = new ArrayList<>();
+        appendTextEvents(event, msg, state, events);
+        appendToolUseEvents(event, msg, state, events);
+        appendTextCompletionEvents(event, msg, state, events);
+        return Flux.fromIterable(events);
+    }
+
+    private List<ResponsesStreamEvent> completionEvents(
+            ResponsesRequest request, String responseId, StreamingState state) {
+        List<ResponsesStreamEvent> events = new ArrayList<>();
+        // If the model ended without an explicit terminal text event, close the open content part
+        // before sending response.completed.
+        if (state.hasTextItem && !state.hasTextDone) {
+            events.addAll(completeTextEvents(state));
+        }
+        ResponsesResponse completed =
+                responseBuilder.buildStreamingCompletedResponse(
+                        request,
+                        responseId,
+                        new ArrayList<>(state.completedOutput.values()),
+                        state.accumulatedText.toString(),
+                        state.terminalMessage);
+        events.add(ResponsesStreamEvent.responseEvent("response.completed", completed));
+        return events;
+    }
+
+    private void appendTextEvents(
+            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
         boolean includeText =
                 !(event.getType() == EventType.REASONING
                         && event.isLast()
-                        && hasSeenIncrementalReasoning.get());
-        List<ResponsesStreamEvent> events = new ArrayList<>();
+                        && state.hasSeenIncrementalReasoning);
+        if (includeText) {
+            appendTextDelta(text(msg), state, events);
+        }
+    }
 
-        String text = text(msg);
-        if (includeText && !text.isEmpty()) {
-            if (hasTextItem.compareAndSet(false, true)) {
+    private void appendTextDelta(
+            String text, StreamingState state, List<ResponsesStreamEvent> events) {
+        if (!text.isEmpty()) {
+            if (!state.hasTextItem) {
+                state.hasTextItem = true;
                 // Responses streams must announce output item and content part creation before
                 // emitting text deltas for that item.
-                int index = nextOutputIndex.getAndIncrement();
-                textOutputIndex.set(index);
+                int index = state.nextOutputIndex++;
+                state.textOutputIndex = index;
                 ResponsesOutputItem item =
-                        ResponsesOutputItem.message(messageId, "", "in_progress");
+                        ResponsesOutputItem.message(state.messageId, "", "in_progress");
                 events.add(
                         ResponsesStreamEvent.outputItemEvent(
                                 "response.output_item.added", index, item));
@@ -284,73 +259,69 @@ public class ResponsesStreamingAdapter {
                                 "response.content_part.added",
                                 index,
                                 0,
-                                messageId,
+                                state.messageId,
                                 ResponsesContentPart.outputText("")));
             }
-            accumulatedText.append(text);
+            state.accumulatedText.append(text);
             events.add(
                     ResponsesStreamEvent.textDelta(
                             "response.output_text.delta",
-                            textOutputIndex.get(),
+                            state.textOutputIndex,
                             0,
-                            messageId,
+                            state.messageId,
                             text));
         }
+    }
 
-        if (event.getType() == EventType.REASONING) {
-            for (ContentBlock block : msg.getContent()) {
-                if (block instanceof ToolUseBlock toolUseBlock) {
-                    // Tool-use blocks become Responses function_call output items. The actual Java
-                    // tool execution is performed by the client or by AgentScope toolkit code.
-                    int index = nextOutputIndex.getAndIncrement();
-                    String itemId = functionCallId(toolUseBlock.getId());
-                    String arguments = argumentsJson(toolUseBlock);
-                    ResponsesOutputItem addedItem =
-                            ResponsesOutputItem.functionCall(
-                                    itemId,
-                                    toolUseBlock.getId(),
-                                    toolUseBlock.getName(),
-                                    "",
-                                    "in_progress");
-                    ResponsesOutputItem completedItem =
-                            ResponsesOutputItem.functionCall(
-                                    itemId,
-                                    toolUseBlock.getId(),
-                                    toolUseBlock.getName(),
-                                    arguments);
-                    events.add(
-                            ResponsesStreamEvent.outputItemEvent(
-                                    "response.output_item.added", index, addedItem));
-                    if (!arguments.isEmpty()) {
-                        events.add(ResponsesStreamEvent.argumentsDelta(index, itemId, arguments));
-                    }
-                    ResponsesStreamEvent argumentsDone =
-                            ResponsesStreamEvent.argumentsDone(index, itemId, arguments);
-                    argumentsDone.setCallId(toolUseBlock.getId());
-                    argumentsDone.setName(toolUseBlock.getName());
-                    events.add(argumentsDone);
-                    events.add(
-                            ResponsesStreamEvent.outputItemEvent(
-                                    "response.output_item.done", index, completedItem));
-                    completedOutput.put(index, completedItem);
+    private void appendToolUseEvents(
+            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
+        if (event.getType() != EventType.REASONING) {
+            return;
+        }
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ToolUseBlock toolUseBlock) {
+                // Tool-use blocks become Responses function_call output items. The actual Java tool
+                // execution is performed by the client or by AgentScope toolkit code.
+                int index = state.nextOutputIndex++;
+                String itemId = functionCallId(toolUseBlock.getId());
+                String arguments = argumentsJson(toolUseBlock);
+                ResponsesOutputItem addedItem =
+                        ResponsesOutputItem.functionCall(
+                                itemId,
+                                toolUseBlock.getId(),
+                                toolUseBlock.getName(),
+                                "",
+                                "in_progress");
+                ResponsesOutputItem completedItem =
+                        ResponsesOutputItem.functionCall(
+                                itemId, toolUseBlock.getId(), toolUseBlock.getName(), arguments);
+                events.add(
+                        ResponsesStreamEvent.outputItemEvent(
+                                "response.output_item.added", index, addedItem));
+                if (!arguments.isEmpty()) {
+                    events.add(ResponsesStreamEvent.argumentsDelta(index, itemId, arguments));
                 }
+                ResponsesStreamEvent argumentsDone =
+                        ResponsesStreamEvent.argumentsDone(index, itemId, arguments);
+                argumentsDone.setCallId(toolUseBlock.getId());
+                argumentsDone.setName(toolUseBlock.getName());
+                events.add(argumentsDone);
+                events.add(
+                        ResponsesStreamEvent.outputItemEvent(
+                                "response.output_item.done", index, completedItem));
+                state.completedOutput.put(index, completedItem);
             }
         }
+    }
 
+    private void appendTextCompletionEvents(
+            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
         if (event.isLast()
-                && hasTextItem.get()
-                && !hasTextDone.get()
+                && state.hasTextItem
+                && !state.hasTextDone
                 && msg.getGenerateReason() != GenerateReason.TOOL_SUSPENDED) {
-            events.addAll(
-                    completeTextEvents(
-                            textOutputIndex.get(),
-                            messageId,
-                            accumulatedText.toString(),
-                            completedOutput,
-                            hasTextDone));
+            events.addAll(completeTextEvents(state));
         }
-
-        return Flux.fromIterable(events);
     }
 
     private EventType[] streamEventTypes(boolean structuredStream) {
@@ -369,48 +340,15 @@ public class ResponsesStreamingAdapter {
                 : agent.stream(messages, options);
     }
 
-    private List<ResponsesStreamEvent> structuredOutputEvents(
-            Msg msg,
-            AtomicInteger nextOutputIndex,
-            AtomicInteger textOutputIndex,
-            String messageId,
-            AtomicBoolean hasTextItem,
-            StringBuilder accumulatedText,
-            Map<Integer, ResponsesOutputItem> completedOutput,
-            AtomicBoolean hasTextDone) {
+    private List<ResponsesStreamEvent> structuredOutputEvents(Msg msg, StreamingState state) {
         String text = structuredOutputText(msg);
         if (text.isEmpty()) {
             return List.of();
         }
 
         List<ResponsesStreamEvent> events = new ArrayList<>();
-        if (hasTextItem.compareAndSet(false, true)) {
-            int index = nextOutputIndex.getAndIncrement();
-            textOutputIndex.set(index);
-            events.add(
-                    ResponsesStreamEvent.outputItemEvent(
-                            "response.output_item.added",
-                            index,
-                            ResponsesOutputItem.message(messageId, "", "in_progress")));
-            events.add(
-                    ResponsesStreamEvent.contentPartEvent(
-                            "response.content_part.added",
-                            index,
-                            0,
-                            messageId,
-                            ResponsesContentPart.outputText("")));
-        }
-        accumulatedText.append(text);
-        events.add(
-                ResponsesStreamEvent.textDelta(
-                        "response.output_text.delta", textOutputIndex.get(), 0, messageId, text));
-        events.addAll(
-                completeTextEvents(
-                        textOutputIndex.get(),
-                        messageId,
-                        accumulatedText.toString(),
-                        completedOutput,
-                        hasTextDone));
+        appendTextDelta(text, state, events);
+        events.addAll(completeTextEvents(state));
         return events;
     }
 
@@ -426,34 +364,52 @@ public class ResponsesStreamingAdapter {
         }
     }
 
-    private List<ResponsesStreamEvent> completeTextEvents(
-            int outputIndex,
-            String messageId,
-            String text,
-            Map<Integer, ResponsesOutputItem> completedOutput,
-            AtomicBoolean hasTextDone) {
-        if (outputIndex < 0 || !hasTextDone.compareAndSet(false, true)) {
+    private List<ResponsesStreamEvent> completeTextEvents(StreamingState state) {
+        if (state.textOutputIndex < 0 || state.hasTextDone) {
             return List.of();
         }
+        state.hasTextDone = true;
 
-        ResponsesOutputItem item = ResponsesOutputItem.message(messageId, text);
-        completedOutput.put(outputIndex, item);
+        String text = state.accumulatedText.toString();
+        ResponsesOutputItem item = ResponsesOutputItem.message(state.messageId, text);
+        state.completedOutput.put(state.textOutputIndex, item);
 
         List<ResponsesStreamEvent> events = new ArrayList<>();
         events.add(
                 ResponsesStreamEvent.textDone(
-                        "response.output_text.done", outputIndex, 0, messageId, text));
+                        "response.output_text.done",
+                        state.textOutputIndex,
+                        0,
+                        state.messageId,
+                        text));
         events.add(
                 ResponsesStreamEvent.contentPartEvent(
                         "response.content_part.done",
-                        outputIndex,
+                        state.textOutputIndex,
                         0,
-                        messageId,
+                        state.messageId,
                         ResponsesContentPart.outputText(text)));
         events.add(
                 ResponsesStreamEvent.outputItemEvent(
-                        "response.output_item.done", outputIndex, item));
+                        "response.output_item.done", state.textOutputIndex, item));
         return events;
+    }
+
+    private static final class StreamingState {
+
+        private final String messageId;
+        private int nextOutputIndex;
+        private int textOutputIndex = -1;
+        private boolean hasTextItem;
+        private boolean hasTextDone;
+        private boolean hasSeenIncrementalReasoning;
+        private final StringBuilder accumulatedText = new StringBuilder();
+        private final Map<Integer, ResponsesOutputItem> completedOutput = new TreeMap<>();
+        private Msg terminalMessage;
+
+        private StreamingState(String messageId) {
+            this.messageId = messageId;
+        }
     }
 
     private Flux<ResponsesStreamEvent> withStreamMetadata(
