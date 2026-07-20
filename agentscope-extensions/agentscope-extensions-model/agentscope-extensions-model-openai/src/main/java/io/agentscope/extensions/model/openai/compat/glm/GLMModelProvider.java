@@ -70,7 +70,9 @@ public final class GLMModelProvider implements ModelProvider {
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null && MODEL_ID.matcher(modelId).matches();
+        return modelId != null
+                && MODEL_ID.matcher(modelId).matches()
+                && trimToNull(modelId.substring(PREFIX.length())) != null;
     }
 
     @Override
@@ -83,7 +85,8 @@ public final class GLMModelProvider implements ModelProvider {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported GLM model id: " + modelId);
         }
-        String modelName = modelId.substring(PREFIX.length());
+        // supports() guarantees the suffix is non-blank
+        String modelName = trimToNull(modelId.substring(PREFIX.length()));
         String apiKey =
                 firstNonBlank(
                         context.getApiKey(),
@@ -91,9 +94,10 @@ public final class GLMModelProvider implements ModelProvider {
                         System.getenv("ZHIPUAI_API_KEY"));
         if (apiKey == null) {
             throw new IllegalStateException(
-                    "Environment variable GLM_API_KEY (or ZHIPUAI_API_KEY) is required to"
-                            + " auto-create model: "
-                            + modelId);
+                    "An API key is required to auto-create model "
+                            + modelId
+                            + ": provide it via ModelCreationContext#apiKey or the GLM_API_KEY /"
+                            + " ZHIPUAI_API_KEY environment variable");
         }
         String baseUrl = trimToNull(context.getBaseUrl());
         OpenAIChatModel.Builder builder =

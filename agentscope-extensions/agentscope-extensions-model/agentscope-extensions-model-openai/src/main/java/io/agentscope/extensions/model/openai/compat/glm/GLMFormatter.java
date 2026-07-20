@@ -207,6 +207,11 @@ public class GLMFormatter extends OpenAIChatFormatter {
     private static void normalizeSamplingRanges(OpenAIRequest request) {
         Double temperature = request.getTemperature();
         if (temperature != null) {
+            if (temperature < 0.0) {
+                log.warn("GLM temperature range is [0.0, 1.0], clamping {} to 0.0", temperature);
+                temperature = 0.0;
+                request.setTemperature(temperature);
+            }
             if (temperature == 0.0) {
                 // Per the official OpenAI compatibility guide, temperature = 0 is not
                 // applicable on the GLM endpoint; deterministic decoding uses do_sample=false

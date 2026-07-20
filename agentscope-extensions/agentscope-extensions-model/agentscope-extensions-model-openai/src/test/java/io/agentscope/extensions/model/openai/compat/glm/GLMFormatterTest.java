@@ -352,6 +352,22 @@ class GLMFormatterTest {
         }
 
         @Test
+        @DisplayName("Should clamp negative temperature to 0 and translate to do_sample=false")
+        void testClampNegativeTemperature() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("glm-5.2").messages(List.of()).build();
+
+            GenerateOptions options = GenerateOptions.builder().temperature(-0.5).build();
+
+            formatter.applyOptions(request, options, null);
+
+            // Clamped to 0.0, then translated to do_sample=false like an explicit 0
+            assertNull(request.getTemperature());
+            assertNotNull(request.getExtraParams());
+            assertEquals(false, request.getExtraParams().get("do_sample"));
+        }
+
+        @Test
         @DisplayName("Should translate temperature=0 to do_sample=false")
         void testTemperatureZeroBecomesDoSampleFalse() {
             OpenAIRequest request =

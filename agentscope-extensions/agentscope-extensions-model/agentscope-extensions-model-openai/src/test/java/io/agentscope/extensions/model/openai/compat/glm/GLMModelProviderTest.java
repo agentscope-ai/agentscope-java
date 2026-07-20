@@ -47,6 +47,9 @@ class GLMModelProviderTest {
         assertTrue(provider.supports("glm:glm-5.2"));
         assertTrue(provider.supports("glm:glm-4.6v"));
         assertFalse(provider.supports("glm:"));
+        // Whitespace-only model names must not be treated as supported
+        assertFalse(provider.supports("glm: "));
+        assertFalse(provider.supports("glm:   "));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports(null));
     }
@@ -56,8 +59,20 @@ class GLMModelProviderTest {
         GLMModelProvider provider = new GLMModelProvider();
 
         assertThrows(IllegalArgumentException.class, () -> provider.create("glm:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("glm: "));
         assertThrows(IllegalArgumentException.class, () -> provider.create("glm-5.2"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
+    }
+
+    @Test
+    void createTrimsModelName() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-glm-key").build();
+
+        Model model = provider.create("glm: glm-5.2", context);
+
+        assertEquals("glm-5.2", model.getModelName());
     }
 
     @Test
