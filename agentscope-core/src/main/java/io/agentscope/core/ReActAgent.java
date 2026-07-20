@@ -2585,22 +2585,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             TextBlock tb) {
                                                                         sink.next(
                                                                                 new ToolResultTextDeltaEvent(
-                                                                                        replyId,
-                                                                                        toolUse
-                                                                                                .getId(),
-                                                                                        toolUse
-                                                                                                .getName(),
-                                                                                        tb
-                                                                                                .getText()));
+                                                                                                replyId,
+                                                                                                toolUse
+                                                                                                        .getId(),
+                                                                                                toolUse
+                                                                                                        .getName(),
+                                                                                                tb
+                                                                                                        .getText())
+                                                                                        .withMetadata(
+                                                                                                chunk
+                                                                                                        .getMetadata()));
                                                                     } else {
                                                                         sink.next(
                                                                                 new ToolResultDataDeltaEvent(
-                                                                                        replyId,
-                                                                                        toolUse
-                                                                                                .getId(),
-                                                                                        toolUse
-                                                                                                .getName(),
-                                                                                        block));
+                                                                                                replyId,
+                                                                                                toolUse
+                                                                                                        .getId(),
+                                                                                                toolUse
+                                                                                                        .getName(),
+                                                                                                block)
+                                                                                        .withMetadata(
+                                                                                                chunk
+                                                                                                        .getMetadata()));
                                                                     }
                                                                 }
                                                             }
@@ -2650,12 +2656,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                                 .getValue());
                                                                                 sink.next(
                                                                                         new ToolResultEndEvent(
-                                                                                                replyId,
-                                                                                                entry.getKey()
-                                                                                                        .getId(),
-                                                                                                entry.getKey()
-                                                                                                        .getName(),
-                                                                                                state));
+                                                                                                        replyId,
+                                                                                                        entry.getKey()
+                                                                                                                .getId(),
+                                                                                                        entry.getKey()
+                                                                                                                .getName(),
+                                                                                                        state)
+                                                                                                .withMetadata(
+                                                                                                        entry.getValue()
+                                                                                                                .getMetadata()));
                                                                             }
                                                                             sink.complete();
                                                                         },
@@ -2765,19 +2774,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Set<String> chunkedToolIds) {
             String toolId = entry.getKey().getId();
             String toolName = entry.getKey().getName();
+            ToolResultBlock toolResult = entry.getValue();
             if (chunkedToolIds.contains(toolId)) {
                 return;
             }
-            List<ContentBlock> output = entry.getValue().getOutput();
+            List<ContentBlock> output = toolResult.getOutput();
             if (output == null || output.isEmpty()) {
                 return;
             }
             for (ContentBlock block : output) {
                 if (block instanceof TextBlock tb) {
                     sink.next(
-                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText()));
+                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText())
+                                    .withMetadata(toolResult.getMetadata()));
                 } else {
-                    sink.next(new ToolResultDataDeltaEvent(replyId, toolId, toolName, block));
+                    sink.next(
+                            new ToolResultDataDeltaEvent(replyId, toolId, toolName, block)
+                                    .withMetadata(toolResult.getMetadata()));
                 }
             }
         }

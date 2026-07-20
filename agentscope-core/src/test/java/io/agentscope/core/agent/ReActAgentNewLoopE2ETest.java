@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -160,6 +161,36 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    private static final class MetadataTool extends ToolBase {
+        MetadataTool(String name) {
+            super(
+                    name,
+                    "returns metadata",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            return Mono.just(
+                    ToolResultBlock.of(
+                            TextBlock.builder().text("meta:" + q).build(),
+                            Map.of("source", "meta_tool", "query", q)));
+        }
+    }
+
     private static final class RecordingMiddleware implements MiddlewareBase {
         final List<String> trace = new ArrayList<>();
 
@@ -291,5 +322,47 @@ class ReActAgentNewLoopE2ETest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(ToolResultState.ERROR, end.getState());
+    }
+
+    @Test
+    void toolResultMetadataPropagatesToEvents() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "meta", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new MetadataTool("meta"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run meta tool")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        Map<String, Object> expected = Map.of("source", "meta_tool", "query", "alpha");
+
+        events.stream()
+                .filter(ToolResultEndEvent.class::isInstance)
+                .map(ToolResultEndEvent.class::cast)
+                .forEach(e -> assertEquals(expected, e.getMetadata()));
+
+        events.stream()
+                .filter(ToolResultTextDeltaEvent.class::isInstance)
+                .map(ToolResultTextDeltaEvent.class::cast)
+                .forEach(e -> assertEquals(expected, e.getMetadata()));
     }
 }
