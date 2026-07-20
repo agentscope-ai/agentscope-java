@@ -16,9 +16,9 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -30,338 +30,131 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAITool;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolFunction;
 import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for GLMFormatter.
+ * Backward-compatibility tests for the deprecated {@link GLMFormatter} and
+ * {@link GLMMultiAgentFormatter}.
  *
- * <p>Tests verify Zhipu GLM-specific requirements:
- * <ul>
- *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>Only supports "auto" for tool_choice</li>
- *   <li>Does NOT support strict parameter in tool definitions</li>
- * </ul>
+ * <p>The full behavior test suite lives next to the new implementations in
+ * {@code io.agentscope.extensions.model.openai.compat.glm}. These tests only verify that the
+ * deprecated classes still behave like (and are substitutable for) the new ones.
  */
+@SuppressWarnings("deprecation")
 @Tag("unit")
-@DisplayName("GLMFormatter Unit Tests")
+@DisplayName("Deprecated GLM formatter Backward Compatibility Tests")
 class GLMFormatterTest {
 
-    private GLMFormatter formatter;
-
-    @BeforeEach
-    void setUp() {
-        formatter = new GLMFormatter();
+    @Test
+    @DisplayName("Deprecated GLMFormatter should be an instance of the new implementation")
+    void testDeprecatedFormatterIsNewImplementation() {
+        assertTrue(
+                new GLMFormatter()
+                        instanceof io.agentscope.extensions.model.openai.compat.glm.GLMFormatter);
+        assertTrue(
+                new GLMMultiAgentFormatter()
+                        instanceof
+                        io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter);
     }
 
-    @Nested
-    @DisplayName("supportsStrict Tests")
-    class SupportsStrictTests {
+    @Test
+    @DisplayName("Deprecated GLMFormatter should still ensure a user message")
+    void testFormatEnsuresUserMessage() {
+        GLMFormatter formatter = new GLMFormatter();
 
-        @Test
-        @DisplayName("supportsStrict should return false")
-        void testSupportsStrictReturnsFalse() {
-            assertFalse(formatter.supportsStrict());
-        }
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful")
+                                                        .build()))
+                                .build());
 
-        @Test
-        @DisplayName("applyTools should not include strict parameter")
-        void testApplyToolsWithoutStrict() {
-            OpenAIRequest request =
-                    OpenAIRequest.builder().model("glm-4").messages(List.of()).build();
+        List<OpenAIMessage> result = formatter.format(messages);
 
-            ToolSchema tool =
-                    ToolSchema.builder()
-                            .name("test_tool")
-                            .description("Test tool")
-                            .strict(true)
-                            .build();
-
-            formatter.applyTools(request, List.of(tool));
-
-            assertNotNull(request.getTools());
-            assertEquals(1, request.getTools().size());
-            // Strict should not be set because GLM doesn't support it
-            assertNull(request.getTools().get(0).getFunction().getStrict());
-        }
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("user", result.get(1).getRole());
     }
 
-    @Nested
-    @DisplayName("ensureUserMessage Tests")
-    class EnsureUserMessageTests {
+    @Test
+    @DisplayName("Deprecated static ensureUserMessage should delegate to the new implementation")
+    void testStaticEnsureUserMessageDelegates() {
+        List<OpenAIMessage> messages =
+                List.of(OpenAIMessage.builder().role("assistant").content("Hi").build());
 
-        @Test
-        @DisplayName("Should return unchanged if user message exists")
-        void testReturnUnchangedWithUserMessage() {
-            List<OpenAIMessage> messages =
-                    List.of(OpenAIMessage.builder().role("user").content("Hello").build());
+        List<OpenAIMessage> result = GLMFormatter.ensureUserMessage(messages);
 
-            List<OpenAIMessage> result = GLMFormatter.ensureUserMessage(messages);
-
-            assertEquals(1, result.size());
-            assertEquals("Hello", result.get(0).getContentAsString());
-        }
-
-        @Test
-        @DisplayName("Should add placeholder user message if no user message")
-        void testAddPlaceholderIfNoUserMessage() {
-            List<OpenAIMessage> messages =
-                    List.of(
-                            OpenAIMessage.builder()
-                                    .role("system")
-                                    .content("You are helpful")
-                                    .build(),
-                            OpenAIMessage.builder().role("assistant").content("Hello!").build());
-
-            List<OpenAIMessage> result = GLMFormatter.ensureUserMessage(messages);
-
-            assertEquals(3, result.size());
-            // Last message should be the placeholder user message
-            assertEquals("user", result.get(2).getRole());
-            assertEquals("", result.get(2).getContentAsString());
-        }
-
-        @Test
-        @DisplayName("Should add placeholder for empty message list")
-        void testAddPlaceholderForEmptyList() {
-            List<OpenAIMessage> messages = List.of();
-
-            List<OpenAIMessage> result = GLMFormatter.ensureUserMessage(messages);
-
-            assertEquals(1, result.size());
-            assertEquals("user", result.get(0).getRole());
-            assertEquals("", result.get(0).getContentAsString());
-        }
-
-        @Test
-        @DisplayName("Should detect user message in mixed conversation")
-        void testDetectUserInMixedConversation() {
-            List<OpenAIMessage> messages =
-                    List.of(
-                            OpenAIMessage.builder().role("system").content("System prompt").build(),
-                            OpenAIMessage.builder().role("user").content("User question").build(),
-                            OpenAIMessage.builder()
-                                    .role("assistant")
-                                    .content("Assistant response")
-                                    .build());
-
-            List<OpenAIMessage> result = GLMFormatter.ensureUserMessage(messages);
-
-            // No additional message needed
-            assertEquals(3, result.size());
-        }
+        assertEquals(2, result.size());
+        assertEquals("user", result.get(1).getRole());
     }
 
-    @Nested
-    @DisplayName("applyGLMToolChoice Tests")
-    class ApplyGLMToolChoiceTests {
+    @Test
+    @DisplayName("Deprecated static applyGLMToolChoice should degrade to auto")
+    void testStaticApplyGLMToolChoiceDelegates() {
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("test_tool");
+        OpenAITool tool = new OpenAITool();
+        tool.setFunction(function);
+        tool.setType("function");
 
-        private OpenAIRequest createRequestWithTools() {
-            OpenAIToolFunction function = new OpenAIToolFunction();
-            function.setName("test_tool");
-            OpenAITool tool = new OpenAITool();
-            tool.setFunction(function);
-            tool.setType("function");
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("glm-4.7")
+                        .messages(List.of())
+                        .tools(List.of(tool))
+                        .build();
 
-            return OpenAIRequest.builder()
-                    .model("glm-4")
-                    .messages(List.of())
-                    .tools(List.of(tool))
-                    .build();
-        }
+        GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Required());
 
-        @Test
-        @DisplayName("Should set tool_choice to auto for Auto")
-        void testToolChoiceAuto() {
-            OpenAIRequest request = createRequestWithTools();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Auto());
-
-            assertEquals("auto", request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should degrade None to auto")
-        void testToolChoiceNoneDegradesToAuto() {
-            OpenAIRequest request = createRequestWithTools();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.None());
-
-            assertEquals("auto", request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should degrade Required to auto")
-        void testToolChoiceRequiredDegradesToAuto() {
-            OpenAIRequest request = createRequestWithTools();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Required());
-
-            assertEquals("auto", request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should degrade Specific to auto")
-        void testToolChoiceSpecificDegradesToAuto() {
-            OpenAIRequest request = createRequestWithTools();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Specific("test_tool"));
-
-            assertEquals("auto", request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should not set tool_choice if no tools")
-        void testNoToolChoiceWithoutTools() {
-            OpenAIRequest request =
-                    OpenAIRequest.builder().model("glm-4").messages(List.of()).build();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Auto());
-
-            assertNull(request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should not set tool_choice if tools list is empty")
-        void testNoToolChoiceWithEmptyTools() {
-            OpenAIRequest request =
-                    OpenAIRequest.builder()
-                            .model("glm-4")
-                            .messages(List.of())
-                            .tools(List.of())
-                            .build();
-
-            GLMFormatter.applyGLMToolChoice(request, new ToolChoice.Auto());
-
-            assertNull(request.getToolChoice());
-        }
-
-        @Test
-        @DisplayName("Should handle null toolChoice")
-        void testNullToolChoice() {
-            OpenAIRequest request = createRequestWithTools();
-
-            GLMFormatter.applyGLMToolChoice(request, null);
-
-            assertEquals("auto", request.getToolChoice());
-        }
+        assertEquals("auto", request.getToolChoice());
     }
 
-    @Nested
-    @DisplayName("doFormat Integration Tests")
-    class DoFormatTests {
+    @Test
+    @DisplayName("Deprecated GLMFormatter should still drop the strict parameter")
+    void testApplyToolsWithoutStrict() {
+        GLMFormatter formatter = new GLMFormatter();
 
-        @Test
-        @DisplayName("Should ensure user message in formatted output")
-        void testFormatEnsuresUserMessage() {
-            List<Msg> messages =
-                    List.of(
-                            Msg.builder()
-                                    .role(MsgRole.SYSTEM)
-                                    .content(
-                                            List.of(
-                                                    TextBlock.builder()
-                                                            .text("You are helpful")
-                                                            .build()))
-                                    .build());
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("glm-4.7").messages(List.of()).build();
 
-            List<OpenAIMessage> result = formatter.format(messages);
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("test_tool")
+                        .description("Test tool")
+                        .strict(true)
+                        .build();
 
-            // Should have system message + placeholder user message
-            assertEquals(2, result.size());
-            assertEquals("system", result.get(0).getRole());
-            assertEquals("user", result.get(1).getRole());
-        }
+        formatter.applyTools(request, List.of(tool));
 
-        @Test
-        @DisplayName("Should not add placeholder if user message exists")
-        void testFormatWithExistingUserMessage() {
-            List<Msg> messages =
-                    List.of(
-                            Msg.builder()
-                                    .role(MsgRole.SYSTEM)
-                                    .content(
-                                            List.of(
-                                                    TextBlock.builder()
-                                                            .text("You are helpful")
-                                                            .build()))
-                                    .build(),
-                            Msg.builder()
-                                    .role(MsgRole.USER)
-                                    .content(List.of(TextBlock.builder().text("Hello").build()))
-                                    .build());
-
-            List<OpenAIMessage> result = formatter.format(messages);
-
-            assertEquals(2, result.size());
-            assertEquals("system", result.get(0).getRole());
-            assertEquals("user", result.get(1).getRole());
-            assertEquals("Hello", result.get(1).getContentAsString());
-        }
-
-        @Test
-        @DisplayName("Should format assistant messages correctly")
-        void testFormatAssistantMessages() {
-            List<Msg> messages =
-                    List.of(
-                            Msg.builder()
-                                    .role(MsgRole.USER)
-                                    .content(List.of(TextBlock.builder().text("Hello").build()))
-                                    .build(),
-                            Msg.builder()
-                                    .role(MsgRole.ASSISTANT)
-                                    .content(
-                                            List.of(
-                                                    TextBlock.builder()
-                                                            .text("Hello! How can I help?")
-                                                            .build()))
-                                    .build());
-
-            List<OpenAIMessage> result = formatter.format(messages);
-
-            assertEquals(2, result.size());
-            assertEquals("assistant", result.get(1).getRole());
-            assertEquals("Hello! How can I help?", result.get(1).getContentAsString());
-        }
-
-        @Test
-        @DisplayName("Should handle empty message list")
-        void testFormatEmptyList() {
-            List<OpenAIMessage> result = formatter.format(List.of());
-
-            // Should add placeholder user message
-            assertEquals(1, result.size());
-            assertEquals("user", result.get(0).getRole());
-        }
+        assertNotNull(request.getTools());
+        assertNull(request.getTools().get(0).getFunction().getStrict());
     }
 
-    @Nested
-    @DisplayName("applyToolChoice Integration Tests")
-    class ApplyToolChoiceIntegrationTests {
+    @Test
+    @DisplayName("Deprecated GLMMultiAgentFormatter should still ensure a user message")
+    void testMultiAgentFormatEnsuresUserMessage() {
+        GLMMultiAgentFormatter formatter = new GLMMultiAgentFormatter();
 
-        @Test
-        @DisplayName("Should apply tool choice through formatter")
-        void testApplyToolChoiceThroughFormatter() {
-            OpenAIToolFunction function = new OpenAIToolFunction();
-            function.setName("get_weather");
-            OpenAITool tool = new OpenAITool();
-            tool.setFunction(function);
-            tool.setType("function");
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful")
+                                                        .build()))
+                                .build());
 
-            OpenAIRequest request =
-                    OpenAIRequest.builder()
-                            .model("glm-4")
-                            .messages(List.of())
-                            .tools(List.of(tool))
-                            .build();
+        List<OpenAIMessage> result = formatter.format(messages);
 
-            formatter.applyToolChoice(request, new ToolChoice.Specific("get_weather"));
-
-            // GLM should degrade to auto
-            assertEquals("auto", request.getToolChoice());
-        }
+        assertEquals(2, result.size());
+        assertEquals("user", result.get(1).getRole());
     }
 }

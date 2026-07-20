@@ -1,1 +1,2 @@
 io.agentscope.extensions.model.openai.OpenAIModelProvider
+io.agentscope.extensions.model.openai.compat.glm.GLMModelProvider
