@@ -29,7 +29,9 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,15 +76,23 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        evictOversizedToolResults(agent, rc);
-        return next.apply(input);
+        Map<String, ToolResultBlock> replacements = evictOversizedToolResults(agent, rc);
+        if (replacements.isEmpty()) {
+            return next.apply(input);
+        }
+        List<Msg> boundedInput =
+                input.messages().stream()
+                        .map(message -> replaceEvictedResults(message, replacements))
+                        .toList();
+        return next.apply(new ReasoningInput(boundedInput, input.tools(), input.options()));
     }
 
-    private void evictOversizedToolResults(Agent agent, RuntimeContext rc) {
+    private Map<String, ToolResultBlock> evictOversizedToolResults(Agent agent, RuntimeContext rc) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
-            return;
+            return Map.of();
         }
+        Map<String, ToolResultBlock> replacements = new HashMap<>();
         List<Msg> ctx = state.contextMutable();
         String agentName = agent.getName();
         for (int i = 0; i < ctx.size(); i++) {
@@ -90,14 +100,19 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             if (msg == null || msg.getRole() != MsgRole.TOOL) {
                 continue;
             }
-            Msg rebuilt = evictMessage(msg, agentName, rc);
+            Msg rebuilt = evictMessage(msg, agentName, rc, replacements);
             if (rebuilt != msg) {
                 ctx.set(i, rebuilt);
             }
         }
+        return replacements;
     }
 
-    private Msg evictMessage(Msg msg, String agentName, RuntimeContext rc) {
+    private Msg evictMessage(
+            Msg msg,
+            String agentName,
+            RuntimeContext rc,
+            Map<String, ToolResultBlock> replacements) {
         List<ContentBlock> contentBlocks = msg.getContent();
         if (contentBlocks == null || contentBlocks.isEmpty()) {
             return msg;
@@ -109,7 +124,39 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                 ToolResultBlock maybeEvicted = maybeEvict(tr, agentName, rc);
                 if (maybeEvicted != tr) {
                     changed = true;
+                    replacements.put(tr.getId(), maybeEvicted);
                     rebuilt.add(maybeEvicted);
+                    continue;
+                }
+            }
+            rebuilt.add(block);
+        }
+        if (!changed) {
+            return msg;
+        }
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(rebuilt)
+                .metadata(msg.getMetadata())
+                .timestamp(msg.getTimestamp())
+                .build();
+    }
+
+    private Msg replaceEvictedResults(Msg msg, Map<String, ToolResultBlock> replacements) {
+        if (msg == null || msg.getRole() != MsgRole.TOOL) {
+            return msg;
+        }
+        List<ContentBlock> contentBlocks = msg.getContent();
+        boolean changed = false;
+        List<ContentBlock> rebuilt = new ArrayList<>(contentBlocks.size());
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof ToolResultBlock result) {
+                ToolResultBlock replacement = replacements.get(result.getId());
+                if (replacement != null) {
+                    changed = true;
+                    rebuilt.add(replacement);
                     continue;
                 }
             }
@@ -189,9 +236,12 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private String buildEvictionPath(String agentName, String toolCallId) {
-        String base = config.getEvictionPath();
-        if (!base.startsWith("/")) {
-            base = "/" + base;
+        String base = config.getEvictionPath().replace('\\', '/');
+        while (base.startsWith("/")) {
+            base = base.substring(1);
+        }
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
         }
         String safeAgent = agentName.replaceAll("[^a-zA-Z0-9_-]", "_");
         String safeId = toolCallId.replaceAll("[^a-zA-Z0-9_-]", "_");

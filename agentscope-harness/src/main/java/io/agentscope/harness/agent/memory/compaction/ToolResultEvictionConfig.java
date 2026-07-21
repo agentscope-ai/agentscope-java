@@ -49,7 +49,7 @@ public class ToolResultEvictionConfig {
     public static final int DEFAULT_PREVIEW_CHARS = 2_000;
 
     /** Root path prefix under which evicted results are stored. */
-    public static final String DEFAULT_EVICTION_PATH = "/large_tool_results";
+    public static final String DEFAULT_EVICTION_PATH = "large_tool_results";
 
     /**
      * Tools excluded from eviction by default.

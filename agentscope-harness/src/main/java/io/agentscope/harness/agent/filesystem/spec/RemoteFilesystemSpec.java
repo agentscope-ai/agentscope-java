@@ -222,6 +222,12 @@ public class RemoteFilesystemSpec {
                 overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
         routes.put("plans/", overlayRoute(workspace.resolve("plans"), "plans", effectiveAgentId));
         routes.put(
+                "large_tool_results/",
+                overlayRoute(
+                        workspace.resolve("large_tool_results"),
+                        "large_tool_results",
+                        effectiveAgentId));
+        routes.put(
                 "agents/" + effectiveAgentId + "/sessions/",
                 overlayRoute(
                         workspace.resolve("agents").resolve(effectiveAgentId).resolve("sessions"),
