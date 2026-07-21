@@ -79,6 +79,13 @@ public final class ToolValidator {
             return null; // No schema, validation passes
         }
 
+        // Defensive: treat null/blank input as empty JSON object so that
+        // networknt-schema does not throw NPE ("argument 'content' is null")
+        // when a ToolUseBlock carries parsed arguments but no raw content string.
+        if (input == null || input.isBlank()) {
+            input = "{}";
+        }
+
         try {
             // Convert schema to JSON string
             String schemaJson = JsonUtils.getJsonCodec().toJson(schema);
