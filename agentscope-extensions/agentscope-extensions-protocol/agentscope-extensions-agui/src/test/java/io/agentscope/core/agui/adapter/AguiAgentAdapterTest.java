@@ -715,7 +715,10 @@ class AguiAgentAdapterTest {
                 Msg.builder()
                         .id("msg-suspended")
                         .role(MsgRole.TOOL)
-                        .content(ToolResultBlock.suspended(toolUse))
+                        .content(
+                                List.of(
+                                        ToolResultBlock.suspended(toolUse),
+                                        ToolResultBlock.suspended(toolUse)))
                         .build();
 
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
@@ -756,6 +759,51 @@ class AguiAgentAdapterTest {
         assertEquals("tool_suspended", interrupt.reason());
         assertEquals("tc-approval", interrupt.toolCallId());
         assertEquals("request_approval", interrupt.metadata().get("toolName"));
+    }
+
+    @Test
+    void testSuspendedToolsWithoutNamesUseUnknownInterruptMetadata() {
+        String[] missingToolNames = {null, " "};
+        for (int i = 0; i < missingToolNames.length; i++) {
+            String toolCallId = "tc-unnamed-" + i;
+            ToolResultBlock suspended =
+                    new ToolResultBlock(
+                            toolCallId,
+                            missingToolNames[i],
+                            List.of(TextBlock.builder().text("awaiting").build()),
+                            Map.of(ToolResultBlock.METADATA_SUSPENDED, true));
+            Msg suspendedResultMsg =
+                    Msg.builder()
+                            .id("msg-unnamed-" + i)
+                            .role(MsgRole.TOOL)
+                            .content(suspended)
+                            .build();
+            when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                    .thenReturn(
+                            Flux.just(new Event(EventType.TOOL_RESULT, suspendedResultMsg, true)));
+
+            RunAgentInput input =
+                    RunAgentInput.builder()
+                            .threadId("thread-unnamed-" + i)
+                            .runId("run-unnamed-" + i)
+                            .messages(
+                                    List.of(AguiMessage.userMessage("msg-" + i, "Please approve")))
+                            .build();
+
+            List<AguiEvent> events = adapter.run(input).collectList().block();
+
+            assertNotNull(events);
+            AguiEvent.RunFinished finished =
+                    events.stream()
+                            .filter(AguiEvent.RunFinished.class::isInstance)
+                            .map(AguiEvent.RunFinished.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals("unknown", outcome.interrupts().get(0).metadata().get("toolName"));
+        }
     }
 
     @Test

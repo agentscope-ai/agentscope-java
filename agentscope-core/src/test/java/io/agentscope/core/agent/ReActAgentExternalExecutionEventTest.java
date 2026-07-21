@@ -133,6 +133,29 @@ class ReActAgentExternalExecutionEventTest {
     }
 
     @Test
+    void missingModelReplyIdsFallBackToStableToolCallIdentity() {
+        for (String missingReplyId : new String[] {null, " "}) {
+            ReActAgent agent =
+                    buildAgent(
+                            new ScriptedModel(
+                                    toolResponseWithReplyId(missingReplyId),
+                                    textResponse("unused")),
+                            null);
+
+            RequireExternalExecutionEvent request =
+                    firstRequest(agent.streamEvents(userMessage("approve")).collectList().block());
+
+            assertEquals(TOOL_CALL_ID, request.getReplyId());
+
+            List<AgentEvent> resumed =
+                    agent.streamEvents(toolResultMessage("approved")).collectList().block();
+            ExternalExecutionResultEvent result =
+                    eventsOf(resumed, ExternalExecutionResultEvent.class).get(0);
+            assertEquals(request.getReplyId(), result.getReplyId());
+        }
+    }
+
+    @Test
     void rejectedResultsDoNotEmitAcceptedResultEvents() {
         ReActAgent duplicateAgent = buildAgent(new ScriptedModel(toolResponse()), null);
         duplicateAgent.streamEvents(userMessage("approve")).collectList().block();
@@ -195,17 +218,22 @@ class ReActAgentExternalExecutionEventTest {
     }
 
     private static ChatResponse toolResponse() {
-        return ChatResponse.builder()
-                .id(REPLY_ID)
-                .content(
-                        List.<ContentBlock>of(
-                                ToolUseBlock.builder()
-                                        .id(TOOL_CALL_ID)
-                                        .name(TOOL_NAME)
-                                        .input(Map.of("request", "Deploy to production?"))
-                                        .content("{\"request\":\"Deploy to production?\"}")
-                                        .build()))
-                .build();
+        return toolResponseWithReplyId(REPLY_ID);
+    }
+
+    private static ChatResponse toolResponseWithReplyId(String replyId) {
+        return new ChatResponse(
+                replyId,
+                List.<ContentBlock>of(
+                        ToolUseBlock.builder()
+                                .id(TOOL_CALL_ID)
+                                .name(TOOL_NAME)
+                                .input(Map.of("request", "Deploy to production?"))
+                                .content("{\"request\":\"Deploy to production?\"}")
+                                .build()),
+                null,
+                null,
+                null);
     }
 
     private static ChatResponse textResponse(String text) {

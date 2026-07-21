@@ -1778,15 +1778,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>Using the message id rather than a per-invocation random id keeps external-execution
          * request/result correlation stable when an agent is rebuilt from an {@link AgentStateStore}.
+         * If a custom model supplies a missing reply id, the first persisted tool-call id provides
+         * the same stable fallback identity.
          */
         private String pendingToolReplyId() {
-            Msg lastAssistant = findLastAssistantMsg();
-            if (lastAssistant != null
-                    && lastAssistant.getId() != null
-                    && !lastAssistant.getId().isBlank()) {
+            Msg lastAssistant =
+                    Objects.requireNonNull(
+                            findLastAssistantMsg(),
+                            "Pending tool calls require an assistant message");
+            if (lastAssistant.getId() != null && !lastAssistant.getId().isBlank()) {
                 return lastAssistant.getId();
             }
-            return UUID.randomUUID().toString().replace("-", "");
+            return Objects.requireNonNull(
+                    lastAssistant.getContentBlocks(ToolUseBlock.class).get(0).getId(),
+                    "Pending tool calls require a tool-call id");
         }
 
         /**
