@@ -33,6 +33,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -814,6 +815,330 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(
                 result.stream().noneMatch(r -> "task-old".equals(r.getTaskId())),
                 "Old task file should be skipped by recentWindow filter");
+    }
+
+    // ------------------------------------------------------------------
+    //  Completion callback: terminal status and error propagation
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("completion callback receives COMPLETED status and result for successful task")
+    void completionCallback_completedStatusAndResult() throws Exception {
+        String session = "sess-cb-ok";
+        String taskId = "task-cb-ok";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-ok",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "success-result"));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        assertEquals(1, events.size());
+        TaskCompletionEvent event = events.get(0);
+        assertEquals(TaskStatus.COMPLETED, event.status());
+        assertEquals(taskId, event.taskId());
+        assertEquals("agent-cb-ok", event.subAgentId());
+        assertEquals(session, event.sessionId());
+        assertEquals("success-result", event.result());
+        assertNull(event.errorMessage());
+    }
+
+    @Test
+    @DisplayName("completion callback receives FAILED status and errorMessage for failing task")
+    void completionCallback_failedStatusAndErrorMessage() throws Exception {
+        String session = "sess-cb-fail";
+        String taskId = "task-cb-fail";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-fail",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("intentional-failure-marker");
+                        }));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus().isTerminal();
+                });
+
+        assertEquals(1, events.size());
+        TaskCompletionEvent event = events.get(0);
+        assertEquals(TaskStatus.FAILED, event.status());
+        assertEquals(taskId, event.taskId());
+        assertEquals("agent-cb-fail", event.subAgentId());
+        assertEquals(session, event.sessionId());
+        assertNull(event.result());
+        assertNotNull(event.errorMessage());
+        assertTrue(event.errorMessage().contains("intentional-failure-marker"));
+    }
+
+    @Test
+    @DisplayName("completion callback receives CANCELLED status when task is cancelled")
+    void completionCallback_cancelledStatus() throws Exception {
+        String session = "sess-cb-cancel";
+        String taskId = "task-cb-cancel";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CountDownLatch taskRunning = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-cancel",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "should-not-appear";
+                        }));
+
+        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
+                });
+
+        repo.cancelTask(RuntimeContext.empty(), session, taskId);
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.CANCELLED;
+                });
+
+        // Allow the worker to finish (it will see the cancel flag and call markCancelled)
+        release.countDown();
+        Thread.sleep(200);
+
+        assertTrue(
+                events.stream().anyMatch(e -> e.status() == TaskStatus.CANCELLED),
+                "Callback should receive CANCELLED status event");
+        TaskCompletionEvent cancelEvent =
+                events.stream()
+                        .filter(e -> e.status() == TaskStatus.CANCELLED)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(taskId, cancelEvent.taskId());
+        assertEquals("agent-cb-cancel", cancelEvent.subAgentId());
+        assertNull(cancelEvent.result());
+        assertNull(cancelEvent.errorMessage());
+    }
+
+    @Test
+    @DisplayName("exception in callback is swallowed and task still completes")
+    void completionCallback_exceptionInCallbackIsSwallowed() throws Exception {
+        String session = "sess-cb-ex";
+        String taskId = "task-cb-ex";
+
+        repo.setCompletionCallback(
+                e -> {
+                    throw new RuntimeException("boom");
+                });
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-ex",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "ok"));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus() == TaskStatus.COMPLETED;
+                });
+
+        BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+        assertEquals(TaskStatus.COMPLETED, t.getTaskStatus());
+    }
+
+    @Test
+    @DisplayName("task completes normally when no callback is set")
+    void fireCompletionCallback_nullCallbackDoesNotThrow() throws Exception {
+        String session = "sess-cb-null";
+        String taskId = "task-cb-null";
+
+        // No callback set
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cb-null",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "done"));
+
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus() == TaskStatus.COMPLETED;
+                });
+
+        BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+        assertEquals(TaskStatus.COMPLETED, t.getTaskStatus());
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks fires completion callback for orphaned task")
+    void sweepOrphanedTasks_firesCompletionCallback() throws Exception {
+        String session = "sess-sweep-cb";
+        String taskId = "task-stale-cb";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        // Write a RUNNING record with a lastUpdatedAt far in the past
+        TaskRecord stale = new TaskRecord(taskId, "agent-stale-cb", "test-agent", session, null);
+        stale.setStatus(TaskStatus.RUNNING);
+        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.FAILED;
+                });
+
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                e ->
+                                        e.status() == TaskStatus.FAILED
+                                                && taskId.equals(e.taskId())
+                                                && "agent-stale-cb".equals(e.subAgentId())
+                                                && e.errorMessage() != null
+                                                && e.errorMessage().contains("executor lost")),
+                "Orphan sweeper must fire completion callback with FAILED status and error");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks does not fire callback for live local tasks")
+    void sweepOrphanedTasks_doesNotFireCallbackForLiveTasks() throws Exception {
+        String session = "sess-sweep-live-cb";
+        String taskId = "task-live-cb";
+
+        CopyOnWriteArrayList<TaskCompletionEvent> events = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(events::add);
+
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-live-cb",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            try {
+                                release.await();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "live";
+                        }));
+
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord(
+                                        RuntimeContext.empty(), "test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
+                                .orElse(false));
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        assertTrue(
+                events.isEmpty(),
+                "Sweeper must not fire callback for tasks with a live local future");
+
+        release.countDown();
+    }
+
+    // ------------------------------------------------------------------
+    //  Sweep marker JSON format
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sweep marker writes JSON format with ts field")
+    void sweepMarker_writesJsonFormat() throws Exception {
+        repo.sweepOrphanedTasksDefault_forTest();
+
+        Path markerPath = tempDir.resolve("agents/test-agent/tasks/_sweep.marker");
+        assertTrue(Files.exists(markerPath), "Sweep marker file should exist");
+        String content = Files.readString(markerPath).strip();
+        assertTrue(content.startsWith("{"), "Sweep marker should be JSON, got: " + content);
+        assertTrue(
+                content.contains("\"ts\""),
+                "Sweep marker JSON should contain 'ts' field, got: " + content);
+
+        // Verify readSweepMarker still parses correctly
+        Optional<Instant> parsed =
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
+        assertTrue(parsed.isPresent(), "readSweepMarker must parse the JSON format");
+        assertTrue(
+                parsed.get().isAfter(Instant.now().minusSeconds(5)),
+                "Parsed sweep timestamp should be very recent");
+    }
+
+    @Test
+    @DisplayName("readSweepMarker parses legacy plain ISO-8601 format")
+    void sweepMarker_parsesLegacyFormat() throws Exception {
+        // Write a legacy plain ISO-8601 string (no JSON wrapper)
+        Path markerPath = tempDir.resolve("agents/test-agent/tasks/_sweep.marker");
+        markerPath.getParent().toFile().mkdirs();
+        Files.writeString(markerPath, Instant.now().toString());
+
+        Optional<Instant> parsed =
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
+        assertTrue(parsed.isPresent(), "readSweepMarker must parse legacy ISO-8601 format");
+        assertTrue(
+                parsed.get().isAfter(Instant.now().minusSeconds(5)),
+                "Parsed legacy timestamp should be very recent");
+    }
+
+    // ------------------------------------------------------------------
+    //  TaskCompletionEvent null status guard
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TaskCompletionEvent rejects null status")
+    void taskCompletionEvent_rejectsNullStatus() {
+        try {
+            new TaskCompletionEvent(null, null, null, null, null, null, null);
+            throw new AssertionError("Should have thrown NullPointerException");
+        } catch (NullPointerException e) {
+            assertTrue(e.getMessage().contains("status"), "NPE message should mention 'status'");
+        }
     }
 
     // ------------------------------------------------------------------

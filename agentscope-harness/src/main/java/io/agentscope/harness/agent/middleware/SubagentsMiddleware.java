@@ -285,16 +285,44 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         }
         if (taskRepository instanceof WorkspaceTaskRepository wtr) {
             wtr.setCompletionCallback(
-                    (rc, taskId, subAgentId, sessionId, result) -> {
-                        String userId = rc != null ? rc.getUserId() : null;
+                    event -> {
+                        String userId = event.rc() != null ? event.rc().getUserId() : null;
                         String hintContent =
-                                String.format(
-                                        "<system-notification>Background subagent task '%s'"
-                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                                + "</system-notification>",
-                                        taskId,
-                                        subAgentId,
-                                        result != null ? result : "(no output)");
+                                switch (event.status()) {
+                                    case COMPLETED ->
+                                            String.format(
+                                                    "<system-notification>Background subagent"
+                                                            + " task '%s' (agent=%s) has"
+                                                            + " completed.\n\nResult:\n\n%s"
+                                                            + "</system-notification>",
+                                                    event.taskId(),
+                                                    event.subAgentId(),
+                                                    event.result() != null
+                                                            ? event.result()
+                                                            : "(no output)");
+                                    case FAILED ->
+                                            String.format(
+                                                    "<system-notification>Background subagent"
+                                                            + " task '%s' (agent=%s) has"
+                                                            + " FAILED.\n\nError:\n\n%s"
+                                                            + "</system-notification>",
+                                                    event.taskId(),
+                                                    event.subAgentId(),
+                                                    event.errorMessage() != null
+                                                            ? event.errorMessage()
+                                                            : "(no error message)");
+                                    case CANCELLED ->
+                                            String.format(
+                                                    "<system-notification>Background subagent"
+                                                            + " task '%s' (agent=%s) was"
+                                                            + " cancelled."
+                                                            + "</system-notification>",
+                                                    event.taskId(), event.subAgentId());
+                                    default ->
+                                            throw new IllegalStateException(
+                                                    "Unexpected terminal status: "
+                                                            + event.status());
+                                };
                         String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
                         java.util.Map<String, Object> hintPayload =
                                 java.util.Map.of(
@@ -306,11 +334,11 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                                         hintContent,
                                         "source",
                                         "subagent_task");
-                        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+                        messageBus.inboxPush(event.sessionId(), hintPayload).subscribe();
                         messageBus
                                 .enqueueWakeup(
                                         userId != null ? userId : "",
-                                        sessionId,
+                                        event.sessionId(),
                                         agentId != null ? agentId : "")
                                 .subscribe(
                                         unused -> {},
@@ -318,13 +346,14 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                                                 log.warn(
                                                         "Failed to enqueue wakeup after task {}"
                                                                 + " completion: {}",
-                                                        taskId,
+                                                        event.taskId(),
                                                         err.getMessage()));
                         log.info(
-                                "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
+                                "Subagent task {} ({}) pushed to inbox and enqueued wakeup:"
                                         + " session={}",
-                                taskId,
-                                sessionId);
+                                event.taskId(),
+                                event.status(),
+                                event.sessionId());
                     });
         }
         return this;
