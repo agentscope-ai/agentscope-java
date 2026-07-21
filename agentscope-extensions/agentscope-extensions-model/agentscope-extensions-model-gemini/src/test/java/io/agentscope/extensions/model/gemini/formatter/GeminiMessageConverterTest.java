@@ -506,8 +506,8 @@ class GeminiMessageConverterTest {
     }
 
     @Test
-    @DisplayName("Should skip ThinkingBlock")
-    void testSkipThinkingBlock() {
+    @DisplayName("Should convert ThinkingBlock to a thought Part")
+    void testConvertThinkingBlock() {
         ThinkingBlock thinkingBlock =
                 ThinkingBlock.builder().thinking("Internal reasoning").build();
 
@@ -525,13 +525,15 @@ class GeminiMessageConverterTest {
 
         assertEquals(1, result.size());
         Content content = result.get(0);
-        assertEquals(1, content.parts().get().size());
-        assertEquals("Visible response", content.parts().get().get(0).text().get());
+        assertEquals(2, content.parts().get().size());
+        assertEquals("Internal reasoning", content.parts().get().get(0).text().get());
+        assertTrue(content.parts().get().get(0).thought().orElse(false));
+        assertEquals("Visible response", content.parts().get().get(1).text().get());
     }
 
     @Test
-    @DisplayName("Should skip message with only ThinkingBlock")
-    void testSkipMessageWithOnlyThinkingBlock() {
+    @DisplayName("Should convert message with only ThinkingBlock")
+    void testConvertMessageWithOnlyThinkingBlock() {
         ThinkingBlock thinkingBlock =
                 ThinkingBlock.builder().thinking("Internal reasoning").build();
 
@@ -544,7 +546,10 @@ class GeminiMessageConverterTest {
 
         List<Content> result = converter.convertMessages(List.of(msg));
 
-        assertTrue(result.isEmpty());
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().orElseThrow().get(0);
+        assertEquals("Internal reasoning", part.text().orElseThrow());
+        assertTrue(part.thought().orElse(false));
     }
 
     @Test

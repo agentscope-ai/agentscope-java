@@ -28,11 +28,13 @@ import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -110,6 +112,56 @@ class GeminiResponseParserTest {
         ContentBlock block2 = chatResponse.getContent().get(1);
         assertInstanceOf(TextBlock.class, block2);
         assertEquals("The answer is 42.", ((TextBlock) block2).getText());
+    }
+
+    @Test
+    void testParseTextAndThinkingThoughtSignatures() {
+        byte[] thinkingSignature = "thinking-signature".getBytes(StandardCharsets.UTF_8);
+        byte[] textSignature = "text-signature".getBytes(StandardCharsets.UTF_8);
+        Part thinkingPart =
+                Part.builder()
+                        .text("Let me think.")
+                        .thought(true)
+                        .thoughtSignature(thinkingSignature)
+                        .build();
+        Part textPart = Part.builder().text("The answer.").thoughtSignature(textSignature).build();
+        Content content =
+                Content.builder().role("model").parts(List.of(thinkingPart, textPart)).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        ThinkingBlock thinking = (ThinkingBlock) chatResponse.getContent().get(0);
+        TextBlock text = (TextBlock) chatResponse.getContent().get(1);
+        assertArrayEquals(
+                thinkingSignature,
+                (byte[]) thinking.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
+        assertArrayEquals(
+                textSignature,
+                (byte[]) text.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
+    }
+
+    @Test
+    void testParseEmptyTextPartWithThoughtSignature() {
+        byte[] signature = "signature-only-chunk".getBytes(StandardCharsets.UTF_8);
+        Part part = Part.builder().text("").thoughtSignature(signature).build();
+        Content content = Content.builder().role("model").parts(List.of(part)).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(1, chatResponse.getContent().size());
+        TextBlock text = (TextBlock) chatResponse.getContent().get(0);
+        assertEquals("", text.getText());
+        assertArrayEquals(
+                signature,
+                (byte[]) text.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
     }
 
     @Test

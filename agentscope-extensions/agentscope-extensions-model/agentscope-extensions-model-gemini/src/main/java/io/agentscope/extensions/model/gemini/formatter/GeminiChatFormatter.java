@@ -117,14 +117,30 @@ public class GeminiChatFormatter
                 defaultOptions,
                 configBuilder::presencePenalty);
 
-        // Apply ThinkingConfig if either includeThoughts or thinkingBudget is set
+        // Apply ThinkingConfig when any thinking option is configured.
         Integer thinkingBudget =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        Boolean includeThoughts =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getIncludeThoughts);
+        String thinkingLevel =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingLevel);
 
-        if (thinkingBudget != null) {
+        if (thinkingBudget != null || includeThoughts != null || thinkingLevel != null) {
             ThinkingConfig.Builder thinkingConfigBuilder = ThinkingConfig.builder();
-            thinkingConfigBuilder.includeThoughts(true);
-            thinkingConfigBuilder.thinkingBudget(thinkingBudget);
+
+            if (includeThoughts != null) {
+                thinkingConfigBuilder.includeThoughts(includeThoughts);
+            } else if (thinkingBudget != null) {
+                // Preserve the existing behavior for callers that only set thinkingBudget.
+                thinkingConfigBuilder.includeThoughts(true);
+            }
+            if (thinkingBudget != null) {
+                thinkingConfigBuilder.thinkingBudget(thinkingBudget);
+            }
+            if (thinkingLevel != null) {
+                thinkingConfigBuilder.thinkingLevel(thinkingLevel);
+            }
+
             configBuilder.thinkingConfig(thinkingConfigBuilder.build());
         }
     }
