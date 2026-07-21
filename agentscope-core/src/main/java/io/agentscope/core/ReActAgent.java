@@ -370,22 +370,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return fresh;
         }
         try {
-            return stateStore
-                    .get(userId, sessionId, "agent_state", AgentState.class)
-                    .orElseGet(
-                            () -> {
-                                AgentState legacy =
-                                        LegacyStateLoader.loadFromLegacySession(
-                                                stateStore, userId, sessionId);
-                                if (legacy != null
-                                        && (!legacy.getContext().isEmpty()
-                                                || !legacy.getToolContext()
-                                                        .getActivatedGroups()
-                                                        .isEmpty())) {
-                                    return legacy;
-                                }
-                                return fresh;
-                            });
+            AgentState loaded =
+                    stateStore
+                            .get(userId, sessionId, "agent_state", AgentState.class)
+                            .orElseGet(
+                                    () -> {
+                                        AgentState legacy =
+                                                LegacyStateLoader.loadFromLegacySession(
+                                                        stateStore, userId, sessionId);
+                                        if (legacy != null
+                                                && (!legacy.getContext().isEmpty()
+                                                        || !legacy.getToolContext()
+                                                                .getActivatedGroups()
+                                                                .isEmpty())) {
+                                            return legacy;
+                                        }
+                                        return fresh;
+                                    });
+            return mergeInitialPermissionContext(loaded, permCtx);
         } catch (Exception e) {
             log.warn(
                     "Failed to load AgentState for slot (userId={}, sessionId={}): {}",
@@ -407,6 +409,50 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             asb.permissionContext(permCtx);
         }
         return asb.build();
+    }
+
+    /**
+     * Repair a stale persisted session whose {@link PermissionContextState} is {@linkplain
+     * PermissionContextState#isTrivial() trivial} by applying the builder's initial (non-trivial)
+     * {@code permCtx} on top of it.
+     *
+     * <p>Background (D-08): a non-trivial permission context is required for the full {@link
+     * PermissionEngine} to engage; otherwise {@code evaluatePermissions} falls back to the
+     * lightweight path that only honours each tool's own {@code checkPermissions} self-check —
+     * which returns {@code passthrough} for file/shell tools, so {@code write_file} runs unchecked
+     * and {@link io.agentscope.core.event.RequireUserConfirmEvent} never fires. Sessions persisted
+     * before the builder seeded a non-trivial context carry a trivial one forever, since the load
+     * path returns the persisted state verbatim. Merging the initial context here upgrades those
+     * stale sessions in place, preserving their conversation/tool state while restoring HITL
+     * gating. This only fires for trivial persisted contexts (mode DEFAULT, no rules), so a session
+     * whose mode was deliberately changed via {@link #setPermissionMode} — which makes the context
+     * non-trivial by flipping the mode away from DEFAULT — is left untouched.
+     *
+     * @param loaded the state loaded from the store (or legacy fallback)
+     * @param initialPermCtx the builder's initial permission context (may be {@code null})
+     * @return {@code loaded} unchanged when it already has a non-trivial context or no initial
+     *     context was supplied; otherwise a copy of {@code loaded} with the initial context applied
+     */
+    private static AgentState mergeInitialPermissionContext(
+            AgentState loaded, PermissionContextState initialPermCtx) {
+        if (loaded == null
+                || initialPermCtx == null
+                || !loaded.getPermissionContext().isTrivial()) {
+            return loaded;
+        }
+        return AgentState.builder()
+                .sessionId(loaded.getSessionId())
+                .userId(loaded.getUserId())
+                .summary(loaded.getSummary())
+                .context(loaded.getContext())
+                .replyId(loaded.getReplyId())
+                .curIter(loaded.getCurIter())
+                .shutdownInterrupted(loaded.isShutdownInterrupted())
+                .permissionContext(initialPermCtx)
+                .toolContext(loaded.getToolContext())
+                .tasksContext(loaded.getTasksContext())
+                .planModeContext(loaded.getPlanModeContext())
+                .build();
     }
 
     /**

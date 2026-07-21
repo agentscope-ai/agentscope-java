@@ -274,7 +274,15 @@ public class AguiAgentAdapter {
                     if (config.isEnableReasoning()) {
                         String thinking = thinkingBlock.getThinking();
                         if (thinking != null && !thinking.isEmpty()) {
-                            String messageId = msg.getId();
+                            // Reasoning is a distinct AG-UI message (role "reasoning") from the
+                            // text answer (role "assistant"); they are associated only by runId
+                            // and order, never by messageId. Reusing msg.getId() for both makes
+                            // clients group them into a single message bubble (e.g. the answer
+                            // gets folded into the reasoning/thought panel). Use a distinct id so
+                            // the reasoning message renders independently and stays collapsible.
+                            // Suffix (not a fresh UUID) so multiple ThinkingBlocks in one Msg
+                            // dedupe into a single reasoning message, mirroring the text message.
+                            String messageId = msg.getId() + "-reasoning";
 
                             // Start reasoning message if not started
                             if (!state.hasStartedReasoningMessage(messageId)) {
