@@ -553,6 +553,49 @@ class GeminiMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should skip ThinkingBlock from a non-assistant message")
+    void testSkipThinkingBlockFromNonAssistantMessage() {
+        Msg msg =
+                Msg.builder()
+                        .name("tool")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Internal reasoning")
+                                                .build()))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should not apply tool thoughtSignature to a non-assistant message")
+    void testIgnoreToolUseSignatureFromNonAssistantMessage() {
+        byte[] signature = "signature".getBytes();
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_123")
+                        .name("search")
+                        .input(Map.of("query", "AgentScope"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("tool")
+                        .content(List.of(toolUseBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals("user", result.get(0).role().orElseThrow());
+        assertFalse(result.get(0).parts().orElseThrow().get(0).thoughtSignature().isPresent());
+    }
+
+    @Test
     @DisplayName("Should handle mixed content types")
     void testMixedContentTypes() {
         String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
