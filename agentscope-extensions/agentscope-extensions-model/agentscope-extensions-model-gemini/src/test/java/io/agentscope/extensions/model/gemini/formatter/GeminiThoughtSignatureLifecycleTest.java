@@ -92,6 +92,47 @@ class GeminiThoughtSignatureLifecycleTest {
     }
 
     @Test
+    void shouldPreserveDistinctSignaturesOnMultipleTextParts() {
+        byte[] firstSignature = "first-signature".getBytes(StandardCharsets.UTF_8);
+        byte[] secondSignature = "second-signature".getBytes(StandardCharsets.UTF_8);
+        Content modelContent =
+                Content.builder()
+                        .role("model")
+                        .parts(
+                                List.of(
+                                        Part.builder()
+                                                .text("First")
+                                                .thoughtSignature(firstSignature)
+                                                .build(),
+                                        Part.builder()
+                                                .text("Second")
+                                                .thoughtSignature(secondSignature)
+                                                .build()))
+                        .build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-multiple-text-parts")
+                        .candidates(List.of(Candidate.builder().content(modelContent).build()))
+                        .build();
+
+        ChatResponse parsed = parser.parseResponse(response, Instant.now());
+        ReasoningContext reasoningContext = new ReasoningContext("assistant");
+        reasoningContext.processChunk(parsed);
+        Msg accumulated = reasoningContext.buildFinalMessage();
+        String json = JsonUtils.getJsonCodec().toJson(accumulated);
+        Msg restored = JsonUtils.getJsonCodec().fromJson(json, Msg.class);
+
+        List<Part> replayedParts =
+                converter.convertMessages(List.of(restored)).get(0).parts().orElseThrow();
+
+        assertEquals(2, replayedParts.size());
+        assertEquals("First", replayedParts.get(0).text().orElseThrow());
+        assertEquals("Second", replayedParts.get(1).text().orElseThrow());
+        assertArrayEquals(firstSignature, replayedParts.get(0).thoughtSignature().orElseThrow());
+        assertArrayEquals(secondSignature, replayedParts.get(1).thoughtSignature().orElseThrow());
+    }
+
+    @Test
     void shouldRejectInvalidBase64Signature() {
         Msg message =
                 AssistantMessage.builder()

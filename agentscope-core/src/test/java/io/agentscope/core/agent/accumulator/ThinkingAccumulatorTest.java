@@ -22,26 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlockMetadataKeys;
-import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class TextAccumulatorTest {
+class ThinkingAccumulatorTest {
 
-    private final TextAccumulator accumulator = new TextAccumulator();
-
-    @Test
-    void replaceNullClearsAccumulatedText() {
-        TextAccumulator accumulator = new TextAccumulator();
-        accumulator.add(TextBlock.builder().text("original").build());
-
-        accumulator.replace(null);
-
-        assertFalse(accumulator.hasContent());
-        assertEquals("", accumulator.getAccumulated());
-    }
+    private final ThinkingAccumulator accumulator = new ThinkingAccumulator();
 
     @Test
     void shouldIgnoreNullAndRemainEmpty() {
@@ -49,70 +38,76 @@ class TextAccumulatorTest {
 
         assertFalse(accumulator.hasContent());
         assertNull(accumulator.buildAggregated());
-        assertTrue(accumulator.buildAllTextBlocks().isEmpty());
+        assertTrue(accumulator.buildAllThinkingBlocks().isEmpty());
     }
 
     @Test
-    void shouldAccumulateTextAndMetadata() {
-        accumulator.add(TextBlock.builder().text("Hello").build());
+    void shouldAccumulateThinkingAndMetadata() {
+        accumulator.add(ThinkingBlock.builder().thinking("Think").build());
         accumulator.add(
-                TextBlock.builder().text(" world").metadata(Map.of("provider", "gemini")).build());
+                ThinkingBlock.builder()
+                        .thinking(" carefully")
+                        .metadata(Map.of("provider", "gemini"))
+                        .build());
 
-        TextBlock aggregated = (TextBlock) accumulator.buildAggregated();
-        List<TextBlock> blocks = accumulator.buildAllTextBlocks();
+        ThinkingBlock aggregated = (ThinkingBlock) accumulator.buildAggregated();
+        List<ThinkingBlock> blocks = accumulator.buildAllThinkingBlocks();
 
-        assertEquals("Hello world", aggregated.getText());
+        assertEquals("Think carefully", aggregated.getThinking());
         assertEquals("gemini", aggregated.getMetadata().get("provider"));
         assertEquals(1, blocks.size());
-        assertEquals("Hello world", blocks.get(0).getText());
+        assertEquals("Think carefully", blocks.get(0).getThinking());
         assertEquals("gemini", blocks.get(0).getMetadata().get("provider"));
     }
 
     @Test
-    void shouldBuildTextOnlyBlockWithoutMetadata() {
-        accumulator.add(TextBlock.builder().text("Answer").build());
+    void shouldBuildThinkingOnlyBlockWithoutMetadata() {
+        accumulator.add(ThinkingBlock.builder().thinking("Reasoning").build());
 
-        TextBlock aggregated = (TextBlock) accumulator.buildAggregated();
-        List<TextBlock> blocks = accumulator.buildAllTextBlocks();
+        ThinkingBlock aggregated = (ThinkingBlock) accumulator.buildAggregated();
+        List<ThinkingBlock> blocks = accumulator.buildAllThinkingBlocks();
 
         assertTrue(accumulator.hasContent());
-        assertEquals("Answer", aggregated.getText());
+        assertEquals("Reasoning", aggregated.getThinking());
         assertNull(aggregated.getMetadata());
         assertEquals(1, blocks.size());
-        assertEquals("Answer", blocks.get(0).getText());
+        assertEquals("Reasoning", blocks.get(0).getThinking());
         assertNull(blocks.get(0).getMetadata());
     }
 
     @Test
     void shouldBuildMetadataOnlyBlock() {
         accumulator.add(
-                TextBlock.builder().text("").metadata(Map.of("provider", "gemini")).build());
+                ThinkingBlock.builder()
+                        .thinking("")
+                        .metadata(Map.of("provider", "gemini"))
+                        .build());
 
-        TextBlock aggregated = (TextBlock) accumulator.buildAggregated();
-        List<TextBlock> blocks = accumulator.buildAllTextBlocks();
+        ThinkingBlock aggregated = (ThinkingBlock) accumulator.buildAggregated();
+        List<ThinkingBlock> blocks = accumulator.buildAllThinkingBlocks();
 
         assertTrue(accumulator.hasContent());
-        assertEquals("", aggregated.getText());
+        assertEquals("", aggregated.getThinking());
         assertEquals("gemini", aggregated.getMetadata().get("provider"));
         assertEquals(1, blocks.size());
-        assertEquals("", blocks.get(0).getText());
+        assertEquals("", blocks.get(0).getThinking());
         assertEquals("gemini", blocks.get(0).getMetadata().get("provider"));
     }
 
     @Test
     void shouldAttachMetadataOnlySignatureChunkToCurrentPart() {
         byte[] signature = "signature".getBytes(StandardCharsets.UTF_8);
-        accumulator.add(TextBlock.builder().text("Answer").build());
+        accumulator.add(ThinkingBlock.builder().thinking("Reasoning").build());
         accumulator.add(
-                TextBlock.builder()
-                        .text("")
+                ThinkingBlock.builder()
+                        .thinking("")
                         .metadata(Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, signature))
                         .build());
 
-        List<TextBlock> blocks = accumulator.buildAllTextBlocks();
+        List<ThinkingBlock> blocks = accumulator.buildAllThinkingBlocks();
 
         assertEquals(1, blocks.size());
-        assertEquals("Answer", blocks.get(0).getText());
+        assertEquals("Reasoning", blocks.get(0).getThinking());
         assertArrayEquals(
                 signature,
                 (byte[])
@@ -128,37 +123,37 @@ class TextAccumulatorTest {
         accumulator.add(signedBlock("First", firstSignature));
         accumulator.add(signedBlock("Second", secondSignature));
 
-        List<TextBlock> blocks = accumulator.buildAllTextBlocks();
+        List<ThinkingBlock> blocks = accumulator.buildAllThinkingBlocks();
 
         assertEquals(2, blocks.size());
-        assertEquals("First", blocks.get(0).getText());
-        assertEquals("Second", blocks.get(1).getText());
+        assertEquals("First", blocks.get(0).getThinking());
+        assertEquals("Second", blocks.get(1).getThinking());
         assertArrayEquals(firstSignature, signatureOf(blocks.get(0)));
         assertArrayEquals(secondSignature, signatureOf(blocks.get(1)));
         assertEquals("FirstSecond", accumulator.getAccumulated());
     }
 
     @Test
-    void shouldClearTextMetadataAndPartBoundariesOnReset() {
+    void shouldClearThinkingMetadataAndPartBoundariesOnReset() {
         accumulator.add(signedBlock("Completed", "signature".getBytes(StandardCharsets.UTF_8)));
-        accumulator.add(TextBlock.builder().text("Pending").build());
+        accumulator.add(ThinkingBlock.builder().thinking("Pending").build());
 
         accumulator.reset();
 
         assertEquals("", accumulator.getAccumulated());
         assertFalse(accumulator.hasContent());
         assertNull(accumulator.buildAggregated());
-        assertTrue(accumulator.buildAllTextBlocks().isEmpty());
+        assertTrue(accumulator.buildAllThinkingBlocks().isEmpty());
     }
 
-    private TextBlock signedBlock(String text, byte[] signature) {
-        return TextBlock.builder()
-                .text(text)
+    private ThinkingBlock signedBlock(String thinking, byte[] signature) {
+        return ThinkingBlock.builder()
+                .thinking(thinking)
                 .metadata(Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, signature))
                 .build();
     }
 
-    private byte[] signatureOf(TextBlock block) {
+    private byte[] signatureOf(ThinkingBlock block) {
         return (byte[]) block.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE);
     }
 }

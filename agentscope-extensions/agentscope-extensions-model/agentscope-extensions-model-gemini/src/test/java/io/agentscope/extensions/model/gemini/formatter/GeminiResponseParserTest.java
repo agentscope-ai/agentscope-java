@@ -165,6 +165,61 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseEmptyThinkingPartWithThoughtSignature() {
+        byte[] signature = "thinking-signature-only".getBytes(StandardCharsets.UTF_8);
+        Part part = Part.builder().text("").thought(true).thoughtSignature(signature).build();
+        Content content = Content.builder().role("model").parts(List.of(part)).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(1, chatResponse.getContent().size());
+        ThinkingBlock thinking = (ThinkingBlock) chatResponse.getContent().get(0);
+        assertEquals("", thinking.getThinking());
+        assertArrayEquals(
+                signature,
+                (byte[]) thinking.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
+    }
+
+    @Test
+    void testSkipEmptyTextAndThinkingPartsWithoutThoughtSignature() {
+        Part thinkingPart = Part.builder().text("").thought(true).build();
+        Part textPart = Part.builder().text("").build();
+        Part thoughtFlagOnlyPart = Part.builder().thought(true).build();
+        Content content =
+                Content.builder()
+                        .role("model")
+                        .parts(List.of(thinkingPart, textPart, thoughtFlagOnlyPart))
+                        .build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertTrue(chatResponse.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseTextPartWithExplicitFalseThoughtFlag() {
+        Part part = Part.builder().text("Visible answer").thought(false).build();
+        Content content = Content.builder().role("model").parts(List.of(part)).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(1, chatResponse.getContent().size());
+        assertEquals("Visible answer", ((TextBlock) chatResponse.getContent().get(0)).getText());
+    }
+
+    @Test
     void testParseToolCallResponse() {
         // Build response with function call
         Map<String, Object> args = new HashMap<>();
