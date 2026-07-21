@@ -112,7 +112,9 @@ public final class ChannelRouter {
                         ? msg.senderId()
                         : (msg.peer().kind().isDirect() ? msg.peer().id() : null);
 
-        MsgContext context = buildContext(msg, effectiveScope, agentId, userId);
+        MsgContext context =
+                buildContext(msg, effectiveScope, agentId, userId)
+                        .withBusinessContext(msg.businessContext());
         OutboundAddress outbound = buildOutboundAddress(msg);
         return new RouteResult(agentId, context, matchedBy, outbound);
     }
