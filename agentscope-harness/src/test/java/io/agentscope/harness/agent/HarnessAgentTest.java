@@ -214,27 +214,29 @@ class HarnessAgentTest {
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), marker);
 
         Model model = stubModel("assistant-done");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .disableWorkspaceContext()
-                        .build();
+                        .build()) {
 
-        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s-no-ctx").build()).block();
+            agent.call(userText("hi"), RuntimeContext.builder().sessionId("s-no-ctx").build())
+                    .block();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentTest::joinAllText)
-                        .collect(Collectors.joining("\n"));
-        assertFalse(
-                combined.contains(marker),
-                "AGENTS.md should not be injected when context hook is disabled");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            String combined =
+                    captor.getAllValues().stream()
+                            .map(HarnessAgentTest::joinAllText)
+                            .collect(Collectors.joining("\n"));
+            assertFalse(
+                    combined.contains(marker),
+                    "AGENTS.md should not be injected when context hook is disabled");
+        }
     }
 
     @Test
@@ -244,30 +246,32 @@ class HarnessAgentTest {
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), marker);
 
         Model model = stubModel("assistant-done");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                        .build()) {
 
-        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
+            agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("<agents_context>"))
-                        .findFirst()
-                        .orElse("");
-        assertTrue(
-                combined.contains("<agents_context>"),
-                "expected workspace hook to wrap AGENTS.md in agents_context");
-        assertTrue(
-                combined.contains(marker), "model should see AGENTS.md body in injected context");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            String combined =
+                    captor.getAllValues().stream()
+                            .map(HarnessAgentTest::joinAllText)
+                            .filter(s -> s.contains("<agents_context>"))
+                            .findFirst()
+                            .orElse("");
+            assertTrue(
+                    combined.contains("<agents_context>"),
+                    "expected workspace hook to wrap AGENTS.md in agents_context");
+            assertTrue(
+                    combined.contains(marker),
+                    "model should see AGENTS.md body in injected context");
+        }
     }
 
     @Test
@@ -440,43 +444,46 @@ class HarnessAgentTest {
                 """);
 
         Model model = stubModel("done");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("main")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                        .build()) {
 
-        List<String> toolNames =
-                agent.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .collect(Collectors.toList());
-        assertTrue(
-                toolNames.contains("agent_spawn"), "subagent support should register agent_spawn");
-        assertTrue(
-                toolNames.contains("task_output"),
-                "subagent async path should register task_output");
+            List<String> toolNames =
+                    agent.getDelegate().getToolkit().getToolSchemas().stream()
+                            .map(ToolSchema::getName)
+                            .collect(Collectors.toList());
+            assertTrue(
+                    toolNames.contains("agent_spawn"),
+                    "subagent support should register agent_spawn");
+            assertTrue(
+                    toolNames.contains("task_output"),
+                    "subagent async path should register task_output");
 
-        agent.call(userText("go"), RuntimeContext.builder().sessionId("s2").build()).block();
+            agent.call(userText("go"), RuntimeContext.builder().sessionId("s2").build()).block();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("## Subagents"))
-                        .findFirst()
-                        .orElse("");
-        assertTrue(
-                combined.contains("## Subagents"), "subagent hook should inject Subagents section");
-        assertTrue(
-                combined.contains("`" + specId + "`"),
-                "Markdown subagent id (from filename) should appear in prompt");
-        assertTrue(
-                combined.contains("general-purpose"),
-                "built-in general-purpose entry should be listed");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            String combined =
+                    captor.getAllValues().stream()
+                            .map(HarnessAgentTest::joinAllText)
+                            .filter(s -> s.contains("## Subagents"))
+                            .findFirst()
+                            .orElse("");
+            assertTrue(
+                    combined.contains("## Subagents"),
+                    "subagent hook should inject Subagents section");
+            assertTrue(
+                    combined.contains("`" + specId + "`"),
+                    "Markdown subagent id (from filename) should appear in prompt");
+            assertTrue(
+                    combined.contains("general-purpose"),
+                    "built-in general-purpose entry should be listed");
+        }
     }
 
     @Test

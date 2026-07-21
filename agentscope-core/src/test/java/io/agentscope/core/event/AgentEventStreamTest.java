@@ -164,6 +164,88 @@ class AgentEventStreamTest {
     }
 
     @Nested
+    @DisplayName("Compaction events serialize and deserialize correctly")
+    class CompactionEventRoundTrip {
+
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        @Test
+        @DisplayName("CompactionStartEvent round-trips through AgentEvent polymorphism")
+        void compactionStartRoundTrip() throws Exception {
+            CompactionStartEvent original =
+                    new CompactionStartEvent(
+                            CompactionStartEvent.TriggerReason.TOKEN_THRESHOLD, 80000, 42000, 12);
+            String json = mapper.writeValueAsString(original);
+
+            assertTrue(json.contains("\"type\":\"COMPACTION_START\""));
+            assertTrue(json.contains("\"triggerReason\":\"TOKEN_THRESHOLD\""));
+            assertTrue(json.contains("\"thresholdValue\":80000"));
+            assertTrue(json.contains("\"estimatedTokens\":42000"));
+            assertTrue(json.contains("\"messageCount\":12"));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertNotNull(deserialized);
+            assertEquals(AgentEventType.COMPACTION_START, deserialized.getType());
+            CompactionStartEvent start = (CompactionStartEvent) deserialized;
+            assertEquals(
+                    CompactionStartEvent.TriggerReason.TOKEN_THRESHOLD, start.getTriggerReason());
+            assertEquals(80000, start.getThresholdValue());
+            assertEquals(42000, start.getEstimatedTokens());
+            assertEquals(12, start.getMessageCount());
+            assertEquals(original.getId(), start.getId());
+        }
+
+        @Test
+        @DisplayName("CompactionStartEvent accepts legacy triggerThreshold JSON alias")
+        void compactionStartLegacyAlias() throws Exception {
+            String legacyJson =
+                    "{\"type\":\"COMPACTION_START\","
+                            + "\"id\":\"abc\",\"createdAt\":\"2026-07-13T00:00:00Z\","
+                            + "\"estimatedTokens\":100,\"triggerThreshold\":200}";
+            AgentEvent deserialized = mapper.readValue(legacyJson, AgentEvent.class);
+            CompactionStartEvent start = (CompactionStartEvent) deserialized;
+            assertEquals(200, start.getThresholdValue());
+            assertEquals(100, start.getEstimatedTokens());
+        }
+
+        @Test
+        @DisplayName("CompactionEndEvent round-trips through AgentEvent polymorphism")
+        void compactionEndRoundTrip() throws Exception {
+            CompactionEndEvent original =
+                    new CompactionEndEvent(
+                            CompactionEndEvent.Outcome.COMPACTED, 20, 5, 20000, 5000);
+            String json = mapper.writeValueAsString(original);
+
+            assertTrue(json.contains("\"type\":\"COMPACTION_END\""));
+            assertTrue(json.contains("\"outcome\":\"COMPACTED\""));
+            assertTrue(json.contains("\"originalMessageCount\":20"));
+            assertTrue(json.contains("\"compactedMessageCount\":5"));
+            assertTrue(json.contains("\"beforeTokens\":20000"));
+            assertTrue(json.contains("\"afterTokens\":5000"));
+
+            AgentEvent deserialized = mapper.readValue(json, AgentEvent.class);
+            assertNotNull(deserialized);
+            assertEquals(AgentEventType.COMPACTION_END, deserialized.getType());
+            CompactionEndEvent end = (CompactionEndEvent) deserialized;
+            assertEquals(CompactionEndEvent.Outcome.COMPACTED, end.getOutcome());
+            assertEquals(20, end.getOriginalMessageCount());
+            assertEquals(5, end.getCompactedMessageCount());
+            assertEquals(20000, end.getBeforeTokens());
+            assertEquals(5000, end.getAfterTokens());
+            assertEquals(15000, end.getEstimatedTokensSaved());
+            assertEquals(original.getId(), end.getId());
+        }
+
+        @Test
+        @DisplayName("COMPACTION_START and COMPACTION_END are in AgentEventType enum")
+        void compactionTypesRegistered() {
+            assertEquals(
+                    AgentEventType.COMPACTION_START, AgentEventType.fromValue("COMPACTION_START"));
+            assertEquals(AgentEventType.COMPACTION_END, AgentEventType.fromValue("COMPACTION_END"));
+        }
+    }
+
+    @Nested
     @DisplayName("replyStream emits the canonical event order")
     @Disabled("Stage 7 lands the new Agent main class; this suite locks the stream contract.")
     class StreamOrdering {

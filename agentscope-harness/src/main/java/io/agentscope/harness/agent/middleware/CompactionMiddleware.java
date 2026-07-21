@@ -19,6 +19,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CompactionEndEvent;
+import io.agentscope.core.event.CompactionStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -26,14 +28,18 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.CompactionDecision;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -99,46 +105,87 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
                     CompactionConfig effectiveConfig = resolveEffectiveConfig();
+                    final Msg sys = systemMsg;
 
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
                             new ConversationCompactor(model, flushManager);
-                    final Msg sys = systemMsg;
 
-                    return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
-                            .flatMapMany(
-                                    optResult -> {
-                                        if (optResult.isEmpty()) {
-                                            return next.apply(input);
-                                        }
-                                        List<Msg> compacted = optResult.get();
-                                        applyToContext(
-                                                RuntimeContext.resolveAgentState(rc, reActAgent),
-                                                compacted);
-                                        log.debug(
-                                                "Compacted to {} messages before reasoning",
-                                                compacted.size());
-                                        List<Msg> newMessages = new ArrayList<>();
-                                        if (sys != null) {
-                                            newMessages.add(sys);
-                                        }
-                                        newMessages.addAll(compacted);
-                                        return next.apply(
-                                                new ReasoningInput(
-                                                        newMessages,
-                                                        input.tools(),
-                                                        input.options()));
-                                    })
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                e.getMessage());
-                                        return next.apply(input);
-                                    });
+                    CompactionDecision decision = compactor.probe(conversation, effectiveConfig);
+                    if (!(decision instanceof CompactionDecision.Proceed proceed)) {
+                        return next.apply(input);
+                    }
+
+                    CompactionStartEvent startEvent =
+                            new CompactionStartEvent(
+                                    proceed.triggerReason(),
+                                    proceed.thresholdValue(),
+                                    proceed.estimatedTokens(),
+                                    proceed.messageCount());
+                    final int originalMessageCount = proceed.messageCount();
+                    final int beforeTokens = proceed.estimatedTokens();
+
+                    return Flux.concat(
+                            Flux.just(startEvent),
+                            compactor
+                                    .execute(rc, proceed, effectiveConfig, agentId, sessionId)
+                                    .map(Optional::of)
+                                    .onErrorResume(
+                                            e -> {
+                                                log.warn(
+                                                        "Compaction failed, continuing without"
+                                                                + " compaction: {}",
+                                                        e.getMessage());
+                                                return Mono.just(Optional.<List<Msg>>empty());
+                                            })
+                                    .flatMapMany(
+                                            optResult -> {
+                                                if (optResult.isEmpty()) {
+                                                    CompactionEndEvent failedEvent =
+                                                            new CompactionEndEvent(
+                                                                    CompactionEndEvent.Outcome
+                                                                            .FAILED,
+                                                                    originalMessageCount,
+                                                                    originalMessageCount,
+                                                                    beforeTokens,
+                                                                    beforeTokens);
+                                                    return Flux.concat(
+                                                            Flux.just(failedEvent),
+                                                            next.apply(input));
+                                                }
+
+                                                List<Msg> compacted = optResult.get();
+                                                applyToContext(
+                                                        RuntimeContext.resolveAgentState(
+                                                                rc, reActAgent),
+                                                        compacted);
+
+                                                int afterTokens =
+                                                        TokenCounterUtil.calculateToken(compacted);
+                                                CompactionEndEvent endEvent =
+                                                        new CompactionEndEvent(
+                                                                CompactionEndEvent.Outcome
+                                                                        .COMPACTED,
+                                                                originalMessageCount,
+                                                                compacted.size(),
+                                                                beforeTokens,
+                                                                afterTokens);
+
+                                                List<Msg> newMessages = new ArrayList<>();
+                                                if (sys != null) {
+                                                    newMessages.add(sys);
+                                                }
+                                                newMessages.addAll(compacted);
+
+                                                return Flux.concat(
+                                                        Flux.just(endEvent),
+                                                        next.apply(
+                                                                new ReasoningInput(
+                                                                        newMessages,
+                                                                        input.tools(),
+                                                                        input.options())));
+                                            }));
                 });
     }
 

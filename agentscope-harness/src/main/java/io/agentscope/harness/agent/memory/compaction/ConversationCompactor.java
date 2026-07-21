@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.CompactionStartEvent.TriggerReason;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -74,46 +75,75 @@ public class ConversationCompactor {
     // -------------------------------------------------------------------------
 
     /**
-     * Runs compaction on the supplied conversation messages if a trigger condition is met.
+     * Non-LLM probe that decides whether compaction should run.
+     *
+     * <p>Applies the cheap {@code truncateArgs} + {@code pruneToolResults} passes, re-checks
+     * the trigger against the post-prune conversation, and locates a safe cutoff. When any of
+     * these steps determines compaction is unnecessary, returns {@link CompactionDecision.Skip}
+     * so callers can pass through without emitting {@code COMPACTION_START}.
      *
      * <p>Only <em>conversation</em> messages (non-SYSTEM) should be passed. The caller must
      * separate system messages before invoking this method and re-prepend them after.
      *
      * @param conversationMessages non-SYSTEM messages (USER / ASSISTANT / TOOL)
      * @param config               compaction configuration
-     * @param agentId              agent identifier used for the memory offload path
-     * @param sessionId            session identifier used for the memory offload path
-     * @return {@code Optional.empty()} when no compaction was needed; otherwise the replacement
-     *         message list consisting of {@code [summaryUserMsg] + preservedTail}
+     * @return {@link CompactionDecision.Proceed} carrying the pruned messages + cutoff when
+     *         compaction should run; {@link CompactionDecision.Skip} otherwise
      */
-    public Mono<Optional<List<Msg>>> compactIfNeeded(
-            RuntimeContext rc,
-            List<Msg> conversationMessages,
-            CompactionConfig config,
-            String agentId,
-            String sessionId) {
-
+    public CompactionDecision probe(List<Msg> conversationMessages, CompactionConfig config) {
         if (conversationMessages == null || conversationMessages.isEmpty()) {
-            return Mono.just(Optional.empty());
+            return CompactionDecision.Skip.INSTANCE;
         }
 
-        // Step 1a: Lightweight arg truncation (non-LLM).
-        // Step 1b: Aggregate tool-result pruning (non-LLM).
         List<Msg> messages =
                 pruneToolResults(
                         truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
                         config.getPruneConfig());
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
-        if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+        TriggerReason reason = detectTriggerReason(messages, totalTokens, config);
+        if (reason == null) {
+            return CompactionDecision.Skip.INSTANCE;
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — skipping");
-            return Mono.just(Optional.empty());
+            return CompactionDecision.Skip.INSTANCE;
         }
+
+        int thresholdValue =
+                reason == TriggerReason.MESSAGE_THRESHOLD
+                        ? config.getTriggerMessages()
+                        : config.getTriggerTokens();
+
+        return new CompactionDecision.Proceed(
+                messages, cutoff, reason, thresholdValue, totalTokens, messages.size());
+    }
+
+    /**
+     * Executes compaction using the plan captured in a {@link CompactionDecision.Proceed}.
+     *
+     * <p>Runs memory flush, message offload, and the LLM summarization call, then returns
+     * {@code [summaryUserMsg] + preservedTail}. Callers should invoke this only after
+     * {@link #probe} returns a {@link CompactionDecision.Proceed}.
+     *
+     * @param rc        runtime context (nullable)
+     * @param decision  the probe result
+     * @param config    compaction configuration
+     * @param agentId   agent identifier used for the memory offload path
+     * @param sessionId session identifier used for the memory offload path
+     * @return the replacement message list consisting of {@code [summaryUserMsg] + preservedTail}
+     */
+    public Mono<List<Msg>> execute(
+            RuntimeContext rc,
+            CompactionDecision.Proceed decision,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
+
+        List<Msg> messages = decision.prunedMessages();
+        int cutoff = decision.cutoff();
 
         // Filter previous summary messages from the prefix before offloading to avoid
         // re-storing already-archived summaries.
@@ -123,11 +153,10 @@ public class ConversationCompactor {
         log.info(
                 "Compaction triggered: total={} msgs / {} tokens, cutoff={}, keeping={} msgs",
                 messages.size(),
-                totalTokens,
+                decision.estimatedTokens(),
                 cutoff,
                 tail.size());
 
-        // Step 2: Flush long-term memories from the prefix (best-effort).
         Mono<Void> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
@@ -142,9 +171,6 @@ public class ConversationCompactor {
                                         })
                         : Mono.empty();
 
-        // Step 3: Offload raw messages to JSONL and capture the file path.
-        // If offload fails, we continue with null — the summary message falls back to the
-        // simple format without a file reference.
         Mono<String> offloadStep;
         if (config.isOffloadBeforeCompact()) {
             offloadStep =
@@ -172,7 +198,6 @@ public class ConversationCompactor {
             offloadStep = Mono.just("");
         }
 
-        // Step 4: LLM summarization of the prefix, combined with the offload result.
         return flushStep
                 .then(offloadStep)
                 .flatMap(
@@ -196,31 +221,59 @@ public class ConversationCompactor {
                                                             messages.size(),
                                                             tail.size(),
                                                             compacted.size());
-                                                    return Optional.of(compacted);
+                                                    return compacted;
                                                 }));
+    }
+
+    /**
+     * Convenience wrapper combining {@link #probe} and {@link #execute}. Returns
+     * {@code Optional.empty()} when the probe decides to skip.
+     *
+     * @param conversationMessages non-SYSTEM messages (USER / ASSISTANT / TOOL)
+     * @param config               compaction configuration
+     * @param agentId              agent identifier used for the memory offload path
+     * @param sessionId            session identifier used for the memory offload path
+     * @return the replacement message list, or empty when no compaction was needed
+     */
+    public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
+        CompactionDecision decision = probe(conversationMessages, config);
+        if (!(decision instanceof CompactionDecision.Proceed proceed)) {
+            return Mono.just(Optional.empty());
+        }
+        return execute(rc, proceed, config, agentId, sessionId).map(Optional::of);
     }
 
     // -------------------------------------------------------------------------
     // Trigger logic
     // -------------------------------------------------------------------------
 
-    private static boolean shouldCompact(
+    /**
+     * Returns which threshold caused the trigger, or {@code null} when neither threshold is
+     * crossed. The message-count check wins when both dimensions cross simultaneously (matching
+     * the historical short-circuit ordering).
+     */
+    private static TriggerReason detectTriggerReason(
             List<Msg> messages, int totalTokens, CompactionConfig config) {
         if (config.getTriggerMessages() > 0 && messages.size() >= config.getTriggerMessages()) {
             log.debug(
                     "Compaction trigger: message count {} >= {}",
                     messages.size(),
                     config.getTriggerMessages());
-            return true;
+            return TriggerReason.MESSAGE_THRESHOLD;
         }
         if (config.getTriggerTokens() > 0 && totalTokens >= config.getTriggerTokens()) {
             log.debug(
                     "Compaction trigger: token count {} >= {}",
                     totalTokens,
                     config.getTriggerTokens());
-            return true;
+            return TriggerReason.TOKEN_THRESHOLD;
         }
-        return false;
+        return null;
     }
 
     // -------------------------------------------------------------------------
