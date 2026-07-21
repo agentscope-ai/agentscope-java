@@ -54,4 +54,15 @@ class TextBlockTest {
         assertNull(restored.getMetadata());
         assertFalse(serialized.contains("metadata"));
     }
+
+    @Test
+    void shouldNormalizeNullTextFromBuilderAndJson() {
+        TextBlock built = TextBlock.builder().text(null).build();
+        TextBlock restored =
+                JsonUtils.getJsonCodec()
+                        .fromJson("{\"type\":\"text\",\"text\":null}", TextBlock.class);
+
+        assertEquals("", built.getText());
+        assertEquals("", restored.getText());
+    }
 }
