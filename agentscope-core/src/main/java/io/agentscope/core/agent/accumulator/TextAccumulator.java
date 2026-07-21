@@ -17,6 +17,8 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Text content accumulator for accumulating streaming text chunks.
@@ -27,6 +29,7 @@ import io.agentscope.core.message.TextBlock;
 public class TextAccumulator implements ContentAccumulator<TextBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
+    private final Map<String, Object> metadata = new HashMap<>();
 
     /**
      * @hidden
@@ -36,6 +39,9 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         if (block != null && block.getText() != null) {
             accumulated.append(block.getText());
         }
+        if (block != null && block.getMetadata() != null) {
+            metadata.putAll(block.getMetadata());
+        }
     }
 
     /**
@@ -43,7 +49,7 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return accumulated.length() > 0 || !metadata.isEmpty();
     }
 
     /**
@@ -54,7 +60,10 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         if (!hasContent()) {
             return null;
         }
-        return TextBlock.builder().text(accumulated.toString()).build();
+        return TextBlock.builder()
+                .text(accumulated.toString())
+                .metadata(metadata.isEmpty() ? null : metadata)
+                .build();
     }
 
     /**
@@ -63,6 +72,7 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        metadata.clear();
     }
 
     /**

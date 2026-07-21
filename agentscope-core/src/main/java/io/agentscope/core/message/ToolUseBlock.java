@@ -26,16 +26,19 @@ import java.util.Map;
  * Represents a tool use request within a message.
  *
  * <p>This content block is used when an agent requests to execute a tool.
- * It contains the tool's unique identifier, name, input parameters, and optionally
- * the raw content for streaming tool calls.
+ * It contains the tool's unique identifier, name, input parameters, and optionally the raw content for streaming tool
+ * calls.
  *
  * <p>The tool input is stored as a generic map of string keys to object values,
  * allowing for flexible parameter passing to different tool implementations.
  */
 public final class ToolUseBlock extends ContentBlock {
 
-    /** Metadata key for Gemini thought signature (byte[] value). */
-    public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
+    /**
+     * Metadata key for an opaque model thought signature.
+     */
+    public static final String METADATA_THOUGHT_SIGNATURE =
+            ContentBlockMetadataKeys.THOUGHT_SIGNATURE;
 
     /**
      * Metadata key marking this tool call as a provider server tool (Boolean value). Server tools
@@ -55,9 +58,9 @@ public final class ToolUseBlock extends ContentBlock {
     /**
      * Creates a new tool use block for JSON deserialization.
      *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
+     * @param id       Unique identifier for this tool call
+     * @param name     Name of the tool to execute
+     * @param input    Input parameters for the tool (will be defensively copied)
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
     public ToolUseBlock(
@@ -68,8 +71,8 @@ public final class ToolUseBlock extends ContentBlock {
     /**
      * Creates a new tool use block without metadata (convenience constructor).
      *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
+     * @param id    Unique identifier for this tool call
+     * @param name  Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
@@ -79,10 +82,10 @@ public final class ToolUseBlock extends ContentBlock {
     /**
      * Creates a new tool use block with raw content for streaming.
      *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
-     * @param content Raw content for streaming tool calls
+     * @param id       Unique identifier for this tool call
+     * @param name     Name of the tool to execute
+     * @param input    Input parameters for the tool (will be defensively copied)
+     * @param content  Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
     public ToolUseBlock(
@@ -97,12 +100,12 @@ public final class ToolUseBlock extends ContentBlock {
     /**
      * Creates a new tool use block with all fields.
      *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
-     * @param content Raw content for streaming tool calls
+     * @param id       Unique identifier for this tool call
+     * @param name     Name of the tool to execute
+     * @param input    Input parameters for the tool (will be defensively copied)
+     * @param content  Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
-     * @param state The tool call state, defaults to PENDING if null
+     * @param state    The tool call state, defaults to PENDING if null
      */
     @JsonCreator
     public ToolUseBlock(
@@ -218,6 +221,7 @@ public final class ToolUseBlock extends ContentBlock {
      * Builder for constructing ToolUseBlock instances.
      */
     public static class Builder {
+
         private String id;
         private String name;
         private Map<String, Object> input;

@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
  * <p>This converter handles the core message transformation logic, including:
  * <ul>
  *   <li>Text blocks</li>
+ *   <li>Thinking blocks</li>
  *   <li>Tool use blocks (function_call)</li>
  *   <li>Tool result blocks (function_response as independent Content)</li>
  *   <li>Multimodal content (image, audio, video)</li>
@@ -88,10 +89,15 @@ public class GeminiMessageConverter {
 
         for (Msg msg : msgs) {
             List<Part> parts = new ArrayList<>();
+            boolean modelRole = msg.getRole() == MsgRole.ASSISTANT;
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    parts.add(Part.builder().text(tb.getText()).build());
+                    Part.Builder partBuilder = Part.builder().text(tb.getText());
+                    if (modelRole) {
+                        GeminiThoughtSignatureUtils.applyMetadata(partBuilder, tb.getMetadata());
+                    }
+                    parts.add(partBuilder.build());
 
                 } else if (block instanceof ToolUseBlock tub) {
                     // Prioritize using content field (raw arguments string), fallback to input map
@@ -124,25 +130,8 @@ public class GeminiMessageConverter {
                     // Build Part with FunctionCall and optional thought signature
                     Part.Builder partBuilder = Part.builder().functionCall(functionCall);
 
-                    // Check for thought signature in metadata
-                    Map<String, Object> metadata = tub.getMetadata();
-                    if (metadata != null
-                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                        Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[] bytes) {
-                            // In-memory: signature is already byte[]
-                            partBuilder.thoughtSignature(bytes);
-                        } else if (signature instanceof String base64 && !base64.isEmpty()) {
-                            // Persistence: the codec restores byte[] as a String
-                            try {
-                                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
-                            } catch (IllegalArgumentException e) {
-                                log.warn(
-                                        "Skipping invalid thought signature on tool call '{}'",
-                                        tub.getName(),
-                                        e);
-                            }
-                        }
+                    if (modelRole) {
+                        GeminiThoughtSignatureUtils.applyMetadata(partBuilder, tub.getMetadata());
                     }
 
                     parts.add(partBuilder.build());
@@ -190,9 +179,19 @@ public class GeminiMessageConverter {
                 } else if (block instanceof HintBlock hb) {
                     parts.add(Part.builder().text(hb.getHint()).build());
 
-                } else if (block instanceof ThinkingBlock) {
-                    log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
-                    continue;
+                } else if (block instanceof ThinkingBlock thinkingBlock) {
+                    if (!modelRole) {
+                        log.debug(
+                                "Skipping ThinkingBlock from non-assistant message when formatting"
+                                        + " for Gemini API");
+                        continue;
+                    }
+
+                    Part.Builder partBuilder =
+                            Part.builder().text(thinkingBlock.getThinking()).thought(true);
+                    GeminiThoughtSignatureUtils.applyMetadata(
+                            partBuilder, thinkingBlock.getMetadata());
+                    parts.add(partBuilder.build());
 
                 } else {
                     log.warn(

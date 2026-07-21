@@ -16,7 +16,10 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Represents plain text content in a message.
@@ -25,21 +28,27 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Text blocks are commonly used for user messages, assistant responses,
  * and any other textual communication.
  *
- * <p>The text content can be empty but never null. The toString() method
- * returns the text content for convenience.
+ * <p>The text content can be empty but never null. Optional metadata preserves provider-specific
+ * information associated with the text content. The toString() method returns the text content for
+ * convenience.
  */
 public final class TextBlock extends ContentBlock {
 
     private final String text;
+    private final Map<String, Object> metadata;
 
     /**
      * Creates a new text block for JSON deserialization.
      *
      * @param text The text content (null will be converted to empty string)
+     * @param metadata Optional provider-specific metadata
      */
     @JsonCreator
-    private TextBlock(@JsonProperty("text") String text) {
+    private TextBlock(
+            @JsonProperty("text") String text,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         this.text = text != null ? text : "";
+        this.metadata = metadata != null ? new HashMap<>(metadata) : null;
     }
 
     /**
@@ -49,6 +58,16 @@ public final class TextBlock extends ContentBlock {
      */
     public String getText() {
         return text;
+    }
+
+    /**
+     * Gets provider-specific metadata associated with this text block.
+     *
+     * @return The metadata map, or null if no metadata is set
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public Map<String, Object> getMetadata() {
+        return metadata;
     }
 
     @Override
@@ -71,6 +90,7 @@ public final class TextBlock extends ContentBlock {
     public static class Builder {
 
         private String text;
+        private Map<String, Object> metadata;
 
         /**
          * Sets the text content for the block.
@@ -84,12 +104,23 @@ public final class TextBlock extends ContentBlock {
         }
 
         /**
+         * Sets provider-specific metadata for the block.
+         *
+         * @param metadata The metadata map
+         * @return This builder for chaining
+         */
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
+        /**
          * Builds a new TextBlock with the configured text.
          *
          * @return A new TextBlock instance (null text will be converted to empty string)
          */
         public TextBlock build() {
-            return new TextBlock(text != null ? text : "");
+            return new TextBlock(text != null ? text : "", metadata);
         }
     }
 }

@@ -17,10 +17,12 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
@@ -92,11 +94,11 @@ class GeminiThoughtSignaturePersistenceTest {
     }
 
     @Test
-    @DisplayName("Should ignore non-Base64 signature instead of failing")
-    void testNonBase64SignatureIgnored() {
-        Part part = firstPart(assistantMsg(toolUseWithSignature("not valid base64!!!")));
-
-        assertFalse(part.thoughtSignature().isPresent());
+    @DisplayName("Should reject non-Base64 signature instead of silently dropping it")
+    void testNonBase64SignatureRejected() {
+        assertThrows(
+                FormatterException.class,
+                () -> firstPart(assistantMsg(toolUseWithSignature("not valid base64!!!"))));
     }
 
     @Test
@@ -110,18 +112,16 @@ class GeminiThoughtSignaturePersistenceTest {
     }
 
     @Test
-    @DisplayName("Should ignore non-string signature values")
-    void testNonStringSignatureIgnored() {
-        Part part = firstPart(assistantMsg(toolUseWithSignature(42)));
-
-        assertFalse(part.thoughtSignature().isPresent());
+    @DisplayName("Should reject non-string signature values")
+    void testNonStringSignatureRejected() {
+        assertThrows(
+                FormatterException.class, () -> firstPart(assistantMsg(toolUseWithSignature(42))));
     }
 
     @Test
-    @DisplayName("Should ignore empty string signature")
-    void testEmptySignatureIgnored() {
-        Part part = firstPart(assistantMsg(toolUseWithSignature("")));
-
-        assertFalse(part.thoughtSignature().isPresent());
+    @DisplayName("Should reject empty string signature")
+    void testEmptySignatureRejected() {
+        assertThrows(
+                FormatterException.class, () -> firstPart(assistantMsg(toolUseWithSignature(""))));
     }
 }
