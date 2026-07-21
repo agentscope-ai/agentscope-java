@@ -147,7 +147,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `workspaceProjectionEnabled(boolean)` | Enable host → sandbox static asset projection | `true` |
 | `workspaceProjectionRoots(List)` | Root paths included in projection | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
-#### Kubernetes sandbox
+#### Kubernetes sandbox (agent-sandbox)
+
+The Kubernetes store is fully based on [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox): sandbox pods are managed by the agent-sandbox controller in your cluster, and image, resources, and PVCs are all declared cluster-side in a `SandboxTemplate` / `SandboxWarmPool` (not configured from Java). The Java side claims instances from the warm pool via `SandboxClaim`. Install the agent-sandbox controller and create the template and warm pool before use.
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -155,16 +157,27 @@ HarnessAgent agent = HarnessAgent.builder()
     .model(model)
     .workspace(workspace)
     .filesystem(new KubernetesFilesystemSpec()
-        .image("node:20-slim")
         .namespace("agents")
-        .serviceAccount("agent-runner")
-        .cpuRequest("500m")
-        .memoryRequest("256Mi")
-        .nodeSelector(Map.of("pool", "agent"))
-        .podLabels(Map.of("app", "agentscope"))
+        .warmPoolName("agent-pool")        // SandboxWarmPool name
         .isolationScope(IsolationScope.USER))
     .build();
 ```
+
+Main `KubernetesFilesystemSpec` options:
+
+| Method | Description | Default |
+|--------|-------------|---------|
+| `namespace(String)` | namespace of the SandboxClaim | `default` |
+| `warmPoolName(String)` | `SandboxWarmPool` name | required |
+| `workspaceRoot(String)` | workspace root inside the sandbox; **must be on the PVC mount declared in the template** | `/workspace` |
+| `fileApiBaseDir(String)` | runtime file API base directory; must match `workspaceRoot`; blank falls back to base64-over-exec transfer | `/workspace` |
+| `apiUrl(String)` | direct runtime API URL (takes precedence when set) | none |
+| `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | reach the sandbox through the Gateway API | none |
+| `serverPort(int)` | runtime HTTP API port | `8888` |
+| `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
+| `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
+
+When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
 
 #### E2B sandbox
 
