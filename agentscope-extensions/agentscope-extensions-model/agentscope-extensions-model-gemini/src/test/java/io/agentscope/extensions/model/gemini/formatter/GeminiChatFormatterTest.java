@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -92,6 +93,59 @@ class GeminiChatFormatterTest {
 
         assertTrue(config.presencePenalty().isPresent());
         assertEquals(0.3f, config.presencePenalty().get(), 0.001f);
+    }
+
+    @Test
+    void testApplyThinkingBudgetPreservesLegacyIncludeThoughts() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(2048).build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertEquals(2048, thinkingConfig.thinkingBudget().orElseThrow());
+        assertTrue(thinkingConfig.includeThoughts().orElseThrow());
+        assertFalse(thinkingConfig.thinkingLevel().isPresent());
+    }
+
+    @Test
+    void testApplyStandaloneIncludeThoughts() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().includeThoughts(false).build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertFalse(thinkingConfig.includeThoughts().orElseThrow());
+        assertFalse(thinkingConfig.thinkingBudget().isPresent());
+        assertFalse(thinkingConfig.thinkingLevel().isPresent());
+    }
+
+    @Test
+    void testApplyThinkingLevel() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().thinkingLevel("high").build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertEquals("high", thinkingConfig.thinkingLevel().orElseThrow().toString());
+        assertFalse(thinkingConfig.includeThoughts().isPresent());
+        assertFalse(thinkingConfig.thinkingBudget().isPresent());
+    }
+
+    @Test
+    void testExplicitIncludeThoughtsOverridesDefaultAndLegacyBehavior() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().includeThoughts(false).build();
+        GenerateOptions defaults =
+                GenerateOptions.builder().thinkingBudget(4096).includeThoughts(true).build();
+
+        formatter.applyOptions(configBuilder, options, defaults);
+
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertFalse(thinkingConfig.includeThoughts().orElseThrow());
+        assertEquals(4096, thinkingConfig.thinkingBudget().orElseThrow());
     }
 
     @Test

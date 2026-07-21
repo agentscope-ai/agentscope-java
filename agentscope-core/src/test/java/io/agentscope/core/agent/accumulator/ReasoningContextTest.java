@@ -20,12 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -332,5 +335,57 @@ class ReasoningContextTest {
 
         // Verify text is accumulated correctly
         assertEquals("Let me check the weather for you.", context.getAccumulatedText());
+    }
+
+    @Test
+    @DisplayName("Should preserve text and thinking metadata while accumulating")
+    void testContentMetadataAccumulation() {
+        String textSignature = "dGV4dC1zaWduYXR1cmU=";
+        String thinkingSignature = "dGhpbmtpbmctc2lnbmF0dXJl";
+
+        ChatResponse firstChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Think carefully").build(),
+                                        TextBlock.builder().text("Answer").build()))
+                        .build();
+        ChatResponse secondChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("")
+                                                .metadata(
+                                                        Map.of(
+                                                                ContentBlockMetadataKeys
+                                                                        .THOUGHT_SIGNATURE,
+                                                                thinkingSignature))
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("")
+                                                .metadata(
+                                                        Map.of(
+                                                                ContentBlockMetadataKeys
+                                                                        .THOUGHT_SIGNATURE,
+                                                                textSignature))
+                                                .build()))
+                        .build();
+
+        context.processChunk(firstChunk);
+        context.processChunk(secondChunk);
+        Msg result = context.buildFinalMessage();
+
+        ThinkingBlock thinking = result.getFirstContentBlock(ThinkingBlock.class);
+        TextBlock text = result.getFirstContentBlock(TextBlock.class);
+        assertEquals("Think carefully", thinking.getThinking());
+        assertEquals("Answer", text.getText());
+        assertEquals(
+                thinkingSignature,
+                thinking.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
+        assertEquals(
+                textSignature, text.getMetadata().get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE));
     }
 }

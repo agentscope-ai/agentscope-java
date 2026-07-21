@@ -41,6 +41,9 @@ class GenerateOptionsTest {
                         .maxTokens(4096)
                         .frequencyPenalty(0.3)
                         .presencePenalty(0.4)
+                        .thinkingBudget(2048)
+                        .includeThoughts(false)
+                        .thinkingLevel("high")
                         .build();
 
         assertNotNull(options);
@@ -49,6 +52,24 @@ class GenerateOptionsTest {
         assertEquals(4096, options.getMaxTokens());
         assertEquals(0.3, options.getFrequencyPenalty());
         assertEquals(0.4, options.getPresencePenalty());
+        assertEquals(2048, options.getThinkingBudget());
+        assertEquals(Boolean.FALSE, options.getIncludeThoughts());
+        assertEquals("high", options.getThinkingLevel());
+    }
+
+    @Test
+    @DisplayName("Should merge thinking options and preserve explicit false")
+    void testMergeThinkingOptions() {
+        GenerateOptions primary =
+                GenerateOptions.builder().includeThoughts(false).thinkingLevel("low").build();
+        GenerateOptions fallback =
+                GenerateOptions.builder().includeThoughts(true).thinkingBudget(4096).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertEquals(Boolean.FALSE, merged.getIncludeThoughts());
+        assertEquals(4096, merged.getThinkingBudget());
+        assertEquals("low", merged.getThinkingLevel());
     }
 
     @Test

@@ -17,6 +17,8 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Thinking content accumulator for accumulating streaming thinking chunks.
@@ -28,6 +30,7 @@ import io.agentscope.core.message.ThinkingBlock;
 public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
+    private final Map<String, Object> metadata = new HashMap<>();
 
     /**
      * @hidden
@@ -37,6 +40,9 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (block != null && block.getThinking() != null) {
             accumulated.append(block.getThinking());
         }
+        if (block != null && block.getMetadata() != null) {
+            metadata.putAll(block.getMetadata());
+        }
     }
 
     /**
@@ -44,7 +50,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return accumulated.length() > 0 || !metadata.isEmpty();
     }
 
     /**
@@ -55,7 +61,10 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (!hasContent()) {
             return null;
         }
-        return ThinkingBlock.builder().thinking(accumulated.toString()).build();
+        return ThinkingBlock.builder()
+                .thinking(accumulated.toString())
+                .metadata(metadata.isEmpty() ? null : metadata)
+                .build();
     }
 
     /**
@@ -64,6 +73,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        metadata.clear();
     }
 
     /**
