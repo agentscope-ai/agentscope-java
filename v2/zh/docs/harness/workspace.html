@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
+    <meta property="article:modified_time" content="2026-07-21T03:25:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -949,7 +949,7 @@
 <li><p><strong>工具结果落盘</strong>（compaction）—— 超大工具输出写到磁盘，上下文里只留 head/tail 预览 + <code class="docutils literal notranslate"><span class="pre">read_file</span></code> 指针，agent 之后可按需重读而不撑爆 prompt。</p></li>
 <li><p><strong>会话日志</strong>（<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>）—— 永不压缩的完整对话日志，随时可查。</p></li>
 </ul>
-<p>这些进化数据默认长期有效：记忆无限累积，会话日志只追加不自动清除。每条通道如何产生与维护，详见下文 <a class="reference internal" href="#id9">智能体如何进化</a>。</p>
+<p>这些进化数据默认长期有效：记忆无限累积，会话日志只追加不自动清除。每条通道如何产生与维护，详见下文 <a class="reference internal" href="#id10">智能体如何进化</a>。</p>
 <p>（每次调用的易失<em>运行期上下文</em> —— <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> —— 不在这张清单里：它是在途对话的恢复快照，单独存放在 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>，从不进工作区。详见下方第 2 条下的提示框。）</p>
 <p><strong>2. 内容按生命周期分三类，互不混淆。</strong></p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1062,13 +1062,57 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 不传则用 ${user.dir}/.agentscope/workspace</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 不传则走下面的默认解析顺序</span>
 <span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;SOUL.md&quot;</span><span class="p">)</span><span class="w">                </span><span class="c1">// 任意 workspace 相对路径，全文注入</span>
 <span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;PREFERENCES.md&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxContextTokens</span><span class="p">(</span><span class="mi">8000</span><span class="p">)</span><span class="w">                          </span><span class="c1">// MEMORY 注入预算</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<section id="id3">
+<h3>workspace 的解析顺序<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>不显式调用 <code class="docutils literal notranslate"><span class="pre">workspace(...)</span></code> 时，<code class="docutils literal notranslate"><span class="pre">build()</span></code> 按以下优先级（从高到低）确定工作区目录：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>优先级</p></th>
+<th class="head"><p>来源</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">workspace(Path)</span></code> / <code class="docutils literal notranslate"><span class="pre">workspace(String)</span></code></p></td>
+<td><p>Builder 显式设置，覆盖一切</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope.workspace</span></code> 系统属性</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">-Dagentscope.workspace=/data/workspace</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AGENTSCOPE_WORKSPACE</span></code> 环境变量</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">AGENTSCOPE_WORKSPACE=/data/workspace</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>默认值</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">${user.dir}/.agentscope/workspace</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>系统属性和环境变量主要服务于<strong>镜像打包 / 容器部署</strong>：应用代码里不写死路径，构建镜像或启动容器时通过环境变量灵活注入。例如：</p>
+<div class="highlight-dockerfile notranslate"><div class="highlight"><pre><span></span><span class="k">ENV</span><span class="w"> </span><span class="nv">AGENTSCOPE_WORKSPACE</span><span class="o">=</span>/data/agent-workspace
+</pre></div>
+</div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># k8s / docker-compose</span>
+<span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AGENTSCOPE_WORKSPACE</span>
+<span class="w">    </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/agent-workspace</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p>空白值（如 <code class="docutils literal notranslate"><span class="pre">&quot;</span>&#160;&#160; <span class="pre">&quot;</span></code>）视为未设置，会继续往下一级回退。</p>
+</div></blockquote>
 <p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 至少写一份骨架：</p>
 <div class="highlight-markdown notranslate"><div class="highlight"><pre><span></span><span class="gh"># MyAgent</span>
 
@@ -1113,8 +1157,9 @@
 </table>
 </div>
 </section>
-<section id="id3">
-<h2>工作区内容如何被加载<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+</section>
+<section id="id4">
+<h2>工作区内容如何被加载<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p>因为工作区是逻辑布局（见上方提示框），”加载”从不假设它是一个普通本机目录——每次读取都经过配置的 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的<a class="reference internal" href="#filesystem-first">两层读</a>正是把这种”与后端无关”落到实处的机制；各模式如何在物理上解析路径，见 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a>。</p>
 <section id="system-prompt">
 <h3>一次推理的 system prompt 拼装<a class="headerlink" href="#system-prompt" title="Link to this heading">¶</a></h3>
@@ -1182,8 +1227,8 @@
 <p>写入永远走第 1 层（filesystem 后端），从不直接落到本地磁盘。</p>
 <p>这套两层读的价值在<strong>共享存储模式</strong>最明显：第一个副本启动时本地磁盘上有团队 git 同步过来的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 模板，立刻可用；之后任何节点对 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 的覆盖（例如管理台编辑）会写到共享 KV，所有副本下一次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 就读到最新版本。模板是 fallback，远端覆盖是事实。</p>
 </section>
-<section id="id4">
-<h3>多用户同一工作区时的覆盖优先级<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<section id="id5">
+<h3>多用户同一工作区时的覆盖优先级<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 是切多用户的钥匙——让同一个 agent 实例服务多个用户而互不串读。</p>
 <p>对<strong>运行时数据</strong>（sessions / tasks / memory），框架按 <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节”运行时数据与 Memory 怎么存”。</p>
 <p>对<strong>静态资产</strong>（特别是 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 和 <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>），用户级目录可以<strong>覆盖</strong>工作区共用版：</p>
@@ -1313,13 +1358,13 @@
 </table>
 </div>
 <p>两者都不需要你手写编辑。本节依次走一遍这两个数据面。</p>
-<section id="id5">
-<h3>Agent 状态 —— 独立存储，不在工作区<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h3>Agent 状态 —— 独立存储，不在工作区<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 是按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 维度的运行期上下文，被刻意放在<strong>工作区树之外</strong>。每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束，它会被序列化成 JSON，按该次调用的 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 通过 <a class="reference internal" href="../../integration/session/index.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></span></a> 持久化；下次同 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 的 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 自动加载回来。</p>
 <p>默认情况下 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 使用 <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>，根目录在工作区<strong>之外</strong>的 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>（可通过 <code class="docutils literal notranslate"><span class="pre">agentscope.state.home</span></code> 系统属性改根目录），让运行时状态与工作区数据解耦。可通过 <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code> 换成别的后端。</p>
 </section>
-<section id="id6">
-<h3>会话日志（这些<em>才是</em>工作区文件）<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>会话日志（这些<em>才是</em>工作区文件）<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <p>与 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 不同，工作区里保留 <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> 下的<strong>对话日志</strong>：</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">sessions.json</span></code></strong> —— 该 agent 的会话索引（key 是 sessionId，value 是 summary + updatedAt）。</p></li>
@@ -1330,8 +1375,8 @@
 </div></blockquote>
 <p>完整细节（恢复链路、跨节点接续、<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 寻址）见 <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context</span></a>。</p>
 </section>
-<section id="id7">
-<h3>Memory（长期记忆）<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>Memory（长期记忆）<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p>两层结构：</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
 ├── MEMORY.md                  ← 策划后的长期记忆，每轮注入 system prompt
@@ -1351,8 +1396,8 @@
 <li><p>agent 可主动调 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 找老内容（详见 <a class="reference internal" href="memory.html"><span class="std std-doc">记忆</span></a>）。</p></li>
 </ul>
 </section>
-<section id="id8">
-<h3>命名空间隔离怎么落到路径上<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="id9">
+<h3>命名空间隔离怎么落到路径上<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager.resolveRuntimeDataPath()</span></code> 会问 <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 当前 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 应该走哪个命名空间。命名空间最终怎么变成”具体的存储位置”，按 filesystem 模式分：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -1384,8 +1429,8 @@
 </div></blockquote>
 </section>
 </section>
-<section id="id9">
-<h2>智能体如何进化<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<section id="id10">
+<h2>智能体如何进化<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <p>除了静态定义，工作区还是智能体<em>累积经验</em>的落点。五条通道自动累积——打开对应能力，数据就开始在工作区里堆积，并和其它内容一样按租户隔离。每条都有自己的深入文档，这张表是索引：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -1433,8 +1478,8 @@
 </div>
 <p>贯穿其中的理念：<strong>智能体在每次运行之间变强，而你不用搭任何存储。</strong> 记忆、技能、计划、会话日志、落盘结果都只是工作区里的文件——它们享受和本页其它内容一样的按租户隔离、两层读、以及跨 filesystem 模式的可移植性。（唯一的例外是易失的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 运行期上下文——它存在独立的 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>，不在工作区；见 <a class="reference internal" href="#memory">运行时数据与 Memory 怎么存</a>。）</p>
 </section>
-<section id="id10">
-<h2>重点目录深入<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<section id="id11">
+<h2>重点目录深入<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
 <section id="skills">
 <h3><code class="docutils literal notranslate"><span class="pre">skills/</span></code><a class="headerlink" href="#skills" title="Link to this heading">¶</a></h3>
 <p>技能是”写好的能力包”——一份目录里放 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>（说明 + 给 agent 看的指令），可以附带参考文档、脚本。</p>
@@ -1545,13 +1590,13 @@ model: qwen3-max         # 可选；默认继承父
 <p>这种”目录里全是细节，prompt 里只放索引”的模式，避免把整个知识库塞进 token 预算。</p>
 </section>
 </section>
-<section id="id11">
-<h2>写入工作区的安全规则<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<section id="id12">
+<h2>写入工作区的安全规则<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">additionalContextFile</span></code>、<code class="docutils literal notranslate"><span class="pre">writeUtf8WorkspaceRelative</span></code>、<code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 这些接口接受<strong>工作区相对路径</strong>。框架做基本的 path-traversal 校验（拒绝 <code class="docutils literal notranslate"><span class="pre">../../etc/passwd</span></code> 这种逃出工作区的写法）。</p>
 <p>需要写文件时，<strong>通过 <code class="docutils literal notranslate"><span class="pre">HarnessAgent#getWorkspaceManager()</span></code> 而不是 <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code></strong>——后者在沙箱或共享存储模式下会写到错的地方（写到了宿主磁盘而不是沙箱里 / KV 里）。例外：builder 装配时的初始化脚本（例如 <code class="docutils literal notranslate"><span class="pre">initWorkspaceIfAbsent</span></code> 这种生成 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 种子），那时还没有运行时上下文，用 <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> 是 OK 的——它本来就是要落本地模板。</p>
 </section>
-<section id="id12">
-<h2>相关文档<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
+<section id="id13">
+<h2>相关文档<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> — system prompt 是怎么拼出来的，能力之间如何协作</p></li>
 <li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、<code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>、多用户隔离</p></li>
@@ -1617,7 +1662,7 @@ model: qwen3-max         # 可选；默认继承父
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-07-21</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1655,11 +1700,14 @@ model: qwen3-max         # 可选；默认继承父
 <li><a class="reference internal" href="#">工作区（Workspace）</a><ul>
 <li><a class="reference internal" href="#id1">设计理念</a></li>
 <li><a class="reference internal" href="#id2">工作区目录布局</a></li>
-<li><a class="reference internal" href="#builder">Builder 配置</a></li>
-<li><a class="reference internal" href="#id3">工作区内容如何被加载</a><ul>
+<li><a class="reference internal" href="#builder">Builder 配置</a><ul>
+<li><a class="reference internal" href="#id3">workspace 的解析顺序</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id4">工作区内容如何被加载</a><ul>
 <li><a class="reference internal" href="#system-prompt">一次推理的 system prompt 拼装</a></li>
 <li><a class="reference internal" href="#filesystem-first">两层读架构（filesystem-first + 本地兜底）</a></li>
-<li><a class="reference internal" href="#id4">多用户同一工作区时的覆盖优先级</a><ul>
+<li><a class="reference internal" href="#id5">多用户同一工作区时的覆盖优先级</a><ul>
 <li><a class="reference internal" href="#agent">同一套 agent 逻辑，按用户定制</a></li>
 </ul>
 </li>
@@ -1667,14 +1715,14 @@ model: qwen3-max         # 可选；默认继承父
 </ul>
 </li>
 <li><a class="reference internal" href="#memory">运行时数据与 Memory 怎么存</a><ul>
-<li><a class="reference internal" href="#id5">Agent 状态 —— 独立存储，不在工作区</a></li>
-<li><a class="reference internal" href="#id6">会话日志（这些<em>才是</em>工作区文件）</a></li>
-<li><a class="reference internal" href="#id7">Memory（长期记忆）</a></li>
-<li><a class="reference internal" href="#id8">命名空间隔离怎么落到路径上</a></li>
+<li><a class="reference internal" href="#id6">Agent 状态 —— 独立存储，不在工作区</a></li>
+<li><a class="reference internal" href="#id7">会话日志（这些<em>才是</em>工作区文件）</a></li>
+<li><a class="reference internal" href="#id8">Memory（长期记忆）</a></li>
+<li><a class="reference internal" href="#id9">命名空间隔离怎么落到路径上</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id9">智能体如何进化</a></li>
-<li><a class="reference internal" href="#id10">重点目录深入</a><ul>
+<li><a class="reference internal" href="#id10">智能体如何进化</a></li>
+<li><a class="reference internal" href="#id11">重点目录深入</a><ul>
 <li><a class="reference internal" href="#skills"><code class="docutils literal notranslate"><span class="pre">skills/</span></code></a></li>
 <li><a class="reference internal" href="#subagents"><code class="docutils literal notranslate"><span class="pre">subagents/</span></code></a></li>
 <li><a class="reference internal" href="#tools-json"><code class="docutils literal notranslate"><span class="pre">tools.json</span></code></a></li>
@@ -1683,8 +1731,8 @@ model: qwen3-max         # 可选；默认继承父
 <li><a class="reference internal" href="#knowledge"><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id11">写入工作区的安全规则</a></li>
-<li><a class="reference internal" href="#id12">相关文档</a></li>
+<li><a class="reference internal" href="#id12">写入工作区的安全规则</a></li>
+<li><a class="reference internal" href="#id13">相关文档</a></li>
 </ul>
 </li>
 </ul>
