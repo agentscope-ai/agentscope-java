@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-07-21T03:30:57+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -19,7 +19,7 @@
     <link rel="stylesheet" type="text/css" href="../../../../_static/sphinx-design.min.css?v=95c83b7e" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/custom.css?v=6f24c6f4" />
-    <link rel="stylesheet" type="text/css" href="../../../../_static/homepage.css?v=16a56cbd" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/homepage.css?v=f1c207f0" />
     
     
 
@@ -1111,7 +1111,7 @@
 <td><p>本地开发 / 单机 / 信任 shell</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>Kubernetes</strong></p></td>
-<td><p>自建 K8s 集群、节点级 bind mount</p></td>
+<td><p>自建 K8s 集群；完全基于 <a class="reference external" href="https://github.com/kubernetes-sigs/agent-sandbox">agent-sandbox</a>（SandboxClaim / WarmPool），工作区持久化靠 PVC（见下文）</p></td>
 </tr>
 <tr class="row-even"><td><p><strong>Daytona</strong></p></td>
 <td><p>通用托管沙箱 HTTP API</p></td>
@@ -1128,17 +1128,163 @@
 <p>所有后端实现同一组接口，agent 代码、工具集、<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 都不用变。</p>
 </section>
 <section id="id8">
-<h2>工作区怎么映射进沙箱<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<p>宿主侧 <code class="docutils literal notranslate"><span class="pre">workspace/</span></code> 下的关键文件（<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>、<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。</p>
-<p>需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 <code class="docutils literal notranslate"><span class="pre">BindMountEntry</span></code>（仅 Docker / K8s 支持；Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。</p>
-<p>Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里的产物，让 agent 自己 <code class="docutils literal notranslate"><span class="pre">read_file</span></code>。</p>
-</section>
+<h2>运行时镜像约束<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<p>沙箱镜像（Docker 的 <code class="docutils literal notranslate"><span class="pre">image</span></code>、Kubernetes agent-sandbox 的运行时镜像等）由你指定，但<strong>不是任意镜像都能用</strong>。Harness 的文件工具（<code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> / <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code>）和快照机制全部通过在沙箱内执行 POSIX shell 命令实现，镜像必须满足下面的契约，否则工具会以难以排查的方式失败。</p>
 <section id="id9">
-<h2>实现自己的沙箱后端<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
-<p>需要接入 Docker 以外的隔离环境（自建远端执行器、商用沙箱 API、本地 mock 等），不需要改 Harness 源码——实现几个契约接口然后传给 <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code> 就行。参考 <code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> 测试里的 <code class="docutils literal notranslate"><span class="pre">InMemorySandbox</span></code> 系列，是最小可改造骨架。</p>
+<h3>基线约束（所有后端通用）<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<p>镜像内必须可用：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>类别</p></th>
+<th class="head"><p>要求</p></th>
+<th class="head"><p>谁在用</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Shell</p></td>
+<td><p>POSIX 兼容 <code class="docutils literal notranslate"><span class="pre">sh</span></code>（支持 <code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">]</span></code>、<code class="docutils literal notranslate"><span class="pre">&amp;&amp;</span></code>、管道、重定向、heredoc）</p></td>
+<td><p>所有文件工具、<code class="docutils literal notranslate"><span class="pre">execute</span></code> 工具</p></td>
+</tr>
+<tr class="row-odd"><td><p>核心工具</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mkdir</span></code> <code class="docutils literal notranslate"><span class="pre">dirname</span></code> <code class="docutils literal notranslate"><span class="pre">rm</span></code> <code class="docutils literal notranslate"><span class="pre">mv</span></code> <code class="docutils literal notranslate"><span class="pre">test</span></code> <code class="docutils literal notranslate"><span class="pre">printf</span></code> <code class="docutils literal notranslate"><span class="pre">sort</span></code></p></td>
+<td><p>各文件操作</p></td>
+</tr>
+<tr class="row-even"><td><p>文本/查找</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sed</span></code> <code class="docutils literal notranslate"><span class="pre">grep</span></code>（支持 <code class="docutils literal notranslate"><span class="pre">-rHnF</span></code> <code class="docutils literal notranslate"><span class="pre">--include</span></code>）<code class="docutils literal notranslate"><span class="pre">find</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">read_file</span></code> 分页、<code class="docutils literal notranslate"><span class="pre">grep_files</span></code>、<code class="docutils literal notranslate"><span class="pre">glob_files</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>元数据</p></td>
+<td><p>GNU 风格 <code class="docutils literal notranslate"><span class="pre">stat</span> <span class="pre">-c</span></code>（非 BSD <code class="docutils literal notranslate"><span class="pre">stat</span> <span class="pre">-f</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_files</span></code>、<code class="docutils literal notranslate"><span class="pre">glob_files</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>归档/编码</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tar</span></code>、<code class="docutils literal notranslate"><span class="pre">base64</span></code>（编码 + <code class="docutils literal notranslate"><span class="pre">-d</span></code> 解码）</p></td>
+<td><p>快照持久化/恢复、文件上传下载</p></td>
+</tr>
+<tr class="row-odd"><td><p>解释器</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">python3</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">edit_file</span></code>（精确字符串替换）</p></td>
+</tr>
+<tr class="row-even"><td><p>文件系统</p></td>
+<td><p>工作区根目录（默认 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>）可写</p></td>
+<td><p>全部</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>以 <code class="docutils literal notranslate"><span class="pre">ubuntu:24.04</span></code>、<code class="docutils literal notranslate"><span class="pre">debian</span></code> 为基础的镜像天然满足（<code class="docutils literal notranslate"><span class="pre">python3</span></code> 可能需额外安装）；<code class="docutils literal notranslate"><span class="pre">alpine</span></code>（BusyBox <code class="docutils literal notranslate"><span class="pre">stat</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> 行为不同）和 distroless 镜像<strong>不满足</strong>。</p>
+<p>快速自检（在镜像内执行，全部成功即基本达标）：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;echo ok&#39;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>python3<span class="w"> </span>--version<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>tar<span class="w"> </span>--version<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span>x<span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>stat<span class="w"> </span>-c<span class="w"> </span>%Y<span class="w"> </span>/tmp<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-rHnF<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.txt&#39;</span><span class="w"> </span>x<span class="w"> </span>/tmp<span class="p">;</span><span class="w"> </span><span class="nb">true</span>
+</pre></div>
+</div>
+</section>
+<section id="kubernetes-agent-sandbox">
+<h3>Kubernetes（agent-sandbox）附加约束<a class="headerlink" href="#kubernetes-agent-sandbox" title="Link to this heading">¶</a></h3>
+<p>agent-sandbox 后端不通过 <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">exec</span></code> 进容器，而是访问运行时容器暴露的 HTTP API（默认端口 8888）。镜像里的运行时服务必须实现：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>端点</p></th>
+<th class="head"><p>语义</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/execute</span></code>（body <code class="docutils literal notranslate"><span class="pre">{&quot;command&quot;:</span> <span class="pre">&quot;...&quot;}</span></code>）</p></td>
+<td><p><strong>必须以 POSIX shell 语义解释 command</strong>（等价 <code class="docutils literal notranslate"><span class="pre">sh</span> <span class="pre">-c</span></code>），返回 <code class="docutils literal notranslate"><span class="pre">{&quot;stdout&quot;,</span> <span class="pre">&quot;stderr&quot;,</span> <span class="pre">&quot;exit_code&quot;}</span></code>。Harness 发出的命令包含 <code class="docutils literal notranslate"><span class="pre">cd</span> <span class="pre">...</span> <span class="pre">&amp;&amp;</span> <span class="pre">(...)</span></code>、管道等 shell 结构</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/upload</span></code>（multipart，<code class="docutils literal notranslate"><span class="pre">filename</span></code> 为相对路径）</p></td>
+<td><p>写文件到文件 API 根目录下</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/download/{path}</span></code></p></td>
+<td><p>按相对路径下载文件字节</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/list/{path}</span></code>、<code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/exists/{path}</span></code></p></td>
+<td><p>目录列表 / 存在性检查</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>文件 API 根目录必须与工作区根一致</strong>（推荐都用 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>）。Harness 通过 <code class="docutils literal notranslate"><span class="pre">/upload</span></code> / <code class="docutils literal notranslate"><span class="pre">/download</span></code> 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 <code class="docutils literal notranslate"><span class="pre">.agentscope-tmp/</span></code>），以及 <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 <code class="docutils literal notranslate"><span class="pre">KubernetesSandboxClientOptions.fileApiBaseDir</span></code> 配置（默认 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>）；置空则退回 base64-over-exec 传输。</p>
+<blockquote>
+<div><p>注意：agent-sandbox 上游仓库的示例运行时（<code class="docutils literal notranslate"><span class="pre">examples/python-runtime-sandbox</span></code>）用 <code class="docutils literal notranslate"><span class="pre">shlex.split</span></code> 直接 <code class="docutils literal notranslate"><span class="pre">subprocess.run</span></code>、不经过 shell，且文件 API 根目录是 <code class="docutils literal notranslate"><span class="pre">/app</span></code>——<strong>不满足本契约</strong>，只能作为端点形状的参考。上游 KEP-539.2 正在推进运行时接口的正式标准化（REST/gRPC 规范 + 一致性测试），未来可对齐官方规范。</p>
+</div></blockquote>
 </section>
 <section id="id10">
-<h2>相关文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<h3>为什么这样设计<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Sandbox</span></code> 抽象的主数据面入口是 <code class="docutils literal notranslate"><span class="pre">exec(command)</span></code>。这是刻意的——<code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担”纯字节搬运”：工作区快照和单文件上传下载走它（后端通过实现 <code class="docutils literal notranslate"><span class="pre">SandboxFileTransfer</span></code> 可选接口声明该能力），其余一切走 <code class="docutils literal notranslate"><span class="pre">execute</span></code>。这也意味着：<strong>镜像契约本身就是沙箱接口的一部分</strong>，换镜像前先跑上面的自检。</p>
+</section>
+</section>
+<section id="kubernetes-pvc">
+<h2>Kubernetes 后端的状态保存：PVC 是第一层<a class="headerlink" href="#kubernetes-pvc" title="Link to this heading">¶</a></h2>
+<p>Kubernetes 后端完全基于 agent-sandbox：沙箱 pod 由 agent-sandbox 控制器管理，镜像、资源、存储都声明在集群侧的 <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxWarmPool</span></code> 里，Java 侧只负责领取（<code class="docutils literal notranslate"><span class="pre">SandboxClaim</span></code>）和连接。这带来一个和其他后端不同的点——<strong>工作区数据的持久化主要靠 PVC，而不是 Harness 快照</strong>，两层机制各管一事：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>层</p></th>
+<th class="head"><p>保存什么</p></th>
+<th class="head"><p>恢复场景</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>PVC</strong>（<code class="docutils literal notranslate"><span class="pre">SandboxTemplate.volumeClaimTemplates</span></code>）</p></td>
+<td><p>工作区文件本身</p></td>
+<td><p>pod 重启 / 驱逐 / 休眠唤醒——claim 还活着，文件随 PVC 原样回来，零传输</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>SandboxState + snapshotSpec</strong>（Harness 层）</p></td>
+<td><p>身份指针（claimName / namespace）+ 工作区 tar 快照</p></td>
+<td><p>resume 时定位沙箱（始终需要）；claim 已删除 / PVC 丢失 / 跨集群时的冷恢复</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>框架不需要为 PVC 做任何特殊适配：resume 后启动时会探测 <code class="docutils literal notranslate"><span class="pre">test</span> <span class="pre">-d</span> <span class="pre">/workspace</span></code>，PVC 在的话直接命中”工作区仍存活”分支，快照恢复整个跳过。</p>
+<p><strong>必须配置对的三件事：</strong></p>
+<ol class="arabic simple">
+<li><p><strong>PVC 必须挂载在 <code class="docutils literal notranslate"><span class="pre">workspaceRoot</span></code> 上</strong>（默认 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>）。挂错位置或用 <code class="docutils literal notranslate"><span class="pre">emptyDir</span></code>，pod 一重启工作区就丢，每次 call 都退化成快照恢复甚至冷启动。参考模板（来自 agent-sandbox 官方示例）：</p></li>
+</ol>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">extensions.agents.x-k8s.io/v1beta1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SandboxTemplate</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">podTemplate</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">runtime</span>
+<span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-conformant-runtime:latest</span><span class="w">   </span><span class="c1"># 须满足上面的运行时镜像约束</span>
+<span class="w">        </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8888</span>
+<span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">workspace</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/workspace</span><span class="w">                 </span><span class="c1"># = workspaceRoot = fileApiBaseDir</span>
+<span class="w">  </span><span class="nt">volumeClaimTemplates</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">workspace</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">accessModes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;ReadWriteOnce&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1Gi</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p><strong>注意 claim 的生命周期边界</strong>。<code class="docutils literal notranslate"><span class="pre">shutdownTime</span></code> / <code class="docutils literal notranslate"><span class="pre">shutdownPolicy:</span> <span class="pre">Delete</span></code> 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。</p></li>
+<li><p><strong>按需选 snapshotSpec</strong>。PVC + <code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code>（默认）：省掉每次 call 结束的 tar 打包传输，代价是 claim 没了就冷启动；PVC + OSS / Redis 快照：双保险，claim 过期、PVC 丢失、跨集群迁移都能从快照冷恢复，代价是每次 call 结束多一次全量打包。</p></li>
+</ol>
+<p>另外提醒：<code class="docutils literal notranslate"><span class="pre">SandboxState</span></code>（身份指针）这层永远绕不开——多副本部署时要配分布式 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>，否则别的副本拿不到 claimName，PVC 里的数据再完整也 resume 不回来。</p>
+</section>
+<section id="id11">
+<h2>工作区怎么映射进沙箱<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<p>宿主侧 <code class="docutils literal notranslate"><span class="pre">workspace/</span></code> 下的关键文件（<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>、<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。</p>
+<p>需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 <code class="docutils literal notranslate"><span class="pre">BindMountEntry</span></code>（仅 Docker 支持；Kubernetes 后端的挂载在集群侧 <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> 的 podTemplate 里声明，Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。</p>
+<p>Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里的产物，让 agent 自己 <code class="docutils literal notranslate"><span class="pre">read_file</span></code>。</p>
+</section>
+<section id="id12">
+<h2>实现自己的沙箱后端<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
+<p>需要接入 Docker 以外的隔离环境（自建远端执行器、商用沙箱 API、本地 mock 等），不需要改 Harness 源码——实现几个契约接口然后传给 <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code> 就行。参考 <code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> 测试里的 <code class="docutils literal notranslate"><span class="pre">InMemorySandbox</span></code> 系列，是最小可改造骨架。</p>
+</section>
+<section id="id13">
+<h2>相关文档<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 三种声明式模式对比</p></li>
 <li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">workspace/</span></code> 下哪些文件会同步进沙箱</p></li>
@@ -1200,7 +1346,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-07-21</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1244,9 +1390,16 @@
 <li><a class="reference internal" href="#id5">并发控制（多副本场景）</a></li>
 <li><a class="reference internal" href="#id6">自管沙箱实例（高级）</a></li>
 <li><a class="reference internal" href="#id7">沙箱后端怎么选</a></li>
-<li><a class="reference internal" href="#id8">工作区怎么映射进沙箱</a></li>
-<li><a class="reference internal" href="#id9">实现自己的沙箱后端</a></li>
-<li><a class="reference internal" href="#id10">相关文档</a></li>
+<li><a class="reference internal" href="#id8">运行时镜像约束</a><ul>
+<li><a class="reference internal" href="#id9">基线约束（所有后端通用）</a></li>
+<li><a class="reference internal" href="#kubernetes-agent-sandbox">Kubernetes（agent-sandbox）附加约束</a></li>
+<li><a class="reference internal" href="#id10">为什么这样设计</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kubernetes-pvc">Kubernetes 后端的状态保存：PVC 是第一层</a></li>
+<li><a class="reference internal" href="#id11">工作区怎么映射进沙箱</a></li>
+<li><a class="reference internal" href="#id12">实现自己的沙箱后端</a></li>
+<li><a class="reference internal" href="#id13">相关文档</a></li>
 </ul>
 </li>
 </ul>

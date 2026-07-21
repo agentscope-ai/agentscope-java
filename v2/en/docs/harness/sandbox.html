@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-07-21T03:30:57+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -19,7 +19,7 @@
     <link rel="stylesheet" type="text/css" href="../../../../_static/sphinx-design.min.css?v=95c83b7e" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/custom.css?v=6f24c6f4" />
-    <link rel="stylesheet" type="text/css" href="../../../../_static/homepage.css?v=16a56cbd" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/homepage.css?v=f1c207f0" />
     
     
 
@@ -1112,7 +1112,7 @@
 <td><p>Local dev / single machine / trusted shell</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>Kubernetes</strong></p></td>
-<td><p>Self-hosted K8s, node-level bind mounts</p></td>
+<td><p>Self-hosted K8s; fully based on <a class="reference external" href="https://github.com/kubernetes-sigs/agent-sandbox">agent-sandbox</a> (SandboxClaim / WarmPool), workspace persistence via PVC (see below)</p></td>
 </tr>
 <tr class="row-even"><td><p><strong>Daytona</strong></p></td>
 <td><p>Generic managed sandbox HTTP API</p></td>
@@ -1128,10 +1128,156 @@
 </div>
 <p>All stores implement the same interface; agent code, toolkit, and <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> don’t change.</p>
 </section>
+<section id="runtime-image-contract">
+<h2>Runtime image contract<a class="headerlink" href="#runtime-image-contract" title="Link to this heading">¶</a></h2>
+<p>You choose the sandbox image (Docker <code class="docutils literal notranslate"><span class="pre">image</span></code>, the Kubernetes agent-sandbox runtime image, etc.), but <strong>not every image works</strong>. Harness file tools (<code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> / <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code>) and the snapshot machinery are all implemented by running POSIX shell commands inside the sandbox. The image must satisfy the contract below, or tools will fail in hard-to-diagnose ways.</p>
+<section id="baseline-contract-all-backends">
+<h3>Baseline contract (all backends)<a class="headerlink" href="#baseline-contract-all-backends" title="Link to this heading">¶</a></h3>
+<p>The image must provide:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Category</p></th>
+<th class="head"><p>Requirement</p></th>
+<th class="head"><p>Used by</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Shell</p></td>
+<td><p>POSIX-compatible <code class="docutils literal notranslate"><span class="pre">sh</span></code> (<code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">]</span></code>, <code class="docutils literal notranslate"><span class="pre">&amp;&amp;</span></code>, pipes, redirection, heredocs)</p></td>
+<td><p>every file tool, the <code class="docutils literal notranslate"><span class="pre">execute</span></code> tool</p></td>
+</tr>
+<tr class="row-odd"><td><p>Core utils</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mkdir</span></code> <code class="docutils literal notranslate"><span class="pre">dirname</span></code> <code class="docutils literal notranslate"><span class="pre">rm</span></code> <code class="docutils literal notranslate"><span class="pre">mv</span></code> <code class="docutils literal notranslate"><span class="pre">test</span></code> <code class="docutils literal notranslate"><span class="pre">printf</span></code> <code class="docutils literal notranslate"><span class="pre">sort</span></code></p></td>
+<td><p>individual file operations</p></td>
+</tr>
+<tr class="row-even"><td><p>Text/search</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sed</span></code>, <code class="docutils literal notranslate"><span class="pre">grep</span></code> (with <code class="docutils literal notranslate"><span class="pre">-rHnF</span></code>, <code class="docutils literal notranslate"><span class="pre">--include</span></code>), <code class="docutils literal notranslate"><span class="pre">find</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">read_file</span></code> pagination, <code class="docutils literal notranslate"><span class="pre">grep_files</span></code>, <code class="docutils literal notranslate"><span class="pre">glob_files</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>GNU-style <code class="docutils literal notranslate"><span class="pre">stat</span> <span class="pre">-c</span></code> (not BSD <code class="docutils literal notranslate"><span class="pre">stat</span> <span class="pre">-f</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_files</span></code>, <code class="docutils literal notranslate"><span class="pre">glob_files</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Archive/encoding</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tar</span></code>, <code class="docutils literal notranslate"><span class="pre">base64</span></code> (encode + <code class="docutils literal notranslate"><span class="pre">-d</span></code> decode)</p></td>
+<td><p>snapshot persist/hydrate, file upload/download</p></td>
+</tr>
+<tr class="row-odd"><td><p>Interpreter</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">python3</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">edit_file</span></code> (exact string replacement)</p></td>
+</tr>
+<tr class="row-even"><td><p>Filesystem</p></td>
+<td><p>writable workspace root (default <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>)</p></td>
+<td><p>everything</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Images based on <code class="docutils literal notranslate"><span class="pre">ubuntu:24.04</span></code> or <code class="docutils literal notranslate"><span class="pre">debian</span></code> qualify out of the box (<code class="docutils literal notranslate"><span class="pre">python3</span></code> may need installing); <code class="docutils literal notranslate"><span class="pre">alpine</span></code> (BusyBox <code class="docutils literal notranslate"><span class="pre">stat</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> behave differently) and distroless images do <strong>not</strong>.</p>
+<p>Quick conformance check (run inside the image; all must succeed):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;echo ok&#39;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>python3<span class="w"> </span>--version<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>tar<span class="w"> </span>--version<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span>x<span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>stat<span class="w"> </span>-c<span class="w"> </span>%Y<span class="w"> </span>/tmp<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-rHnF<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.txt&#39;</span><span class="w"> </span>x<span class="w"> </span>/tmp<span class="p">;</span><span class="w"> </span><span class="nb">true</span>
+</pre></div>
+</div>
+</section>
+<section id="additional-contract-for-kubernetes-agent-sandbox">
+<h3>Additional contract for Kubernetes (agent-sandbox)<a class="headerlink" href="#additional-contract-for-kubernetes-agent-sandbox" title="Link to this heading">¶</a></h3>
+<p>The agent-sandbox backend does not <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">exec</span></code> into the container; it talks to an HTTP API exposed by the runtime container (default port 8888). The runtime service in your image must implement:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Endpoint</p></th>
+<th class="head"><p>Semantics</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/execute</span></code> (body <code class="docutils literal notranslate"><span class="pre">{&quot;command&quot;:</span> <span class="pre">&quot;...&quot;}</span></code>)</p></td>
+<td><p><strong>Must interpret the command with POSIX shell semantics</strong> (equivalent to <code class="docutils literal notranslate"><span class="pre">sh</span> <span class="pre">-c</span></code>) and return <code class="docutils literal notranslate"><span class="pre">{&quot;stdout&quot;,</span> <span class="pre">&quot;stderr&quot;,</span> <span class="pre">&quot;exit_code&quot;}</span></code>. Harness sends commands containing <code class="docutils literal notranslate"><span class="pre">cd</span> <span class="pre">...</span> <span class="pre">&amp;&amp;</span> <span class="pre">(...)</span></code>, pipes, and other shell constructs</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/upload</span></code> (multipart; <code class="docutils literal notranslate"><span class="pre">filename</span></code> is a relative path)</p></td>
+<td><p>writes a file under the file-API base directory</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/download/{path}</span></code></p></td>
+<td><p>downloads file bytes by relative path</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/list/{path}</span></code>, <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/exists/{path}</span></code></p></td>
+<td><p>directory listing / existence check</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>The file-API base directory must match the workspace root</strong> (recommended: <code class="docutils literal notranslate"><span class="pre">/workspace</span></code> for both). Harness transfers two kinds of content through <code class="docutils literal notranslate"><span class="pre">/upload</span></code> / <code class="docutils literal notranslate"><span class="pre">/download</span></code>: workspace snapshot tarballs (temp files under <code class="docutils literal notranslate"><span class="pre">.agentscope-tmp/</span></code> inside that directory), and single-file bytes for <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / file downloads when the path lies under the base directory (Linux caps a single command-line argument at about 128 KiB; native file-API transfer has no such limit). The base directory is configured via <code class="docutils literal notranslate"><span class="pre">KubernetesSandboxClientOptions.fileApiBaseDir</span></code> (default <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>); setting it blank falls back to base64-over-exec transfer.</p>
+<blockquote>
+<div><p>Note: the example runtime in the upstream agent-sandbox repo (<code class="docutils literal notranslate"><span class="pre">examples/python-runtime-sandbox</span></code>) runs commands via <code class="docutils literal notranslate"><span class="pre">shlex.split</span></code> + <code class="docutils literal notranslate"><span class="pre">subprocess.run</span></code> without a shell, and roots its file API at <code class="docutils literal notranslate"><span class="pre">/app</span></code> — it does <strong>not</strong> conform to this contract and should only be used as a reference for endpoint shapes. Upstream KEP-539.2 is standardizing the runtime interface (REST/gRPC spec + conformance tests); this contract can converge on the official spec once it lands.</p>
+</div></blockquote>
+</section>
+<section id="why-it-works-this-way">
+<h3>Why it works this way<a class="headerlink" href="#why-it-works-this-way" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Sandbox</span></code> abstraction’s primary data-plane entry point is <code class="docutils literal notranslate"><span class="pre">exec(command)</span></code>. This is deliberate — tool semantics like <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> (regex, string replacement, globbing) cannot be expressed through a small set of file-API endpoints; running shell scripts against a standard toolchain inside the image is the only portable answer. The file API (upload/download) handles pure byte transfer only: workspace snapshots and single-file upload/download go through it (backends declare the capability by implementing the optional <code class="docutils literal notranslate"><span class="pre">SandboxFileTransfer</span></code> interface); everything else goes through <code class="docutils literal notranslate"><span class="pre">execute</span></code>. Which also means: <strong>the image contract is part of the sandbox interface</strong> — run the conformance check above before switching images.</p>
+</section>
+</section>
+<section id="kubernetes-state-persistence-pvc-is-the-first-layer">
+<h2>Kubernetes state persistence: PVC is the first layer<a class="headerlink" href="#kubernetes-state-persistence-pvc-is-the-first-layer" title="Link to this heading">¶</a></h2>
+<p>The Kubernetes store is fully based on agent-sandbox: sandbox pods are managed by the agent-sandbox controller, and image, resources, and storage are all declared cluster-side in a <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxWarmPool</span></code> — the Java side only claims instances (<code class="docutils literal notranslate"><span class="pre">SandboxClaim</span></code>) and connects. This makes it different from other stores in one important way: <strong>workspace data persistence is primarily the PVC’s job, not the Harness snapshot’s</strong>. The two layers each own one thing:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Layer</p></th>
+<th class="head"><p>What it preserves</p></th>
+<th class="head"><p>Recovery scenario</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>PVC</strong> (<code class="docutils literal notranslate"><span class="pre">SandboxTemplate.volumeClaimTemplates</span></code>)</p></td>
+<td><p>the workspace files themselves</p></td>
+<td><p>pod restart / eviction / hibernate-and-wake — the claim is still alive, files come back with the volume, zero transfer</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>SandboxState + snapshotSpec</strong> (Harness layer)</p></td>
+<td><p>identity pointer (claimName / namespace) + workspace tarball snapshot</p></td>
+<td><p>locating the sandbox on resume (always required); cold recovery when the claim was deleted / PVC lost / cross-cluster</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The framework needs no special handling for PVCs: on resume, startup probes <code class="docutils literal notranslate"><span class="pre">test</span> <span class="pre">-d</span> <span class="pre">/workspace</span></code>; when the PVC is there, the “workspace preserved” branch is taken and snapshot restore is skipped entirely.</p>
+<p><strong>Three things you must configure correctly:</strong></p>
+<ol class="arabic simple">
+<li><p><strong>The PVC must be mounted at <code class="docutils literal notranslate"><span class="pre">workspaceRoot</span></code></strong> (default <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>). Mount it elsewhere or use <code class="docutils literal notranslate"><span class="pre">emptyDir</span></code>, and the workspace is gone on every pod restart — each call degrades to snapshot restore or a cold start. Reference template (from the upstream agent-sandbox examples):</p></li>
+</ol>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">extensions.agents.x-k8s.io/v1beta1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SandboxTemplate</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">podTemplate</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">runtime</span>
+<span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-conformant-runtime:latest</span><span class="w">   </span><span class="c1"># must satisfy the runtime image contract above</span>
+<span class="w">        </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8888</span>
+<span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">workspace</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/workspace</span><span class="w">                 </span><span class="c1"># = workspaceRoot = fileApiBaseDir</span>
+<span class="w">  </span><span class="nt">volumeClaimTemplates</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">workspace</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">accessModes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;ReadWriteOnce&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1Gi</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p><strong>Mind the claim lifecycle boundary.</strong> Once <code class="docutils literal notranslate"><span class="pre">shutdownTime</span></code> / <code class="docutils literal notranslate"><span class="pre">shutdownPolicy:</span> <span class="pre">Delete</span></code> removes the Sandbox, PVC-based warm recovery is over — the next resume won’t find the claim, and the framework creates a fresh sandbox (with an empty new PVC). Whether the workspace comes back depends on point 3.</p></li>
+<li><p><strong>Pick <code class="docutils literal notranslate"><span class="pre">snapshotSpec</span></code> accordingly.</strong> PVC + <code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> (default): skips the tar-and-upload at the end of every call, at the cost of a cold start once the claim is gone. PVC + OSS / Redis snapshot: belt and suspenders — claim expiry, PVC loss, and cross-cluster migration all recover from the snapshot, at the cost of a full archive per call.</p></li>
+</ol>
+<p>One more reminder: the <code class="docutils literal notranslate"><span class="pre">SandboxState</span></code> identity layer is never optional — in multi-replica deployments configure a distributed <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, otherwise other replicas can’t learn the claimName and the data on the PVC is unreachable no matter how intact it is.</p>
+</section>
 <section id="how-the-workspace-maps-into-the-sandbox">
 <h2>How the workspace maps into the sandbox<a class="headerlink" href="#how-the-workspace-maps-into-the-sandbox" title="Link to this heading">¶</a></h2>
 <p>Host-side key files under <code class="docutils literal notranslate"><span class="pre">workspace/</span></code> (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>, <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.</p>
-<p>To bind a host directory into the sandbox (e.g. a code repo), use <code class="docutils literal notranslate"><span class="pre">BindMountEntry</span></code> (only Docker / K8s; managed sandboxes like Daytona / E2B run in the cloud and can’t mount your host paths).</p>
+<p>To bind a host directory into the sandbox (e.g. a code repo), use <code class="docutils literal notranslate"><span class="pre">BindMountEntry</span></code> (Docker only; for Kubernetes, declare mounts in the cluster-side <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> pod template instead; managed sandboxes like Daytona / E2B run in the cloud and can’t mount your host paths).</p>
 <p>File changes inside the sandbox don’t sync back to the host — to retrieve sandbox-produced artifacts, have the agent <code class="docutils literal notranslate"><span class="pre">read_file</span></code> them.</p>
 </section>
 <section id="implementing-your-own-sandbox-store">
@@ -1201,7 +1347,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-07-21</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1245,6 +1391,13 @@
 <li><a class="reference internal" href="#concurrency-control-multi-replica">Concurrency control (multi-replica)</a></li>
 <li><a class="reference internal" href="#self-managed-sandbox-instances-advanced">Self-managed sandbox instances (advanced)</a></li>
 <li><a class="reference internal" href="#choosing-a-sandbox-store">Choosing a sandbox store</a></li>
+<li><a class="reference internal" href="#runtime-image-contract">Runtime image contract</a><ul>
+<li><a class="reference internal" href="#baseline-contract-all-backends">Baseline contract (all backends)</a></li>
+<li><a class="reference internal" href="#additional-contract-for-kubernetes-agent-sandbox">Additional contract for Kubernetes (agent-sandbox)</a></li>
+<li><a class="reference internal" href="#why-it-works-this-way">Why it works this way</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kubernetes-state-persistence-pvc-is-the-first-layer">Kubernetes state persistence: PVC is the first layer</a></li>
 <li><a class="reference internal" href="#how-the-workspace-maps-into-the-sandbox">How the workspace maps into the sandbox</a></li>
 <li><a class="reference internal" href="#implementing-your-own-sandbox-store">Implementing your own sandbox store</a></li>
 <li><a class="reference internal" href="#related-pages">Related pages</a></li>

@@ -180,18 +180,109 @@ SandboxContext callCtx = SandboxContext.builder()
 | 后端 | 适合 |
 |------|------|
 | **Docker** | 本地开发 / 单机 / 信任 shell |
-| **Kubernetes** | 自建 K8s 集群、节点级 bind mount |
+| **Kubernetes** | 自建 K8s 集群；完全基于 [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)（SandboxClaim / WarmPool），工作区持久化靠 PVC（见下文） |
 | **Daytona** | 通用托管沙箱 HTTP API |
 | **E2B** | 通用托管沙箱 + 平台原生快照 |
 | **AgentRun** | 阿里云托管沙箱（函数计算 FC 3.0），实例级 NAS / OSS 动态挂载，中国大陆区域低延迟。在 Harness 里和 Docker / K8s / Daytona / E2B 等后端等价对待，模板配置 / RAM 权限 / NAS-first 等接入细节归在 integration 文档下 |
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
 
+## 运行时镜像约束
+
+沙箱镜像（Docker 的 `image`、Kubernetes agent-sandbox 的运行时镜像等）由你指定，但**不是任意镜像都能用**。Harness 的文件工具（`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`）和快照机制全部通过在沙箱内执行 POSIX shell 命令实现，镜像必须满足下面的契约，否则工具会以难以排查的方式失败。
+
+### 基线约束（所有后端通用）
+
+镜像内必须可用：
+
+| 类别 | 要求 | 谁在用 |
+|------|------|--------|
+| Shell | POSIX 兼容 `sh`（支持 `[ ]`、`&&`、管道、重定向、heredoc） | 所有文件工具、`execute` 工具 |
+| 核心工具 | `mkdir` `dirname` `rm` `mv` `test` `printf` `sort` | 各文件操作 |
+| 文本/查找 | `sed` `grep`（支持 `-rHnF` `--include`）`find` | `read_file` 分页、`grep_files`、`glob_files` |
+| 元数据 | GNU 风格 `stat -c`（非 BSD `stat -f`） | `list_files`、`glob_files` |
+| 归档/编码 | `tar`、`base64`（编码 + `-d` 解码） | 快照持久化/恢复、文件上传下载 |
+| 解释器 | `python3` | `edit_file`（精确字符串替换） |
+| 文件系统 | 工作区根目录（默认 `/workspace`）可写 | 全部 |
+
+以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足（`python3` 可能需额外安装）；`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像**不满足**。
+
+快速自检（在镜像内执行，全部成功即基本达标）：
+
+```bash
+sh -c 'echo ok' && python3 --version && tar --version \
+  && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
+```
+
+### Kubernetes（agent-sandbox）附加约束
+
+agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时容器暴露的 HTTP API（默认端口 8888）。镜像里的运行时服务必须实现：
+
+| 端点 | 语义 |
+|------|------|
+| `POST /execute`（body `{"command": "..."}`） | **必须以 POSIX shell 语义解释 command**（等价 `sh -c`），返回 `{"stdout", "stderr", "exit_code"}`。Harness 发出的命令包含 `cd ... && (...)`、管道等 shell 结构 |
+| `POST /upload`（multipart，`filename` 为相对路径） | 写文件到文件 API 根目录下 |
+| `GET /download/{path}` | 按相对路径下载文件字节 |
+| `GET /list/{path}`、`GET /exists/{path}` | 目录列表 / 存在性检查 |
+
+**文件 API 根目录必须与工作区根一致**（推荐都用 `/workspace`）。Harness 通过 `/upload` / `/download` 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 `.agentscope-tmp/`），以及 `write_file` / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 `KubernetesSandboxClientOptions.fileApiBaseDir` 配置（默认 `/workspace`）；置空则退回 base64-over-exec 传输。
+
+> 注意：agent-sandbox 上游仓库的示例运行时（`examples/python-runtime-sandbox`）用 `shlex.split` 直接 `subprocess.run`、不经过 shell，且文件 API 根目录是 `/app`——**不满足本契约**，只能作为端点形状的参考。上游 KEP-539.2 正在推进运行时接口的正式标准化（REST/gRPC 规范 + 一致性测试），未来可对齐官方规范。
+
+### 为什么这样设计
+
+`Sandbox` 抽象的主数据面入口是 `exec(command)`。这是刻意的——`edit_file` / `grep_files` 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担"纯字节搬运"：工作区快照和单文件上传下载走它（后端通过实现 `SandboxFileTransfer` 可选接口声明该能力），其余一切走 `execute`。这也意味着：**镜像契约本身就是沙箱接口的一部分**，换镜像前先跑上面的自检。
+
+## Kubernetes 后端的状态保存：PVC 是第一层
+
+Kubernetes 后端完全基于 agent-sandbox：沙箱 pod 由 agent-sandbox 控制器管理，镜像、资源、存储都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里，Java 侧只负责领取（`SandboxClaim`）和连接。这带来一个和其他后端不同的点——**工作区数据的持久化主要靠 PVC，而不是 Harness 快照**，两层机制各管一事：
+
+| 层 | 保存什么 | 恢复场景 |
+|----|---------|---------|
+| **PVC**（`SandboxTemplate.volumeClaimTemplates`） | 工作区文件本身 | pod 重启 / 驱逐 / 休眠唤醒——claim 还活着，文件随 PVC 原样回来，零传输 |
+| **SandboxState + snapshotSpec**（Harness 层） | 身份指针（claimName / namespace）+ 工作区 tar 快照 | resume 时定位沙箱（始终需要）；claim 已删除 / PVC 丢失 / 跨集群时的冷恢复 |
+
+框架不需要为 PVC 做任何特殊适配：resume 后启动时会探测 `test -d /workspace`，PVC 在的话直接命中"工作区仍存活"分支，快照恢复整个跳过。
+
+**必须配置对的三件事：**
+
+1. **PVC 必须挂载在 `workspaceRoot` 上**（默认 `/workspace`）。挂错位置或用 `emptyDir`，pod 一重启工作区就丢，每次 call 都退化成快照恢复甚至冷启动。参考模板（来自 agent-sandbox 官方示例）：
+
+```yaml
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+spec:
+  podTemplate:
+    spec:
+      containers:
+      - name: runtime
+        image: your-conformant-runtime:latest   # 须满足上面的运行时镜像约束
+        ports:
+        - containerPort: 8888
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace                 # = workspaceRoot = fileApiBaseDir
+  volumeClaimTemplates:
+  - metadata:
+      name: workspace
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+```
+
+2. **注意 claim 的生命周期边界**。`shutdownTime` / `shutdownPolicy: Delete` 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。
+
+3. **按需选 snapshotSpec**。PVC + `NoopSnapshotSpec`（默认）：省掉每次 call 结束的 tar 打包传输，代价是 claim 没了就冷启动；PVC + OSS / Redis 快照：双保险，claim 过期、PVC 丢失、跨集群迁移都能从快照冷恢复，代价是每次 call 结束多一次全量打包。
+
+另外提醒：`SandboxState`（身份指针）这层永远绕不开——多副本部署时要配分布式 `AgentStateStore`，否则别的副本拿不到 claimName，PVC 里的数据再完整也 resume 不回来。
+
 ## 工作区怎么映射进沙箱
 
 宿主侧 `workspace/` 下的关键文件（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。
 
-需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 `BindMountEntry`（仅 Docker / K8s 支持；Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。
+需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 `BindMountEntry`（仅 Docker 支持；Kubernetes 后端的挂载在集群侧 `SandboxTemplate` 的 podTemplate 里声明，Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。
 
 Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里的产物，让 agent 自己 `read_file`。
 
