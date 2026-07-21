@@ -33,9 +33,11 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -1772,6 +1774,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Return the persisted assistant reply id that owns the currently pending tool calls.
+         *
+         * <p>Using the message id rather than a per-invocation random id keeps external-execution
+         * request/result correlation stable when an agent is rebuilt from an {@link AgentStateStore}.
+         */
+        private String pendingToolReplyId() {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant != null
+                    && lastAssistant.getId() != null
+                    && !lastAssistant.getId().isBlank()) {
+                return lastAssistant.getId();
+            }
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+
+        /**
          * Check if there are pending tool calls without corresponding results.
          *
          * @return true if there are pending tool calls
@@ -1871,7 +1889,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 + pendingIds);
             }
 
+            String replyId = pendingToolReplyId();
             state.contextMutable().addAll(msgs);
+            publishEvent(new ExternalExecutionResultEvent(replyId, results));
         }
 
         /**
@@ -2319,7 +2339,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return executeIteration(iter + 1);
             }
 
-            String replyId = UUID.randomUUID().toString().replace("-", "");
+            String replyId = pendingToolReplyId();
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
                     new AtomicReference<>(List.of());
 
@@ -2340,7 +2360,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 .apply(new ActingInput(toolCalls));
                                 return stream.doOnNext(
                                                 ev -> {
-                                                    if (ev instanceof RequestStopEvent rs) {
+                                                    if (ev instanceof RequestStopEvent rs
+                                                            && rs.getGenerateReason()
+                                                                    != GenerateReason
+                                                                            .TOOL_SUSPENDED) {
                                                         actingStopRequested.compareAndSet(null, rs);
                                                     }
                                                 })
@@ -2408,9 +2431,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Stream fine-grained {@link AgentEvent}s from tool execution during the acting phase.
          *
-         * <p>Emits: {@link ToolResultStartEvent} → delta events → {@link ToolResultEndEvent}
-         * for each tool call. The provided {@code resultHolder} is populated with the execution
-         * results so the caller can process them afterward.
+         * <p>For completed tools, emits {@link ToolResultStartEvent} → delta events → {@link
+         * ToolResultEndEvent}. Suspended tools emit a start event but no result delta or terminal
+         * end event; instead the batch ends with {@link RequireExternalExecutionEvent} followed by
+         * a {@link RequestStopEvent} carrying {@link GenerateReason#TOOL_SUSPENDED}. The provided
+         * {@code resultHolder} is populated with all execution results so the caller can process
+         * them afterward.
          *
          * @param toolCalls    the tool calls to execute
          * @param replyId      the reply identifier for event correlation
@@ -2633,11 +2659,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             merged.addAll(results);
                                                                             resultHolder.set(
                                                                                     merged);
+                                                                            List<ToolUseBlock>
+                                                                                    suspended =
+                                                                                            new ArrayList<>();
                                                                             for (Map.Entry<
                                                                                             ToolUseBlock,
                                                                                             ToolResultBlock>
                                                                                     entry :
                                                                                             results) {
+                                                                                if (entry.getValue()
+                                                                                        .isSuspended()) {
+                                                                                    suspended.add(
+                                                                                            entry
+                                                                                                    .getKey());
+                                                                                    continue;
+                                                                                }
                                                                                 emitToolResultDelta(
                                                                                         sink,
                                                                                         replyId,
@@ -2656,6 +2692,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                 entry.getKey()
                                                                                                         .getName(),
                                                                                                 state));
+                                                                            }
+                                                                            if (!suspended
+                                                                                    .isEmpty()) {
+                                                                                sink.next(
+                                                                                        new RequireExternalExecutionEvent(
+                                                                                                replyId,
+                                                                                                suspended));
+                                                                                sink.next(
+                                                                                        new RequestStopEvent(
+                                                                                                "external"
+                                                                                                    + " execution"
+                                                                                                    + " required",
+                                                                                                GenerateReason
+                                                                                                        .TOOL_SUSPENDED));
                                                                             }
                                                                             sink.complete();
                                                                         },

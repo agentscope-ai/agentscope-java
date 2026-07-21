@@ -701,6 +701,64 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testSuspendedToolFinishesWithInterruptWithoutToolCallResult() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("tc-approval")
+                        .name("request_approval")
+                        .input(Map.of("request", "Deploy to production?"))
+                        .content("{\"request\":\"Deploy to production?\"}")
+                        .build();
+        Msg toolCallMsg =
+                Msg.builder().id("msg-approval").role(MsgRole.ASSISTANT).content(toolUse).build();
+        Msg suspendedResultMsg =
+                Msg.builder()
+                        .id("msg-suspended")
+                        .role(MsgRole.TOOL)
+                        .content(ToolResultBlock.suspended(toolUse))
+                        .build();
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(
+                        Flux.just(
+                                new Event(EventType.REASONING, toolCallMsg, false),
+                                new Event(EventType.TOOL_RESULT, suspendedResultMsg, true)));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-approval")
+                        .runId("run-approval")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Please approve")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+        assertTrue(
+                events.stream().noneMatch(AguiEvent.ToolCallResult.class::isInstance),
+                "Suspended placeholder must not be emitted as a terminal tool result");
+        assertEquals(
+                1,
+                events.stream().filter(AguiEvent.ToolCallEnd.class::isInstance).count(),
+                "The tool arguments phase must still be closed");
+
+        AguiEvent.RunFinished finished =
+                events.stream()
+                        .filter(AguiEvent.RunFinished.class::isInstance)
+                        .map(AguiEvent.RunFinished.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        AguiEvent.RunFinishedInterruptOutcome outcome =
+                assertInstanceOf(AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+        assertEquals(1, outcome.interrupts().size());
+        AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+        assertEquals("tc-approval", interrupt.id());
+        assertEquals("tool_suspended", interrupt.reason());
+        assertEquals("tc-approval", interrupt.toolCallId());
+        assertEquals("request_approval", interrupt.metadata().get("toolName"));
+    }
+
+    @Test
     void testRunWithAgentError() {
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.error(new RuntimeException("Agent error")));

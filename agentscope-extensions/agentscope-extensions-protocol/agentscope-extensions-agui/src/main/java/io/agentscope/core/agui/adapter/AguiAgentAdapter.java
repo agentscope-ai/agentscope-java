@@ -358,8 +358,6 @@ public class AguiAgentAdapter {
                         toolCallId = UUID.randomUUID().toString();
                     }
 
-                    String result = extractToolResultText(toolResult);
-
                     boolean hasStarted = state.hasStartedToolCall(toolCallId);
                     if (!hasStarted) {
                         String toolName = toolResult.getName();
@@ -373,7 +371,18 @@ public class AguiAgentAdapter {
                     }
 
                     // Ensure ToolCallEnd is emitted to close arguments phase
-                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                    if (!state.hasEndedToolCall(toolCallId)) {
+                        events.add(
+                                new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                        state.endToolCall(toolCallId);
+                    }
+
+                    if (toolResult.isSuspended()) {
+                        state.addExternalExecutionInterrupt(toolCallId, toolResult.getName());
+                        continue;
+                    }
+
+                    String result = extractToolResultText(toolResult);
 
                     events.add(
                             new AguiEvent.ToolCallResult(
@@ -383,7 +392,6 @@ public class AguiAgentAdapter {
                                     result,
                                     "tool",
                                     msg.getId()));
-                    state.endToolCall(toolCallId);
                 }
             }
         }
@@ -422,8 +430,12 @@ public class AguiAgentAdapter {
             }
         }
 
-        // Emit RUN_FINISHED
-        events.add(new AguiEvent.RunFinished(state.threadId, state.runId));
+        // Emit RUN_FINISHED, using an interrupt outcome when external tools are suspended.
+        AguiEvent.RunFinishedOutcome outcome =
+                state.getInterrupts().isEmpty()
+                        ? null
+                        : new AguiEvent.RunFinishedInterruptOutcome(state.getInterrupts());
+        events.add(new AguiEvent.RunFinished(state.threadId, state.runId, null, outcome));
 
         return Flux.fromIterable(events);
     }
@@ -534,6 +546,7 @@ public class AguiAgentAdapter {
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
         private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
         private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
+        private final Map<String, AguiEvent.Interrupt> interrupts = new LinkedHashMap<>();
         private String currentTextMessageId = null;
         private String currentReasoningMessageId = null;
 
@@ -592,6 +605,24 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedToolCalls() {
             return startedToolCalls;
+        }
+
+        void addExternalExecutionInterrupt(String toolCallId, String toolName) {
+            String resolvedToolName = toolName == null || toolName.isBlank() ? "unknown" : toolName;
+            interrupts.putIfAbsent(
+                    toolCallId,
+                    new AguiEvent.Interrupt(
+                            toolCallId,
+                            "tool_suspended",
+                            "External execution required for tool '" + resolvedToolName + "'",
+                            toolCallId,
+                            null,
+                            null,
+                            Map.of("toolName", resolvedToolName)));
+        }
+
+        List<AguiEvent.Interrupt> getInterrupts() {
+            return List.copyOf(interrupts.values());
         }
 
         boolean hasStartedReasoningMessage(String messageId) {
