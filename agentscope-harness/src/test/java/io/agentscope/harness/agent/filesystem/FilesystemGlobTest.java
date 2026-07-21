@@ -76,4 +76,42 @@ class FilesystemGlobTest {
                 Set.of("/agents/demo-session.log.jsonl", "/agents/sub/demo-session.log.jsonl"),
                 paths);
     }
+
+    @Test
+    void remote_glob_recursivePattern_matchesFileAtSearchRoot() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        store.put(ns, "/hello.txt", Map.of("content", "root"));
+        store.put(ns, "/reports/hello.txt", Map.of("content", "nested"));
+
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        GlobResult result = fs.glob(RT, "**/hello.txt", "/");
+
+        assertTrue(result.isSuccess());
+        Set<String> paths =
+                result.matches().stream()
+                        .map(fi -> fi.path().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+        // "**/" must also match zero intermediate directories, i.e. the file at the search root.
+        assertEquals(Set.of("/hello.txt", "/reports/hello.txt"), paths);
+    }
+
+    @Test
+    void remote_glob_recursiveWildcardPattern_matchesFileAtSearchRoot() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        store.put(ns, "/hello.txt", Map.of("content", "root"));
+        store.put(ns, "/reports/note.txt", Map.of("content", "nested"));
+        store.put(ns, "/reports/data.bin", Map.of("content", "ignored"));
+
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        GlobResult result = fs.glob(RT, "**/*.txt", "/");
+
+        assertTrue(result.isSuccess());
+        Set<String> paths =
+                result.matches().stream()
+                        .map(fi -> fi.path().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+        assertEquals(Set.of("/hello.txt", "/reports/note.txt"), paths);
+    }
 }

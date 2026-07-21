@@ -425,8 +425,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
                                         + (effectivePattern.startsWith("**")
                                                 ? effectivePattern
                                                 : "**/" + effectivePattern));
+        // The recursive matcher never matches files directly at the search root: a leading "**/"
+        // requires at least one directory separator, so "**/hello.txt" misses "/hello.txt". The
+        // direct matcher covers that zero-directory case — strip the leading "**/" so the pattern
+        // applies to a bare file name at the root.
+        String directPattern =
+                effectivePattern.startsWith("**/")
+                        ? effectivePattern.substring(3)
+                        : effectivePattern;
         PathMatcher directMatcher =
-                FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
+                FileSystems.getDefault().getPathMatcher("glob:" + directPattern);
 
         // Fast path: index has entries for this prefix
         if (index != null && index.hasPrefix(normalizedPath)) {
