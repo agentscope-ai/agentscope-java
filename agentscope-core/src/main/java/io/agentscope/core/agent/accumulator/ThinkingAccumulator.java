@@ -16,8 +16,11 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.ThinkingBlock;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,17 +34,33 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
     private final Map<String, Object> metadata = new HashMap<>();
+    private final List<ThinkingBlock> completedBlocks = new ArrayList<>();
+    private final StringBuilder currentBlock = new StringBuilder();
+    private final Map<String, Object> currentMetadata = new HashMap<>();
 
     /**
      * @hidden
      */
     @Override
     public void add(ThinkingBlock block) {
-        if (block != null && block.getThinking() != null) {
-            accumulated.append(block.getThinking());
+        if (block == null) {
+            return;
         }
-        if (block != null && block.getMetadata() != null) {
-            metadata.putAll(block.getMetadata());
+
+        accumulated.append(block.getThinking());
+        currentBlock.append(block.getThinking());
+
+        Map<String, Object> blockMetadata = block.getMetadata();
+        if (blockMetadata != null) {
+            metadata.putAll(blockMetadata);
+            currentMetadata.putAll(blockMetadata);
+        }
+
+        // A thought signature terminates its provider Part. Keep that boundary so distinct
+        // signature-bearing Parts can be replayed without merging their metadata.
+        if (blockMetadata != null
+                && blockMetadata.get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE) != null) {
+            completeCurrentBlock();
         }
     }
 
@@ -68,12 +87,33 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     }
 
     /**
+     * Build accumulated thinking blocks while preserving thought-signature Part boundaries.
+     *
+     * @hidden
+     * @return accumulated thinking blocks in their original order
+     */
+    public List<ThinkingBlock> buildAllThinkingBlocks() {
+        if (!hasContent()) {
+            return List.of();
+        }
+
+        List<ThinkingBlock> blocks = new ArrayList<>(completedBlocks);
+        if (currentBlock.length() > 0 || !currentMetadata.isEmpty()) {
+            blocks.add(buildCurrentBlock());
+        }
+        return List.copyOf(blocks);
+    }
+
+    /**
      * @hidden
      */
     @Override
     public void reset() {
         accumulated.setLength(0);
         metadata.clear();
+        completedBlocks.clear();
+        currentBlock.setLength(0);
+        currentMetadata.clear();
     }
 
     /**
@@ -84,5 +124,18 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     public String getAccumulated() {
         return accumulated.toString();
+    }
+
+    private void completeCurrentBlock() {
+        completedBlocks.add(buildCurrentBlock());
+        currentBlock.setLength(0);
+        currentMetadata.clear();
+    }
+
+    private ThinkingBlock buildCurrentBlock() {
+        return ThinkingBlock.builder()
+                .thinking(currentBlock.toString())
+                .metadata(currentMetadata.isEmpty() ? null : currentMetadata)
+                .build();
     }
 }

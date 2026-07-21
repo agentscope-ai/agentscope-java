@@ -138,7 +138,7 @@ public class GeminiResponseParser {
             // Check for thinking content first (parts with thought=true flag)
             if (part.thought().isPresent() && part.thought().get() && part.text().isPresent()) {
                 String thinkingText = part.text().get();
-                if (thinkingText != null && (!thinkingText.isEmpty() || metadata != null)) {
+                if (!thinkingText.isEmpty() || metadata != null) {
                     blocks.add(
                             ThinkingBlock.builder()
                                     .thinking(thinkingText)
@@ -158,7 +158,7 @@ public class GeminiResponseParser {
             // Check for text content
             if (part.text().isPresent()) {
                 String text = part.text().get();
-                if (text != null && (!text.isEmpty() || metadata != null)) {
+                if (!text.isEmpty() || metadata != null) {
                     blocks.add(TextBlock.builder().text(text).metadata(metadata).build());
                 }
             }
