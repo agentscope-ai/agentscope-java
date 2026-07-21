@@ -80,14 +80,21 @@ public final class SessionSandboxStateStore {
      * {@link AgentStateStore} 2-arg slot model. The userId column is always {@code null} because
      * sandbox state is conceptually agent-scoped, not user-scoped: USER/AGENT/GLOBAL scopes are
      * encoded into the sessionId prefix rather than the userId slot.
+     *
+     * <p>Uses {@code :} rather than {@code /} as the segment separator: SQL-backed
+     * {@link AgentStateStore} implementations validate the sessionId and reject {@code /} and
+     * {@code \} as path separators (e.g. {@code PostgresAgentStateStore}/{@code MysqlAgentStateStore}
+     * {@code validateSessionId}), so a {@code /}-delimited slot id makes sandbox state persistence
+     * throw {@code IllegalArgumentException} on those stores under any isolation scope. {@code :} is
+     * the same separator {@code MysqlAgentStateStore#slotId} already relies on for that reason.
      */
     private String slotSessionId(SandboxIsolationKey key) {
         IsolationScope scope = key.getScope();
         return switch (scope) {
-            case SESSION -> "sandbox/session/" + key.getValue();
-            case USER -> "sandbox/user/" + agentId + "/" + key.getValue();
-            case AGENT -> "sandbox/agent/" + agentId;
-            case GLOBAL -> "sandbox/global";
+            case SESSION -> "sandbox:session:" + key.getValue();
+            case USER -> "sandbox:user:" + agentId + ":" + key.getValue();
+            case AGENT -> "sandbox:agent:" + agentId;
+            case GLOBAL -> "sandbox:global";
         };
     }
 

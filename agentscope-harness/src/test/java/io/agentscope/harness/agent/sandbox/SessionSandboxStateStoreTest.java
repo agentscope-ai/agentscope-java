@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.State;
 import io.agentscope.harness.agent.IsolationScope;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +74,28 @@ class SessionSandboxStateStoreTest {
     }
 
     @Test
+    void slotSessionId_hasNoPathSeparators_soSqlStoresAccept_allScopes() throws Exception {
+        // SQL-backed AgentStateStore impls (Postgres/MySQL) reject '/' and '\' in the sessionId
+        // via validateSessionId. A store whose slot ids contain path separators makes sandbox
+        // state persistence throw on those backends for every isolation scope (issue #2327).
+        SessionSandboxStateStore sqlLikeStore =
+                new SessionSandboxStateStore(new PathSeparatorRejectingStore(), AGENT_ID);
+
+        for (SandboxIsolationKey key :
+                new SandboxIsolationKey[] {
+                    isolationKey(IsolationScope.SESSION, "sess-001"),
+                    isolationKey(IsolationScope.USER, "user-123"),
+                    isolationKey(IsolationScope.AGENT, AGENT_ID),
+                    isolationKey(IsolationScope.GLOBAL, SandboxIsolationKey.GLOBAL_VALUE)
+                }) {
+            sqlLikeStore.save(key, JSON);
+            assertEquals(JSON, sqlLikeStore.load(key).orElseThrow());
+            sqlLikeStore.delete(key);
+            assertFalse(sqlLikeStore.load(key).isPresent());
+        }
+    }
+
+    @Test
     void deleteUsesTombstone_evenWhenSessionDeleteUnsupported() throws Exception {
         SessionSandboxStateStore redisLikeStore =
                 new SessionSandboxStateStore(new NoDeleteSession(), AGENT_ID);
@@ -104,6 +128,39 @@ class SessionSandboxStateStoreTest {
         @Override
         public void delete(String userId, String sessionId, String key) {
             // no-op
+        }
+    }
+
+    /**
+     * Mirrors the {@code validateSessionId} contract of the SQL-backed stores
+     * ({@code PostgresAgentStateStore}/{@code MysqlAgentStateStore}): the sessionId must not contain
+     * a path separator. Lets the round-trip test fail exactly the way those backends do.
+     */
+    private static final class PathSeparatorRejectingStore extends InMemoryAgentStateStore {
+        private static void validate(String sessionId) {
+            if (sessionId != null && (sessionId.contains("/") || sessionId.contains("\\"))) {
+                throw new IllegalArgumentException(
+                        "AgentStateStore ID cannot contain path separators: " + sessionId);
+            }
+        }
+
+        @Override
+        public void save(String userId, String sessionId, String key, State value) {
+            validate(sessionId);
+            super.save(userId, sessionId, key, value);
+        }
+
+        @Override
+        public <T extends State> Optional<T> get(
+                String userId, String sessionId, String key, Class<T> type) {
+            validate(sessionId);
+            return super.get(userId, sessionId, key, type);
+        }
+
+        @Override
+        public void delete(String userId, String sessionId, String key) {
+            validate(sessionId);
+            super.delete(userId, sessionId, key);
         }
     }
 }
