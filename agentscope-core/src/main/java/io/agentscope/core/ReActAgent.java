@@ -90,6 +90,8 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -210,6 +212,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /** Tool name used for the per-call structured-output {@code generate_response} tool. */
     public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
+
+    /**
+     * Maximum number of reminder retries when the model finishes a fallback structured-output
+     * call without invoking {@code generate_response} (parity with the 1.x
+     * {@code StructuredOutputHook}).
+     */
+    private static final int STRUCTURED_OUTPUT_MAX_RETRIES = 3;
 
     /**
      * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
@@ -1151,6 +1160,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedThinking);
                                             }
                                             scope.state.contextMutable().add(out);
+                                        } else {
+                                            // Give-up path: the reminders injected by the
+                                            // self-healing retries are internal artifacts —
+                                            // strip them so they don't pollute later turns.
+                                            scope.state
+                                                    .contextMutable()
+                                                    .removeIf(
+                                                            scope
+                                                                    ::isFailedStructuredOutputRetryArtifact);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
@@ -1464,6 +1482,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
+
+        /** Reminder retries performed after rounds that ended without a tool call. */
+        int soRetryCount;
+
+        /** Assistant responses that triggered a fallback structured-output retry. */
+        final List<Msg> soRetryAttemptMsgs = new ArrayList<>();
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
@@ -1942,6 +1966,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             .build(),
                                                     options);
                                 }
+                                // Retry round of a fallback structured-output call (the last
+                                // context message is a TOOL_CHOICE reminder): force the model
+                                // to call generate_response via the tool_choice API parameter.
+                                if (soTool != null
+                                        && isToolChoiceReminder(event.getInputMessages())) {
+                                    options =
+                                            GenerateOptions.mergeOptions(
+                                                    GenerateOptions.builder()
+                                                            .toolChoice(
+                                                                    new ToolChoice.Specific(
+                                                                            STRUCTURED_OUTPUT_TOOL_NAME))
+                                                            .build(),
+                                                    options);
+                                }
                                 List<Msg> modelInput =
                                         prependSystemMsg(
                                                 event.getInputMessages(), event.getSystemMessage());
@@ -2079,6 +2117,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
+                                    // Structured-output self-healing (1.x StructuredOutputHook
+                                    // parity): the model ended the loop with plain text instead
+                                    // of calling generate_response — remind it and go back to
+                                    // reasoning; the retry round forces tool_choice.
+                                    if (eventMsg != null
+                                            && soTool != null
+                                            && !soCompleted
+                                            && soRetryCount < STRUCTURED_OUTPUT_MAX_RETRIES) {
+                                        soRetryCount++;
+                                        log.debug(
+                                                "Model didn't call {}, requesting retry ({}/{})",
+                                                STRUCTURED_OUTPUT_TOOL_NAME,
+                                                soRetryCount,
+                                                STRUCTURED_OUTPUT_MAX_RETRIES);
+                                        soRetryAttemptMsgs.add(eventMsg);
+                                        state.contextMutable()
+                                                .add(createStructuredOutputReminder());
+                                        return reasoning(iter + 1, true);
+                                    }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
 
@@ -3362,6 +3419,63 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         }
                                         return executeIteration(iter + 1);
                                     }));
+        }
+
+        /**
+         * Build the reminder message injected when the model finishes a fallback
+         * structured-output call without invoking {@code generate_response}. Tagged with the
+         * {@link MessageMetadataKeys#STRUCTURED_OUTPUT_REMINDER} metadata so
+         * {@code compressStructuredOutputContext} removes it from the final context.
+         */
+        private Msg createStructuredOutputReminder() {
+            return Msg.builder()
+                    .name("system")
+                    .role(MsgRole.USER)
+                    .content(
+                            TextBlock.builder()
+                                    .text(
+                                            "Please call the '"
+                                                    + STRUCTURED_OUTPUT_TOOL_NAME
+                                                    + "' function to provide your response.")
+                                    .build())
+                    .metadata(
+                            Map.of(
+                                    MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
+                                    true,
+                                    MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
+                                    StructuredOutputReminder.TOOL_CHOICE.toString()))
+                    .build();
+        }
+
+        private boolean isFailedStructuredOutputRetryArtifact(Msg msg) {
+            Map<String, Object> metadata = msg.getMetadata();
+            boolean isReminder =
+                    metadata != null
+                            && Boolean.TRUE.equals(
+                                    metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
+            boolean isIntermediateAttempt =
+                    soRetryAttemptMsgs.stream().anyMatch(attempt -> attempt == msg);
+            return isReminder || isIntermediateAttempt;
+        }
+
+        /**
+         * True when the last input message is a TOOL_CHOICE structured-output reminder — i.e.
+         * this reasoning round is a self-healing retry that must force {@code tool_choice}.
+         */
+        private static boolean isToolChoiceReminder(List<Msg> msgs) {
+            if (msgs == null || msgs.isEmpty()) {
+                return false;
+            }
+            Msg last = msgs.get(msgs.size() - 1);
+            Map<String, Object> metadata = last != null ? last.getMetadata() : null;
+            return metadata != null
+                    && Boolean.TRUE.equals(
+                            metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))
+                    && StructuredOutputReminder.TOOL_CHOICE
+                            .toString()
+                            .equals(
+                                    metadata.get(
+                                            MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE));
         }
 
         /**
