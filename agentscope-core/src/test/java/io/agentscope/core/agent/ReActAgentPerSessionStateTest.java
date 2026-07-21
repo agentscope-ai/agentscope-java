@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -36,9 +37,11 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +49,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -67,6 +71,42 @@ class ReActAgentPerSessionStateTest {
                     ChatResponse.builder()
                             .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
                             .build());
+        }
+    }
+
+    private static final class FailingModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "failing";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(new IllegalStateException("model failed"));
+        }
+    }
+
+    private static final class NeverModel extends ChatModelBase {
+        private final CountDownLatch subscribed;
+
+        private NeverModel(CountDownLatch subscribed) {
+            this.subscribed = subscribed;
+        }
+
+        @Override
+        public String getModelName() {
+            return "never";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.defer(
+                    () -> {
+                        subscribed.countDown();
+                        return Flux.never();
+                    });
         }
     }
 
@@ -118,6 +158,170 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("completed calls release persistent per-session caches")
+    void completedCallsReleasePersistentCaches() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        agent.getAgentState();
+        int initialStateCacheSize = cacheSize(agent, "stateCache");
+        int initialPermissionCacheSize = cacheSize(agent, "permissionEngineCache");
+
+        for (int i = 0; i < 32; i++) {
+            RuntimeContext ctx =
+                    RuntimeContext.builder().userId("user").sessionId("session-" + i).build();
+            agent.call(List.of(userMsg("hello-" + i)), ctx).block(Duration.ofSeconds(5));
+        }
+
+        assertEquals(initialStateCacheSize, cacheSize(agent, "stateCache"));
+        assertEquals(initialPermissionCacheSize, cacheSize(agent, "permissionEngineCache"));
+    }
+
+    @Test
+    @DisplayName("failed calls release persistent per-session caches")
+    void failedCallsReleasePersistentCaches() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new FailingModel())
+                        .stateStore(new InMemoryAgentStateStore())
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("failed").build();
+        agent.getAgentState();
+        int initialStateCacheSize = cacheSize(agent, "stateCache");
+        int initialPermissionCacheSize = cacheSize(agent, "permissionEngineCache");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> agent.call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(5)));
+
+        assertEquals(initialStateCacheSize, cacheSize(agent, "stateCache"));
+        assertEquals(initialPermissionCacheSize, cacheSize(agent, "permissionEngineCache"));
+    }
+
+    @Test
+    @DisplayName("cancelled calls release persistent per-session caches")
+    void cancelledCallsReleasePersistentCaches() throws Exception {
+        CountDownLatch subscribed = new CountDownLatch(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NeverModel(subscribed))
+                        .stateStore(new InMemoryAgentStateStore())
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("cancelled").build();
+        agent.getAgentState();
+        int initialStateCacheSize = cacheSize(agent, "stateCache");
+        int initialPermissionCacheSize = cacheSize(agent, "permissionEngineCache");
+
+        Disposable call = agent.call(List.of(userMsg("hello")), ctx).subscribe();
+        assertTrue(subscribed.await(5, TimeUnit.SECONDS), "model stream should start");
+        call.dispose();
+
+        assertEquals(initialStateCacheSize, cacheSize(agent, "stateCache"));
+        assertEquals(initialPermissionCacheSize, cacheSize(agent, "permissionEngineCache"));
+    }
+
+    @Test
+    @DisplayName("session eviction removes only the selected in-memory slot")
+    void evictSessionRemovesOnlySelectedSlot() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        RuntimeContext first = RuntimeContext.builder().userId("u").sessionId("first").build();
+        RuntimeContext second = RuntimeContext.builder().userId("u").sessionId("second").build();
+        agent.call(List.of(userMsg("first")), first).block(Duration.ofSeconds(5));
+        agent.call(List.of(userMsg("second")), second).block(Duration.ofSeconds(5));
+        AgentState firstState = agent.getAgentState(first);
+        AgentState secondState = agent.getAgentState(second);
+
+        agent.evictSession("u", "first");
+
+        assertNotSame(firstState, agent.getAgentState(first));
+        assertSame(secondState, agent.getAgentState(second));
+
+        AgentState defaultState = agent.getAgentState(null, agent.getDefaultSessionId());
+        agent.evictSession(null, null);
+        assertNotSame(defaultState, agent.getAgentState(null, agent.getDefaultSessionId()));
+
+        AgentState blankSessionState = agent.getAgentState(null, agent.getDefaultSessionId());
+        agent.evictSession(null, " ");
+        assertNotSame(blankSessionState, agent.getAgentState(null, agent.getDefaultSessionId()));
+    }
+
+    @Test
+    @DisplayName("user eviction removes all and only that user's in-memory slots")
+    void evictUserRemovesOnlySelectedUsersSlots() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        agent.call(
+                        List.of(userMsg("first")),
+                        RuntimeContext.builder().userId("u1").sessionId("first").build())
+                .block(Duration.ofSeconds(5));
+        agent.call(
+                        List.of(userMsg("second")),
+                        RuntimeContext.builder().userId("u1").sessionId("second").build())
+                .block(Duration.ofSeconds(5));
+        agent.call(
+                        List.of(userMsg("other")),
+                        RuntimeContext.builder().userId("u2").sessionId("first").build())
+                .block(Duration.ofSeconds(5));
+        AgentState first = agent.getAgentState("u1", "first");
+        AgentState second = agent.getAgentState("u1", "second");
+        AgentState other = agent.getAgentState("u2", "first");
+
+        agent.evictUser("u1");
+
+        assertNotSame(first, agent.getAgentState("u1", "first"));
+        assertNotSame(second, agent.getAgentState("u1", "second"));
+        assertSame(other, agent.getAgentState("u2", "first"));
+
+        AgentState anonymous = agent.getAgentState(null, "anonymous");
+        agent.evictUser(null);
+        assertNotSame(anonymous, agent.getAgentState(null, "anonymous"));
+
+        AgentState blankUser = agent.getAgentState(null, "blank-user");
+        agent.evictUser(" ");
+        assertNotSame(blankUser, agent.getAgentState(null, "blank-user"));
+    }
+
+    @Test
+    @DisplayName("close clears all in-memory session caches")
+    void closeClearsSessionCaches() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        agent.call(
+                        List.of(userMsg("hello")),
+                        RuntimeContext.builder().userId("u").sessionId("session").build())
+                .block(Duration.ofSeconds(5));
+        assertTrue(cacheSize(agent, "stateCache") > 0);
+        assertTrue(cacheSize(agent, "permissionEngineCache") > 0);
+
+        agent.close();
+
+        assertEquals(0, cacheSize(agent, "stateCache"));
+        assertEquals(0, cacheSize(agent, "permissionEngineCache"));
+    }
+
+    @Test
+    @DisplayName("calls without a state store retain in-memory per-session state")
+    void callsWithoutStateStoreRetainSessionCaches() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        agent.getAgentState();
+        int initialStateCacheSize = cacheSize(agent, "stateCache");
+        int initialPermissionCacheSize = cacheSize(agent, "permissionEngineCache");
+
+        for (int i = 0; i < 3; i++) {
+            RuntimeContext ctx =
+                    RuntimeContext.builder().userId("user").sessionId("session-" + i).build();
+            agent.call(List.of(userMsg("hello-" + i)), ctx).block(Duration.ofSeconds(5));
+        }
+
+        assertEquals(initialStateCacheSize + 3, cacheSize(agent, "stateCache"));
+        assertEquals(initialPermissionCacheSize + 3, cacheSize(agent, "permissionEngineCache"));
     }
 
     @Test
@@ -215,6 +419,16 @@ class ReActAgentPerSessionStateTest {
             }
         }
         return out;
+    }
+
+    private static int cacheSize(ReActAgent agent, String fieldName) {
+        try {
+            Field field = ReActAgent.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return ((Map<?, ?>) field.get(agent)).size();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to inspect " + fieldName, e);
+        }
     }
 
     @Test

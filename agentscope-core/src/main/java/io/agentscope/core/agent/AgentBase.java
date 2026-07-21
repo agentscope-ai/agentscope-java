@@ -319,7 +319,11 @@ public abstract class AgentBase implements Agent {
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 msgs.toArray(new Msg[0]))));
-        return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+        if (scope == null) {
+            return body;
+        }
+        return body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope))
+                .doFinally(signal -> afterCallScopeExecution(scope));
     }
 
     /**
@@ -594,6 +598,15 @@ public abstract class AgentBase implements Agent {
      * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
      */
     protected void afterAgentExecution() {}
+
+    /**
+     * Invoked when a call-specific scope terminates after success, error, or cancellation.
+     * Subclasses can release resources owned by the exact scope without consulting shared
+     * instance fields that may already refer to another concurrent call.
+     *
+     * @param callScope the scope returned by {@link #beforeAgentExecution(List, RuntimeContext)}
+     */
+    protected void afterCallScopeExecution(Object callScope) {}
 
     /**
      * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
