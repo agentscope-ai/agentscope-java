@@ -83,7 +83,8 @@ public class ShellExecuteTool {
         if (result.truncated()) {
             sb.append("\n(output was truncated)");
         }
-        return sb.toString();    }
+        return sb.toString();
+    }
 
     static String prefixWorkingDirectory(String command, String workingDirectory, String osName) {
         if (isWindows(osName)) {
