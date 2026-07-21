@@ -41,6 +41,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -123,7 +124,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -350,7 +351,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         // Handle tool calls
@@ -513,6 +514,66 @@ public class OpenAIMessageConverter {
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }
+
+    /**
+     * Sanitizes an agent/user name to comply with the OpenAI {@code name} field constraint
+     * {@code ^[a-zA-Z0-9_-]{1,64}$}.
+     *
+     * <p>Transformation rules applied in order:
+     * <ol>
+     *   <li>Spaces are replaced with {@code _}.</li>
+     *   <li>Any remaining characters outside {@code [a-zA-Z0-9_-]} are replaced with {@code _}.</li>
+     *   <li>Consecutive underscores are collapsed to a single {@code _}.</li>
+     *   <li>Leading and trailing underscores are stripped.</li>
+     *   <li>If the result is empty (e.g. a purely non-ASCII name), {@code "agent"} is returned
+     *       as a safe fallback so the field is still included.</li>
+     *   <li>If the result exceeds 64 characters it is truncated and trailing underscores are
+     *       stripped from the cut point.</li>
+     * </ol>
+     *
+     * <p>When sanitization actually changes the name a single {@code WARN}-level log line is
+     * emitted so operators can rename their agents to avoid the silent transformation.
+     *
+     * @param name the raw agent/user name (must be non-null; callers are responsible for the
+     *             null-check)
+     * @return a non-null, non-empty string that satisfies {@code ^[a-zA-Z0-9_-]{1,64}$}
+     */
+    static String sanitizeName(String name) {
+        // Replace spaces explicitly so the intent is clear, then replace all other illegal chars
+        String sanitized = name.replace(' ', '_');
+        sanitized = OPENAI_NAME_ILLEGAL_CHARS.matcher(sanitized).replaceAll("_");
+        // Collapse consecutive underscores and strip leading/trailing ones
+        sanitized = MULTIPLE_UNDERSCORES.matcher(sanitized).replaceAll("_");
+        sanitized = sanitized.replaceAll("^_+|_+$", "");
+
+        if (sanitized.isEmpty()) {
+            sanitized = "agent";
+        }
+
+        // Enforce 64-char max
+        if (sanitized.length() > 64) {
+            sanitized = sanitized.substring(0, 64).replaceAll("_+$", "");
+            if (sanitized.isEmpty()) {
+                sanitized = "agent";
+            }
+        }
+
+        if (!sanitized.equals(name)) {
+            log.warn(
+                    "Agent name '{}' contains characters not allowed by the OpenAI API"
+                            + " (^[a-zA-Z0-9_-]{{1,64}}$); using '{}' instead."
+                            + " Consider renaming the agent to an ASCII-only name.",
+                    name,
+                    sanitized);
+        }
+        return sanitized;
+    }
+
+    /** Matches any character outside the OpenAI-permitted set {@code [a-zA-Z0-9_-]}. */
+    private static final Pattern OPENAI_NAME_ILLEGAL_CHARS = Pattern.compile("[^a-zA-Z0-9_\\-]");
+
+    /** Matches two or more consecutive underscores. */
+    private static final Pattern MULTIPLE_UNDERSCORES = Pattern.compile("_{2,}");
 
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.

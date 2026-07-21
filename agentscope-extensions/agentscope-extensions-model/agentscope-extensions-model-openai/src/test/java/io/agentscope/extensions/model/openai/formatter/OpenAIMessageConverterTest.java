@@ -704,7 +704,7 @@ class OpenAIMessageConverterTest {
     class NameFieldTests {
 
         @Test
-        @DisplayName("Should set name field for user message")
+        @DisplayName("Should set name field for user message when already valid")
         void testUserMessageWithName() {
             Msg msg =
                     Msg.builder()
@@ -720,7 +720,7 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
-        @DisplayName("Should set name field for assistant message")
+        @DisplayName("Should set name field for assistant message when already valid")
         void testAssistantMessageWithName() {
             Msg msg =
                     Msg.builder()
@@ -749,6 +749,112 @@ class OpenAIMessageConverterTest {
 
             assertNotNull(result);
             assertNull(result.getName());
+        }
+
+        // --- sanitizeName unit tests (package-private method via same-package test) ---
+
+        @Test
+        @DisplayName("sanitizeName: valid ASCII name passes through unchanged")
+        void testSanitizeNameValid() {
+            assertEquals("My_Agent", OpenAIMessageConverter.sanitizeName("My_Agent"));
+            assertEquals("agent-1", OpenAIMessageConverter.sanitizeName("agent-1"));
+            assertEquals("Alice", OpenAIMessageConverter.sanitizeName("Alice"));
+        }
+
+        @Test
+        @DisplayName("sanitizeName: spaces are replaced with underscores")
+        void testSanitizeNameWithSpaces() {
+            assertEquals("My_Agent", OpenAIMessageConverter.sanitizeName("My Agent"));
+            assertEquals("hello_world", OpenAIMessageConverter.sanitizeName("hello world"));
+        }
+
+        @Test
+        @DisplayName("sanitizeName: non-ASCII characters are replaced with underscores")
+        void testSanitizeNameNonAscii() {
+            String result = OpenAIMessageConverter.sanitizeName("智能助手");
+            // all Chinese chars become '_', consecutive collapse, leading/trailing stripped → "agent"
+            assertTrue(
+                    result.matches("^[a-zA-Z0-9_\\-]{1,64}$"),
+                    "Result must satisfy OpenAI constraint but was: " + result);
+        }
+
+        @Test
+        @DisplayName("sanitizeName: mixed name with spaces and Chinese collapses correctly")
+        void testSanitizeNameMixed() {
+            String result = OpenAIMessageConverter.sanitizeName("My Agent 你好");
+            // "My_Agent___" → collapse → "My_Agent"
+            assertEquals("My_Agent", result);
+            assertTrue(result.matches("^[a-zA-Z0-9_\\-]{1,64}$"));
+        }
+
+        @Test
+        @DisplayName("sanitizeName: name exceeding 64 chars is truncated")
+        void testSanitizeNameTooLong() {
+            String longName = "a".repeat(80);
+            String result = OpenAIMessageConverter.sanitizeName(longName);
+            assertTrue(result.length() <= 64, "Result must be at most 64 chars");
+            assertTrue(result.matches("^[a-zA-Z0-9_\\-]{1,64}$"));
+        }
+
+        @Test
+        @DisplayName("sanitizeName: purely illegal name falls back to 'agent'")
+        void testSanitizeNamePurelyIllegal() {
+            assertEquals("agent", OpenAIMessageConverter.sanitizeName("!!!"));
+            assertEquals("agent", OpenAIMessageConverter.sanitizeName("你好"));
+        }
+
+        @Test
+        @DisplayName(
+                "sanitizeName: assistant message with space in name is sanitized before API call")
+        void testAssistantMessageNameWithSpaceIsSanitized() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("My Agent")
+                            .content(List.of(TextBlock.builder().text("Hi").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("My_Agent", result.getName());
+        }
+
+        @Test
+        @DisplayName(
+                "sanitizeName: user message with space in name is sanitized before API call")
+        void testUserMessageNameWithSpaceIsSanitized() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("Hello World")
+                            .content(List.of(TextBlock.builder().text("Hi").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("Hello_World", result.getName());
+        }
+
+        @Test
+        @DisplayName(
+                "sanitizeName: assistant message with Chinese name is sanitized before API call")
+        void testAssistantMessageChineseNameIsSanitized() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("智能助手")
+                            .content(List.of(TextBlock.builder().text("你好").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getName());
+            assertTrue(
+                    result.getName().matches("^[a-zA-Z0-9_\\-]{1,64}$"),
+                    "Sanitized name must satisfy OpenAI constraint but was: " + result.getName());
         }
     }
 
