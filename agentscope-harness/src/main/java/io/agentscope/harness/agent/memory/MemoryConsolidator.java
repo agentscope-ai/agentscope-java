@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -214,27 +215,30 @@ public class MemoryConsolidator {
             return "";
         }
 
-        List<FileInfo> eligible = new ArrayList<>();
+        List<String> eligible = new ArrayList<>();
         for (FileInfo fi : glob.matches()) {
             if (fi.isDirectory()) {
                 continue;
             }
-            String name = fileName(fi.path());
+            String rel = workspaceManager.toWorkspaceRelativePath(fi.path());
+            if (rel.isBlank()) {
+                continue;
+            }
+            String name = fileName(rel);
             if (name.equals(STATE_FILE) || name.equals("archive") || !name.endsWith(".md")) {
                 continue;
             }
             if (isModifiedAfter(fi, watermark)) {
-                eligible.add(fi);
+                eligible.add(rel);
             }
         }
-        eligible.sort(Comparator.comparing(fi -> fileName(fi.path())));
+        eligible.sort(Comparator.comparing(MemoryConsolidator::fileName));
 
         StringBuilder sb = new StringBuilder();
-        for (FileInfo fi : eligible) {
-            String rel = toRelative(fi.path());
+        for (String rel : eligible) {
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, rel);
             if (content != null && !content.isBlank()) {
-                sb.append("### ").append(fileName(fi.path())).append("\n");
+                sb.append("### ").append(fileName(rel)).append("\n");
                 sb.append(content.strip()).append("\n\n");
             }
         }
@@ -258,21 +262,18 @@ public class MemoryConsolidator {
         if (path == null || path.isEmpty()) {
             return "";
         }
-        String stripped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-        int idx = stripped.lastIndexOf('/');
-        return idx >= 0 ? stripped.substring(idx + 1) : stripped;
-    }
-
-    /**
-     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
-     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
-     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
-     */
-    private static String toRelative(String path) {
-        if (path == null) {
-            return "";
+        try {
+            Path p = Path.of(path);
+            Path name = p.getFileName();
+            if (name != null) {
+                return name.toString();
+            }
+        } catch (Exception ignored) {
+            // Fall through to string-based parsing.
         }
-        return path.startsWith("/") ? path.substring(1) : path;
+        String stripped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        int idx = Math.max(stripped.lastIndexOf('/'), stripped.lastIndexOf('\\'));
+        return idx >= 0 ? stripped.substring(idx + 1) : stripped;
     }
 
     private void writeConsolidatedMemory(RuntimeContext rc, String content) {
