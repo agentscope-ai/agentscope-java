@@ -404,6 +404,12 @@
             <artifactId>jsonschema-module-jackson</artifactId>
         </dependency>
 
+        <!-- Jackson 3.x (tools.jackson) required by jsonschema-generator 5.x -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- JSON Schema Validator for tool input validation -->
         <dependency>
             <groupId>com.networknt</groupId>
