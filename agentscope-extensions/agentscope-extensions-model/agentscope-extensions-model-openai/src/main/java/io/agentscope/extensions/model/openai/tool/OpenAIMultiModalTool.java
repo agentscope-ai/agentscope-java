@@ -58,6 +58,11 @@ public class OpenAIMultiModalTool {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMultiModalTool.class);
 
+    private static final String DEFAULT_VISION_MODEL = "gpt-4o";
+    private static final String DEFAULT_IMAGE_GEN_MODEL = "dall-e-3";
+    private static final String DEFAULT_TTS_MODEL = "tts-1";
+    private static final String DEFAULT_STT_MODEL = "whisper-1";
+
     /** OpenAI API key. */
     private final String apiKey;
 
@@ -68,13 +73,23 @@ public class OpenAIMultiModalTool {
     private final String baseUrl;
 
     /** Default vision model used when the caller does not specify one. */
-    private final String defaultModelName;
+    private final String defaultVisionModel;
+
+    /** Default image generation model used when the caller does not specify one. */
+    private final String defaultImageGenModel;
+
+    /** Default TTS model used when the caller does not specify one. */
+    private final String defaultTtsModel;
+
+    /** Default speech-to-text model used when the caller does not specify one. */
+    private final String defaultSttModel;
 
     /**
      * Create a new OpenAIMultiModalTool with default base URL.
      *
      * @param apiKey the OpenAI API key
      */
+    @Deprecated
     public OpenAIMultiModalTool(String apiKey) {
         this(apiKey, null, "gpt-4o");
     }
@@ -85,6 +100,7 @@ public class OpenAIMultiModalTool {
      * @param apiKey the OpenAI API key
      * @param baseUrl the base URL (null for default https://api.openai.com)
      */
+    @Deprecated
     public OpenAIMultiModalTool(String apiKey, String baseUrl) {
         this(apiKey, baseUrl, "gpt-4o");
     }
@@ -94,19 +110,39 @@ public class OpenAIMultiModalTool {
      *
      * @param apiKey the OpenAI API key
      * @param baseUrl the base URL (null for default https://api.openai.com)
-     * @param defaultModelName the default vision model name used when the caller omits the model
+     * @param defaultVisionModel the default vision model name used when the caller omits the model
      *     parameter (e.g., "gpt-4o" for OpenAI, or your backend's vision model name)
      */
-    public OpenAIMultiModalTool(String apiKey, String baseUrl, String defaultModelName) {
+    @Deprecated
+    public OpenAIMultiModalTool(String apiKey, String baseUrl, String defaultVisionModel) {
+        this(
+                apiKey,
+                baseUrl,
+                defaultVisionModel,
+                DEFAULT_IMAGE_GEN_MODEL,
+                DEFAULT_TTS_MODEL,
+                DEFAULT_STT_MODEL);
+    }
+
+    private OpenAIMultiModalTool(
+            String apiKey,
+            String baseUrl,
+            String defaultVisionModel,
+            String defaultImageGenModel,
+            String defaultTtsModel,
+            String defaultSttModel) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             throw new IllegalArgumentException("OpenAI API key cannot be empty.");
         }
-        if (defaultModelName == null || defaultModelName.trim().isEmpty()) {
-            throw new IllegalArgumentException("defaultModelName cannot be empty.");
+        if (defaultVisionModel == null || defaultVisionModel.trim().isEmpty()) {
+            throw new IllegalArgumentException("defaultVisionModel cannot be empty.");
         }
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
-        this.defaultModelName = defaultModelName;
+        this.defaultVisionModel = defaultVisionModel;
+        this.defaultImageGenModel = defaultImageGenModel;
+        this.defaultTtsModel = defaultTtsModel;
+        this.defaultSttModel = defaultSttModel;
         this.client = new OpenAIClient();
     }
 
@@ -115,6 +151,7 @@ public class OpenAIMultiModalTool {
      *
      * @param client the OpenAI client
      */
+    @Deprecated
     protected OpenAIMultiModalTool(OpenAIClient client) {
         this(client, "gpt-4o");
     }
@@ -123,23 +160,143 @@ public class OpenAIMultiModalTool {
      * Create a new OpenAIMultiModalTool with custom client and default model (for testing).
      *
      * @param client the OpenAI client
-     * @param defaultModelName the default vision model name
+     * @param defaultVisionModel the default vision model name
      */
-    protected OpenAIMultiModalTool(OpenAIClient client, String defaultModelName) {
-        if (defaultModelName == null || defaultModelName.trim().isEmpty()) {
-            throw new IllegalArgumentException("defaultModelName cannot be empty.");
+    @Deprecated
+    protected OpenAIMultiModalTool(OpenAIClient client, String defaultVisionModel) {
+        if (defaultVisionModel == null || defaultVisionModel.trim().isEmpty()) {
+            throw new IllegalArgumentException("defaultVisionModel cannot be empty.");
         }
         this.apiKey = "test-key";
         this.baseUrl = null;
-        this.defaultModelName = defaultModelName;
+        this.defaultVisionModel = defaultVisionModel;
+        this.defaultImageGenModel = DEFAULT_IMAGE_GEN_MODEL;
+        this.defaultTtsModel = DEFAULT_TTS_MODEL;
+        this.defaultSttModel = DEFAULT_STT_MODEL;
         this.client = client;
+    }
+
+    /**
+     * Creates a new builder for OpenAIMultiModalTool.
+     *
+     * @return a new Builder instance
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Builder for OpenAIMultiModalTool.
+     *
+     * <p>Each capability has an independent default model. When not set via builder,
+     * the existing hardcoded default is used — no change to current behavior.
+     */
+    public static class Builder {
+        private String apiKey;
+        private String baseUrl;
+        private String defaultVisionModel;
+        private String defaultImageGenModel;
+        private String defaultTtsModel;
+        private String defaultSttModel;
+
+        /**
+         * Sets the API key for OpenAI authentication.
+         *
+         * @param apiKey the API key
+         * @return this builder instance
+         */
+        public Builder apiKey(String apiKey) {
+            this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets a custom base URL for OpenAI API.
+         *
+         * @param baseUrl the base URL (null for default)
+         * @return this builder instance
+         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets the default vision model for image-to-text.
+         *
+         * <p>When not set, falls back to {@code "gpt-4o"}.
+         *
+         * @param defaultVisionModel the vision model name
+         * @return this builder instance
+         */
+        public Builder defaultVisionModel(String defaultVisionModel) {
+            this.defaultVisionModel = defaultVisionModel;
+            return this;
+        }
+
+        /**
+         * Sets the default model for text-to-image generation.
+         *
+         * <p>When not set, falls back to {@code "dall-e-3"}.
+         *
+         * @param defaultImageGenModel the image generation model name
+         * @return this builder instance
+         */
+        public Builder defaultImageGenModel(String defaultImageGenModel) {
+            this.defaultImageGenModel = defaultImageGenModel;
+            return this;
+        }
+
+        /**
+         * Sets the default TTS model for text-to-audio.
+         *
+         * <p>When not set, falls back to {@code "tts-1"}.
+         *
+         * @param defaultTtsModel the TTS model name
+         * @return this builder instance
+         */
+        public Builder defaultTtsModel(String defaultTtsModel) {
+            this.defaultTtsModel = defaultTtsModel;
+            return this;
+        }
+
+        /**
+         * Sets the default speech-to-text model for audio-to-text.
+         *
+         * <p>When not set, falls back to {@code "whisper-1"}.
+         *
+         * @param defaultSttModel the STT model name
+         * @return this builder instance
+         */
+        public Builder defaultSttModel(String defaultSttModel) {
+            this.defaultSttModel = defaultSttModel;
+            return this;
+        }
+
+        /**
+         * Builds the OpenAIMultiModalTool instance.
+         *
+         * @return configured OpenAIMultiModalTool instance
+         * @throws IllegalArgumentException if apiKey is not set
+         */
+        public OpenAIMultiModalTool build() {
+            if (apiKey == null || apiKey.trim().isEmpty()) {
+                throw new IllegalArgumentException("apiKey must be set");
+            }
+            return new OpenAIMultiModalTool(
+                    apiKey,
+                    baseUrl,
+                    defaultVisionModel != null ? defaultVisionModel : DEFAULT_VISION_MODEL,
+                    defaultImageGenModel != null ? defaultImageGenModel : DEFAULT_IMAGE_GEN_MODEL,
+                    defaultTtsModel != null ? defaultTtsModel : DEFAULT_TTS_MODEL,
+                    defaultSttModel != null ? defaultSttModel : DEFAULT_STT_MODEL);
+        }
     }
 
     /**
      * Generate image(s) based on the given prompt.
      *
      * @param prompt the text prompt to generate image
-     * @param model the model to use (e.g., "dall-e-3", "dall-e-2")
      * @param n the number of images to generate (1 for dall-e-3, 1-10 for dall-e-2)
      * @param size the size of the image (e.g., "1024x1024", "1792x1024", "1024x1792")
      * @param quality the quality of the image ("standard" or "hd" for dall-e-3)
@@ -154,11 +311,6 @@ public class OpenAIMultiModalTool {
     public Mono<ToolResultBlock> openaiTextToImage(
             @ToolParam(name = "prompt", description = "The text prompt to generate image")
                     String prompt,
-            @ToolParam(
-                            name = "model",
-                            description = "The model to use, e.g., 'dall-e-3', 'dall-e-2'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "n",
                             description =
@@ -185,8 +337,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     String responseFormat) {
 
-        String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("dall-e-3");
+        String finalModel = this.defaultImageGenModel;
         Integer finalN = Optional.ofNullable(n).orElse(1);
         String finalSize =
                 Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1024x1024");
@@ -282,7 +433,6 @@ public class OpenAIMultiModalTool {
      *
      * @param imageUrls the URLs of the images to analyze
      * @param prompt the text prompt describing what to extract from the images
-     * @param model the vision model to use (leave empty to use the configured default)
      * @param maxTokens the maximum number of tokens in the response
      * @return a ToolResultBlock containing the text description of the images
      */
@@ -303,22 +453,12 @@ public class OpenAIMultiModalTool {
                             required = false)
                     String prompt,
             @ToolParam(
-                            name = "model",
-                            description =
-                                    "The vision model to use (leave empty to use the configured"
-                                            + " default)",
-                            required = false)
-                    String model,
-            @ToolParam(
                             name = "max_tokens",
                             description = "The maximum number of tokens in the response",
                             required = false)
                     Integer maxTokens) {
 
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> !s.trim().isEmpty())
-                        .orElse(this.defaultModelName);
+        String finalModel = this.defaultVisionModel;
         String finalPrompt =
                 Optional.ofNullable(prompt)
                         .filter(s -> !s.trim().isEmpty())
@@ -410,7 +550,6 @@ public class OpenAIMultiModalTool {
      * Convert text to audio (speech) using OpenAI TTS models.
      *
      * @param text the text to convert to speech
-     * @param model the TTS model to use (e.g., "tts-1", "tts-1-hd")
      * @param voice the voice to use ("alloy", "echo", "fable", "onyx", "nova", "shimmer")
      * @param responseFormat the audio format ("mp3", "opus", "aac", "flac")
      * @param speed the speed of the speech (0.25 to 4.0)
@@ -423,11 +562,6 @@ public class OpenAIMultiModalTool {
                             + "Returns audio as base64 data.")
     public Mono<ToolResultBlock> openaiTextToAudio(
             @ToolParam(name = "text", description = "The text to convert to speech") String text,
-            @ToolParam(
-                            name = "model",
-                            description = "The TTS model to use, e.g., 'tts-1', 'tts-1-hd'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "voice",
                             description =
@@ -446,8 +580,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     Double speed) {
 
-        String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("tts-1");
+        String finalModel = this.defaultTtsModel;
         String finalVoice =
                 Optional.ofNullable(voice).filter(s -> !s.trim().isEmpty()).orElse("alloy");
         String finalResponseFormat =
@@ -497,7 +630,6 @@ public class OpenAIMultiModalTool {
      * This is a placeholder implementation.
      *
      * @param audioUrl the URL of the audio file to transcribe
-     * @param model the transcription model to use (e.g., "whisper-1")
      * @param language the language of the audio (ISO-639-1 code, optional)
      * @param prompt optional text to guide the model's style
      * @param responseFormat the format of the response ("json", "text", "verbose_json", etc.)
@@ -512,11 +644,6 @@ public class OpenAIMultiModalTool {
     public Mono<ToolResultBlock> openaiAudioToText(
             @ToolParam(name = "audio_url", description = "The URL of the audio file to transcribe")
                     String audioUrl,
-            @ToolParam(
-                            name = "model",
-                            description = "The transcription model to use, e.g., 'whisper-1'",
-                            required = false)
-                    String model,
             @ToolParam(
                             name = "language",
                             description = "The language of the audio (ISO-639-1 code, optional)",
@@ -540,8 +667,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     Double temperature) {
 
-        String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("whisper-1");
+        String finalModel = this.defaultSttModel;
         String finalResponseFormat =
                 Optional.ofNullable(responseFormat).filter(s -> !s.trim().isEmpty()).orElse("text");
 

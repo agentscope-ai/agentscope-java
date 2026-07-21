@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.extensions.model.openai.OpenAIClient;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -55,7 +56,7 @@ class OpenAIMultiModalToolTest {
                 .thenReturn(jsonResponse);
 
         Mono<ToolResultBlock> resultMono =
-                tool.openaiTextToImage(prompt, "dall-e-3", 1, "1024x1024", "standard", "url");
+                tool.openaiTextToImage(prompt, 1, "1024x1024", "standard", "url");
         ToolResultBlock result = resultMono.block();
 
         assertNotNull(result);
@@ -81,8 +82,7 @@ class OpenAIMultiModalToolTest {
                         argThat(
                                 req -> {
                                     @SuppressWarnings("unchecked")
-                                    java.util.Map<String, Object> map =
-                                            (java.util.Map<String, Object>) req;
+                                    Map<String, Object> map = (Map<String, Object>) req;
                                     return "my-custom-vision-model".equals(map.get("model"));
                                 })))
                 .thenReturn(jsonResponse);
@@ -91,7 +91,7 @@ class OpenAIMultiModalToolTest {
                 new OpenAIMultiModalTool(client, "my-custom-vision-model");
 
         Mono<ToolResultBlock> resultMono =
-                toolWithCustomModel.openaiImageToText(imageUrl, null, null, null);
+                toolWithCustomModel.openaiImageToText(imageUrl, null, null);
         ToolResultBlock result = resultMono.block();
 
         assertNotNull(result);
@@ -103,5 +103,35 @@ class OpenAIMultiModalToolTest {
                 IllegalArgumentException.class, () -> new OpenAIMultiModalTool("key", null, ""));
         assertThrows(
                 IllegalArgumentException.class, () -> new OpenAIMultiModalTool("key", null, null));
+    }
+
+    @Test
+    void testBuilder_withAllCustomModels() {
+        OpenAIMultiModalTool tool =
+                OpenAIMultiModalTool.builder()
+                        .apiKey("sk-test")
+                        .baseUrl("https://custom.api.com")
+                        .defaultVisionModel("gpt-4o-mini")
+                        .defaultImageGenModel("dall-e-2")
+                        .defaultTtsModel("tts-1-hd")
+                        .defaultSttModel("whisper-1")
+                        .build();
+        assertNotNull(tool);
+    }
+
+    @Test
+    void testBuilder_usesDefaultsWhenNotSet() {
+        OpenAIMultiModalTool tool = OpenAIMultiModalTool.builder().apiKey("sk-test").build();
+        assertNotNull(tool);
+    }
+
+    @Test
+    void testBuilder_rejectsBlankApiKey() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenAIMultiModalTool.builder().apiKey("").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenAIMultiModalTool.builder().apiKey(null).build());
     }
 }
