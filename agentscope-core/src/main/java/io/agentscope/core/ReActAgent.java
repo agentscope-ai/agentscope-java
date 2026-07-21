@@ -377,11 +377,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 AgentState legacy =
                                         LegacyStateLoader.loadFromLegacySession(
                                                 stateStore, userId, sessionId);
-                                if (legacy != null
-                                        && (!legacy.getContext().isEmpty()
-                                                || !legacy.getToolContext()
-                                                        .getActivatedGroups()
-                                                        .isEmpty())) {
+                                if (!legacy.getContext().isEmpty()
+                                        || !legacy.getToolContext()
+                                                .getActivatedGroups()
+                                                .isEmpty()) {
                                     return legacy;
                                 }
                                 return fresh;
@@ -469,11 +468,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         PermissionEngine loadedEngine;
         if (stateStore != null) {
             loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            loadedEngine.ensureRulesFrom(initialPermissionContext);
             permissionEngineCache.put(slot, loadedEngine);
         } else {
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
-                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+                            slot,
+                            k -> {
+                                PermissionEngine pe =
+                                        new PermissionEngine(loaded.getPermissionContext());
+                                pe.ensureRulesFrom(initialPermissionContext);
+                                return pe;
+                            });
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
         if (toolkit != null) {

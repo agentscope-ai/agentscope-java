@@ -372,4 +372,56 @@ class PermissionEngineTest {
                     .verifyComplete();
         }
     }
+
+    @Nested
+    @DisplayName("ensureRulesFrom: session-restore rule sync")
+    class EnsureRulesFrom {
+
+        private PermissionContextState contextWithAllTables() {
+            return PermissionContextState.builder()
+                    .mode(PermissionMode.DEFAULT)
+                    .addAllowRule("bash", allowAll("bash"))
+                    .addDenyRule("rm", denyAll("rm"))
+                    .addAskRule("npm", askAll("npm"))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Re-inserts missing allow/deny/ask rules symmetrically")
+        void reinsertsMissingAllowDenyAsk() {
+            // Engine built from a drifted (trivial) persisted context - missing all invariant
+            // rules.
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.ensureRulesFrom(contextWithAllTables());
+
+            assertEquals(1, engine.getAllowRules().get("bash").size());
+            assertEquals(1, engine.getDenyRules().get("rm").size());
+            assertEquals(1, engine.getAskRules().get("npm").size());
+        }
+
+        @Test
+        @DisplayName("Does not duplicate rules already present")
+        void doesNotDuplicateExistingRules() {
+            // Two distinct context instances carrying the same rules: engine from one, sync from
+            // the other. Existing rules must not be duplicated.
+            PermissionContextState persisted = contextWithAllTables();
+            PermissionContextState source = contextWithAllTables();
+            PermissionEngine engine = new PermissionEngine(persisted);
+            engine.ensureRulesFrom(source);
+
+            assertEquals(1, engine.getAllowRules().get("bash").size());
+            assertEquals(1, engine.getDenyRules().get("rm").size());
+            assertEquals(1, engine.getAskRules().get("npm").size());
+        }
+
+        @Test
+        @DisplayName("Null source is a no-op")
+        void nullSourceIsNoop() {
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.ensureRulesFrom(null);
+            assertTrue(engine.getAllowRules().isEmpty());
+            assertTrue(engine.getDenyRules().isEmpty());
+            assertTrue(engine.getAskRules().isEmpty());
+        }
+    }
 }

@@ -31,7 +31,9 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
@@ -152,6 +154,28 @@ import reactor.core.publisher.Mono;
 public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
+
+    /**
+     * Plan-control tools automatically allowed (no ASK) under {@link
+     * io.agentscope.core.permission.PermissionMode#DEFAULT} when plan mode is enabled. These are
+     * pure plan-authoring tools whose only effect is writing the plan file or the todo list.
+     *
+     * <p>This is a deliberate subset of {@code PlanModeMiddleware.ALWAYS_ALLOWED}:
+     *
+     * <ul>
+     *   <li>{@code plan_exit} is excluded — leaving plan mode is a human-in-the-loop hand-off. Its
+     *       tool-level ASK self-check plus the absence of an ALLOW rule together guarantee the user
+     *       approves the plan before execution begins.
+     *   <li>The subagent / task tools ({@code agent_spawn}, {@code agent_send}, {@code agent_list},
+     *       {@code task_output}, {@code task_list}) are excluded — they have side effects and
+     *       remain ASK-gated in DEFAULT mode.
+     * </ul>
+     *
+     * <p>Keep this in sync with {@code PlanModeMiddleware.ALWAYS_ALLOWED} whenever a new
+     * plan-authoring tool is added; tools that should stay HITL-gated are intentionally left out.
+     */
+    private static final List<String> PLAN_CONTROL_AUTO_ALLOW_TOOLS =
+            List.of(PlanModeTools.PLAN_ENTER, PlanModeTools.PLAN_WRITE, "todo_write");
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
@@ -1125,6 +1149,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // JsonFileAgentStateStore rooted at ~/.agentscope/state/<agentId>/, outside any workspace).
         AgentStateStore stateStoreOverride;
 
+        // Permission context — mirrored to enable plan-mode allow-rule injection in build().
+        PermissionContextState permissionContext = PermissionContextState.builder().build();
+
         DistributedStore distributedStore;
 
         io.agentscope.harness.agent.bus.MessageBus messageBus;
@@ -1493,7 +1520,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder permissionContext(PermissionContextState permissionContext) {
-            inner.permissionContext(permissionContext);
+            this.permissionContext =
+                    permissionContext != null
+                            ? permissionContext
+                            : PermissionContextState.builder().build();
             return this;
         }
 
@@ -2335,6 +2365,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     return t != null && t.isReadOnly();
                                 },
                                 planExtraAllowed));
+
+                // Auto-inject ALLOW rules for plan-control tools so PermissionEngine does not
+                // prompt ASK in DEFAULT mode. plan_exit deliberately excluded (preserves HITL).
+                PermissionContextState base = this.permissionContext;
+                PermissionContextState.Builder pb =
+                        PermissionContextState.builder().mode(base.getMode());
+                base.getWorkingDirectories().forEach(pb::addWorkingDirectory);
+                base.getAllowRules()
+                        .forEach((t, rules) -> rules.forEach(r -> pb.addAllowRule(t, r)));
+                base.getDenyRules().forEach((t, rules) -> rules.forEach(r -> pb.addDenyRule(t, r)));
+                base.getAskRules().forEach((t, rules) -> rules.forEach(r -> pb.addAskRule(t, r)));
+                for (String toolName : PLAN_CONTROL_AUTO_ALLOW_TOOLS) {
+                    pb.addAllowRule(
+                            toolName,
+                            new PermissionRule(
+                                    toolName, null, PermissionBehavior.ALLOW, "plan_mode"));
+                }
+                inner.permissionContext(pb.build());
+            } else {
+                inner.permissionContext(this.permissionContext);
             }
 
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
