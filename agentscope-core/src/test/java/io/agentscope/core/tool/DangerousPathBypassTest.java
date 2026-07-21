@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
@@ -99,6 +100,8 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToSshIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(supportsSymlinks(), "Symlinks not supported on this platform");
+
         Path sshDir = tempDir.resolve(".ssh");
         Files.createDirectory(sshDir);
         Path sshConfig = sshDir.resolve("config");
@@ -112,6 +115,8 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToDotEnvIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(supportsSymlinks(), "Symlinks not supported on this platform");
+
         Path envFile = tempDir.resolve(".env");
         Files.writeString(envFile, "SECRET=value\n");
 
@@ -119,5 +124,19 @@ class DangerousPathBypassTest {
         Files.createSymbolicLink(link, envFile);
 
         assertTrue(PROBE.check(link.toString()));
+    }
+
+    private boolean supportsSymlinks() {
+        try {
+            Path temp = Files.createTempFile("symlink-probe", ".tmp");
+            Path link = Files.createTempFile("symlink-probe-link", ".tmp");
+            Files.deleteIfExists(link);
+            Files.createSymbolicLink(link, temp);
+            Files.deleteIfExists(link);
+            Files.deleteIfExists(temp);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

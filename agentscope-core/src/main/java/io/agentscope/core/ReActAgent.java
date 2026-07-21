@@ -33,8 +33,10 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ModelCallAttemptRole;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.ModelFallbackActivatedEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -84,6 +86,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.AttemptEventContext;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
@@ -136,7 +139,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -2121,7 +2126,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
+                    .apply(
+                            new ModelCallInput(
+                                    messages, tools, options, modelForCall(this::publishEvent)));
         }
 
         private Flux<AgentEvent> modelCallStream(
@@ -2130,8 +2137,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String replyId = UUID.randomUUID().toString().replace("-", "");
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
+            // Inject AttemptEventContext into GenerateOptions so that Provider's
+            // applyTimeoutAndRetry() picks up the emitter and emits attempt lifecycle events.
+            GenerateOptions optionsWithTracking =
+                    injectAttemptTracking(mci.options(), replyId, mci.model(), this::publishEvent);
+
             Flux<AgentEvent> modelEvents =
-                    mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                    mci.model().stream(mci.messages(), mci.tools(), optionsWithTracking)
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
                                     chunk ->
@@ -3054,7 +3066,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messageList = prepareSummaryMessages();
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
-            Model summaryModel = modelForCall();
+            Model summaryModel = modelForCall(this::publishEvent);
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
@@ -3484,29 +3496,50 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
-    private Model modelForCall() {
+    private Model modelForCall(Consumer<AgentEvent> eventEmitter) {
         Model fallbackModel = modelConfig.fallbackModel();
         if (fallbackModel == null) {
             return model;
         }
 
         AtomicReference<Model> activeModel = new AtomicReference<>(model);
+        AtomicInteger primaryAttemptCount = new AtomicInteger(0);
         return new Model() {
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                // Count each subscription to the primary model as one attempt,
+                // including retries applied by ModelUtils.applyTimeoutAndRetry
+                // inside the provider transport.
+                Flux<ChatResponse> primaryFlux =
+                        model.stream(messages, tools, options)
+                                .doOnSubscribe(sub -> primaryAttemptCount.incrementAndGet());
                 return primaryFlux.switchOnFirst(
                         (signal, flux) -> {
                             if (signal.isOnError()) {
                                 Throwable error = signal.getThrowable();
                                 activeModel.set(fallbackModel);
+                                int failedAttempts = primaryAttemptCount.get();
+                                // Extract replyId from the ExecutionConfig if present
+                                String replyId = extractReplyId(options);
                                 log.warn(
-                                        "Primary model {} failed, switching to fallback {}",
+                                        "Primary model {} failed after {} attempt(s), switching to"
+                                                + " fallback {}",
                                         model.getModelName(),
+                                        failedAttempts,
                                         fallbackModel.getModelName(),
                                         error);
-                                return fallbackModel.stream(messages, tools, options);
+                                eventEmitter.accept(
+                                        new ModelFallbackActivatedEvent(
+                                                replyId,
+                                                failedAttempts,
+                                                model.getModelName(),
+                                                fallbackModel.getModelName()));
+                                // Inject FALLBACK role into options for the fallback model
+                                GenerateOptions fallbackOptions =
+                                        injectFallbackAttemptTracking(
+                                                options, replyId, eventEmitter);
+                                return fallbackModel.stream(messages, tools, fallbackOptions);
                             }
                             return flux;
                         });
@@ -3527,6 +3560,74 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return activeModel.get().getContextWindowSize();
             }
         };
+    }
+
+    /**
+     * Injects an {@link AttemptEventContext} with PRIMARY role into the given GenerateOptions
+     * so that the Provider's {@code ModelUtils.applyTimeoutAndRetry()} emits attempt lifecycle
+     * events through the retry pipeline.
+     */
+    private GenerateOptions injectAttemptTracking(
+            GenerateOptions options,
+            String replyId,
+            Model targetModel,
+            Consumer<AgentEvent> emitter) {
+        boolean hasFallback = modelConfig != null && modelConfig.fallbackModel() != null;
+        AttemptEventContext ctx =
+                new AttemptEventContext(
+                        emitter, replyId, ModelCallAttemptRole.PRIMARY, hasFallback);
+        ExecutionConfig existingExec = options != null ? options.getExecutionConfig() : null;
+        ExecutionConfig execWithTracking;
+        if (existingExec != null) {
+            execWithTracking =
+                    ExecutionConfig.mergeConfigs(
+                            ExecutionConfig.builder().attemptEventContext(ctx).build(),
+                            existingExec);
+        } else {
+            execWithTracking = ExecutionConfig.builder().attemptEventContext(ctx).build();
+        }
+        if (options != null) {
+            return GenerateOptions.mergeOptions(
+                    GenerateOptions.builder().executionConfig(execWithTracking).build(), options);
+        }
+        return GenerateOptions.builder().executionConfig(execWithTracking).build();
+    }
+
+    /**
+     * Injects an {@link AttemptEventContext} with FALLBACK role into the given GenerateOptions
+     * for the fallback model after primary exhaustion.
+     */
+    private GenerateOptions injectFallbackAttemptTracking(
+            GenerateOptions options, String replyId, Consumer<AgentEvent> emitter) {
+        AttemptEventContext ctx =
+                new AttemptEventContext(emitter, replyId, ModelCallAttemptRole.FALLBACK, false);
+        ExecutionConfig existingExec = options != null ? options.getExecutionConfig() : null;
+        ExecutionConfig execWithTracking;
+        if (existingExec != null) {
+            execWithTracking =
+                    ExecutionConfig.mergeConfigs(
+                            ExecutionConfig.builder().attemptEventContext(ctx).build(),
+                            existingExec);
+        } else {
+            execWithTracking = ExecutionConfig.builder().attemptEventContext(ctx).build();
+        }
+        if (options != null) {
+            return GenerateOptions.mergeOptions(
+                    GenerateOptions.builder().executionConfig(execWithTracking).build(), options);
+        }
+        return GenerateOptions.builder().executionConfig(execWithTracking).build();
+    }
+
+    /**
+     * Extracts the replyId from the AttemptEventContext embedded in GenerateOptions.
+     */
+    private String extractReplyId(GenerateOptions options) {
+        if (options != null
+                && options.getExecutionConfig() != null
+                && options.getExecutionConfig().getAttemptEventContext() != null) {
+            return options.getExecutionConfig().getAttemptEventContext().getReplyId();
+        }
+        return null;
     }
 
     @Override
