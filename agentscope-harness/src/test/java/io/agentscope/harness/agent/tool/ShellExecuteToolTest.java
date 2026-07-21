@@ -66,7 +66,8 @@ class ShellExecuteToolTest {
 
     @Test
     void execute_withWorkingDirectory_prefixesCd() {
-        String expectedCommand = ShellExecuteTool.prefixWorkingDirectory("ls", "sub", System.getProperty("os.name"));
+        String expectedCommand =
+                ShellExecuteTool.prefixWorkingDirectory("ls", "sub", System.getProperty("os.name"));
         when(sandbox.execute(eq(RT), eq(expectedCommand), eq(30)))
                 .thenReturn(new ExecuteResponse("out", 0, false));
 
