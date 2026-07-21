@@ -772,7 +772,8 @@ class OpenAIMessageConverterTest {
         @DisplayName("sanitizeName: non-ASCII characters are replaced with underscores")
         void testSanitizeNameNonAscii() {
             String result = OpenAIMessageConverter.sanitizeName("智能助手");
-            // all Chinese chars become '_', consecutive collapse, leading/trailing stripped → "agent"
+            // all Chinese chars become '_', consecutive collapse, leading/trailing stripped →
+            // "agent"
             assertTrue(
                     result.matches("^[a-zA-Z0-9_\\-]{1,64}$"),
                     "Result must satisfy OpenAI constraint but was: " + result);
@@ -821,8 +822,7 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
-        @DisplayName(
-                "sanitizeName: user message with space in name is sanitized before API call")
+        @DisplayName("sanitizeName: user message with space in name is sanitized before API call")
         void testUserMessageNameWithSpaceIsSanitized() {
             Msg msg =
                     Msg.builder()
