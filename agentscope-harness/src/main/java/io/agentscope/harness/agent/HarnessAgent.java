@@ -2523,7 +2523,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
-            ReActAgent delegate = inner.build();
+            ReActAgent delegate;
+            try {
+                delegate = inner.build();
+            } finally {
+                // ReActAgent owns its copied toolkit. Release this build-only MCP reference.
+                agentToolkit.close();
+            }
             selfRef.set(delegate);
 
             return new HarnessAgent(

@@ -63,7 +63,7 @@ import reactor.core.publisher.Mono;
  *   <li>MCP (Model Context Protocol) client support for external tool providers</li>
  * </ul>
  */
-public class Toolkit {
+public class Toolkit implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
 
@@ -72,6 +72,7 @@ public class Toolkit {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
+    private final McpClientLifecycleOwner mcpLifecycleOwner;
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
@@ -90,7 +91,12 @@ public class Toolkit {
      * @param config Toolkit configuration (if null, uses defaultConfig())
      */
     public Toolkit(ToolkitConfig config) {
+        this(config, new McpClientLifecycleOwner());
+    }
+
+    private Toolkit(ToolkitConfig config, McpClientLifecycleOwner mcpLifecycleOwner) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
+        this.mcpLifecycleOwner = mcpLifecycleOwner;
         this.methodInvoker = new ToolMethodInvoker(new DefaultToolResultConverter());
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
@@ -100,7 +106,8 @@ public class Toolkit {
                         groupManager,
                         (tool, groupName, mcpClientName, presetParameters) ->
                                 registerAgentTool(
-                                        tool, groupName, null, mcpClientName, presetParameters));
+                                        tool, groupName, null, mcpClientName, presetParameters),
+                        mcpLifecycleOwner);
 
         // Create executor based on configuration
         if (config != null && config.hasCustomExecutor()) {
@@ -549,6 +556,17 @@ public class Toolkit {
         return mcpClientManager.removeMcpClient(mcpClientName);
     }
 
+    /** Returns a snapshot of MCP client names owned by this toolkit. */
+    public Set<String> getMcpClientNames() {
+        return mcpClientManager.getMcpClientNames();
+    }
+
+    /** Releases all MCP clients owned by this toolkit. Idempotent. */
+    @Override
+    public void close() {
+        mcpClientManager.closeAll();
+    }
+
     // ==================== Tool Group Management (Delegated) ====================
 
     /**
@@ -781,18 +799,23 @@ public class Toolkit {
      * @return A new Toolkit instance with copied state
      */
     public Toolkit copy() {
-        Toolkit copy = new Toolkit(this.config);
+        Toolkit copy = new Toolkit(this.config, this.mcpLifecycleOwner);
+        try {
+            // Copy all registered tools
+            this.toolRegistry.copyTo(copy.toolRegistry);
 
-        // Copy all registered tools
-        this.toolRegistry.copyTo(copy.toolRegistry);
+            // Copy all tool groups and their states
+            this.groupManager.copyTo(copy.groupManager);
 
-        // Copy all tool groups and their states
-        this.groupManager.copyTo(copy.groupManager);
+            // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
+            copy.executor.setChunkCallback(this.executor.getChunkCallback());
 
-        // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
-        copy.executor.setChunkCallback(this.executor.getChunkCallback());
-
-        return copy;
+            this.mcpClientManager.copyOwnershipTo(copy.mcpClientManager);
+            return copy;
+        } catch (RuntimeException | Error e) {
+            copy.close();
+            throw e;
+        }
     }
 
     /**
