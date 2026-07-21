@@ -16,10 +16,12 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
@@ -198,7 +200,15 @@ class ToolExecutor {
 
         // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
+        AgentState agentState =
+                RuntimeContext.resolveAgentState(param.getRuntimeContext(), param.getAgent());
+        boolean active =
+                agentState != null
+                        ? groupManager.isActiveTool(
+                                toolCall.getName(),
+                                agentState.getToolContext().getActivatedGroups())
+                        : groupManager.isActiveTool(toolCall.getName());
+        if (registered != null && !active) {
             String errorMsg =
                     String.format(
                             "Unauthorized tool call: '%s' is not available", toolCall.getName());

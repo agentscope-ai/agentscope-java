@@ -336,6 +336,30 @@ class ToolGroupManager {
     }
 
     /**
+     * Check if a tool belongs to any of the explicitly active groups.
+     *
+     * <p>If the tool is not in any group, it is considered active by default. Unlike {@link
+     * #isActiveTool(String)}, this method does not read the manager's shared activation flags.
+     *
+     * @param toolName Tool name
+     * @param activeGroupNames Group names to treat as active
+     * @return true if ungrouped or in at least one explicitly active group
+     */
+    public boolean isActiveTool(String toolName, Collection<String> activeGroupNames) {
+        if (toolName == null) {
+            return false;
+        }
+        Set<String> groups = tools.get(toolName);
+        if (groups == null || groups.isEmpty()) {
+            return true;
+        }
+        if (activeGroupNames == null || activeGroupNames.isEmpty()) {
+            return false;
+        }
+        return groups.stream().anyMatch(activeGroupNames::contains);
+    }
+
+    /**
      * Check whether a tool belongs to any group.
      *
      * @param toolName Tool name
