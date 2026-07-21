@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AgentDefinition, updateAgent, deleteAgent } from '../api/agents';
+import { AgentDefinition, AgentVersionEntry, archiveAgent, getAgent, listVersions, updateAgent, deleteAgent } from '../api/agents';
 import { useNavigate } from 'react-router-dom';
 import ShareAgentDialog from './ShareAgentDialog';
 
@@ -77,6 +77,9 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [versions, setVersions] = useState<AgentVersionEntry[]>([]);
+  const [versionsErr, setVersionsErr] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     setName(agent.name);
@@ -84,6 +87,15 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
     setSysPrompt(agent.sysPrompt ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
   }, [agent.id]);
+
+  useEffect(() => {
+    if (agent.scope === 'global' || !agent.ownerId) return;
+    let cancelled = false;
+    listVersions(agent.id)
+      .then(v => { if (!cancelled) { setVersions(v); setVersionsErr(null); } })
+      .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : 'Failed to load versions'); });
+    return () => { cancelled = true; };
+  }, [agent.id, agent.scope, agent.ownerId]);
 
   async function handleSave() {
     setOk(false);
@@ -115,6 +127,21 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
     }
   }
 
+  async function handleArchive() {
+    if (!confirm(`Archive agent "${agent.name}"? New managed sessions cannot be created.`)) return;
+    setArchiving(true);
+    setErr(null);
+    try {
+      await archiveAgent(agent.id);
+      await getAgent(agent.id);
+      setOk(true);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Archive failed');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   return (
     <div style={S.page}>
       {isGlobal && (
@@ -135,6 +162,31 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
           <label style={S.fieldLabel}>Agent ID</label>
           <div style={S.meta}>{agent.id}</div>
         </div>
+
+        {agent.version != null && (
+          <div style={S.row}>
+            <label style={S.fieldLabel}>Current version</label>
+            <div style={S.meta}>v{agent.version}</div>
+          </div>
+        )}
+
+        {agent.archivedAt != null && (
+          <div style={{
+            padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+            background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.88rem',
+          }}>
+            Archived {new Date(agent.archivedAt).toLocaleString()}
+          </div>
+        )}
+
+        {agent.permissionPolicies && Object.keys(agent.permissionPolicies).length > 0 && (
+          <div style={S.row}>
+            <label style={S.fieldLabel}>Permission policies</label>
+            <pre style={{ ...S.meta, whiteSpace: 'pre-wrap', margin: 0 }}>
+              {JSON.stringify(agent.permissionPolicies, null, 2)}
+            </pre>
+          </div>
+        )}
 
         <div style={S.row}>
           <label style={S.fieldLabel}>Name</label>
@@ -194,6 +246,11 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
           {canShare && (
             <button style={S.shareBtn} onClick={() => setShareOpen(true)}>↗ Share</button>
           )}
+          {!agent.archivedAt && (
+            <button style={S.dangerBtn} onClick={handleArchive} disabled={archiving}>
+              {archiving ? 'Archiving…' : 'Archive agent'}
+            </button>
+          )}
           <button style={S.dangerBtn} onClick={handleDelete}>Delete agent</button>
         </div>
       )}
@@ -203,6 +260,41 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
       {shareOpen && (
         <ShareAgentDialog agent={agent} onClose={() => setShareOpen(false)} />
       )}
+
+      <div style={{ ...S.card, marginTop: 24 }}>
+        <span style={S.cardLabel}>Version history</span>
+        {versionsErr && <p style={S.error}>{versionsErr}</p>}
+        {!versionsErr && versions.length === 0 && (
+          <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>No version snapshots yet.</p>
+        )}
+        {versions.map(v => (
+          <div key={v.version} style={{
+            padding: '12px 14px', borderRadius: 8, marginBottom: 8,
+            background: '#f8fafc', border: '1px solid #e2e8f0',
+          }}>
+            <div style={{ fontWeight: 600, fontSize: '0.92rem', color: '#0f172a' }}>
+              v{v.version}
+              {agent.version === v.version && (
+                <span style={{
+                  marginLeft: 8, padding: '2px 8px', borderRadius: 999,
+                  fontSize: '0.72rem', background: '#dcfce7', color: '#15803d',
+                }}>current</span>
+              )}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>
+              {new Date(v.createdAt).toLocaleString()}
+            </div>
+            {v.snapshot && (
+              <pre style={{
+                fontSize: '0.76rem', color: '#64748b', marginTop: 8, marginBottom: 0,
+                whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto',
+              }}>
+                {JSON.stringify(v.snapshot, null, 2)}
+              </pre>
+            )}
+          </div>
+        ))}
+      </div>
 
       <div style={{ ...S.card, marginTop: 24 }}>
         <span style={S.cardLabel}>Metadata</span>

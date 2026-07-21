@@ -259,7 +259,10 @@ public class AdminUserController {
                 e.workspacePath(),
                 e.skillRepositories(),
                 e.sandboxMode(),
-                e.sandboxScope());
+                e.sandboxScope(),
+                e.version(),
+                e.archivedAt(),
+                e.permissionPolicies());
     }
 
     private static AdminUserView toView(UserRecord u) {

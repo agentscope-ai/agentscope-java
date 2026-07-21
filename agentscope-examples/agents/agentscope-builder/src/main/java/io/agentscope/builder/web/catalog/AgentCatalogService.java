@@ -20,6 +20,9 @@ import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.auth.UserStore.UserRecord;
+import io.agentscope.builder.web.managed.AgentVersionService;
+import io.agentscope.builder.web.managed.AgentVersionSnapshot;
+import io.agentscope.builder.web.persistence.jpa.AgentVersionEntity;
 import io.agentscope.builder.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.template.TemplateRegistry;
@@ -79,6 +82,10 @@ public class AgentCatalogService {
     private final SharedWorkspacePaths sharedWorkspacePaths;
     private final UserStore userStore;
     private final AgentAclService aclService;
+    private final io.agentscope.builder.web.managed.EnvironmentSpecFactory environmentSpecFactory;
+    private final io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware
+            toolConfirmationMiddleware;
+    private final AgentVersionService versionService;
 
     /**
      * In-flight cache of dynamically-registered gateway agent IDs. Key: {@code {userId}/{agentId}},
@@ -103,7 +110,11 @@ public class AgentCatalogService {
             TemplateRegistry templateRegistry,
             SharedWorkspacePaths sharedWorkspacePaths,
             UserStore userStore,
-            AgentAclService aclService) {
+            AgentAclService aclService,
+            AgentVersionService versionService,
+            io.agentscope.builder.web.managed.EnvironmentSpecFactory environmentSpecFactory,
+            io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware
+                    toolConfirmationMiddleware) {
         this.builderBootstrap = builderBootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
@@ -112,6 +123,9 @@ public class AgentCatalogService {
         this.sharedWorkspacePaths = sharedWorkspacePaths;
         this.userStore = userStore;
         this.aclService = aclService;
+        this.versionService = versionService;
+        this.environmentSpecFactory = environmentSpecFactory;
+        this.toolConfirmationMiddleware = toolConfirmationMiddleware;
         // Install the owner-pinned filesystem user-id resolver on the gateway so chat-time reads
         // for shared (SCOPE_USER) agents land in the same namespace the controller writes to.
         // See {@link #resolveFilesystemUserId} for the resolution rules.
@@ -276,8 +290,13 @@ public class AgentCatalogService {
                         workspacePath,
                         req.skillRepositories(),
                         req.sandboxMode(),
-                        req.sandboxScope());
-        store.save(userId, entry);
+                        req.sandboxScope(),
+                        1,
+                        null,
+                        req.permissionPolicies());
+        UserAgentDefinitionStore.StoredEntry saved = store.save(userId, entry);
+        versionService.createInitialVersion(
+                userId, id, versionService.snapshotFromStoredEntry(saved));
         log.info("User '{}' created custom agent '{}'", userId, id);
 
         // Workspace scaffolding. Template wins over AI draft if both are supplied; otherwise fall
@@ -307,7 +326,7 @@ public class AgentCatalogService {
                     e.getMessage());
         }
 
-        return entry.toDefinition(userId);
+        return saved.toDefinition(userId);
     }
 
     private Path userWorkspacePath(String userId, UserAgentDefinitionStore.StoredEntry entry) {
@@ -460,6 +479,13 @@ public class AgentCatalogService {
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found: " + agentId));
 
+        if (existing.archivedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent is archived: " + agentId);
+        }
+        if (req.version() == null || req.version() != existing.version()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "version mismatch");
+        }
+
         long now = System.currentTimeMillis();
         UserAgentDefinitionStore.StoredEntry updated =
                 new UserAgentDefinitionStore.StoredEntry(
@@ -495,14 +521,121 @@ public class AgentCatalogService {
                                 ? req.skillRepositories()
                                 : existing.skillRepositories(),
                         req.sandboxMode() != null ? req.sandboxMode() : existing.sandboxMode(),
-                        req.sandboxScope() != null ? req.sandboxScope() : existing.sandboxScope());
-        store.save(userId, updated);
+                        req.sandboxScope() != null ? req.sandboxScope() : existing.sandboxScope(),
+                        existing.version(),
+                        existing.archivedAt(),
+                        req.permissionPolicies() != null
+                                ? req.permissionPolicies()
+                                : existing.permissionPolicies());
+        UserAgentDefinitionStore.StoredEntry saved = store.save(userId, updated);
+        int newVersion =
+                versionService.appendVersion(
+                        userId, agentId, versionService.snapshotFromStoredEntry(saved));
+        saved =
+                new UserAgentDefinitionStore.StoredEntry(
+                        saved.id(),
+                        saved.name(),
+                        saved.description(),
+                        saved.sysPrompt(),
+                        saved.model(),
+                        saved.maxIters(),
+                        saved.toolsAllow(),
+                        saved.toolsDeny(),
+                        saved.identityName(),
+                        saved.identityEmoji(),
+                        saved.groupChatMentionPatterns(),
+                        saved.groupChatRequireMention(),
+                        saved.skillsAllow(),
+                        saved.skillsDeny(),
+                        saved.createdAt(),
+                        saved.updatedAt(),
+                        saved.shares(),
+                        saved.runAs(),
+                        saved.forkOf(),
+                        saved.workspacePath(),
+                        saved.skillRepositories(),
+                        saved.sandboxMode(),
+                        saved.sandboxScope(),
+                        newVersion,
+                        saved.archivedAt(),
+                        saved.permissionPolicies());
 
         // Evict cached gateway registration so the next conversation picks up the new definition.
         registeredUcaIds.remove(ucaCacheKey(userId, agentId));
 
         log.info("User '{}' updated custom agent '{}'", userId, agentId);
-        return updated.toDefinition(userId);
+        return saved.toDefinition(userId);
+    }
+
+    /** Archives a user-custom agent so it becomes read-only. */
+    public AgentDefinition archiveUserAgent(String userId, String agentId) {
+        UserAgentDefinitionStore.StoredEntry existing =
+                store.findById(userId, agentId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Agent not found: " + agentId));
+        if (existing.archivedAt() != null) {
+            return existing.toDefinition(userId);
+        }
+        long now = System.currentTimeMillis();
+        UserAgentDefinitionStore.StoredEntry archived =
+                new UserAgentDefinitionStore.StoredEntry(
+                        existing.id(),
+                        existing.name(),
+                        existing.description(),
+                        existing.sysPrompt(),
+                        existing.model(),
+                        existing.maxIters(),
+                        existing.toolsAllow(),
+                        existing.toolsDeny(),
+                        existing.identityName(),
+                        existing.identityEmoji(),
+                        existing.groupChatMentionPatterns(),
+                        existing.groupChatRequireMention(),
+                        existing.skillsAllow(),
+                        existing.skillsDeny(),
+                        existing.createdAt(),
+                        now,
+                        existing.shares(),
+                        existing.runAs(),
+                        existing.forkOf(),
+                        existing.workspacePath(),
+                        existing.skillRepositories(),
+                        existing.sandboxMode(),
+                        existing.sandboxScope(),
+                        existing.version(),
+                        now,
+                        existing.permissionPolicies());
+        UserAgentDefinitionStore.StoredEntry saved = store.save(userId, archived);
+        registeredUcaIds.remove(ucaCacheKey(userId, agentId));
+        log.info("User '{}' archived custom agent '{}'", userId, agentId);
+        return saved.toDefinition(userId);
+    }
+
+    /** Lists version metadata for a user-custom agent. */
+    public List<AgentVersionSummary> listAgentVersions(String userId, String agentId) {
+        store.findById(userId, agentId)
+                .orElseThrow(
+                        () ->
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND, "Agent not found: " + agentId));
+        return versionService.listVersions(userId, agentId).stream()
+                .map(v -> new AgentVersionSummary(v.getVersion(), v.getCreatedAt()))
+                .toList();
+    }
+
+    /** Returns a specific version snapshot for a user-custom agent. */
+    public AgentVersionDetail getAgentVersion(String userId, String agentId, int version) {
+        store.findById(userId, agentId)
+                .orElseThrow(
+                        () ->
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND, "Agent not found: " + agentId));
+        AgentVersionEntity entity = versionService.getVersion(userId, agentId, version);
+        AgentVersionSnapshot snapshot = versionService.fromJson(entity.getSnapshotJson());
+        return new AgentVersionDetail(entity.getVersion(), entity.getCreatedAt(), snapshot);
     }
 
     /**
@@ -575,8 +708,13 @@ public class AgentCatalogService {
                         // suffix
                         src.skillRepositories(),
                         src.sandboxMode(),
-                        src.sandboxScope());
-        store.save(newOwnerId, clone);
+                        src.sandboxScope(),
+                        1,
+                        null,
+                        src.permissionPolicies());
+        UserAgentDefinitionStore.StoredEntry saved = store.save(newOwnerId, clone);
+        versionService.createInitialVersion(
+                newOwnerId, id, versionService.snapshotFromStoredEntry(saved));
         log.info(
                 "User '{}' cloned agent '{}/{}' as '{}/{}'",
                 newOwnerId,
@@ -584,7 +722,7 @@ public class AgentCatalogService {
                 srcAgentId,
                 newOwnerId,
                 id);
-        return new StoredEntryAndDefinition(clone, clone.toDefinition(newOwnerId));
+        return new StoredEntryAndDefinition(saved, saved.toDefinition(newOwnerId));
     }
 
     private String uniqueIdInNamespace(String owner, String preferredBase) {
@@ -799,6 +937,9 @@ public class AgentCatalogService {
                             cfg != null ? cfg.getWorkspace() : null, // mirror runtime workspace
                             null, // sandboxMode — globals follow the platform default
                             null, // sandboxScope
+                            null, // version — globals have no version history
+                            null, // archivedAt
+                            null, // permissionPolicies
                             null)); // tierForCurrentUser — populated by the controller
         }
         return result;
@@ -863,6 +1004,12 @@ public class AgentCatalogService {
         // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
         b.middleware(
                 new io.agentscope.builder.web.toolbus.ToolNotificationMiddleware(toolEventBus));
+        b.middleware(toolConfirmationMiddleware);
+
+        // Apply filesystem topology from agent sandbox fields (session environments can refine
+        // this further at turn time via IsolationScope on RuntimeContext / rebuild).
+        environmentSpecFactory.applyAgentSandboxFields(
+                b, entry.sandboxMode(), entry.sandboxScope());
 
         HarnessAgent agent = b.build();
 
@@ -924,7 +1071,15 @@ public class AgentCatalogService {
             AgentDraft aiDraft,
             List<io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry> skillRepositories,
             String sandboxMode,
-            String sandboxScope) {}
+            String sandboxScope,
+            Integer version,
+            Map<String, String> permissionPolicies) {}
+
+    /** Summary metadata for one agent version row. */
+    public record AgentVersionSummary(int version, long createdAt) {}
+
+    /** Full snapshot payload for one agent version row. */
+    public record AgentVersionDetail(int version, long createdAt, AgentVersionSnapshot snapshot) {}
 
     /**
      * Optional AI-generated draft attached to a creation request. Carries the suggested

@@ -18,6 +18,8 @@ package io.agentscope.builder.web.catalog;
 import io.agentscope.builder.web.audit.ActivityEvent;
 import io.agentscope.builder.web.audit.AgentActivityStore;
 import io.agentscope.builder.web.catalog.AgentCatalogService.AgentCreateRequest;
+import io.agentscope.builder.web.catalog.AgentCatalogService.AgentVersionDetail;
+import io.agentscope.builder.web.catalog.AgentCatalogService.AgentVersionSummary;
 import io.agentscope.builder.web.share.AgentAccessGuard;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
@@ -177,6 +179,58 @@ public class AgentCatalogController {
                     // sweep can see who triggered the deletion before the log went away.
                     activity.record(
                             ownerId, id, activity.actor(userId), ActivityEvent.Action.DELETE_AGENT);
+                });
+    }
+
+    /** Archives a user-custom agent definition (owner or EDIT-tier grantee). */
+    @PostMapping("/{id}/archive")
+    public Mono<AgentDefinition> archiveAgent(@PathVariable String id, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(
+                () -> {
+                    AgentDefinition def = guard.require(userId, id, Tier.EDIT);
+                    String ownerId = def.ownerId();
+                    if (ownerId == null) {
+                        throw new ResponseStatusException(
+                                HttpStatus.CONFLICT,
+                                "Global agents cannot be archived via the catalog API");
+                    }
+                    AgentDefinition archived = catalogService.archiveUserAgent(ownerId, id);
+                    return withTier(userId, archived);
+                });
+    }
+
+    /** Lists version metadata for a user-custom agent. */
+    @GetMapping("/{id}/versions")
+    public Mono<List<AgentVersionSummary>> listVersions(
+            @PathVariable String id, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(
+                () -> {
+                    AgentDefinition def = guard.require(userId, id, Tier.RUN);
+                    String ownerId = def.ownerId();
+                    if (ownerId == null) {
+                        throw new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, "Global agents have no version history");
+                    }
+                    return catalogService.listAgentVersions(ownerId, id);
+                });
+    }
+
+    /** Returns a specific version snapshot for a user-custom agent. */
+    @GetMapping("/{id}/versions/{version}")
+    public Mono<AgentVersionDetail> getVersion(
+            @PathVariable String id, @PathVariable int version, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(
+                () -> {
+                    AgentDefinition def = guard.require(userId, id, Tier.RUN);
+                    String ownerId = def.ownerId();
+                    if (ownerId == null) {
+                        throw new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, "Global agents have no version history");
+                    }
+                    return catalogService.getAgentVersion(ownerId, id, version);
                 });
     }
 }

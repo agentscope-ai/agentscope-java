@@ -19,6 +19,9 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import ChannelsHubPage from './pages/ChannelsHubPage';
 import ChannelDetailPage from './pages/ChannelDetailPage';
 import MarketplacesPage from './pages/MarketplacesPage';
+import EnvironmentsHubPage from './pages/EnvironmentsHubPage';
+import MemoryStoresPage from './pages/MemoryStoresPage';
+import VaultsPage from './pages/VaultsPage';
 import AppShell from './components/AppShell';
 import AgentLayout from './components/AgentLayout';
 import { clearToken, getToken, me } from './api/auth';
@@ -71,6 +74,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/marketplaces" element={<MarketplacesPage />} />
+          <Route path="/environments" element={<EnvironmentsHubPage />} />
+          <Route path="/memory-stores" element={<MemoryStoresPage />} />
+          <Route path="/vaults" element={<VaultsPage />} />
           <Route path="/channels" element={<ChannelsHubPage />} />
           <Route path="/channels/:channelId" element={<ChannelDetailPage />} />
 

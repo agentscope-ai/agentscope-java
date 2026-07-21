@@ -173,6 +173,9 @@ export default function AppShell() {
               AgentScope Builder
             </span>
             <NavLink to="/marketplaces" label="My Marketplaces" />
+            <NavLink to="/environments" label="Environments" />
+            <NavLink to="/memory-stores" label="Memory" />
+            <NavLink to="/vaults" label="Vaults" />
             {admin && <NavLink to="/channels" label="Channels" />}
           </div>
           <UserMenu username={username} admin={admin} onLogout={logout} />

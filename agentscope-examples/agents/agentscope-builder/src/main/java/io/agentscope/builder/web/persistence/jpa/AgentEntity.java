@@ -168,6 +168,25 @@ public class AgentEntity {
     @Column(name = "sandbox_scope", length = 16)
     private String sandboxScope;
 
+    /**
+     * Head version pointer into {@link AgentVersionEntity}. Starts at 1 on create; bumps on each
+     * configuration change. Optimistic-lock updates must supply the current value.
+     */
+    @Column(name = "head_version", nullable = false)
+    private int headVersion = 1;
+
+    /** When non-null the agent is archived (read-only; no new sessions). */
+    @Column(name = "archived_at")
+    private Long archivedAt;
+
+    /**
+     * JSON map of per-tool permission policies ({@code always_allow} / {@code always_ask}).
+     * Null means builtins default to allow and MCP tools default to ask.
+     */
+    @Lob
+    @Column(name = "permission_policies_json")
+    private String permissionPoliciesJson;
+
     @Column(name = "created_at")
     private long createdAt;
 
@@ -357,6 +376,30 @@ public class AgentEntity {
 
     public void setSandboxScope(String sandboxScope) {
         this.sandboxScope = sandboxScope;
+    }
+
+    public int getHeadVersion() {
+        return headVersion;
+    }
+
+    public void setHeadVersion(int headVersion) {
+        this.headVersion = headVersion;
+    }
+
+    public Long getArchivedAt() {
+        return archivedAt;
+    }
+
+    public void setArchivedAt(Long archivedAt) {
+        this.archivedAt = archivedAt;
+    }
+
+    public String getPermissionPoliciesJson() {
+        return permissionPoliciesJson;
+    }
+
+    public void setPermissionPoliciesJson(String permissionPoliciesJson) {
+        this.permissionPoliciesJson = permissionPoliciesJson;
     }
 
     public long getCreatedAt() {

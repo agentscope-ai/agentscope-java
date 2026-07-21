@@ -21,6 +21,7 @@ import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -89,7 +90,10 @@ public interface UserAgentDefinitionStore {
             String workspacePath,
             List<SkillRepositoryConfigEntry> skillRepositories,
             String sandboxMode,
-            String sandboxScope) {
+            String sandboxScope,
+            int version,
+            Long archivedAt,
+            Map<String, String> permissionPolicies) {
 
         public AgentDefinition toDefinition(String ownerId) {
             return new AgentDefinition(
@@ -118,6 +122,9 @@ public interface UserAgentDefinitionStore {
                     workspacePath,
                     sandboxMode,
                     sandboxScope,
+                    version,
+                    archivedAt,
+                    permissionPolicies,
                     null); // tierForCurrentUser — populated by the controller
         }
 

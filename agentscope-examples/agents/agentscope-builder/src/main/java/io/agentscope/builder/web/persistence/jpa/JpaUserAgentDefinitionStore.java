@@ -24,6 +24,7 @@ import io.agentscope.builder.web.share.AgentShareGrant;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +47,7 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final TypeReference<List<SkillRepositoryConfigEntry>> SKILL_REPO_LIST =
             new TypeReference<>() {};
+    private static final TypeReference<Map<String, String>> POLICY_MAP = new TypeReference<>() {};
 
     private final AgentEntityRepository repository;
 
@@ -100,6 +102,9 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
         entity.setSkillRepositoriesJson(writeSkillRepositories(entry.skillRepositories()));
         entity.setSandboxMode(entry.sandboxMode());
         entity.setSandboxScope(entry.sandboxScope());
+        entity.setHeadVersion(entry.version());
+        entity.setArchivedAt(entry.archivedAt());
+        entity.setPermissionPoliciesJson(writePolicyMap(entry.permissionPolicies()));
         entity.setCreatedAt(entry.createdAt());
         entity.setUpdatedAt(entry.updatedAt());
 
@@ -166,7 +171,10 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
                 e.getWorkspacePath(),
                 readSkillRepositories(e.getSkillRepositoriesJson()),
                 e.getSandboxMode(),
-                e.getSandboxScope());
+                e.getSandboxScope(),
+                e.getHeadVersion(),
+                e.getArchivedAt(),
+                readPolicyMap(e.getPermissionPoliciesJson()));
     }
 
     private static List<AgentShareGrant> mapShares(
@@ -218,6 +226,24 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
         if (list == null || list.isEmpty()) return null;
         try {
             return MAPPER.writeValueAsString(list);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private static Map<String, String> readPolicyMap(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return MAPPER.readValue(json, POLICY_MAP);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private static String writePolicyMap(Map<String, String> map) {
+        if (map == null || map.isEmpty()) return null;
+        try {
+            return MAPPER.writeValueAsString(map);
         } catch (JsonProcessingException ex) {
             return null;
         }

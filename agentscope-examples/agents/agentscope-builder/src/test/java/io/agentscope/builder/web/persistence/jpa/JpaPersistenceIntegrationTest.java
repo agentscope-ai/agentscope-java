@@ -150,6 +150,9 @@ class JpaPersistenceIntegrationTest {
                         "/tmp/agentscope-test/demo",
                         null,
                         null,
+                        null,
+                        1,
+                        null,
                         null);
 
         StoredEntry saved = agentStore.save("bob-1", entry);

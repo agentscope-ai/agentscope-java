@@ -1,10 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { currentSession, stream } from '../api/chat';
+import { ensureDefaultEnvironment, listEnvironments } from '../api/environments';
+import {
+  createManagedSession,
+  EventStreamHandle,
+  listEvents,
+  postToolConfirmation,
+  postUserMessage,
+  SessionEvent,
+  streamEvents,
+} from '../api/managedSessions';
 import { TurnEntry, turns as fetchTurns } from '../api/sessions';
 import ToolCallBlock from './ToolCallBlock';
 
 type Role = 'user' | 'assistant' | 'system';
+type ChatMode = 'legacy' | 'managed';
 
 interface ToolEntry {
   id: string;
@@ -21,16 +32,25 @@ interface Message {
   pending?: boolean;
 }
 
+interface PendingConfirmation {
+  toolUseId: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+}
+
 const S: Record<string, React.CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#f8fafc' },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '10px 28px', borderBottom: '1px solid #e2e8f0', background: '#ffffff',
-    fontSize: '0.82rem', color: '#64748b', flexShrink: 0,
+    fontSize: '0.82rem', color: '#64748b', flexShrink: 0, flexWrap: 'wrap',
   },
   sessionTag: {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.78rem',
     background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 6,
+  },
+  modeActive: {
+    background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca', fontWeight: 600,
   },
   iconBtn: {
     background: '#ffffff', border: '1px solid #e2e8f0', color: '#475569',
@@ -57,6 +77,11 @@ const S: Record<string, React.CSSProperties> = {
     alignSelf: 'center', background: 'transparent', color: '#94a3b8',
     fontSize: '0.85rem', fontStyle: 'italic',
   },
+  confirmCard: {
+    alignSelf: 'stretch', maxWidth: 520, margin: '0 auto',
+    background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
+    padding: '16px 20px', boxShadow: '0 2px 8px rgba(146,64,14,0.08)',
+  },
   composer: {
     borderTop: '1px solid #e2e8f0', padding: '18px 28px',
     display: 'flex', gap: 12, background: '#ffffff',
@@ -75,13 +100,23 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
   },
   sendDisabled: { background: '#e2e8f0', color: '#94a3b8', cursor: 'not-allowed', boxShadow: 'none' },
+  allowBtn: {
+    padding: '8px 16px', background: '#059669', color: '#fff', border: 'none',
+    borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem',
+  },
+  denyBtn: {
+    padding: '8px 16px', background: '#ffffff', color: '#dc2626',
+    border: '1px solid #fca5a5', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem',
+  },
 };
 
 let counter = 0;
 const nextId = () => `m${Date.now().toString(36)}-${counter++}`;
 
-const STORAGE_PREFIX = 'claw_chat_session:';
-const storageKey = (agentId: string) => `${STORAGE_PREFIX}${agentId}`;
+const LEGACY_STORAGE_PREFIX = 'claw_chat_session:';
+const MANAGED_STORAGE_PREFIX = 'claw_managed_session:';
+const legacyStorageKey = (agentId: string) => `${LEGACY_STORAGE_PREFIX}${agentId}`;
+const managedStorageKey = (agentId: string) => `${MANAGED_STORAGE_PREFIX}${agentId}`;
 
 function turnsToMessages(turns: TurnEntry[]): Message[] {
   const out: Message[] = [];
@@ -109,7 +144,78 @@ function turnsToMessages(turns: TurnEntry[]): Message[] {
   return out;
 }
 
-export default function ChatPanel({ agentId }: { agentId: string }) {
+function payloadText(payload?: Record<string, unknown>): string {
+  if (!payload) return '';
+  const text = payload.text ?? payload.message ?? payload.content;
+  return text != null ? String(text) : '';
+}
+
+function eventsToMessages(events: SessionEvent[]): Message[] {
+  const out: Message[] = [];
+  for (const evt of events) {
+    if (evt.type === 'user.message') {
+      out.push({ id: evt.id, role: 'user', text: payloadText(evt.payload), tools: [] });
+    } else if (evt.type === 'agent.turn_stub' || evt.type.startsWith('agent.message')) {
+      out.push({ id: evt.id, role: 'assistant', text: payloadText(evt.payload) || '[agent response]', tools: [] });
+    } else if (evt.type === 'agent.tool_use') {
+      const tool: ToolEntry = {
+        id: String(evt.payload?.toolUseId ?? evt.id),
+        name: String(evt.payload?.toolName ?? 'tool'),
+        input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
+      };
+      const last = out[out.length - 1];
+      if (last?.role === 'assistant') {
+        last.tools = [...last.tools, tool];
+      } else {
+        out.push({ id: `${evt.id}-host`, role: 'assistant', text: '', tools: [tool] });
+      }
+    }
+  }
+  return out;
+}
+
+function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
+  if (evt.type === 'session.requires_action') {
+    const p = evt.payload ?? {};
+    const toolUseId = p.toolUseId != null ? String(p.toolUseId) : '';
+    if (!toolUseId) return null;
+    return {
+      toolUseId,
+      toolName: String(p.toolName ?? 'tool'),
+      input: typeof p.input === 'object' && p.input != null ? p.input as Record<string, unknown> : undefined,
+    };
+  }
+  if (evt.type === 'session.status_idle' || evt.type === 'session.status_requires_action') {
+    const stopReason = evt.payload?.stopReason;
+    if (stopReason && typeof stopReason === 'object') {
+      const sr = stopReason as Record<string, unknown>;
+      if (sr.toolUseId) {
+        return {
+          toolUseId: String(sr.toolUseId),
+          toolName: String(sr.toolName ?? 'tool'),
+          input: typeof sr.input === 'object' && sr.input != null ? sr.input as Record<string, unknown> : undefined,
+        };
+      }
+    }
+    if (evt.payload?.toolUseId) {
+      return {
+        toolUseId: String(evt.payload.toolUseId),
+        toolName: String(evt.payload.toolName ?? 'tool'),
+        input: typeof evt.payload.input === 'object' && evt.payload.input != null
+          ? evt.payload.input as Record<string, unknown> : undefined,
+      };
+    }
+  }
+  return null;
+}
+
+export default function ChatPanel({
+  agentId,
+  mode: modeProp,
+}: {
+  agentId: string;
+  mode?: ChatMode;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -117,26 +223,108 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(true);
   const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const [managedSessionId, setManagedSessionId] = useState<string | null>(null);
+  const [managedAvailable, setManagedAvailable] = useState(false);
+  const [mode, setMode] = useState<ChatMode>(modeProp ?? 'legacy');
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const streamHandleRef = useRef<EventStreamHandle | null>(null);
+  const replyMsgIdRef = useRef<string | null>(null);
 
-  const persistSession = useCallback((key: string | null) => {
+  const persistLegacySession = useCallback((key: string | null) => {
     if (key) {
-      try { localStorage.setItem(storageKey(agentId), key); } catch { /* ignore quota */ }
+      try { localStorage.setItem(legacyStorageKey(agentId), key); } catch { /* ignore */ }
     } else {
-      try { localStorage.removeItem(storageKey(agentId)); } catch { /* ignore */ }
+      try { localStorage.removeItem(legacyStorageKey(agentId)); } catch { /* ignore */ }
     }
   }, [agentId]);
 
-  // On agent change: pick a session (URL > localStorage > backend default) and rehydrate.
+  const persistManagedSession = useCallback((id: string | null) => {
+    if (id) {
+      try { localStorage.setItem(managedStorageKey(agentId), id); } catch { /* ignore */ }
+    } else {
+      try { localStorage.removeItem(managedStorageKey(agentId)); } catch { /* ignore */ }
+    }
+  }, [agentId]);
+
+  // Probe managed APIs and pick default mode.
   useEffect(() => {
+    let cancelled = false;
+    listEnvironments()
+      .then(() => {
+        if (!cancelled) {
+          setManagedAvailable(true);
+          if (modeProp == null) setMode('managed');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setManagedAvailable(false);
+      });
+    return () => { cancelled = true; };
+  }, [agentId, modeProp]);
+
+  useEffect(() => {
+    if (modeProp != null) setMode(modeProp);
+  }, [modeProp]);
+
+  const handleManagedEvent = useCallback((evt: SessionEvent) => {
+    const confirm = extractConfirmation(evt);
+    if (confirm) setPendingConfirm(confirm);
+
+    if (evt.type === 'user.message') {
+      const text = payloadText(evt.payload);
+      if (text) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === evt.id)) return prev;
+          return [...prev, { id: evt.id, role: 'user', text, tools: [] }];
+        });
+      }
+    } else if (evt.type === 'agent.turn_stub' || evt.type.startsWith('agent.message') || evt.type === 'agent.token') {
+      const text = payloadText(evt.payload);
+      const replyId = replyMsgIdRef.current;
+      if (replyId) {
+        setMessages(prev => prev.map(m => m.id === replyId
+          ? { ...m, text: m.text + (text || ''), pending: false }
+          : m));
+      } else {
+        setMessages(prev => [...prev, { id: evt.id, role: 'assistant', text: text || '[agent response]', tools: [] }]);
+      }
+      replyMsgIdRef.current = null;
+    } else if (evt.type === 'agent.tool_use') {
+      const tool: ToolEntry = {
+        id: String(evt.payload?.toolUseId ?? evt.id),
+        name: String(evt.payload?.toolName ?? 'tool'),
+        input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
+      };
+      const replyId = replyMsgIdRef.current;
+      setMessages(prev => prev.map(m => {
+        if (replyId && m.id !== replyId) return m;
+        if (!replyId && m.role !== 'assistant') return m;
+        return { ...m, tools: [...m.tools, tool], pending: false };
+      }));
+    } else if (evt.type === 'session.status_idle' && !confirm) {
+      const replyId = replyMsgIdRef.current;
+      if (replyId) {
+        setMessages(prev => prev.map(m => m.id === replyId ? { ...m, pending: false } : m));
+        replyMsgIdRef.current = null;
+      }
+    }
+  }, []);
+
+  // Legacy session restore
+  useEffect(() => {
+    if (mode !== 'legacy') return;
     let cancelled = false;
     setMessages([]);
     setInput('');
     setRestoring(true);
+    setPendingConfirm(null);
+    streamHandleRef.current?.close();
+    streamHandleRef.current = null;
 
     const urlKey = searchParams.get('session');
-    const stored = (() => { try { return localStorage.getItem(storageKey(agentId)); } catch { return null; } })();
+    const stored = (() => { try { return localStorage.getItem(legacyStorageKey(agentId)); } catch { return null; } })();
     const initialKey = urlKey || stored || null;
 
     async function run() {
@@ -148,13 +336,10 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           key = cur.sessionKey;
           exists = cur.exists;
         } else {
-          // We have a candidate; just check whether the backend has turns.
           const cur = await currentSession(agentId);
           exists = cur.exists && cur.sessionKey === key;
         }
-      } catch {
-        // ignore — a missing session is fine, we just start empty
-      }
+      } catch { /* ignore */ }
       if (cancelled) return;
       setSessionKey(key);
       if (key && exists) {
@@ -162,13 +347,10 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           const list = await fetchTurns(agentId, key);
           if (cancelled) return;
           setMessages(turnsToMessages(list));
-        } catch {
-          // tolerate failure: empty thread
-        }
+        } catch { /* empty */ }
       }
       if (cancelled) return;
       setRestoring(false);
-      // Reflect the resolved key in the URL (replace so we don't pollute history).
       if (key && key !== urlKey) {
         const next = new URLSearchParams(searchParams);
         next.set('session', key);
@@ -178,16 +360,68 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     run();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId]);
+  }, [agentId, mode]);
+
+  // Managed session restore + SSE
+  useEffect(() => {
+    if (mode !== 'managed') return;
+    let cancelled = false;
+    setMessages([]);
+    setInput('');
+    setRestoring(true);
+    setPendingConfirm(null);
+    streamHandleRef.current?.close();
+    streamHandleRef.current = null;
+
+    async function run() {
+      const stored = (() => { try { return localStorage.getItem(managedStorageKey(agentId)); } catch { return null; } })();
+      let sessionId = stored;
+      try {
+        if (!sessionId) {
+          const env = await ensureDefaultEnvironment();
+          const session = await createManagedSession({ agent: agentId, environmentId: env.id });
+          sessionId = session.id;
+          persistManagedSession(sessionId);
+        }
+        if (cancelled) return;
+        setManagedSessionId(sessionId);
+        try {
+          const events = await listEvents(sessionId);
+          if (!cancelled) setMessages(eventsToMessages(events));
+        } catch { /* empty */ }
+        if (cancelled) return;
+        streamHandleRef.current = streamEvents(
+          sessionId,
+          evt => { if (!cancelled) handleManagedEvent(evt); },
+          () => { /* stream ended */ },
+        );
+      } catch {
+        if (!cancelled) {
+          setManagedAvailable(false);
+          setMode('legacy');
+        }
+        return;
+      }
+      if (!cancelled) setRestoring(false);
+    }
+    run();
+    return () => {
+      cancelled = true;
+      streamHandleRef.current?.close();
+      streamHandleRef.current = null;
+    };
+  }, [agentId, mode, handleManagedEvent, persistManagedSession]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, pendingConfirm]);
 
-  const canSend = useMemo(() => !busy && !restoring && input.trim().length > 0, [busy, restoring, input]);
+  const canSend = useMemo(
+    () => !busy && !restoring && !pendingConfirm && input.trim().length > 0,
+    [busy, restoring, pendingConfirm, input],
+  );
 
-  async function handleSend() {
-    if (!canSend) return;
+  async function handleSendLegacy() {
     const text = input.trim();
     setInput('');
     setBusy(true);
@@ -217,17 +451,13 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
                 return { ...m, tools };
               }
             }
-            tools.push({
-              id: `${evt.toolName ?? 'tool'}-${Date.now()}`,
-              name: evt.toolName ?? 'tool',
-              result: evt.toolResult,
-            });
+            tools.push({ id: `${evt.toolName ?? 'tool'}-${Date.now()}`, name: evt.toolName ?? 'tool', result: evt.toolResult });
             return { ...m, tools };
           }));
         } else if (evt.type === 'done') {
           if (evt.sessionKey) {
             setSessionKey(evt.sessionKey);
-            persistSession(evt.sessionKey);
+            persistLegacySession(evt.sessionKey);
             const next = new URLSearchParams(searchParams);
             if (next.get('session') !== evt.sessionKey) {
               next.set('session', evt.sessionKey);
@@ -252,6 +482,61 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }
 
+  async function handleSendManaged() {
+    if (!managedSessionId) return;
+    const text = input.trim();
+    setInput('');
+    setBusy(true);
+    const userMsg: Message = { id: nextId(), role: 'user', text, tools: [] };
+    const replyMsg: Message = { id: nextId(), role: 'assistant', text: '', tools: [], pending: true };
+    replyMsgIdRef.current = replyMsg.id;
+    setMessages(prev => [...prev, userMsg, replyMsg]);
+
+    try {
+      await postUserMessage(managedSessionId, text);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'send failed';
+      setMessages(prev => prev.map(m => m.id === replyMsg.id
+        ? { ...m, pending: false, text: `[error] ${msg}` }
+        : m));
+      replyMsgIdRef.current = null;
+    } finally {
+      setBusy(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  async function handleSend() {
+    if (!canSend) return;
+    if (mode === 'managed') await handleSendManaged();
+    else await handleSendLegacy();
+  }
+
+  async function handleConfirmation(allow: boolean) {
+    if (!managedSessionId || !pendingConfirm) return;
+    setBusy(true);
+    try {
+      await postToolConfirmation(
+        managedSessionId,
+        pendingConfirm.toolUseId,
+        allow,
+        allow ? undefined : 'Denied by user',
+      );
+      setPendingConfirm(null);
+      setMessages(prev => [...prev, {
+        id: nextId(),
+        role: 'system',
+        text: allow ? `Tool "${pendingConfirm.toolName}" allowed.` : `Tool "${pendingConfirm.toolName}" denied.`,
+        tools: [],
+      }]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'confirmation failed';
+      setMessages(prev => [...prev, { id: nextId(), role: 'system', text: `[error] ${msg}`, tools: [] }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -259,66 +544,97 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }
 
-  function handleNewChat() {
+  async function handleNewChat() {
     if (busy) return;
-    if (messages.length > 0 && !confirm('Start a new chat? The current thread will be cleared (a /reset will be sent to the agent).')) {
+    if (messages.length > 0 && !confirm('Start a new chat?')) return;
+
+    if (mode === 'managed') {
+      streamHandleRef.current?.close();
+      setRestoring(true);
+      setMessages([]);
+      setPendingConfirm(null);
+      persistManagedSession(null);
+      try {
+        const env = await ensureDefaultEnvironment();
+        const session = await createManagedSession({ agent: agentId, environmentId: env.id });
+        setManagedSessionId(session.id);
+        persistManagedSession(session.id);
+        streamHandleRef.current = streamEvents(session.id, handleManagedEvent);
+        setMessages([{ id: nextId(), role: 'system', text: 'New managed session started.', tools: [] }]);
+      } catch (e: unknown) {
+        setMessages([{ id: nextId(), role: 'system', text: `[error] ${e instanceof Error ? e.message : 'failed'}`, tools: [] }]);
+      } finally {
+        setRestoring(false);
+      }
       return;
     }
-    setMessages([{
-      id: nextId(),
-      role: 'system',
-      text: 'New chat started. Previous turns have been cleared.',
-      tools: [],
-    }]);
-    // Send /reset in the background so the harness clears its in-memory turn history too.
+
+    setMessages([{ id: nextId(), role: 'system', text: 'New chat started. Previous turns have been cleared.', tools: [] }]);
     (async () => {
       try {
-        for await (const _ of stream(agentId, { message: '/reset', sessionKey: sessionKey ?? undefined })) {
-          // drain
-        }
-      } catch {
-        // best-effort
-      }
+        for await (const _ of stream(agentId, { message: '/reset', sessionKey: sessionKey ?? undefined })) { /* drain */ }
+      } catch { /* best-effort */ }
     })();
   }
+
+  const sessionLabel = mode === 'managed'
+    ? (managedSessionId ? managedSessionId.slice(0, 24) : 'creating…')
+    : (sessionKey ? sessionKey.slice(0, 24) : 'new');
 
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <span>Session</span>
-        {sessionKey ? (
-          <span style={S.sessionTag} title={sessionKey}>{sessionKey.slice(0, 24)}{sessionKey.length > 24 ? '…' : ''}</span>
-        ) : restoring ? (
-          <span style={{ ...S.sessionTag, opacity: 0.6 }}>resolving…</span>
-        ) : (
-          <span style={{ ...S.sessionTag, opacity: 0.6 }}>new — send to start</span>
+        <span>{mode === 'managed' ? 'Managed session' : 'Session'}</span>
+        <span style={S.sessionTag} title={mode === 'managed' ? (managedSessionId ?? '') : (sessionKey ?? '')}>
+          {restoring ? 'resolving…' : sessionLabel}{sessionLabel.length >= 24 ? '…' : ''}
+        </span>
+        {managedAvailable && (
+          <>
+            <button
+              type="button"
+              style={{ ...S.iconBtn, ...(mode === 'managed' ? S.modeActive : {}) }}
+              onClick={() => setMode('managed')}
+            >
+              Managed
+            </button>
+            <button
+              type="button"
+              style={{ ...S.iconBtn, ...(mode === 'legacy' ? S.modeActive : {}) }}
+              onClick={() => setMode('legacy')}
+            >
+              Legacy
+            </button>
+          </>
         )}
         <span style={{ flex: 1 }} />
+        {mode === 'managed' && managedSessionId && (
+          <button
+            type="button"
+            style={S.iconBtn}
+            onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions/_managed?managed=${encodeURIComponent(managedSessionId)}`)}
+            title="View managed session event timeline"
+          >
+            📊 Events
+          </button>
+        )}
         <button
           type="button"
           style={S.iconBtn}
           onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions`)}
-          title="View all sessions for this agent"
         >
           📋 All sessions
         </button>
-        <button
-          type="button"
-          style={S.iconBtn}
-          onClick={handleNewChat}
-          disabled={busy}
-          title="Clear this thread and start fresh"
-        >
+        <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
           ✨ New chat
         </button>
       </div>
       <div style={S.thread} ref={threadRef}>
-        {restoring && messages.length === 0 && (
-          <div style={S.empty}>Loading conversation…</div>
-        )}
+        {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
         {!restoring && messages.length === 0 && (
           <div style={S.empty}>
-            Start a new conversation. Try <code style={{ background: '#e2e8f0', padding: '1px 6px', borderRadius: 4 }}>/reset</code> to clear the session.
+            {mode === 'managed'
+              ? 'Managed session ready. Messages stream via the session event log.'
+              : <>Start a new conversation. Try <code style={{ background: '#e2e8f0', padding: '1px 6px', borderRadius: 4 }}>/reset</code> to clear.</>}
           </div>
         )}
         {messages.map(m => (
@@ -329,18 +645,32 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
             {m.tools.length > 0 && (
               <div style={{ marginBottom: m.text ? 10 : 0 }}>
                 {m.tools.map(t => (
-                  <ToolCallBlock
-                    key={t.id}
-                    toolName={t.name}
-                    toolCallId={t.id}
-                    result={t.result}
-                  />
+                  <ToolCallBlock key={t.id} toolName={t.name} toolCallId={t.id} result={t.result} />
                 ))}
               </div>
             )}
             {m.text || (m.pending ? <span style={{ color: '#94a3b8' }}>…</span> : null)}
           </div>
         ))}
+        {pendingConfirm && (
+          <div style={S.confirmCard}>
+            <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
+              Allow tool call: {pendingConfirm.toolName}?
+            </div>
+            {pendingConfirm.input && (
+              <pre style={{
+                fontSize: '0.78rem', color: '#78350f', background: '#fef3c7',
+                padding: '8px 10px', borderRadius: 6, overflow: 'auto', maxHeight: 120,
+              }}>
+                {JSON.stringify(pendingConfirm.input, null, 2)}
+              </pre>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button type="button" style={S.allowBtn} onClick={() => handleConfirmation(true)} disabled={busy}>Allow</button>
+              <button type="button" style={S.denyBtn} onClick={() => handleConfirmation(false)} disabled={busy}>Deny</button>
+            </div>
+          </div>
+        )}
       </div>
       <div style={S.composer}>
         <textarea
@@ -349,10 +679,10 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={restoring ? 'Loading…' : `Message ${agentId}…`}
+          placeholder={restoring ? 'Loading…' : pendingConfirm ? 'Confirm tool call above…' : `Message ${agentId}…`}
           rows={1}
           autoFocus
-          disabled={restoring}
+          disabled={restoring || !!pendingConfirm}
         />
         <button
           style={{ ...S.send, ...(canSend ? {} : S.sendDisabled) }}

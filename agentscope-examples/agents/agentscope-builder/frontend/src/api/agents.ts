@@ -27,6 +27,15 @@ export interface AgentDefinition {
   forkOf?: string;
   workspacePath?: string;
   tierForCurrentUser?: ShareTier;
+  version?: number;
+  archivedAt?: number | null;
+  permissionPolicies?: Record<string, string>;
+}
+
+export interface AgentVersionEntry {
+  version: number;
+  snapshot?: Record<string, unknown>;
+  createdAt: number;
 }
 
 export interface AgentDraft {
@@ -105,6 +114,30 @@ export async function deleteAgent(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) {
     throw new Error(`Failed to delete agent: ${res.status}`);
   }
+}
+
+export async function archiveAgent(id: string): Promise<AgentDefinition> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/archive`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to archive agent: ${res.status}`);
+  return res.json();
+}
+
+export async function listVersions(id: string): Promise<AgentVersionEntry[]> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/versions`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to list versions: ${res.status}`);
+  return res.json();
+}
+
+export async function getVersion(id: string, version: number): Promise<AgentVersionEntry> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(id)}/versions/${version}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) throw new Error(`Failed to load version: ${res.status}`);
+  return res.json();
 }
 
 export async function draftAgentWithAi(description: string): Promise<AgentDraft> {

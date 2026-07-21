@@ -25,8 +25,10 @@ import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.auth.UserStore.UserRecord;
+import io.agentscope.builder.web.managed.AgentVersionService;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.template.TemplateRegistry;
+import io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -111,7 +113,10 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 mock(TemplateRegistry.class),
                 mock(SharedWorkspacePaths.class),
                 mock(UserStore.class),
-                mock(AgentAclService.class));
+                mock(AgentAclService.class),
+                mock(AgentVersionService.class),
+                mock(io.agentscope.builder.web.managed.EnvironmentSpecFactory.class),
+                mock(ToolConfirmationMiddleware.class));
 
         // Verifies the wiring done in the constructor — chat-time RC.userId override is only
         // active when the gateway has a resolver, so failing this verification would silently
@@ -146,6 +151,9 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 mock(TemplateRegistry.class),
                 mock(SharedWorkspacePaths.class),
                 userStore,
-                mock(AgentAclService.class));
+                mock(AgentAclService.class),
+                mock(AgentVersionService.class),
+                mock(io.agentscope.builder.web.managed.EnvironmentSpecFactory.class),
+                mock(ToolConfirmationMiddleware.class));
     }
 }

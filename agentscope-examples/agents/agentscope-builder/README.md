@@ -78,6 +78,27 @@ changes. See **[Filesystem Modes](#filesystem-modes)** below for picking one.
 
 ---
 
+## Managed Agents resources
+
+Builder now exposes a Claude Managed Agents–aligned resource model on top of
+the existing HarnessAgent runtime:
+
+| Resource | API | Role |
+|---|---|---|
+| **Agent** (versioned) | `/api/agents`, `/api/agents/{id}/versions` | Optimistic-lock updates (`version` required); archive; immutable config snapshots |
+| **Environment** | `/api/environments` | Execution template: `local` / `sandbox` / `remote` + `isolationScope` |
+| **Session** | `/api/sessions` | Agent × Environment run; append-only `{domain}.{action}` event log; SSE stream |
+| **Memory store** | `/api/memory-stores` | Cross-session mounted memories with versioned documents |
+| **Vault** | `/api/vaults` | Per-user encrypted credentials (AES-GCM); referenced by session `vaultIds` |
+
+Chat UI defaults to **managed session** mode (create session → post `user.message` → stream events). Legacy `/api/agents/{id}/chat/stream` remains available as a fallback toggle.
+
+Tool calls with `permissionPolicies` of `always_ask` pause the session (`requires_action`) until the UI posts `user.tool_confirmation`.
+
+Set `BUILDER_VAULT_MASTER_KEY` in production for vault encryption.
+
+---
+
 ## Quick Start
 
 ```bash

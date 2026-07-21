@@ -77,6 +77,11 @@ builder:
   # .agentscope/agentscope.json is read from (or auto-created in) this directory.
   workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
 
+  # AES-GCM master key for vault credential encryption (>= 32 chars recommended).
+  # MUST be overridden in production via BUILDER_VAULT_MASTER_KEY.
+  vault:
+    master-key: ${BUILDER_VAULT_MASTER_KEY:}
+
   # ---- Workspace storage topology (multi-tenant filesystem) ----
   # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
   # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { TurnEntry, turns, resetSession, deleteSession, markRead } from '../api/sessions';
 import { useNavigate } from 'react-router-dom';
 import ToolCallBlock from './ToolCallBlock';
+import SessionEventTimeline from './SessionEventTimeline';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1100 },
@@ -31,7 +32,15 @@ const S: Record<string, React.CSSProperties> = {
   err: { color: '#dc2626', fontSize: '0.9rem' },
 };
 
-export default function SessionTranscript({ agentId, sessionKey }: { agentId: string; sessionKey: string }) {
+export default function SessionTranscript({
+  agentId,
+  sessionKey,
+  managedSessionId,
+}: {
+  agentId: string;
+  sessionKey: string;
+  managedSessionId?: string;
+}) {
   const [entries, setEntries] = useState<TurnEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -109,6 +118,7 @@ export default function SessionTranscript({ agentId, sessionKey }: { agentId: st
           </div>
         );
       })}
+      {managedSessionId && <SessionEventTimeline managedSessionId={managedSessionId} />}
     </div>
   );
 }

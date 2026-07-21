@@ -247,7 +247,10 @@ public class AgentShareController {
                 e.workspacePath(),
                 e.skillRepositories(),
                 e.sandboxMode(),
-                e.sandboxScope());
+                e.sandboxScope(),
+                e.version(),
+                e.archivedAt(),
+                e.permissionPolicies());
     }
 
     public record AddShareRequest(String granteeType, String granteeId, String tier) {}

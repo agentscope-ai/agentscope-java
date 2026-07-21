@@ -18,6 +18,7 @@ package io.agentscope.builder.web.catalog;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * API representation of an agent definition visible to the current user.
@@ -63,6 +64,11 @@ import java.util.List;
  * @param sandboxScope optional sharing scope when {@code sandboxMode == "sandbox"} ({@code
  *     "SESSION"} / {@code "USER"} / {@code "AGENT"} / {@code "GLOBAL"}). Maps to {@link
  *     io.agentscope.harness.agent.IsolationScope}.
+ * @param version head version number for user-custom agents; {@code null} for globals without
+ *     version history
+ * @param archivedAt when non-null the agent is archived (read-only; no new sessions)
+ * @param permissionPolicies per-tool permission policies ({@code always_allow} / {@code
+ *     always_ask}); {@code null} uses platform defaults
  * @param tierForCurrentUser transient: the calling user's effective tier
  *     ({@code "CLONE"}/{@code "RUN"}/{@code "EDIT"}); only populated on read paths and only when
  *     the caller is authenticated. Never persisted.
@@ -94,6 +100,9 @@ public record AgentDefinition(
         String workspacePath,
         String sandboxMode,
         String sandboxScope,
+        Integer version,
+        Long archivedAt,
+        Map<String, String> permissionPolicies,
         String tierForCurrentUser) {
 
     public static final String SCOPE_GLOBAL = "global";
@@ -130,6 +139,9 @@ public record AgentDefinition(
                 workspacePath,
                 sandboxMode,
                 sandboxScope,
+                version,
+                archivedAt,
+                permissionPolicies,
                 tier);
     }
 }

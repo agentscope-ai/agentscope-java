@@ -74,6 +74,20 @@ java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builde
 
 服务在 `http://localhost:8080` 启动。首次启动会在 `~/.agentscope/builder/agentscope.json` 自动生成一份默认 agent 配置。
 
+## Managed Agents 资源模型
+
+Builder 在现有 HarnessAgent 之上对齐了 Claude Managed Agents 的资源面：
+
+| 资源 | API | 说明 |
+|---|---|---|
+| **Agent**（版本化） | `/api/agents`、`/versions` | 乐观锁更新；archive；配置快照 |
+| **Environment** | `/api/environments` | `local` / `sandbox` / `remote` 执行模板 |
+| **Session** | `/api/sessions` | Agent×Environment 运行实例 + 事件日志/SSE |
+| **Memory store** | `/api/memory-stores` | 跨 session 可挂载记忆（带版本） |
+| **Vault** | `/api/vaults` | AES-GCM 加密凭据；session 级引用 |
+
+生产环境请设置 `BUILDER_VAULT_MASTER_KEY`。
+
 ## 配置
 
 所有配置都使用 `builder.*` 前缀。可写在 `application.yml` 中、传 JVM 系统属性（`-Dbuilder.xxx`），或用环境变量（`BUILDER_XXX`）。

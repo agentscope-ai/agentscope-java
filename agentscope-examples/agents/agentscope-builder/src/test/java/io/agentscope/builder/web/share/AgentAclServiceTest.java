@@ -151,6 +151,9 @@ class AgentAclServiceTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
     }
 
@@ -177,6 +180,9 @@ class AgentAclServiceTest {
                 0L,
                 null,
                 AgentDefinition.RUN_AS_INVOKER,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
