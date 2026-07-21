@@ -736,6 +736,22 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
+        @DisplayName("Should sanitize name field containing spaces and special characters")
+        void testMessageWithSanitizedName() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("My Agent Space!")
+                            .content(List.of(TextBlock.builder().text("Hello").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("My_Agent_Space_", result.getName());
+        }
+
+        @Test
         @DisplayName("Should handle null name")
         void testMessageWithNullName() {
             Msg msg =

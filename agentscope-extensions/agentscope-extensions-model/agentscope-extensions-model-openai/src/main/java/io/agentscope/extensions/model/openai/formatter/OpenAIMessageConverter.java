@@ -123,7 +123,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -350,7 +350,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         // Handle tool calls
@@ -528,5 +528,18 @@ public class OpenAIMessageConverter {
         if (Boolean.TRUE.equals(cacheFlag)) {
             result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
         }
+    }
+
+    /**
+     * Sanitize name to match OpenAI constraints ^[a-zA-Z0-9_-]+$
+     *
+     * @param name The original name
+     * @return The sanitized name with invalid characters replaced by underscores
+     */
+    private String sanitizeName(String name) {
+        if (name == null) {
+            return null;
+        }
+        return name.replaceAll("[^a-zA-Z0-9_-]", "_");
     }
 }
