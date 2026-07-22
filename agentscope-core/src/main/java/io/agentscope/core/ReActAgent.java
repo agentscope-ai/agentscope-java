@@ -2380,7 +2380,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     context.buildFinalMessage();
                                                             RequestStopEvent rs =
                                                                     stopRequested.get();
-                                                            if (rs != null && finalMsg != null) {
+                                                            if (rs != null) {
+                                                                if (finalMsg == null) {
+                                                                    return Mono.empty();
+                                                                }
                                                                 // Persist the reasoning message
                                                                 // before
                                                                 // returning so the next call can
@@ -2393,7 +2396,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 rs
                                                                                         .getGenerateReason()));
                                                             }
-                                                            return Mono.justOrEmpty(finalMsg);
+                                                            if (finalMsg == null) {
+                                                                return executeIteration(iter + 1);
+                                                            }
+                                                            return Mono.just(finalMsg);
                                                         }));
                             })
                     .onErrorResume(
@@ -2458,6 +2464,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
                                     return reasoning(iter + 1, true);
+                                }
+
+                                // Continue the bounded ReAct loop when the model produced only
+                                // thinking or blank text. The message has already been persisted
+                                // above, so the next iteration can use the thinking context.
+                                if (hasNoUsableModelResponse(eventMsg)) {
+                                    return executeIteration(iter + 1);
                                 }
 
                                 // Check finish conditions
@@ -3776,6 +3789,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     Msg.METADATA_REMINDER_KIND,
                                     "empty_response"))
                     .build();
+        }
+
+        /**
+         * Check whether a model response has no visible text or tool calls to act on.
+         *
+         * @param msg The reasoning message
+         * @return true if the response contains only thinking or blank text
+         */
+        private boolean hasNoUsableModelResponse(Msg msg) {
+            if (msg == null || !msg.getContentBlocks(ToolUseBlock.class).isEmpty()) {
+                return false;
+            }
+
+            List<TextBlock> textBlocks = msg.getContentBlocks(TextBlock.class);
+            boolean hasVisibleText =
+                    textBlocks.stream()
+                            .map(TextBlock::getText)
+                            .anyMatch(text -> text != null && !text.isBlank());
+            return !hasVisibleText
+                    && (!textBlocks.isEmpty()
+                            || !msg.getContentBlocks(ThinkingBlock.class).isEmpty());
         }
 
         /**
