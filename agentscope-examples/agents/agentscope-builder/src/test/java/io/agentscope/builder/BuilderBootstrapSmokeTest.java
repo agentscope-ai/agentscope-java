@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -22,13 +23,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -101,6 +107,45 @@ class BuilderBootstrapSmokeTest {
         ChatUiChannel chat = bootstrap.chatUiChannel();
         Msg reply = chat.send("hello").block();
         assertTrue(reply.getTextContent().contains("from-main"));
+    }
+
+    @Test
+    void dynamicAgentUsesGlobalFilesystemConfigurationForItsOwnWorkspace() throws Exception {
+        Path customWorkspace = tempDir.resolve("custom-agent-workspace");
+        Files.createDirectories(customWorkspace.resolve("docs"));
+        Files.writeString(customWorkspace.resolve("docs/guide.md"), "custom shared guide");
+
+        Model model = stubModel("dynamic-agent-reply");
+        BuilderBootstrap bootstrap =
+                BuilderBootstrap.builder()
+                        .skipConfigFile(true)
+                        .cwd(tempDir)
+                        .model(model)
+                        .configureAgent("main", b -> b.name("main"))
+                        .configureAllAgents(
+                                b ->
+                                        b.filesystem(
+                                                new LocalFilesystemSpec()
+                                                        .isolationScope(IsolationScope.USER)
+                                                        .addSharedPrefix("docs")))
+                        .mainAgent("main")
+                        .build();
+
+        HarnessAgent.Builder dynamicBuilder =
+                HarnessAgent.builder()
+                        .agentId("dynamic")
+                        .name("dynamic")
+                        .model(model)
+                        .workspace(customWorkspace);
+        bootstrap.configureDynamicAgent(dynamicBuilder);
+        HarnessAgent dynamicAgent = dynamicBuilder.build();
+
+        String content =
+                dynamicAgent
+                        .workspaceFor("alice", null)
+                        .readManagedWorkspaceFileUtf8(
+                                RuntimeContext.builder().userId("alice").build(), "docs/guide.md");
+        assertEquals("custom shared guide", content);
     }
 
     private static Model stubModel(String assistantText) {

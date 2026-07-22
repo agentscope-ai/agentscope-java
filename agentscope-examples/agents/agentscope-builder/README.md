@@ -150,6 +150,23 @@ Agents run directly on the host with `LocalFilesystemWithShell`. Each user's wor
 
 **When to use:** Single-node deployments, local development, trusted environments.
 
+### Shared read-only workspace directories
+
+Local and remote filesystem modes can expose selected directories from the physical agent
+workspace root as a shared baseline for every tenant:
+
+```yaml
+builder:
+  workspace-store:
+    shared-read-prefixes: docs/,knowledge-base/
+```
+
+The equivalent environment variable is
+`BUILDER_WORKSPACE_SHARED_READ_PREFIXES=docs/,knowledge-base/`. Reads fall back to the shared
+directory (for example `~/.agentscope/builder/workspace/docs/`), while tenant writes use
+copy-on-write and remain in that tenant's namespace. Shared source files are never modified by an
+agent write.
+
 ### Sandbox Mode
 
 ```yaml

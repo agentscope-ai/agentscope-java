@@ -27,7 +27,6 @@ import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.auth.UserStore.UserRecord;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.template.TemplateRegistry;
-import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.util.List;
@@ -107,7 +106,6 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 bootstrap,
                 mock(UserAgentDefinitionStore.class),
                 Optional.empty(),
-                mock(ToolEventBus.class),
                 mock(TemplateRegistry.class),
                 mock(SharedWorkspacePaths.class),
                 mock(UserStore.class),
@@ -142,7 +140,6 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 bootstrap,
                 store,
                 Optional.empty(),
-                mock(ToolEventBus.class),
                 mock(TemplateRegistry.class),
                 mock(SharedWorkspacePaths.class),
                 userStore,
