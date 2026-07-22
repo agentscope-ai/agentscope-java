@@ -103,5 +103,5 @@ Version/label resolution order: `Properties` provided to the constructor → JVM
 
 ## Pairs well with
 
-- [A2A](../protocol/a2a): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
+- [A2A](../protocol/a2a.md): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
 - [Skill repositories](../skill/): coexist with Git/MySQL `AgentSkillRepository` to assemble a Toolkit from multiple sources.

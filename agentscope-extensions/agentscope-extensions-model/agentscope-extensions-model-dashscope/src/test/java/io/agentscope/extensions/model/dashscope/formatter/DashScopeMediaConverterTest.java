@@ -18,8 +18,10 @@ package io.agentscope.extensions.model.dashscope.formatter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
@@ -347,5 +349,110 @@ class DashScopeMediaConverterTest {
         assertNull(videoBlock.getMinPixels());
         assertNull(videoBlock.getMaxPixels());
         assertNull(videoBlock.getTotalPixels());
+    }
+
+    @Test
+    void testConvertDataBlockImageRemoteUrl() throws Exception {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/photo.png").build())
+                        .build();
+
+        DashScopeContentPart result = converter.convertDataBlockToContentPart(block);
+
+        assertNotNull(result);
+        assertEquals("https://example.com/photo.png", result.getImage());
+    }
+
+    @Test
+    void testConvertDataBlockImageBase64() throws Exception {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("iVBORw0KGgo=")
+                                        .build())
+                        .build();
+
+        DashScopeContentPart result = converter.convertDataBlockToContentPart(block);
+
+        assertNotNull(result);
+        assertEquals("data:image/png;base64,iVBORw0KGgo=", result.getImage());
+    }
+
+    @Test
+    void testConvertDataBlockVideoRemoteUrl() throws Exception {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/clip.mp4").build())
+                        .build();
+
+        DashScopeContentPart result = converter.convertDataBlockToContentPart(block);
+
+        assertNotNull(result);
+        assertEquals("https://example.com/clip.mp4", result.getVideoAsString());
+    }
+
+    @Test
+    void testConvertDataBlockAudioBase64() throws Exception {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("audio/mp3")
+                                        .data("ZmFrZSBhdWRpbyBkYXRh")
+                                        .build())
+                        .build();
+
+        DashScopeContentPart result = converter.convertDataBlockToContentPart(block);
+
+        assertNotNull(result);
+        assertEquals("data:audio/mp3;base64,ZmFrZSBhdWRpbyBkYXRh", result.getAudio());
+    }
+
+    @Test
+    void testConvertDataBlockWithMimeTypeHintOverridesExtension() throws Exception {
+        // mimeType hint should take precedence over extension-based inference
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                URLSource.builder()
+                                        .url("https://cdn.example.com/media/abc123")
+                                        .mimeType("image/jpeg")
+                                        .build())
+                        .build();
+
+        DashScopeContentPart result = converter.convertDataBlockToContentPart(block);
+
+        assertNotNull(result);
+        assertNotNull(result.getImage());
+    }
+
+    @Test
+    void testConvertDataBlockNoExtensionNoHintThrows() {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                URLSource.builder()
+                                        .url("https://cdn.example.com/media/abc123")
+                                        .build())
+                        .build();
+
+        assertThrows(Exception.class, () -> converter.convertDataBlockToContentPart(block));
+    }
+
+    @Test
+    void testConvertDataBlockUnknownMimeTypeThrows() {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/octet-stream")
+                                        .data("ZmFrZQ==")
+                                        .build())
+                        .build();
+
+        assertThrows(Exception.class, () -> converter.convertDataBlockToContentPart(block));
     }
 }

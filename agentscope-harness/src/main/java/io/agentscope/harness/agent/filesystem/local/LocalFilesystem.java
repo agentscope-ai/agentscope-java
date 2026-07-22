@@ -359,7 +359,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content = Files.readString(resolved, StandardCharsets.UTF_8);
+            String content =
+                    Files.readString(resolved, StandardCharsets.UTF_8)
+                            .replace("\r\n", "\n")
+                            .replace("\r", "\n");
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
@@ -631,15 +634,40 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
                 return normalized;
             }
-            throw new SecurityException(
-                    "Absolute path "
-                            + normalized
-                            + " is not within an allowed root. Filesystem root: "
-                            + cwd
-                            + "; additional roots: "
-                            + pathPolicy.roots());
+            if (Files.exists(normalized)) {
+                throw rootAccessDenied(normalized);
+            }
+            if (!effectiveKey.startsWith("/")) {
+                throw rootAccessDenied(normalized);
+            }
         }
+
+        if (effectiveKey.startsWith("/")) {
+            String stripped = effectiveKey.substring(1);
+            if (stripped.isEmpty()) {
+                return cwd;
+            }
+            if (stripped.startsWith("~")) {
+                throw new SecurityException("Path traversal not allowed: " + effectiveKey);
+            }
+            Path full = cwd.resolve(stripped).normalize();
+            if (!full.startsWith(cwd)) {
+                throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+            }
+            return full;
+        }
+
         return cwd.resolve(target).normalize();
+    }
+
+    private SecurityException rootAccessDenied(Path normalized) {
+        return new SecurityException(
+                "Absolute path "
+                        + normalized
+                        + " is not within an allowed root. Filesystem root: "
+                        + cwd
+                        + "; additional roots: "
+                        + pathPolicy.roots());
     }
 
     private Path resolveUnrestricted(String effectiveKey) {

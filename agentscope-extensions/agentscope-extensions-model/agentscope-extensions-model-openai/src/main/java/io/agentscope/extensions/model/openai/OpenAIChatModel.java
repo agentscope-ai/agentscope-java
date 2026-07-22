@@ -198,11 +198,6 @@ public class OpenAIChatModel extends ChatModelBase {
         return configuredOptions != null ? configuredOptions.getModelName() : null;
     }
 
-    @Override
-    public boolean supportsNativeStructuredOutput() {
-        return true;
-    }
-
     /**
      * Creates a new builder for OpenAIChatModel.
      *
@@ -229,6 +224,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
 
         /**
@@ -382,6 +378,23 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model supports native structured output via
+         * {@code response_format}.
+         *
+         * <p>Defaults to {@code true}, which is correct for OpenAI's own models. Set to
+         * {@code false} for OpenAI-compatible providers that do not reliably return
+         * schema-constrained JSON through {@code response_format}; the agent will use
+         * the {@code generate_response} fallback tool instead.
+         *
+         * @param nativeStructuredOutput false to disable native structured output
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutput(boolean nativeStructuredOutput) {
+            this.nativeStructuredOutput = nativeStructuredOutput;
+            return this;
+        }
+
+        /**
          * Sets whether this model correctly handles native structured output
          * ({@code response_format}) alongside tool calling.
          *
@@ -440,6 +453,8 @@ public class OpenAIChatModel extends ChatModelBase {
                     contextWindowSize >= 0
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
+            model.setNativeStructuredOutput(
+                    nativeStructuredOutput != null ? nativeStructuredOutput : true);
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
             }

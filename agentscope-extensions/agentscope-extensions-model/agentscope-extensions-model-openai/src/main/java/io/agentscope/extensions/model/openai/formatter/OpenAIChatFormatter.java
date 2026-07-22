@@ -80,6 +80,12 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         if (reasoningEffort != null) {
             request.setReasoningEffort(reasoningEffort);
         }
+        // Apply thinking budget
+        Integer thinkingBudget =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (thinkingBudget != null) {
+            request.setThinkingBudget(thinkingBudget);
+        }
 
         // Apply top_p
         Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
@@ -250,6 +256,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                     case "include_reasoning":
                         if (value instanceof Boolean) {
                             request.setIncludeReasoning((Boolean) value);
+                        }
+                        break;
+                    case "thinking_budget":
+                        if (value instanceof Number number) {
+                            request.setThinkingBudget(number.intValue());
                         }
                         break;
                     case "stop":
