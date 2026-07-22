@@ -18,11 +18,16 @@ package io.agentscope.extensions.model.gemini;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
@@ -30,11 +35,14 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for GeminiChatModel.
@@ -56,6 +64,58 @@ class GeminiChatModelTest {
     @BeforeEach
     void setUp() {
         mockApiKey = ModelTestUtils.createMockApiKey();
+    }
+
+    @Test
+    @DisplayName("Should apply request timeout to Gemini response streams")
+    void testAppliesRequestTimeout() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .timeout(Duration.ofMillis(10))
+                                        .maxAttempts(1)
+                                        .build())
+                        .build();
+
+        ModelException error =
+                assertThrows(
+                        ModelException.class,
+                        () ->
+                                new TestGeminiChatModel(Flux.never())
+                                        .stream(List.of(), List.of(), options).blockLast());
+
+        assertTrue(error.getMessage().contains("timeout"));
+    }
+
+    @Test
+    @DisplayName("Should retry Gemini response streams according to execution config")
+    void testRetriesRequestThroughStreamEntryPoint() {
+        AtomicInteger attempts = new AtomicInteger();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .maxAttempts(2)
+                                        .initialBackoff(Duration.ofMillis(1))
+                                        .maxBackoff(Duration.ofMillis(1))
+                                        .retryOn(error -> true)
+                                        .build())
+                        .build();
+
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        new TestGeminiChatModel(
+                                        Flux.defer(
+                                                () -> {
+                                                    attempts.incrementAndGet();
+                                                    return Flux.error(
+                                                            new IllegalStateException("failed"));
+                                                }))
+                                .stream(List.of(), List.of(), options).blockLast());
+
+        assertEquals(2, attempts.get());
     }
 
     @Test
@@ -628,5 +688,23 @@ class GeminiChatModelTest {
         Field httpOptionsField = GeminiChatModel.class.getDeclaredField("httpOptions");
         httpOptionsField.setAccessible(true);
         return (HttpOptions) httpOptionsField.get(model);
+    }
+
+    private static final class TestGeminiChatModel extends GeminiChatModel {
+
+        private final Flux<ChatResponse> response;
+
+        private TestGeminiChatModel(Flux<ChatResponse> response) {
+            super("test-key", "gemini-test", true, null, null, null, null, null, null, null, null);
+            this.response = response;
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream0(
+                List<io.agentscope.core.message.Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options) {
+            return response;
+        }
     }
 }
