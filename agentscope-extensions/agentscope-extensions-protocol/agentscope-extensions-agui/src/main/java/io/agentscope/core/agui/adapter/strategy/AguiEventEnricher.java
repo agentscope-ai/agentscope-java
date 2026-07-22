@@ -17,19 +17,20 @@ package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
-import java.util.Set;
+import java.util.List;
 
-final class RawAgentEventConverter implements AgentEventConverter {
+/**
+ * Enriches AG-UI events after semantic conversion.
+ */
+public interface AguiEventEnricher {
 
-    @Override
-    public Set<Class<? extends AgentEvent>> eventTypes() {
-        return Set.of();
-    }
-
-    @Override
-    public void convert(AgentEvent event, AguiStreamContext context) {
-        context.emit(
-                new AguiEvent.Raw(
-                        context.getThreadId(), context.getRunId(), event, event.getSource()));
-    }
+    /**
+     * Enrich converted AG-UI events.
+     *
+     * @param source The source AgentEvent, or null for framework lifecycle events
+     * @param events The converted AG-UI events
+     * @param context The stream context
+     * @return The enriched AG-UI events
+     */
+    List<AguiEvent> enrich(AgentEvent source, List<AguiEvent> events, AguiStreamContext context);
 }

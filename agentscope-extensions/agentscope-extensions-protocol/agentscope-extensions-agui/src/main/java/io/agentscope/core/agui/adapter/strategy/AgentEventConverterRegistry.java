@@ -26,16 +26,29 @@ public class AgentEventConverterRegistry {
 
     private final Map<Class<? extends AgentEvent>, AgentEventConverter> converters;
     private final RawAgentEventConverter rawConverter = new RawAgentEventConverter();
+    private final List<AguiEventEnricher> enrichers;
 
     public AgentEventConverterRegistry() {
+        this(List.of(), List.of());
+    }
+
+    public AgentEventConverterRegistry(
+            List<AgentEventConverter> customConverters, List<AguiEventEnricher> enrichers) {
         Map<Class<? extends AgentEvent>, AgentEventConverter> map = new LinkedHashMap<>();
         register(map, new AgentLifecycleEventConverter());
         register(map, new TextBlockEventConverter());
         register(map, new ThinkingBlockEventConverter());
         register(map, new ToolCallEventConverter());
         register(map, new ToolResultEventConverter());
+        register(map, new ModelCallUsageEventConverter());
         register(map, new CustomAgentEventConverter());
+        if (customConverters != null) {
+            for (AgentEventConverter converter : customConverters) {
+                register(map, Objects.requireNonNull(converter, "converter cannot be null"));
+            }
+        }
         this.converters = Map.copyOf(map);
+        this.enrichers = enrichers != null ? List.copyOf(enrichers) : List.of();
     }
 
     public List<AguiEvent> convert(AgentEvent event, AguiStreamContext context) {
@@ -43,7 +56,22 @@ public class AgentEventConverterRegistry {
         Objects.requireNonNull(context, "context cannot be null");
         context.beginEvent();
         converters.getOrDefault(event.getClass(), rawConverter).convert(event, context);
-        return context.drainEvents();
+        return enrich(event, context.drainEvents(), context);
+    }
+
+    public List<AguiEvent> enrich(
+            AgentEvent source, List<AguiEvent> events, AguiStreamContext context) {
+        Objects.requireNonNull(events, "events cannot be null");
+        Objects.requireNonNull(context, "context cannot be null");
+        List<AguiEvent> enriched = List.copyOf(events);
+        for (AguiEventEnricher enricher : enrichers) {
+            enriched =
+                    List.copyOf(
+                            Objects.requireNonNull(
+                                    enricher.enrich(source, enriched, context),
+                                    "enriched events cannot be null"));
+        }
+        return enriched;
     }
 
     private static void register(

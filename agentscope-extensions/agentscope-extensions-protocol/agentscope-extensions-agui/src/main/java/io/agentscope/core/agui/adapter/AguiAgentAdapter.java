@@ -101,7 +101,9 @@ public class AguiAgentAdapter {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
         this.toolConverter = new AguiToolConverter();
-        this.agentEventConverterRegistry = new AgentEventConverterRegistry();
+        this.agentEventConverterRegistry =
+                new AgentEventConverterRegistry(
+                        config.getEventConverters(), config.getEventEnrichers());
     }
 
     /**
@@ -135,30 +137,21 @@ public class AguiAgentAdapter {
                     try {
                         toolInjection = injectFrontendTools(input);
                         agentStream =
-                                streamWithRuntimeContext(
-                                        msgs, options, runtimeContext, threadId, runId);
+                                streamWithRuntimeContext(msgs, options, runtimeContext, input);
                     } catch (Throwable error) {
                         toolInjection.close();
                         return Flux.concat(
-                                Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                Flux.just(new AguiEvent.RunStarted(threadId, runId, null, input)),
                                 errorEvents(threadId, runId, error));
                     }
 
                     ToolInjection activeToolInjection = toolInjection;
 
                     return Flux.concat(
-                                    // Emit RUN_STARTED
-                                    Flux.just(
-                                            new AguiEvent.RunStarted(threadId, runId, null, input)),
                                     agentStream.events(),
-                                    // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> agentStream.finish().get()))
                             .doFinally(signalType -> activeToolInjection.close())
-                            .onErrorResume(
-                                    error ->
-                                            Flux.concat(
-                                                    agentStream.abort().get(),
-                                                    errorEvents(threadId, runId, error)));
+                            .onErrorResume(error -> errorEvents(threadId, runId, error));
                 });
     }
 
@@ -166,30 +159,27 @@ public class AguiAgentAdapter {
             List<Msg> msgs,
             StreamOptions options,
             RuntimeContext runtimeContext,
-            String threadId,
-            String runId) {
+            RunAgentInput input) {
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+
         if (agent instanceof ReActAgent reAct) {
-            AguiStreamContext context = new AguiStreamContext(threadId, runId, config);
+            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
             return new AgentStream(
-                    // Use concatMapIterable to preserve strict event ordering
-                    events.concatMapIterable(
-                            event -> agentEventConverterRegistry.convert(event, context)),
-                    () -> finishRun(context),
+                    convertAgentEvents(events, context),
                     () -> Flux.fromIterable(context.finishPendingEvents()));
         }
         if (isHarnessAgent(agent)) {
-            AguiStreamContext context = new AguiStreamContext(threadId, runId, config);
+            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
                             "agent stream is null");
             return new AgentStream(
-                    events.concatMapIterable(
-                            event -> agentEventConverterRegistry.convert(event, context)),
-                    () -> finishRun(context),
+                    convertAgentEvents(events, context),
                     () -> Flux.fromIterable(context.finishPendingEvents()));
         }
 
@@ -201,21 +191,24 @@ public class AguiAgentAdapter {
         }
         Objects.requireNonNull(events, "agent stream is null");
         return new AgentStream(
-                events.concatMapIterable(event -> convertEvent(event, state)),
-                () -> finishRun(state),
-                Flux::empty);
+                Flux.concat(
+                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                        events.concatMapIterable(event -> convertEvent(event, state))),
+                () -> finishRun(state));
     }
 
-    private Flux<AguiEvent> finishRun(AguiStreamContext context) {
-        List<AguiEvent> events = new ArrayList<>(context.finishPendingEvents());
-        events.add(new AguiEvent.RunFinished(context.getThreadId(), context.getRunId()));
-        return Flux.fromIterable(events);
+    private Flux<AguiEvent> convertAgentEvents(Flux<AgentEvent> events, AguiStreamContext context) {
+        return events
+                // Use concatMapIterable to preserve strict event ordering
+                .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
+                .onErrorResume(
+                        error ->
+                                Flux.concat(
+                                        Flux.fromIterable(context.finishPendingEvents()),
+                                        Flux.error(error)));
     }
 
-    private record AgentStream(
-            Flux<AguiEvent> events,
-            Supplier<Flux<AguiEvent>> finish,
-            Supplier<Flux<AguiEvent>> abort) {}
+    private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
 
     @SuppressWarnings("unchecked")
     private Flux<AgentEvent> invokeHarnessStreamEvents(
@@ -318,7 +311,13 @@ public class AguiAgentAdapter {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
         return Flux.just(
-                new AguiEvent.RunError(threadId, runId, errorMessage, mapErrorCode(error)),
+                new AguiEvent.RunError(
+                        threadId,
+                        runId,
+                        errorMessage,
+                        mapErrorCode(error),
+                        System.currentTimeMillis(),
+                        null),
                 new AguiEvent.RunFinished(threadId, runId));
     }
 
@@ -512,7 +511,7 @@ public class AguiAgentAdapter {
      *
      * @param state The conversion state
      * @return Flux of final events
-     * @deprecated since 2.0.0, use {@link #finishRun(AguiStreamContext)} instead.
+     * @deprecated since 2.0.0, v2 stream cleanup is handled by {@link AguiStreamContext}.
      */
     @Deprecated(since = "2.0.0", forRemoval = false)
     private Flux<AguiEvent> finishRun(EventConversionState state) {

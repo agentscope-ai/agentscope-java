@@ -17,8 +17,10 @@ package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -42,6 +44,7 @@ public class AguiStreamContext {
     private final String threadId;
     private final String runId;
     private final AguiAdapterConfig config;
+    private final RunAgentInput runInput;
 
     private final List<AguiEvent> pendingEvents = new ArrayList<>();
 
@@ -55,11 +58,18 @@ public class AguiStreamContext {
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
+    private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
+        this(threadId, runId, config, null);
+    }
+
+    public AguiStreamContext(
+            String threadId, String runId, AguiAdapterConfig config, RunAgentInput runInput) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
+        this.runInput = runInput;
     }
 
     public String getThreadId() {
@@ -74,6 +84,10 @@ public class AguiStreamContext {
         return config;
     }
 
+    public RunAgentInput getRunInput() {
+        return runInput;
+    }
+
     public void beginEvent() {
         pendingEvents.clear();
     }
@@ -86,6 +100,10 @@ public class AguiStreamContext {
 
     void emit(AguiEvent event) {
         pendingEvents.add(event);
+    }
+
+    TokenUsageAccumulator getTokenUsageAccumulator() {
+        return tokenUsageAccumulator;
     }
 
     public void startTextMessage(String messageId) {
@@ -299,5 +317,40 @@ public class AguiStreamContext {
                 "Ignoring {}: null/blank toolCallId. Upstream must supply a stable toolCallId per"
                         + " AG-UI protocol.",
                 eventName);
+    }
+
+    static final class TokenUsageAccumulator {
+
+        private long cumulativeInputTokens;
+        private long cumulativeOutputTokens;
+        private long cumulativeCachedTokens;
+        private double cumulativeTime;
+
+        TokenUsageSnapshot add(ChatUsage usage) {
+            cumulativeInputTokens += usage.getInputTokens();
+            cumulativeOutputTokens += usage.getOutputTokens();
+            cumulativeCachedTokens += usage.getCachedTokens();
+            cumulativeTime += usage.getTime();
+            return new TokenUsageSnapshot(
+                    new TokenUsage(
+                            usage.getInputTokens(),
+                            usage.getOutputTokens(),
+                            usage.getCachedTokens(),
+                            usage.getTime()),
+                    new TokenUsage(
+                            cumulativeInputTokens,
+                            cumulativeOutputTokens,
+                            cumulativeCachedTokens,
+                            cumulativeTime));
+        }
+    }
+
+    record TokenUsageSnapshot(TokenUsage delta, TokenUsage cumulative) {}
+
+    record TokenUsage(long inputTokens, long outputTokens, long cachedTokens, double time) {
+
+        long totalTokens() {
+            return inputTokens + outputTokens;
+        }
     }
 }

@@ -16,20 +16,25 @@
 package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEvents;
 import io.agentscope.core.event.AgentEvent;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
-final class RawAgentEventConverter implements AgentEventConverter {
+/**
+ * Default AG-UI base event properties enricher.
+ */
+public class BaseEventPropertiesEnricher implements AguiEventEnricher {
 
     @Override
-    public Set<Class<? extends AgentEvent>> eventTypes() {
-        return Set.of();
-    }
-
-    @Override
-    public void convert(AgentEvent event, AguiStreamContext context) {
-        context.emit(
-                new AguiEvent.Raw(
-                        context.getThreadId(), context.getRunId(), event, event.getSource()));
+    public List<AguiEvent> enrich(
+            AgentEvent source, List<AguiEvent> events, AguiStreamContext context) {
+        List<AguiEvent> enriched = new ArrayList<>(events.size());
+        for (AguiEvent event : events) {
+            Long timestamp =
+                    event.timestamp() != null ? event.timestamp() : System.currentTimeMillis();
+            enriched.add(AguiEvents.withBaseProperties(event, timestamp, event.rawEvent()));
+        }
+        return List.copyOf(enriched);
     }
 }

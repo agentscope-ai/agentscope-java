@@ -15,11 +15,11 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
-import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import java.util.Set;
 
@@ -31,10 +31,23 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                 AgentStartEvent.class,
                 AgentEndEvent.class,
                 AgentResultEvent.class,
-                ModelCallStartEvent.class,
-                ModelCallEndEvent.class);
+                ModelCallStartEvent.class);
     }
 
     @Override
-    public void convert(AgentEvent event, AguiStreamContext context) {}
+    public void convert(AgentEvent event, AguiStreamContext context) {
+        if (event instanceof AgentStartEvent) {
+            context.emit(
+                    new AguiEvent.RunStarted(
+                            context.getThreadId(),
+                            context.getRunId(),
+                            null,
+                            context.getRunInput()));
+        } else if (event instanceof AgentEndEvent) {
+            for (AguiEvent pendingEvent : context.finishPendingEvents()) {
+                context.emit(pendingEvent);
+            }
+            context.emit(new AguiEvent.RunFinished(context.getThreadId(), context.getRunId()));
+        }
+    }
 }
