@@ -6,123 +6,207 @@
   />
 </p>
 
-<h3 align="center">Build Production-Ready AI Agents in Java</h3>
+<span align="center">
+
+[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**Documentation**](https://java.agentscope.io/)
+
+</span>
 
 <p align="center">
-  <a href="https://java.agentscope.io/">📖 Documentation</a>
-  &nbsp;|&nbsp;
-  <a href="README_zh.md">中文</a>
-  &nbsp;|&nbsp;
-  <a href="https://discord.gg/eYMpfnkG8h">Discord</a>
+    <a href="https://discord.gg/eYMpfnkG8h">
+        <img
+            src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white"
+            alt="discord"
+        />
+    </a>
+    <a href="https://java.agentscope.io/">
+        <img
+            src="https://img.shields.io/badge/Docs-English%7C%E4%B8%AD%E6%96%87-blue?logo=markdown"
+            alt="docs"
+        />
+    </a>
+    <a href="https://img.shields.io/maven-central/v/io.agentscope/agentscope">
+        <img
+            src="https://img.shields.io/maven-central/v/io.agentscope/agentscope?color=green"
+            alt="Maven Central"
+        />
+    </a>
+    <a href="#">
+        <img
+            src="https://img.shields.io/badge/JDK-17%2B-orange?logo=openjdk"
+            alt="JDK 17+"
+        />
+    </a>
+    <a href="./LICENSE">
+        <img
+            src="https://img.shields.io/badge/license-Apache--2.0-black"
+            alt="license"
+        />
+    </a>
+    <a href="https://deepwiki.com/agentscope-ai/agentscope-java">
+        <img
+            src="https://deepwiki.com/badge.svg"
+            alt="Ask DeepWiki"
+        />
+    </a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/JDK-17%2B-orange" alt="JDK 17+" />
-  <img src="https://img.shields.io/maven-central/v/io.agentscope/agentscope?color=green" alt="Maven Central" />
-  <a href="https://deepwiki.com/agentscope-ai/agentscope-java"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-</p>
+## What is AgentScope Java 2.0?
 
----
+AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
 
-AgentScope Java is an agent-oriented programming framework for building LLM-powered applications. It provides everything you need to create intelligent agents: ReAct reasoning, tool calling, memory management, multi-agent collaboration, and more.
+- [**Event System** →](https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html) A unified event stream with 28 typed events for real-time frontend rendering and human-in-the-loop.
+- [**Permission System** →](https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
+- [**Middleware** →](https://java.agentscope.io/v2/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
+- [**Workspace & Sandbox** →](https://java.agentscope.io/v2/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
+- [**Multi-Agent Orchestration** →](https://java.agentscope.io/v2/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
+- [**Distributed Deployment** →](https://java.agentscope.io/v2/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
 
-## Highlights
+<img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
-### 🎯 Smart Agents, Full Control
+## News
+<!-- BEGIN NEWS -->
+- **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
+- **[2026-07] `v2.0.0-RC5`:** Model provider modularization; unified DataBlock multimodal support; native structured output; Channel IM integration; Tencent Cloud COS state persistence. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
+- **[2026-06] `v2.0.0-RC4`:** Async tool execution and scheduled wakeup dispatching; subagent cross-replica routing and session recovery. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
+- **[2026-06] `v2.0.0-RC3`:** Unified `call()` / `streamEvents()` execution core; `AgentResultEvent`, `CustomEvent`, `HintBlockEvent` new event types. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC3)
+- **[2026-06] `v2.0.0-RC2`:** Fully stateless agent; one-line DistributedBackend; subagent event forwarding; Channel module (DingTalk, Feishu, WeCom); A2A / AG-UI protocol support. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC2)
+- **[2026-05] `v2.0.0-RC1`:** First 2.0 RC — harness engineering, enterprise distributed deployment, event stream / message model / middleware / HITL full redesign. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1)
+- **[2026-05] `v1.1.0`:** Introduced `agentscope-harness` and `HarnessAgent`; Workspace (persona / memory / skills / subagents); pluggable filesystem (local / shared store / sandbox); session persistence with cross-process resume; layered memory and context compaction; declarative subagent orchestration. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v1.1.0-RC1)
+<!-- END NEWS -->
 
-AgentScope adopts the ReAct (Reasoning-Acting) paradigm, enabling agents to autonomously plan and execute complex tasks. Unlike rigid workflow-based approaches, ReAct agents dynamically decide which tools to use and when, adapting to changing requirements in real-time.
+## Community
 
-However, autonomy without control is a liability in production. AgentScope provides comprehensive runtime intervention mechanisms:
+Welcome to join our community on
 
-- **Safe Interruption** - Pause agent execution at any point while preserving full context and tool state, enabling seamless resumption without data loss
-- **Graceful Cancellation** - Terminate long-running or unresponsive tool calls without corrupting agent state, allowing immediate recovery and redirection
-- **Human-in-the-Loop** - Inject corrections, additional context, or guidance at any reasoning step through the Hook system, maintaining human oversight over critical decisions
+| [Discord](https://discord.gg/eYMpfnkG8h)                     | DingTalk                                                              | WeChat                                                       |
+|--------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------|
+| <img src="./docs/imgs/discord.png" width="100" height="100"> | <img src="./docs/imgs/dingtalk_qr_code.png" width="100" height="100"> | <img src="./docs/imgs/wechat.jpeg" width="100" height="100"> |
 
-### 🛠️ Built-in Tools
+## Quickstart
 
-AgentScope includes production-ready tools that address common challenges in agent development:
+### Installation
 
-- **PlanNotebook** - A structured task management system that decomposes complex objectives into ordered, trackable steps. Agents can create, modify, pause, and resume multiple concurrent plans, ensuring systematic execution of multi-step workflows.
+> AgentScope Java requires **JDK 17** or higher.
 
-- **Structured Output** - A self-correcting output parser that guarantees type-safe responses. When LLM output deviates from the expected format, the system automatically detects errors and guides the model to produce valid output, mapping results directly to Java POJOs without manual parsing.
-
-- **Long-term Memory** - Persistent memory storage with semantic search capabilities across sessions. Supports automatic management, agent-controlled recording, or hybrid modes. Enables multi-tenant isolation for enterprise deployments where agents serve multiple users independently.
-
-- **RAG (Retrieval-Augmented Generation)** - Seamless integration with enterprise knowledge bases. Supports both self-hosted embedding-based retrieval and managed services like Alibaba Cloud Bailian, grounding agent responses in authoritative data sources.
-
-### 🔌 Seamless Integration
-
-AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:
-
-- **MCP Protocol** - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.
-
-- **A2A Protocol** - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.
-
-### 🚀 Production Grade
-
-Built for enterprise deployment requirements:
-
-- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.
-
-- **Security Sandbox** - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.
-
-- **Observability** - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
-
-## Quick Start
-
-**Requirements:** JDK 17+
+#### Maven
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope</artifactId>
-    <version>1.0.12</version>
+    <artifactId>agentscope-harness</artifactId>
+    <version>2.0.0</version>
 </dependency>
 ```
 
-```java
-import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+Model providers are shipped as separate extension modules in 2.0. Add the one you need — for example, DashScope:
 
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .sysPrompt("You are a helpful AI assistant.")
-    .model(DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-max")
-        .build())
-    .build();
-
-Msg response = agent.call(Msg.builder()
-        .textContent("Hello!")
-        .build()).block();
-System.out.println(response.getTextContent());
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>2.0.0</version>
+</dependency>
 ```
 
-For more examples, see the [documentation](https://java.agentscope.io/).
+Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
+
+If you only need a bare `ReActAgent` without workspace / persistence / sandbox, depend on `agentscope-core` alone.
+
+## Hello AgentScope!
+
+Start your first agent with AgentScope Java 2.0:
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import java.nio.file.Paths;
+
+public class FirstAgent {
+    public static void main(String[] args) {
+        HarnessAgent agent = HarnessAgent.builder()
+                .name("assistant")
+                .sysPrompt("You are a helpful AI assistant.")
+                // ModelRegistry resolves the string and reads the matching
+                // API-key env var (e.g. OPENAI_API_KEY) automatically.
+                // Examples: "openai:gpt-4.1", "openai:o3",
+                // "deepseek:deepseek-chat", "dashscope:qwen-plus",
+                // "anthropic:claude-sonnet-4-7", "ollama:llama3"
+                .model("dashscope:qwen-plus")
+                // Or pass a ChatModel object directly:
+                // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
+                .workspace(Paths.get(".agentscope/workspace"))
+                .build();
+
+        RuntimeContext ctx = RuntimeContext.builder()
+                .sessionId("demo").userId("alice").build();
+
+        // Blocking call
+        agent.call(new UserMessage("Hello!"), ctx).block();
+
+        // Or stream events for real-time UI rendering
+        agent.streamEvents(new UserMessage("Summarize today in three bullets."), ctx)
+                .doOnNext(event -> {
+                    switch (event.getType()) {
+                        case TEXT_BLOCK_DELTA -> System.out.print(
+                                ((io.agentscope.core.event.TextBlockDeltaEvent) event).getDelta());
+                        case TOOL_CALL_START -> System.out.println(
+                                "\n[tool] " + ((io.agentscope.core.event.ToolCallStartEvent) event).getToolCallName());
+                        default -> { }
+                    }
+                })
+                .blockLast();
+    }
+}
+```
+
+## Key Design
+
+AgentScope Java 2.0 is a major step up from a "build an agent" toolkit toward a complete platform for **running agents in production**. The improvements fall into three focus areas:
+
+### 1 · Harness Engineering — built for long-running, complex tasks
+
+A bare ReAct loop solves one reasoning turn. **HarnessAgent** layers engineering infrastructure on top of ReActAgent via Middleware and Toolkit channels — the reasoning core stays untouched, capabilities layer on:
+
+- **Self-evolution & skill repository** — successful patterns auto-save as Markdown skills, shared across sessions and loaded on demand
+- **Layered memory** — in-context conversation + agent-curated `MEMORY.md` + on-disk fact log, with auto-compaction to bound the prompt
+- **Sub-agents** — declare child agent specs in Markdown, `agent_spawn` / `agent_send` at runtime, sync or background delegation
+- **Auto context management** — structured compaction preserves goals / state / findings / next steps; oversized tool results offload to disk
+- **Plan Mode** — read-only planning state for long tasks, plan files persist and drive execution
+
+### 2 · Enterprise-grade distributed deployment
+
+Production agents must serve many tenants, run untrusted code safely, and survive rolling restarts. AgentScope 2.0 is built for stateless horizontal scaling:
+
+- **Multi-tenant isolation** — `session` / `user` / `agent` / `org` dimension isolation, `RuntimeContext` keys flow through workspace paths, KV namespaces, and sandbox state slots
+- **Secure sandbox** — local subprocess / Docker / Kubernetes / E2B cloud sandbox, with snapshot and resume
+- **Permission control** — three-state engine (allow / approve / deny), sensitive tools require HITL approval
+- **Session recovery** — `AgentStateStore` (in-memory / JSON file / MySQL / Redis / PostgreSQL) backs zero-downtime rolling deploys
+
+### 3 · Foundation framework — a leaner, more developer-friendly core
+
+Messages, events, and the extension model are smaller, more orthogonal — HITL and event streaming are part of how the framework runs, not add-ons:
+
+- **Event stream** — 28 typed events covering model calls, text deltas, tool execution, and user confirmations in real time
+- **Message model** — text / files / images / audio / video / tool results unified into `ContentBlock`, role-strict validation at construction
+- **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` five stages replace v1's flat hooks
+- **HITL first class** — confirm tool arguments, approve sensitive actions, hand off to external systems, agent pauses and resumes exactly
+
+For the complete architecture overview, see the [documentation](https://java.agentscope.io/v2/en/docs/index.html).
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
-
-## Community
-
-| [Discord](https://discord.gg/eYMpfnkG8h)                     | DingTalk | WeChat |
-|--------------------------------------------------------------|----------| ---------|
-| <img src="./docs/imgs/discord.png" width="100" height="100"> | <img src="./docs/imgs/dingtalk_qr_code.jpg" width="100" height="100"> | <img src="./docs/imgs/wechat.png" width="100" height="100"> |
+We welcome contributions from the community! Please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines
+on how to contribute.
 
 ## License
 
-Apache License 2.0 - see [LICENSE](./LICENSE) for details.
-
-## Publications
-
-If you find AgentScope helpful, please cite our papers:
-
-- [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
-- [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
+AgentScope is released under Apache License 2.0.
 
 ## Contributors
+
+All thanks to our contributors:
 
 <a href="https://github.com/agentscope-ai/agentscope-java/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentscope-ai/agentscope-java&max=999&columns=12&anon=1" />

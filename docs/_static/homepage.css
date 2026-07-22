@@ -367,6 +367,211 @@ body.agentscope-home .content-icon-container {
 }
 
 /* ================================================================
+   Adoption strip (v2 homepage: real-world usage showcase)
+   ================================================================ */
+.hs-adoption {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 60px;
+  /* Gradient border: paint surface on padding-box, gradient on border-box */
+  background:
+    linear-gradient(var(--hs-surface), var(--hs-surface)) padding-box,
+    linear-gradient(120deg,
+      var(--hs-accent) 0%,
+      var(--hs-border) 30%,
+      var(--hs-border) 70%,
+      var(--hs-accent) 100%) border-box;
+  box-shadow: 0 4px 30px -12px color-mix(in srgb, var(--hs-accent) 25%, transparent);
+}
+
+/* Ambient glow inside the card */
+.hs-adoption::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 90% at 8% 0%,
+      color-mix(in srgb, var(--hs-accent) 10%, transparent), transparent 70%),
+    radial-gradient(50% 90% at 92% 100%,
+      color-mix(in srgb, var(--hs-accent) 8%, transparent), transparent 70%);
+}
+
+.hs-adoption > * {
+  position: relative;
+}
+
+/* ----- Eyebrow badge ----- */
+.hs-adoption__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--hs-accent);
+}
+
+.hs-adoption__eyebrow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hs-accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--hs-accent) 50%, transparent);
+  animation: hs-pulse 2.2s ease-out infinite;
+}
+
+@keyframes hs-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hs-accent) 45%, transparent); }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ----- Headline stats ----- */
+.hs-adoption__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 14px 0 20px;
+}
+
+.hs-adoption__stats .hs-stat {
+  background: transparent;
+  padding: 10px 28px;
+}
+
+.hs-adoption__stats .hs-stat + .hs-stat {
+  border-left: 1px solid var(--hs-border);
+}
+
+.hs-adoption__stats .hs-stat__val {
+  font-size: clamp(1.3rem, 2.2vw, 1.7rem);
+  background: linear-gradient(100deg,
+    var(--hs-fg) 0%,
+    var(--hs-accent) 55%,
+    color-mix(in srgb, var(--hs-accent) 55%, var(--hs-fg)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.hs-adoption__stats .hs-stat__label {
+  font-size: 0.8rem;
+  line-height: 1.55;
+  margin-top: 6px;
+  max-width: 30em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ----- Tag rows ----- */
+.hs-adoption__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 20px;
+  border-top: 1px solid var(--hs-border);
+  min-width: 0;
+}
+
+.hs-adoption__row-label {
+  flex: 0 0 130px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--hs-muted);
+}
+
+/* ----- Infinite marquee ----- */
+.hs-marquee {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* Fade tags in/out at both edges */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+
+.hs-marquee__track {
+  display: flex;
+  width: max-content;
+  animation: hs-marquee 36s linear infinite;
+}
+
+.hs-marquee--reverse .hs-marquee__track {
+  animation-direction: reverse;
+  animation-duration: 44s;
+}
+
+.hs-marquee:hover .hs-marquee__track {
+  animation-play-state: paused;
+}
+
+.hs-marquee__group {
+  display: flex;
+  gap: 8px;
+  padding-right: 8px;
+  flex-shrink: 0;
+}
+
+@keyframes hs-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Static wrapped tags for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hs-marquee__track {
+    animation: none;
+    flex-wrap: wrap;
+    width: auto;
+    gap: 6px;
+  }
+  .hs-marquee__group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .hs-marquee__group[aria-hidden="true"] {
+    display: none;
+  }
+  .hs-marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+.hs-tag {
+  display: inline-block;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  padding: 3px 12px;
+  border: 1px solid var(--hs-border);
+  border-radius: 999px;
+  color: var(--hs-fg);
+  background: color-mix(in srgb, var(--color-background-primary) 70%, transparent);
+  white-space: nowrap;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.hs-tag:hover {
+  border-color: var(--hs-accent);
+  box-shadow: 0 2px 12px -4px color-mix(in srgb, var(--hs-accent) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.hs-tag--more {
+  border-style: dashed;
+  color: var(--hs-muted);
+  background: transparent;
+}
+
+/* ================================================================
    Sections
    ================================================================ */
 .hs-section {
@@ -735,6 +940,25 @@ body.agentscope-home .content-icon-container {
 
   .hs-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .hs-adoption__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .hs-adoption__stats .hs-stat + .hs-stat {
+    border-left: 0;
+    border-top: 1px solid var(--hs-border);
+  }
+
+  .hs-adoption__row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .hs-adoption__row-label {
+    flex: 0 0 auto;
   }
 }
 
