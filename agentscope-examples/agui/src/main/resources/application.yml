@@ -37,6 +37,7 @@ agentscope:
     run-timeout: 10m
     emit-state-events: true
     emit-tool-call-args: true
+    emit-token-usage: true
     default-agent-id: default
     # Agent ID routing configuration
     # Agent ID can be passed via:
@@ -57,4 +58,3 @@ logging:
   level:
     root: INFO
     io.agentscope: DEBUG
-

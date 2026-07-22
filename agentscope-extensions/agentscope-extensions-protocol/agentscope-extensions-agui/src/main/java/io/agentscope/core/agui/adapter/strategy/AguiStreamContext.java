@@ -98,7 +98,7 @@ public class AguiStreamContext {
         return events;
     }
 
-    void emit(AguiEvent event) {
+    public void emit(AguiEvent event) {
         pendingEvents.add(event);
     }
 

@@ -31,6 +31,7 @@
             --accent-green: #9ece6a;
             --accent-orange: #ff9e64;
             --accent-red: #f7768e;
+            --accent-cyan: #00BCD4;
             --border-color: #414868;
         }
 
@@ -135,6 +136,13 @@
             border-left: 3px solid var(--accent-red);
         }
 
+        .message.custom {
+            background: rgba(0, 188, 212, 0.08);
+            border-left: 3px solid var(--accent-cyan);
+            margin: 0 60px 16px 60px;
+            font-size: 0.85rem;
+        }
+
         .message-role {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -147,6 +155,7 @@
         .message.assistant .message-role { color: var(--accent-blue); }
         .message.tool .message-role { color: var(--accent-orange); }
         .message.reasoning .message-role { color: var(--accent-green); }
+        .message.custom .message-role { color: var(--accent-cyan); }
 
         .message-content {
             white-space: pre-wrap;
@@ -381,6 +390,20 @@
             return div.innerHTML;
         }
 
+        function formatCustomEvent(event) {
+            if (event.name === 'token_usage') {
+                const delta = event.value?.delta || {};
+                const cumulative = event.value?.cumulative || {};
+                return [
+                    'Token usage',
+                    `delta: input=${delta.inputTokens ?? 0}, output=${delta.outputTokens ?? 0}, total=${delta.totalTokens ?? 0}`,
+                    `cumulative: input=${cumulative.inputTokens ?? 0}, output=${cumulative.outputTokens ?? 0}, total=${cumulative.totalTokens ?? 0}`
+                ].join('\n');
+            }
+
+            return `${event.name}\n${JSON.stringify(event.value ?? {}, null, 2)}`;
+        }
+
         async function sendMessage() {
             const text = input.value.trim();
             if (!text || isRunning) return;
@@ -476,6 +499,10 @@
                         hideTypingIndicator();
                         appendMessage('error', `Error: ${error}`);
                     },
+                    onCustomEvent: (event) => {
+                        hideTypingIndicator();
+                        appendMessage('custom', formatCustomEvent(event));
+                    },
                     onRunFinished: () => {
                         console.log('Run finished');
                         hideTypingIndicator();
@@ -539,4 +566,3 @@
     </script>
 </body>
 </html>
-

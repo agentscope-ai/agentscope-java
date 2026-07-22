@@ -268,6 +268,10 @@ class AguiClient {
                     }
                     break;
 
+                case 'CUSTOM':
+                    callbacks.onCustomEvent?.(event);
+                    break;
+
                 default:
                     console.log('Unknown event type:', type, event);
             }
@@ -281,4 +285,3 @@ class AguiClient {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { AguiClient };
 }
-

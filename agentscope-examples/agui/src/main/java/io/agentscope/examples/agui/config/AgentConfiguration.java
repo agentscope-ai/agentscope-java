@@ -17,13 +17,29 @@ package io.agentscope.examples.agui.config;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
+import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
+import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
+import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.agui.tools.ExampleTools;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import reactor.core.publisher.Flux;
 
 /**
  * Configuration class that registers agents with the AG-UI registry.
@@ -64,6 +80,41 @@ public class AgentConfiguration {
         return aguiAgentRegistryCustomizer;
     }
 
+    @Bean
+    public AgentEventConverter exampleAgentEventConverter() {
+        return new AgentEventConverter() {
+            @Override
+            public Set<Class<? extends AgentEvent>> eventTypes() {
+                return Set.of(CustomEvent.class);
+            }
+
+            @Override
+            public void convert(AgentEvent event, AguiStreamContext context) {
+                CustomEvent customEvent = (CustomEvent) event;
+                Map<String, Object> value = new LinkedHashMap<>();
+                value.put("originalName", customEvent.getName());
+                value.put("originalValue", customEvent.getValue());
+                value.put("convertedBy", "exampleAgentEventConverter");
+                context.emit(
+                        new AguiEvent.Custom(
+                                context.getThreadId(),
+                                context.getRunId(),
+                                "example_custom_event",
+                                value));
+            }
+        };
+    }
+
+    @Bean
+    public AguiEventEnricher exampleAguiEventEnricher() {
+        return (source, events, context) -> {
+            long timestamp = System.currentTimeMillis();
+            return events.stream()
+                    .map(event -> enrichExampleEvent(source, event, timestamp))
+                    .toList();
+        };
+    }
+
     /**
      * Create the default agent instance.
      *
@@ -97,6 +148,7 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .toolkit(toolkit)
+                .middleware(exampleCustomEventMiddleware())
                 .maxIters(10)
                 .build();
     }
@@ -120,6 +172,7 @@ public class AgentConfiguration {
                                         true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
+                .middleware(exampleCustomEventMiddleware())
                 .maxIters(1)
                 .build();
     }
@@ -146,8 +199,53 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .toolkit(toolkit)
+                .middleware(exampleCustomEventMiddleware())
                 .maxIters(5)
                 .build();
+    }
+
+    private static AguiEvent enrichExampleEvent(
+            AgentEvent source, AguiEvent event, long fallbackTimestamp) {
+        Long timestamp = event.timestamp() != null ? event.timestamp() : fallbackTimestamp;
+        Object rawEvent = event.rawEvent();
+        if (rawEvent == null && source instanceof CustomEvent customEvent) {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("agentEventType", source.getType().name());
+            if (customEvent.getName() != null) {
+                value.put("name", customEvent.getName());
+            }
+            rawEvent = value;
+        }
+        return AguiEvents.withBaseProperties(event, timestamp, rawEvent);
+    }
+
+    private static MiddlewareBase exampleCustomEventMiddleware() {
+        return new MiddlewareBase() {
+            @Override
+            public Flux<AgentEvent> onAgent(
+                    Agent agent,
+                    RuntimeContext ctx,
+                    AgentInput input,
+                    Function<AgentInput, Flux<AgentEvent>> next) {
+                CustomEvent event =
+                        new CustomEvent("example_agent_event", exampleCustomEventValue(agent, ctx));
+                return next.apply(input)
+                        .concatMap(
+                                agentEvent ->
+                                        agentEvent instanceof AgentStartEvent
+                                                ? Flux.just(agentEvent, event)
+                                                : Flux.just(agentEvent));
+            }
+        };
+    }
+
+    private static Map<String, Object> exampleCustomEventValue(Agent agent, RuntimeContext ctx) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("agentName", agent.getName());
+        if (ctx != null && ctx.getSessionId() != null) {
+            value.put("sessionId", ctx.getSessionId());
+        }
+        return value;
     }
 
     private String getRequiredApiKey() {
