@@ -151,7 +151,7 @@ final class HarnessAgentBuilderSupport {
         if (b.localFilesystemSpec != null) {
             return b.localFilesystemSpec.toFilesystem(workspace, nsFactory);
         }
-        // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
+        // Default: route through LocalFilesystemSpec so the default project (= workspace)
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
     }
