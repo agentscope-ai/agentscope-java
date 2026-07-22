@@ -87,11 +87,21 @@ class ReActAgentNewLoopReplyTest {
             }
             return scripts.get(i).get();
         }
+
+        int calls() {
+            return idx.get();
+        }
     }
 
     private static ChatResponse textResponse(String text) {
         return ChatResponse.builder()
                 .content(List.<ContentBlock>of(TextBlock.builder().text(text).build()))
+                .build();
+    }
+
+    private static ChatResponse thinkingResponse(String thinking) {
+        return ChatResponse.builder()
+                .content(List.<ContentBlock>of(ThinkingBlock.builder().thinking(thinking).build()))
                 .build();
     }
 
@@ -185,6 +195,78 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(
                 agent.getAgentState().getContext().size() >= 2,
                 "user + assistant expected in state");
+    }
+
+    @Test
+    void emptyModelStreamContinuesToNextIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("answer"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(2, model.calls());
+    }
+
+    @Test
+    void emptyTextResponseContinuesToNextIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(textResponse("")),
+                                () -> Flux.just(textResponse("answer"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(2, model.calls());
+    }
+
+    @Test
+    void thinkingOnlyResponseContinuesToNextIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(thinkingResponse("need another pass")),
+                                () -> Flux.just(textResponse("answer"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(2, model.calls());
+    }
+
+    @Test
+    void emptyResponsesReachMaxIterationsAndSummarize() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.empty(),
+                                () -> Flux.empty(),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .maxIters(2)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertTrue(indexOf(events, ExceedMaxItersEvent.class) >= 0);
+        assertEquals(3, model.calls());
     }
 
     @Test
