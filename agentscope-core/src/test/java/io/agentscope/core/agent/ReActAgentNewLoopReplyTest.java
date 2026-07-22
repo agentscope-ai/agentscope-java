@@ -34,6 +34,9 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -204,6 +207,37 @@ class ReActAgentNewLoopReplyTest {
         assertNotNull(result);
         assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
         assertEquals(2, model.calls());
+    }
+
+    @Test
+    void emptyModelStreamDoesNotRepeatPostReasoningForRecoveredResponse() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("answer"))));
+        AtomicInteger postReasoningCalls = new AtomicInteger();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent) {
+                            postReasoningCalls.incrementAndGet();
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .hook(hook)
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(1, postReasoningCalls.get());
     }
 
     @Test
