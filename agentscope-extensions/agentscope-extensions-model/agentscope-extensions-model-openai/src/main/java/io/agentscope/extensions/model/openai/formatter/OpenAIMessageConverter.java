@@ -41,6 +41,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,9 @@ import org.slf4j.LoggerFactory;
 public class OpenAIMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMessageConverter.class);
+
+    private static final Pattern INVALID_MESSAGE_NAME_CHARACTERS =
+            Pattern.compile("[^a-zA-Z0-9_-]");
 
     private final Function<Msg, String> textExtractor;
     private final Function<List<ContentBlock>, String> toolResultConverter;
@@ -123,7 +127,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeMessageName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -350,7 +354,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeMessageName(msg.getName()));
         }
 
         // Handle tool calls
@@ -429,6 +433,17 @@ public class OpenAIMessageConverter {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Sanitize a message name according to the OpenAI API's allowed character set.
+     *
+     * <p>AgentScope permits human-readable agent names, including spaces, while OpenAI only
+     * accepts ASCII letters, digits, underscores, and hyphens in the message {@code name} field.
+     * Keep the original name inside AgentScope and normalize it only at the API boundary.
+     */
+    private String sanitizeMessageName(String name) {
+        return INVALID_MESSAGE_NAME_CHARACTERS.matcher(name).replaceAll("_");
     }
 
     /**

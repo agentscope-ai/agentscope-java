@@ -736,6 +736,38 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
+        @DisplayName("Should sanitize invalid characters in user message name")
+        void testUserMessageWithInvalidNameCharacters() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("Alice Smith@example.com")
+                            .content(List.of(TextBlock.builder().text("Hello").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("Alice_Smith_example_com", result.getName());
+        }
+
+        @Test
+        @DisplayName("Should sanitize invalid characters in assistant message name")
+        void testAssistantMessageWithInvalidNameCharacters() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("Research Agent (East)")
+                            .content(List.of(TextBlock.builder().text("Hi").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("Research_Agent__East_", result.getName());
+        }
+
+        @Test
         @DisplayName("Should handle null name")
         void testMessageWithNullName() {
             Msg msg =
