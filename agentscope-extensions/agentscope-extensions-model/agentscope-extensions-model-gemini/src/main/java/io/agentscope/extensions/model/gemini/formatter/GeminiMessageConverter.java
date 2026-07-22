@@ -59,7 +59,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>Important Conversion Behaviors:</b>
  * <ul>
- *   <li>Tool result blocks are converted to independent "user" role Content</li>
+ *   <li>Tool result blocks from one message are converted to one "user" role Content</li>
  *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
  *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
  * </ul>
@@ -88,6 +88,7 @@ public class GeminiMessageConverter {
 
         for (Msg msg : msgs) {
             List<Part> parts = new ArrayList<>();
+            List<Part> toolResultParts = new ArrayList<>();
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
@@ -137,7 +138,7 @@ public class GeminiMessageConverter {
                     parts.add(partBuilder.build());
 
                 } else if (block instanceof ToolResultBlock trb) {
-                    // IMPORTANT: Tool result as independent Content with "user" role
+                    // Tool results from the same message share one user Content.
                     String textOutput = convertToolResultToString(trb.getOutput());
 
                     // Create response map with "output" key
@@ -154,14 +155,7 @@ public class GeminiMessageConverter {
                     Part functionResponsePart =
                             Part.builder().functionResponse(functionResponse).build();
 
-                    Content toolResultContent =
-                            Content.builder()
-                                    .role("user")
-                                    .parts(List.of(functionResponsePart))
-                                    .build();
-
-                    result.add(toolResultContent);
-                    // Skip adding to current message parts
+                    toolResultParts.add(functionResponsePart);
                     continue;
 
                 } else if (block instanceof ImageBlock ib) {
@@ -188,6 +182,12 @@ public class GeminiMessageConverter {
                             "Unsupported block type: {} in the message, skipped.",
                             block.getClass().getSimpleName());
                 }
+            }
+
+            if (!toolResultParts.isEmpty()) {
+                Content toolResultContent =
+                        Content.builder().role("user").parts(toolResultParts).build();
+                result.add(toolResultContent);
             }
 
             // Add message if there are parts
