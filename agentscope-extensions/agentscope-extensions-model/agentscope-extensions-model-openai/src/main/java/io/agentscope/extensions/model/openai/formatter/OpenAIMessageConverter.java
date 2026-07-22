@@ -47,8 +47,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Converts AgentScope Msg objects to OpenAI DTO types (for HTTP API).
  *
- * <p>This class handles all message role conversions including system, user, assistant, and tool
- * messages. It supports multimodal content (text, images, audio) and tool calling functionality.
+ * <p>
+ * This class handles all message role conversions including system, user,
+ * assistant, and tool
+ * messages. It supports multimodal content (text, images, audio) and tool
+ * calling functionality.
  */
 public class OpenAIMessageConverter {
 
@@ -60,7 +63,7 @@ public class OpenAIMessageConverter {
     /**
      * Create an OpenAIMessageConverter with required dependency functions.
      *
-     * @param textExtractor Function to extract text content from Msg
+     * @param textExtractor       Function to extract text content from Msg
      * @param toolResultConverter Function to convert tool result blocks to strings
      */
     public OpenAIMessageConverter(
@@ -70,10 +73,14 @@ public class OpenAIMessageConverter {
         this.toolResultConverter = toolResultConverter;
     }
 
+    private String sanitizeMessageName(String name) {
+        return name.replaceAll("[^a-zA-Z0-9_-]", "_");
+    }
+
     /**
      * Convert single Msg to OpenAI DTO Message.
      *
-     * @param msg The message to convert
+     * @param msg             The message to convert
      * @param hasMediaContent Whether the message contains media (images/audio)
      * @return OpenAIMessage for OpenAI API
      */
@@ -115,7 +122,7 @@ public class OpenAIMessageConverter {
     /**
      * Convert user message with support for multimodal content.
      *
-     * @param msg The user message
+     * @param msg             The user message
      * @param hasMediaContent Whether the message contains media
      * @return OpenAIMessage
      */
@@ -123,7 +130,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeMessageName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -311,8 +318,10 @@ public class OpenAIMessageConverter {
 
         String textContent = textExtractor.apply(msg);
         // Qwen3 and similar models in thinking mode may produce assistant messages with
-        // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),
-        // a null content would be omitted from the JSON, causing strict OpenAI-compatible
+        // reasoning_content + tool_calls but null content. Due to
+        // @JsonInclude(NON_NULL),
+        // a null content would be omitted from the JSON, causing strict
+        // OpenAI-compatible
         // APIs (e.g. vLLM) to reject with "Field required: input.messages.N.content".
         // Always ensure content is present — use the actual text or fall back to "".
         if (textContent != null && !textContent.isEmpty()) {
@@ -350,7 +359,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeMessageName(msg.getName()));
         }
 
         // Handle tool calls
@@ -517,7 +526,7 @@ public class OpenAIMessageConverter {
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.
      *
-     * @param msg the source message with metadata
+     * @param msg    the source message with metadata
      * @param result the converted OpenAI message
      */
     private void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
