@@ -19,15 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.transport.HttpRequest;
+import io.agentscope.core.model.transport.HttpResponse;
+import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 class GLMModelProviderTest {
 
@@ -120,6 +125,132 @@ class GLMModelProviderTest {
     }
 
     @Test
+    void nativeStructuredOutputWithToolsCanBeEnabledByOption() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .option("nativeStructuredOutput", true)
+                        .option("nativeStructuredOutputWithTools", true)
+                        .build();
+
+        Model model = provider.create("glm:glm-5.2", context);
+
+        assertTrue(model.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    void contextWindowSizeOptionMustBeANumber() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .option("contextWindowSize", "not-a-number")
+                        .build();
+
+        assertThrows(IllegalArgumentException.class, () -> provider.create("glm:glm-5.2", context));
+    }
+
+    @Test
+    void nativeStructuredOutputOptionsMustBeBooleans() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext structuredOutputContext =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .option("nativeStructuredOutput", "yes")
+                        .build();
+        ModelCreationContext structuredOutputWithToolsContext =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .option("nativeStructuredOutputWithTools", "yes")
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.create("glm:glm-5.2", structuredOutputContext));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.create("glm:glm-5.2", structuredOutputWithToolsContext));
+    }
+
+    @Test
+    void createWithoutApiKeyThrowsIllegalStateException() {
+        // Only meaningful when the environment provides no GLM API key either
+        assumeTrue(isBlank(System.getenv("GLM_API_KEY")));
+        assumeTrue(isBlank(System.getenv("ZHIPUAI_API_KEY")));
+
+        GLMModelProvider provider = new GLMModelProvider();
+
+        IllegalStateException fromEmptyContext =
+                assertThrows(IllegalStateException.class, () -> provider.create("glm:glm-5.2"));
+        assertTrue(fromEmptyContext.getMessage().contains("ModelCreationContext#apiKey"));
+        assertTrue(fromEmptyContext.getMessage().contains("GLM_API_KEY"));
+        assertTrue(fromEmptyContext.getMessage().contains("ZHIPUAI_API_KEY"));
+
+        // A blank context API key must fall through to the environment lookup
+        ModelCreationContext blankKeyContext = ModelCreationContext.builder().apiKey("   ").build();
+        assertThrows(
+                IllegalStateException.class, () -> provider.create("glm:glm-5.2", blankKeyContext));
+    }
+
+    @Test
+    void endpointPathIsApplied() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .endpointPath("/custom/chat/completions")
+                        .build();
+
+        Model model = provider.create("glm:glm-5.2", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
+    void httpTransportComponentIsApplied() {
+        GLMModelProvider provider = new GLMModelProvider();
+        HttpTransport transport =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        return Flux.empty();
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .component(HttpTransport.class, transport)
+                        .build();
+
+        Model model = provider.create("glm:glm-5.2", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
+    void customFormatterComponentTakesPrecedence() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-glm-key")
+                        .component(GLMMultiAgentFormatter.class, new GLMMultiAgentFormatter())
+                        .build();
+
+        Model model = provider.create("glm:glm-5.2", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
     void customBaseUrlOverridesDefault() {
         GLMModelProvider provider = new GLMModelProvider();
         ModelCreationContext context =
@@ -136,5 +267,9 @@ class GLMModelProviderTest {
     @Test
     void modelRegistryFindsGlmProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("glm:glm-5.2"));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }
