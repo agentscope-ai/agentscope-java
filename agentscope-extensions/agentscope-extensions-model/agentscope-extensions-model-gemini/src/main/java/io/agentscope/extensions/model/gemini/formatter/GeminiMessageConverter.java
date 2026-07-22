@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Text blocks</li>
  *   <li>Tool use blocks (function_call)</li>
- *   <li>Tool result blocks (function_response as independent Content)</li>
+ *   <li>Tool result blocks (function_response grouped into one user Content per message)</li>
  *   <li>Multimodal content (image, audio, video)</li>
  * </ul>
  *
