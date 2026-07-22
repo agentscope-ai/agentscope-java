@@ -25,11 +25,11 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Spring configuration for shared workspace path resolution.
  *
- * <p>Filesystem composition for each agent now lives entirely inside the harness via {@code
- * HarnessAgent#workspaceFor(String, String)} (driven by the per-agent {@code
- * RemoteFilesystemSpec} wired in {@code BuilderConfig}). The only thing left in this module is the
- * shared on-disk root resolver used by platform side-channels (the per-user marketplaces git-clone
- * cache and per-agent workspace scaffolding).
+ * <p>Filesystem composition for each agent lives inside the harness via {@code
+ * HarnessAgent#workspaceFor(String, String)} and is selected by {@code
+ * builder.workspace-store.fs-spec} in {@code BuilderConfig}. The only thing left in this module is
+ * the shared on-disk root resolver used by platform side-channels (the per-user marketplaces
+ * git-clone cache and per-agent workspace scaffolding).
  */
 @Configuration
 public class BuilderWorkspaceConfig {

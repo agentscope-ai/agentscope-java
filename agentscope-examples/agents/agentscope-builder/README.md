@@ -134,9 +134,19 @@ builder:
 
 ## Filesystem Modes
 
-Builder supports three filesystem modes that control how per-(user, agent) workspaces are backed. Set via `builder.workspace-store.fs-spec`.
+Builder supports three explicit filesystem modes that control how per-(user, agent) workspaces are backed. Set via `builder.workspace-store.fs-spec`.
 
-### Local Mode (default)
+### Auto Mode (default)
+
+```yaml
+builder:
+  workspace-store:
+    fs-spec: auto
+```
+
+`auto` preserves the deployment-aware behavior: `InMemoryAgentStateStore` and `JsonFileAgentStateStore` select local mode, while a distributed `AgentStateStore` selects remote mode. Set an explicit mode when you need to override this detection.
+
+### Local Mode
 
 ```yaml
 builder:
@@ -256,7 +266,7 @@ Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata stored w
 | `BUILDER_MODEL_NAME` | `builder.dashscope.model-name` | `qwen-max` | Model name |
 | `BUILDER_WORKSPACE` | `builder.workspace` | (JVM cwd) | Working directory |
 | `BUILDER_JWT_SECRET` | `builder.jwt.secret` | (dev default) | JWT signing secret |
-| `BUILDER_WORKSPACE_FS_SPEC` | `builder.workspace-store.fs-spec` | `local` | Filesystem mode |
+| `BUILDER_WORKSPACE_FS_SPEC` | `builder.workspace-store.fs-spec` | `auto` | Filesystem mode (`auto`, `local`, `sandbox`, or `remote`) |
 | `BUILDER_SANDBOX_ENABLED` | `builder.sandbox.enabled` | `false` | Enable sandbox |
 | `BUILDER_SANDBOX_IMAGE` | `builder.sandbox.image` | `agentscope/python-sandbox:py311-slim` | Sandbox Docker image |
 | `BUILDER_SANDBOX_ISOLATION` | `builder.sandbox.isolation` | `USER` | Sandbox isolation scope |
