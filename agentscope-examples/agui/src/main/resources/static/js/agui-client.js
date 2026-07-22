@@ -205,7 +205,7 @@ class AguiClient {
                     break;
 
                 case 'RUN_FINISHED':
-                    callbacks.onRunFinished?.(event.threadId, event.runId);
+                    callbacks.onRunFinished?.(event.threadId, event.runId, event);
                     break;
 
                 case 'TEXT_MESSAGE_START':
@@ -250,6 +250,10 @@ class AguiClient {
 
                 case 'TOOL_CALL_END':
                     callbacks.onToolCallEnd?.(event.toolCallId);
+                    break;
+
+                case 'TOOL_CALL_RESULT':
+                    callbacks.onToolCallResult?.(event.toolCallId, event.content, event.messageId);
                     break;
 
                 case 'STATE_SNAPSHOT':

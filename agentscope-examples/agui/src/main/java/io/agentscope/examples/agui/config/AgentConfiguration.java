@@ -148,7 +148,7 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .toolkit(toolkit)
-                .middleware(exampleCustomEventMiddleware())
+                //                .middleware(exampleCustomEventMiddleware())
                 .maxIters(10)
                 .build();
     }

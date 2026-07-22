@@ -41,6 +41,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
@@ -58,7 +59,14 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
@@ -559,6 +567,148 @@ class AguiAgentAdapterV2Test {
                     types(events));
             assertToolCallResult(events.get(5), "tool-2", "result-2");
             assertToolCallResult(events.get(7), "tool-1", "result-1");
+        }
+
+        @Test
+        void testSuspendedToolResultDoesNotEmitToolCallResult() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-tool", "tool-1", "lookup", "needs external work"),
+                            new ToolResultEndEvent(
+                                    "reply-tool", "tool-1", "lookup", ToolResultState.RUNNING));
+
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
+                    types(events));
+        }
+
+        @Test
+        void testSuspendedToolResultFinishesRunWithToolCallInterrupt() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-suspended",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("tool-1")
+                                    .name("lookup")
+                                    .output(
+                                            TextBlock.builder()
+                                                    .text("Execute lookup externally")
+                                                    .build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-suspended", "react"),
+                            new ToolCallStartEvent("reply-suspended", "tool-1", "lookup"),
+                            new ToolCallDeltaEvent(
+                                    "reply-suspended", "tool-1", "lookup", "{\"city\":\"Paris\"}"),
+                            new ToolResultStartEvent("reply-suspended", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-suspended",
+                                    "tool-1",
+                                    "lookup",
+                                    "Execute lookup externally"),
+                            new ToolResultEndEvent(
+                                    "reply-suspended", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-suspended"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(4));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(1, outcome.interrupts().size());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("reply-suspended:tool-1", interrupt.id());
+            assertEquals("tool_call", interrupt.reason());
+            assertEquals("Execute lookup externally", interrupt.message());
+            assertEquals("tool-1", interrupt.toolCallId());
+            assertNull(interrupt.responseSchema());
+            assertNull(interrupt.expiresAt());
+            assertEquals("lookup", interrupt.metadata().get("toolName"));
+            assertEquals(Map.of("city", "Paris"), interrupt.metadata().get("toolInput"));
+            assertEquals("reply-suspended", interrupt.metadata().get("replyId"));
+        }
+
+        @Test
+        void testOnlySuspendedToolIsInterruptedWhenParallelToolCallsPartiallyComplete() {
+            ToolUseBlock suspendedTool =
+                    ToolUseBlock.builder()
+                            .id("tool-2")
+                            .name("search")
+                            .input(Map.of("q", "agent"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-parallel",
+                            suspendedTool,
+                            ToolResultBlock.builder()
+                                    .id("tool-2")
+                                    .name("search")
+                                    .output(TextBlock.builder().text("Search externally").build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-parallel", "react"),
+                            new ToolCallStartEvent("reply-parallel", "tool-1", "lookup"),
+                            new ToolCallStartEvent("reply-parallel", "tool-2", "search"),
+                            new ToolCallEndEvent("reply-parallel", "tool-1", "lookup"),
+                            new ToolResultStartEvent("reply-parallel", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-parallel", "tool-1", "lookup", "done"),
+                            new ToolResultEndEvent("reply-parallel", "tool-1", "lookup", null),
+                            new ToolCallEndEvent("reply-parallel", "tool-2", "search"),
+                            new ToolResultStartEvent("reply-parallel", "tool-2", "search"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-parallel", "tool-2", "search", "Search externally"),
+                            new ToolResultEndEvent(
+                                    "reply-parallel", "tool-2", "search", ToolResultState.RUNNING),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-parallel"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.TOOL_CALL_RESULT,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertToolCallResult(events.get(4), "tool-1", "done");
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(6));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(1, outcome.interrupts().size());
+            assertEquals("tool-2", outcome.interrupts().get(0).toolCallId());
         }
 
         @Test
@@ -1357,6 +1507,15 @@ class AguiAgentAdapterV2Test {
         AguiEvent.ToolCallResult result = assertInstanceOf(AguiEvent.ToolCallResult.class, event);
         assertEquals(expectedToolCallId, result.toolCallId());
         assertEquals(expectedContent, result.content());
+    }
+
+    private static Msg suspendedToolResult(
+            String replyId, ToolUseBlock toolUse, ToolResultBlock toolResult) {
+        return AssistantMessage.builder()
+                .id(replyId)
+                .content(List.<ContentBlock>of(toolUse, toolResult))
+                .generateReason(GenerateReason.TOOL_SUSPENDED)
+                .build();
     }
 
     private static AguiEvent.Custom assertCustomEvent(AguiEvent event, String expectedName) {

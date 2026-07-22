@@ -20,6 +20,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ToolResultState;
 import java.util.Set;
 
 final class ToolResultEventConverter implements AgentEventConverter {
@@ -43,6 +44,10 @@ final class ToolResultEventConverter implements AgentEventConverter {
             context.beginToolResult(start.getToolCallId());
         } else {
             ToolResultEndEvent end = (ToolResultEndEvent) event;
+            if (end.getState() == ToolResultState.RUNNING) {
+                context.markToolCallSuspended(end.getToolCallId());
+                return;
+            }
             context.endToolResult(end.getReplyId(), end.getToolCallId());
         }
     }

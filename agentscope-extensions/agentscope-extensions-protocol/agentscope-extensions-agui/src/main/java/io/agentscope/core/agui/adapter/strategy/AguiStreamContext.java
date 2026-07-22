@@ -57,6 +57,7 @@ public class AguiStreamContext {
     private String currentTextMessageId;
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
+    private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
 
@@ -257,6 +258,22 @@ public class AguiStreamContext {
                         content != null && !content.isEmpty() ? content.toString() : null,
                         "tool",
                         replyId));
+    }
+
+    public void markToolCallSuspended(String toolCallId) {
+        if (!hasStartedToolCall(toolCallId, "ToolResultEndEvent")) {
+            return;
+        }
+        toolResultContent.remove(toolCallId);
+    }
+
+    public void addInterrupt(AguiEvent.Interrupt interrupt) {
+        Objects.requireNonNull(interrupt, "interrupt cannot be null");
+        pendingInterrupts.put(interrupt.id(), interrupt);
+    }
+
+    public List<AguiEvent.Interrupt> getPendingInterrupts() {
+        return List.copyOf(pendingInterrupts.values());
     }
 
     public List<AguiEvent> finishPendingEvents() {
