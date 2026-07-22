@@ -134,6 +134,9 @@ class KimiFormatterTest {
             assertTrue(KimiFormatter.isAlwaysThinkingModel("kimi-k3"));
             assertTrue(KimiFormatter.isAlwaysThinkingModel("kimi-k2.7-code"));
             assertTrue(KimiFormatter.isAlwaysThinkingModel("kimi-k2.7-code-highspeed"));
+            // Only the documented kimi-k2.7-code series is always-thinking; a plain
+            // kimi-k2.7* model must not have its tool_choice degraded
+            assertFalse(KimiFormatter.isAlwaysThinkingModel("kimi-k2.7"));
             assertFalse(KimiFormatter.isAlwaysThinkingModel("kimi-k2.6"));
             assertFalse(KimiFormatter.isAlwaysThinkingModel("moonshot-v1-8k"));
             assertFalse(KimiFormatter.isAlwaysThinkingModel(null));
@@ -156,6 +159,8 @@ class KimiFormatterTest {
             assertFalse(KimiFormatter.supportsRequiredToolChoice("kimi-k2.6"));
             assertFalse(KimiFormatter.supportsRequiredToolChoice("kimi-k2.7-code"));
             assertTrue(KimiFormatter.supportsRequiredToolChoice("moonshot-v1-8k"));
+            // Unknown model: keep the caller-requested value rather than degrade it
+            assertTrue(KimiFormatter.supportsRequiredToolChoice(null));
         }
     }
 

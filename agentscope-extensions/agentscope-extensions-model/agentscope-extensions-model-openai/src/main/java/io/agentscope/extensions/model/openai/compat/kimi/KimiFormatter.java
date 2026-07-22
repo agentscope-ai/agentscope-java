@@ -123,7 +123,7 @@ public class KimiFormatter extends OpenAIChatFormatter {
      * @return true for always-thinking Kimi models
      */
     static boolean isAlwaysThinkingModel(String model) {
-        return model != null && (model.startsWith("kimi-k3") || model.startsWith("kimi-k2.7"));
+        return model != null && (model.startsWith("kimi-k3") || model.startsWith("kimi-k2.7-code"));
     }
 
     /**

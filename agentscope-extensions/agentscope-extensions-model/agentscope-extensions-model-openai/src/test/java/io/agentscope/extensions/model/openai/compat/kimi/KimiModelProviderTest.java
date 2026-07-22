@@ -19,15 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.transport.HttpRequest;
+import io.agentscope.core.model.transport.HttpResponse;
+import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 class KimiModelProviderTest {
 
@@ -121,6 +126,145 @@ class KimiModelProviderTest {
     }
 
     @Test
+    void nativeStructuredOutputWithToolsDisabledByDefault() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-kimi-key").build();
+
+        Model model = provider.create("kimi:kimi-k3", context);
+
+        // Kimi prioritises response_format over tool invocations when both are present
+        assertFalse(model.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    void nativeStructuredOutputWithToolsCanBeEnabledByOption() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .option("nativeStructuredOutput", true)
+                        .option("nativeStructuredOutputWithTools", true)
+                        .build();
+
+        Model model = provider.create("kimi:kimi-k3", context);
+
+        assertTrue(model.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    void contextWindowSizeOptionMustBeANumber() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .option("contextWindowSize", "not-a-number")
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class, () -> provider.create("kimi:kimi-k3", context));
+    }
+
+    @Test
+    void nativeStructuredOutputOptionsMustBeBooleans() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext structuredOutputContext =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .option("nativeStructuredOutput", "yes")
+                        .build();
+        ModelCreationContext structuredOutputWithToolsContext =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .option("nativeStructuredOutputWithTools", "yes")
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.create("kimi:kimi-k3", structuredOutputContext));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.create("kimi:kimi-k3", structuredOutputWithToolsContext));
+    }
+
+    @Test
+    void createWithoutApiKeyThrowsIllegalStateException() {
+        // Only meaningful when the environment provides no Kimi API key either
+        assumeTrue(isBlank(System.getenv("MOONSHOT_API_KEY")));
+        assumeTrue(isBlank(System.getenv("KIMI_API_KEY")));
+
+        KimiModelProvider provider = new KimiModelProvider();
+
+        IllegalStateException fromEmptyContext =
+                assertThrows(IllegalStateException.class, () -> provider.create("kimi:kimi-k3"));
+        assertTrue(fromEmptyContext.getMessage().contains("MOONSHOT_API_KEY"));
+        assertTrue(fromEmptyContext.getMessage().contains("KIMI_API_KEY"));
+
+        // A blank context API key must fall through to the environment lookup
+        ModelCreationContext blankKeyContext = ModelCreationContext.builder().apiKey("   ").build();
+        assertThrows(
+                IllegalStateException.class,
+                () -> provider.create("kimi:kimi-k3", blankKeyContext));
+    }
+
+    @Test
+    void endpointPathIsApplied() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .endpointPath("/custom/chat/completions")
+                        .build();
+
+        Model model = provider.create("kimi:kimi-k3", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
+    void httpTransportComponentIsApplied() {
+        KimiModelProvider provider = new KimiModelProvider();
+        HttpTransport transport =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        return Flux.empty();
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .component(HttpTransport.class, transport)
+                        .build();
+
+        Model model = provider.create("kimi:kimi-k3", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
+    void customFormatterComponentTakesPrecedence() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-kimi-key")
+                        .component(KimiMultiAgentFormatter.class, new KimiMultiAgentFormatter())
+                        .build();
+
+        Model model = provider.create("kimi:kimi-k3", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+    }
+
+    @Test
     void customBaseUrlOverridesDefault() {
         KimiModelProvider provider = new KimiModelProvider();
         ModelCreationContext context =
@@ -137,5 +281,9 @@ class KimiModelProviderTest {
     @Test
     void modelRegistryFindsKimiProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("kimi:kimi-k3"));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }
