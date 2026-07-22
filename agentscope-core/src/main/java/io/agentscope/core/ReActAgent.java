@@ -2267,6 +2267,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             ReasoningContext context = new ReasoningContext(getName());
+            AtomicBoolean retryEmptyResponse = new AtomicBoolean(false);
 
             return checkInterrupted()
                     .then(
@@ -2358,7 +2359,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         .getGenerateReason()));
                                                             }
                                                             if (finalMsg == null) {
-                                                                return executeIteration(iter + 1);
+                                                                retryEmptyResponse.set(true);
+                                                                return Mono.empty();
                                                             }
                                                             return Mono.just(finalMsg);
                                                         }));
@@ -2394,7 +2396,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     return Mono.just(msg);
                                 }
                                 return runPostReasoningPipeline(msg, iter);
-                            });
+                            })
+                    .switchIfEmpty(
+                            Mono.defer(
+                                    () -> {
+                                        if (retryEmptyResponse.get()) {
+                                            return executeIteration(iter + 1);
+                                        }
+                                        return Mono.empty();
+                                    }));
         }
 
         @SuppressWarnings("deprecation")
