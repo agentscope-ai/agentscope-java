@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -83,7 +84,8 @@ class GeminiChatModelTest {
                         ModelException.class,
                         () ->
                                 new TestGeminiChatModel(Flux.never())
-                                        .stream(List.of(), List.of(), options).blockLast());
+                                        .stream(List.of(), List.of(), options)
+                                                .blockLast(Duration.ofSeconds(1)));
 
         assertTrue(error.getMessage().contains("timeout"));
     }
@@ -701,9 +703,7 @@ class GeminiChatModelTest {
 
         @Override
         protected Flux<ChatResponse> doStream0(
-                List<io.agentscope.core.message.Msg> messages,
-                List<ToolSchema> tools,
-                GenerateOptions options) {
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             return response;
         }
     }
