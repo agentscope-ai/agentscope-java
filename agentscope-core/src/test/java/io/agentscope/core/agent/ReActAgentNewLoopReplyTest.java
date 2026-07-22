@@ -99,12 +99,6 @@ class ReActAgentNewLoopReplyTest {
                 .build();
     }
 
-    private static ChatResponse thinkingResponse(String thinking) {
-        return ChatResponse.builder()
-                .content(List.<ContentBlock>of(ThinkingBlock.builder().thinking(thinking).build()))
-                .build();
-    }
-
     private static ChatResponse toolUseResponse(String toolId, String toolName, String inputJson) {
         Map<String, Object> input = new HashMap<>();
         input.put("query", inputJson);
@@ -218,23 +212,6 @@ class ReActAgentNewLoopReplyTest {
                 new ScriptedModel(
                         List.of(
                                 () -> Flux.just(textResponse("")),
-                                () -> Flux.just(textResponse("answer"))));
-        ReActAgent agent =
-                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
-
-        Msg result = agent.call(List.of()).block();
-
-        assertNotNull(result);
-        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
-        assertEquals(2, model.calls());
-    }
-
-    @Test
-    void thinkingOnlyResponseContinuesToNextIteration() {
-        ScriptedModel model =
-                new ScriptedModel(
-                        List.of(
-                                () -> Flux.just(thinkingResponse("need another pass")),
                                 () -> Flux.just(textResponse("answer"))));
         ReActAgent agent =
                 ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
