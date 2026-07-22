@@ -315,20 +315,17 @@ class ReActAgentNewLoopE2ETest {
                 .block();
 
         List<Msg> modelInput = model.inputs.get(0);
-        int toolUseIndex =
-                java.util.stream.IntStream.range(0, modelInput.size())
-                        .filter(
-                                index ->
-                                        modelInput
-                                                .get(index)
-                                                .getContentBlocks(ToolUseBlock.class)
-                                                .stream()
-                                                .anyMatch(
-                                                        block ->
-                                                                "call-history"
-                                                                        .equals(block.getId())))
-                        .findFirst()
-                        .orElseThrow();
+        int toolUseIndex = -1;
+        for (int index = 0; index < modelInput.size(); index++) {
+            boolean containsHistoricalToolUse =
+                    modelInput.get(index).getContentBlocks(ToolUseBlock.class).stream()
+                            .anyMatch(block -> "call-history".equals(block.getId()));
+            if (containsHistoricalToolUse) {
+                toolUseIndex = index;
+                break;
+            }
+        }
+        assertTrue(toolUseIndex >= 0, "model input should include the historical tool use");
         assertTrue(modelInput.get(toolUseIndex).getContentBlocks(ToolResultBlock.class).isEmpty());
         assertEquals(MsgRole.TOOL, modelInput.get(toolUseIndex + 1).getRole());
         assertEquals(

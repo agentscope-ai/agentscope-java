@@ -124,7 +124,6 @@ public final class MessageUtils {
                             assistantContent.equals(message.getContent())
                                     ? message
                                     : message.withContent(assistantContent));
-                    List<ContentBlock> toolResults = new ArrayList<>(toolUses.size());
                     for (ToolUseBlock toolUse : toolUses) {
                         if (toolUse.getId() == null) {
                             continue;
@@ -133,12 +132,8 @@ public final class MessageUtils {
                         if (result == null) {
                             result = interruptedToolResult(toolUse);
                         }
-                        toolResults.add(result);
                         relocatedResultIds.add(toolUse.getId());
-                    }
-                    if (!toolResults.isEmpty()) {
-                        normalized.add(
-                                Msg.builder().role(MsgRole.TOOL).content(toolResults).build());
+                        normalized.add(Msg.builder().role(MsgRole.TOOL).content(result).build());
                     }
                     continue;
                 }
