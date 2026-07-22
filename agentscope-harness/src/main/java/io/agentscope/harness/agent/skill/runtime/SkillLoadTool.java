@@ -20,6 +20,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -59,12 +60,19 @@ public final class SkillLoadTool implements AgentTool {
     private static final Logger log = LoggerFactory.getLogger(SkillLoadTool.class);
 
     private final AtomicReference<SkillCatalog> catalogRef;
+    private final AtomicReference<Toolkit> toolkitRef;
 
     public SkillLoadTool(AtomicReference<SkillCatalog> catalogRef) {
+        this(catalogRef, null);
+    }
+
+    public SkillLoadTool(
+            AtomicReference<SkillCatalog> catalogRef, AtomicReference<Toolkit> toolkitRef) {
         if (catalogRef == null) {
             throw new IllegalArgumentException("catalogRef must not be null");
         }
         this.catalogRef = catalogRef;
+        this.toolkitRef = toolkitRef;
     }
 
     @Override
@@ -139,24 +147,26 @@ public final class SkillLoadTool implements AgentTool {
                                         + "'. Check the available skills list."));
             }
 
-            return Mono.just(loadOne(entry, path));
+            return Mono.just(loadOne(entry, path, param));
         } catch (Exception e) {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
     }
 
-    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path) {
+    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path, ToolCallParam param) {
         AgentSkill skill = entry.skill();
 
         // 1. Special case: SKILL.md returns the parsed body text.
         if (SKILL_FILE.equals(path)) {
+            activateSkillTools(entry, param);
             return ToolResultBlock.text(formatSkillMarkdown(entry));
         }
 
         // 2. In-memory map (Layer 1/3 host repos + marketplace fully-loaded resources).
         Map<String, String> mem = skill.getResources();
         if (mem != null && mem.containsKey(path)) {
+            activateSkillTools(entry, param);
             return ToolResultBlock.text(formatResource(entry, path, mem.get(path)));
         }
 
@@ -164,12 +174,34 @@ public final class SkillLoadTool implements AgentTool {
         if (entry.lazyResources() != null) {
             Optional<String> lazy = entry.lazyResources().read(path);
             if (lazy.isPresent()) {
+                activateSkillTools(entry, param);
                 return ToolResultBlock.text(formatResource(entry, path, lazy.get()));
             }
         }
 
         // 4. Not found: enumerate both sources so the model sees real options.
         return ToolResultBlock.error(formatNotFound(entry, path));
+    }
+
+    private void activateSkillTools(HarnessSkillEntry entry, ToolCallParam param) {
+        Toolkit toolkit = null;
+        if (param != null && param.getAgent() != null) {
+            toolkit = param.getAgent().getToolkit();
+        }
+        if (toolkit == null && toolkitRef != null) {
+            toolkit = toolkitRef.get();
+        }
+        if (toolkit == null) {
+            log.debug(
+                    "activateSkillTools: no toolkit available for skill '{}'",
+                    entry.skill().getSkillId());
+            return;
+        }
+        String toolGroupName = AgentSkill.toolGroupName(entry.skill().getSkillId());
+        if (toolkit.getToolGroup(toolGroupName) == null) {
+            return;
+        }
+        toolkit.updateToolGroups(List.of(toolGroupName), true);
     }
 
     // ---------------------------------------------------------------------

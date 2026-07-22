@@ -308,6 +308,23 @@ class SkillRuntimeTest {
             assertTrue(err1.contains("skillId"));
         }
 
+        @Test
+        void loadingSkillActivatesSkillToolGroupViaRuntimeToolkitFallback() {
+            Toolkit tk = new Toolkit();
+            String toolGroupName = AgentSkill.toolGroupName("alpha_workspace");
+            tk.createToolGroup(toolGroupName, "alpha skill tools", false);
+
+            SkillRuntime r = new SkillRuntime();
+            HarnessSkillEntry e = HarnessSkillEntry.of(skill("alpha", "workspace"), null);
+            r.install(SkillCatalog.of(List.of(e)), tk);
+
+            invoke(r, "alpha_workspace", "SKILL.md");
+
+            assertTrue(
+                    tk.getToolGroup(toolGroupName).isActive(),
+                    "loading a skill should activate its bound tool group");
+        }
+
         private ToolResultBlock invoke(SkillRuntime r, String skillId, String path) {
             ToolCallParam p =
                     ToolCallParam.builder().input(Map.of("skillId", skillId, "path", path)).build();
@@ -347,6 +364,31 @@ class SkillRuntimeTest {
             assertEquals(List.of("second_src"), r.currentCatalog().ids());
             // Same instance still registered.
             assertSame(r.loadTool(), tk.getTool(SkillLoadTool.TOOL_NAME));
+        }
+
+        @Test
+        void laterInstallRefreshesToolkitFallbackReference() {
+            Toolkit firstToolkit = new Toolkit();
+            String toolGroupName = AgentSkill.toolGroupName("alpha_workspace");
+            firstToolkit.createToolGroup(toolGroupName, "alpha skill tools", false);
+            Toolkit secondToolkit = new Toolkit();
+            secondToolkit.createToolGroup(toolGroupName, "alpha skill tools", false);
+
+            SkillRuntime r = new SkillRuntime();
+            HarnessSkillEntry entry = HarnessSkillEntry.of(skill("alpha", "workspace"), null);
+            SkillCatalog catalog = SkillCatalog.of(List.of(entry));
+
+            r.install(catalog, firstToolkit);
+            r.install(catalog, secondToolkit);
+
+            ToolCallParam p =
+                    ToolCallParam.builder()
+                            .input(Map.of("skillId", "alpha_workspace", "path", "SKILL.md"))
+                            .build();
+            r.loadTool().callAsync(p).block();
+
+            assertFalse(firstToolkit.getToolGroup(toolGroupName).isActive());
+            assertTrue(secondToolkit.getToolGroup(toolGroupName).isActive());
         }
     }
 

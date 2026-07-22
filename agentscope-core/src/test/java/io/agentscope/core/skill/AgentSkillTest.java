@@ -179,6 +179,14 @@ class AgentSkillTest {
     }
 
     @Test
+    @DisplayName("Should build shared tool group name from skill id")
+    void testToolGroupNameHelper() {
+        AgentSkill skill = new AgentSkill("weather", "desc", "content", null, "workspace");
+
+        assertEquals("weather_workspace_skill_tools", AgentSkill.toolGroupName(skill.getSkillId()));
+    }
+
+    @Test
     @DisplayName("Should resources immutability")
     void testResourcesImmutability() {
         Map<String, String> originalResources = new HashMap<>();

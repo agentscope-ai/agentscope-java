@@ -38,6 +38,7 @@ public final class SkillRuntime {
 
     private final AtomicReference<SkillCatalog> catalogRef =
             new AtomicReference<>(SkillCatalog.empty());
+    private final AtomicReference<Toolkit> toolkitRef = new AtomicReference<>();
     private final AtomicBoolean toolInstalled = new AtomicBoolean(false);
     private final SkillLoadTool loadTool;
     private final SkillPromptBuilder promptBuilder;
@@ -48,7 +49,7 @@ public final class SkillRuntime {
 
     public SkillRuntime(SkillPromptBuilder promptBuilder) {
         this.promptBuilder = promptBuilder != null ? promptBuilder : new SkillPromptBuilder();
-        this.loadTool = new SkillLoadTool(catalogRef);
+        this.loadTool = new SkillLoadTool(catalogRef, toolkitRef);
     }
 
     /** Snapshot accessor mainly for tests; not for runtime mutation. */
@@ -69,6 +70,7 @@ public final class SkillRuntime {
      */
     public void install(SkillCatalog catalog, Toolkit toolkit) {
         catalogRef.set(catalog != null ? catalog : SkillCatalog.empty());
+        toolkitRef.set(toolkit);
         if (toolkit == null) {
             return;
         }

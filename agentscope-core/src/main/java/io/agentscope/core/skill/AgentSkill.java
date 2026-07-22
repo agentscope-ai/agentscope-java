@@ -66,6 +66,8 @@ import java.util.Set;
  * Manage markdown skill catalogs in application code.
  */
 public class AgentSkill {
+    public static final String TOOL_GROUP_SUFFIX = "_skill_tools";
+
     private final Map<String, Object> metadata;
     private final String skillContent;
     private final Map<String, String> resources;
@@ -266,6 +268,19 @@ public class AgentSkill {
      */
     public String getSkillId() {
         return getName() + "_" + source;
+    }
+
+    /**
+     * Gets the toolkit tool-group name used for tools registered under a skill.
+     *
+     * @param skillId the skill identifier
+     * @return the tool-group name for that skill
+     */
+    public static String toolGroupName(String skillId) {
+        if (skillId == null || skillId.isEmpty()) {
+            throw new IllegalArgumentException("skillId must not be null or empty");
+        }
+        return skillId + TOOL_GROUP_SUFFIX;
     }
 
     /**

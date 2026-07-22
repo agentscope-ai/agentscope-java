@@ -595,6 +595,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
+        CallExecution scope = (CallExecution) callScope;
+        scope.systemMsg = systemMsg;
+        // onSystemPrompt middleware can mutate the live toolkit before the first reasoning
+        // round, so mirror those active-group changes into the call-scoped AgentState now.
+        syncToolkitToState(scope.state);
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
         syncToolkitToState(ce.state);
@@ -2348,6 +2353,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             })
                     .flatMap(
                             results -> {
+                                // Tool execution can activate or deactivate toolkit groups
+                                // (for example, a skill loader exposing newly bound tools).
+                                // Persist that live toolkit state before any branch resumes
+                                // reasoning or returns early.
+                                syncToolkitToState(state);
                                 // Middleware requested stop during acting — return immediately with
                                 // the requested GenerateReason, preserving any results already
                                 // collected.

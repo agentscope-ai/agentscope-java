@@ -85,7 +85,7 @@ class RegisteredSkillTest {
 
         String toolsGroupName = skill.getToolsGroupName();
 
-        assertEquals("my_skill_skill_tools", toolsGroupName);
+        assertEquals(AgentSkill.toolGroupName("my_skill"), toolsGroupName);
     }
 
     @Test
@@ -95,7 +95,7 @@ class RegisteredSkillTest {
 
         String toolsGroupName = skill.getToolsGroupName();
 
-        assertEquals("skill-123_custom_skill_tools", toolsGroupName);
+        assertEquals(AgentSkill.toolGroupName("skill-123_custom"), toolsGroupName);
     }
 
     @Test

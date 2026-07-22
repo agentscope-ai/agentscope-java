@@ -122,7 +122,7 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
 
             // Before registration, the tool group should not exist
-            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+            String toolsGroupName = AgentSkill.toolGroupName(skill.getSkillId());
             assertNull(
                     toolkit.getToolGroup(toolsGroupName),
                     "Tool group should not exist before skill registration");
@@ -266,7 +266,7 @@ class SkillBoxTest {
 
             skillBox.registration().skill(skill).agentTool(testTool).apply();
 
-            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+            String toolsGroupName = AgentSkill.toolGroupName(skill.getSkillId());
 
             assertFalse(
                     skillBox.isSkillActive(skill.getSkillId()),
@@ -306,7 +306,7 @@ class SkillBoxTest {
                             null);
             skillBox.registerSkill(purePromptSkill);
 
-            String toolsGroupName = purePromptSkill.getSkillId() + "_skill_tools";
+            String toolsGroupName = AgentSkill.toolGroupName(purePromptSkill.getSkillId());
             assertNull(
                     toolkit.getToolGroup(toolsGroupName),
                     "ToolGroup should not exist for pure prompt skill");
