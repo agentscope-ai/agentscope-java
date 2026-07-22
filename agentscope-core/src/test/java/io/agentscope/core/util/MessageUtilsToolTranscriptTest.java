@@ -115,13 +115,18 @@ class MessageUtilsToolTranscriptTest {
                                 Msg.builder().role(MsgRole.USER).textContent("continue").build(),
                                 Msg.builder().role(MsgRole.TOOL).content(secondResult).build()));
 
-        assertEquals(3, normalized.size());
-        List<ToolResultBlock> results = normalized.get(1).getContentBlocks(ToolResultBlock.class);
-        assertEquals(
-                List.of("call-4a", "call-4b"),
-                results.stream().map(ToolResultBlock::getId).toList());
-        assertEquals(ToolResultState.ERROR, results.get(0).getState());
-        assertEquals(ToolResultState.DENIED, results.get(1).getState());
+        assertEquals(4, normalized.size());
+        assertToolResult(normalized.get(1), "call-4a", ToolResultState.ERROR);
+        assertToolResult(normalized.get(2), "call-4b", ToolResultState.DENIED);
+        assertEquals(MsgRole.USER, normalized.get(3).getRole());
         assertEquals(1, source.getContentBlocks(ToolResultBlock.class).size());
+    }
+
+    private static void assertToolResult(Msg message, String id, ToolResultState state) {
+        assertEquals(MsgRole.TOOL, message.getRole());
+        List<ToolResultBlock> results = message.getContentBlocks(ToolResultBlock.class);
+        assertEquals(1, results.size());
+        assertEquals(id, results.get(0).getId());
+        assertEquals(state, results.get(0).getState());
     }
 }
