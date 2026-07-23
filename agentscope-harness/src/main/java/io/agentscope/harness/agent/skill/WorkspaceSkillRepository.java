@@ -64,7 +64,8 @@ import org.yaml.snakeyaml.Yaml;
  * invariant.
  */
 @SuppressWarnings("deprecation")
-public class WorkspaceSkillRepository implements AgentSkillRepository, LazyResourceCapable {
+public class WorkspaceSkillRepository
+        implements RuntimeContextSkillRepository, LazyResourceCapable {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceSkillRepository.class);
 
@@ -157,7 +158,16 @@ public class WorkspaceSkillRepository implements AgentSkillRepository, LazyResou
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        RuntimeContext ctx = currentContext();
+        return getAllSkills(currentContext());
+    }
+
+    /**
+     * Lists skills using the caller's request-scoped context rather than the legacy shared context
+     * supplier.
+     */
+    @Override
+    public List<AgentSkill> getAllSkills(RuntimeContext context) {
+        RuntimeContext ctx = context != null ? context : RuntimeContext.empty();
         GlobResult glob;
         try {
             glob = filesystem.glob(ctx, SKILL_FILE, skillsRelativeDir);

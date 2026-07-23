@@ -52,23 +52,46 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </div>
 </div>
 
-<!-- Stats strip -->
-<div class="hs-stats">
-  <div class="hs-stat">
-    <span class="hs-stat__val">Agentic</span>
-    <span class="hs-stat__label">agent-first execution model</span>
+<!-- Stats strip: adoption showcase -->
+<div class="hs-adoption">
+  <div class="hs-adoption__eyebrow">
+    <span class="hs-adoption__eyebrow-dot"></span>Battle-tested in Production
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Harness</span>
-    <span class="hs-stat__label">engineering scaffolding for long runs</span>
+  <div class="hs-adoption__stats">
+    <div class="hs-stat">
+      <span class="hs-stat__val">Alibaba Group</span>
+      <span class="hs-stat__label">the most widely used agent framework in-house (Java &amp; Python), in production across 13+ business units</span>
+    </div>
+    <div class="hs-stat">
+      <span class="hs-stat__val">Open Source Community</span>
+      <span class="hs-stat__label">adopted by industry leaders across 10+ sectors via open source &amp; Alibaba Cloud</span>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Sandbox</span>
-    <span class="hs-stat__label">isolated exec + snapshot resume</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">Alibaba Group</span>
+    <div class="hs-marquee">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">Fliggy</span><span class="hs-tag">Taobao Instant Commerce</span><span class="hs-tag">Whale Entertainment</span><span class="hs-tag">AIDC</span><span class="hs-tag">Alibaba Holding</span><span class="hs-tag">Taotian Trade</span><span class="hs-tag">Taobao App</span><span class="hs-tag">1688</span><span class="hs-tag">Qwen App</span><span class="hs-tag">Amap</span><span class="hs-tag">Alibaba Cloud</span><span class="hs-tag">Ant International</span><span class="hs-tag">Ant Global Payments</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">Fliggy</span><span class="hs-tag">Taobao Instant Commerce</span><span class="hs-tag">Whale Entertainment</span><span class="hs-tag">AIDC</span><span class="hs-tag">Alibaba Holding</span><span class="hs-tag">Taotian Trade</span><span class="hs-tag">Taobao App</span><span class="hs-tag">1688</span><span class="hs-tag">Qwen App</span><span class="hs-tag">Amap</span><span class="hs-tag">Alibaba Cloud</span><span class="hs-tag">Ant International</span><span class="hs-tag">Ant Global Payments</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+      </div>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Distributed</span>
-    <span class="hs-stat__label">A2A / MCP / cross-process</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">Open Source · Cloud</span>
+    <div class="hs-marquee hs-marquee--reverse">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">Finance</span><span class="hs-tag">Transportation &amp; Logistics</span><span class="hs-tag">Retail</span><span class="hs-tag">Manufacturing</span><span class="hs-tag">Energy</span><span class="hs-tag">Healthcare</span><span class="hs-tag">Education &amp; Gov Media</span><span class="hs-tag">Internet</span><span class="hs-tag">SaaS</span><span class="hs-tag">Consulting</span><span class="hs-tag hs-tag--more">and more industry leaders</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">Finance</span><span class="hs-tag">Transportation &amp; Logistics</span><span class="hs-tag">Retail</span><span class="hs-tag">Manufacturing</span><span class="hs-tag">Energy</span><span class="hs-tag">Healthcare</span><span class="hs-tag">Education &amp; Gov Media</span><span class="hs-tag">Internet</span><span class="hs-tag">SaaS</span><span class="hs-tag">Consulting</span><span class="hs-tag hs-tag--more">and more industry leaders</span>
+        </span>
+      </div>
+    </div>
   </div>
 </div>
 

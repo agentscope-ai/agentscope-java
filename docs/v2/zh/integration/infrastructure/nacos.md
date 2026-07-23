@@ -103,5 +103,5 @@ AgentSkill skill = repo.getSkill("calculator");
 
 ## 与其他扩展配合
 
-- 结合 [A2A](../protocol/a2a)：`AgentScopeA2aServer.builder().agentRegistry(...)` 可以注入一个把 AgentCard 推到 Nacos 的注册器，启动后自动暴露给整个集群。
+- 结合 [A2A](../protocol/a2a.md)：`AgentScopeA2aServer.builder().agentRegistry(...)` 可以注入一个把 AgentCard 推到 Nacos 的注册器，启动后自动暴露给整个集群。
 - 结合 [Skill 仓库](../skill/)：可以与 Git/MySQL 的 `AgentSkillRepository` 并存，把同一个 Toolkit 用多个数据源拼起来。

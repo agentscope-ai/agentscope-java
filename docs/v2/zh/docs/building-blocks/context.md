@@ -152,7 +152,7 @@ agentB.call(nextMsg, RuntimeContext.builder()
 `sessionId` 和 `userId` 解决的不是同一件事:
 
 - **`sessionId`** —— 决定哪段对话是哪段,独立的 `AgentState` 快照。
-- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](../harness/filesystem)。
+- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](../harness/filesystem.md)。
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -291,7 +291,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 
 ## 相关文档
 
-- [智能体（Agent）](./agent) —— `ReActAgent` 完整接口与 Builder 参数
-- [上下文压缩](../harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
-- [记忆](../harness/memory) —— 长期记忆与后台维护
-- [权限系统](./permission-system) —— 权限规则的持久化
+- [智能体（Agent）](./agent.md) —— `ReActAgent` 完整接口与 Builder 参数
+- [上下文压缩](../harness/compaction.md) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
+- [记忆](../harness/memory.md) —— 长期记忆与后台维护
+- [权限系统](./permission-system.md) —— 权限规则的持久化

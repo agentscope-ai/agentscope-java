@@ -46,7 +46,7 @@ public class AgentSkillExample {
      * Set this to the absolute path of your skills directory before running.
      */
     private static final String SKILLS_DIR =
-            "agentscope-examples/documentation/quickstart/src/main/resources/skills";
+            "agentscope-examples/documentation/src/main/resources/skills";
 
     /**
      * Output directory where the agent may write new skill files during the demo.
