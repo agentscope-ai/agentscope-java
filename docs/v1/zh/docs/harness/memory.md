@@ -113,7 +113,7 @@ CompactionConfig.builder()
 |------|------|------|
 | `maxResultChars` | `80_000` | 超过则卸载 |
 | `previewChars` | `2_000` | 首尾预览字符数 |
-| `evictionPath` | `/large_tool_results` | 卸载文件根路径 |
+| `evictionPath` | `large_tool_results` | 相对于工作区的卸载文件根路径 |
 | `excludedToolNames` | 内置集（含 `read_file` 等） | 不参与卸载的工具 |
 
 ```java
