@@ -249,6 +249,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private final AgentStateStore stateStore;
 
+    /** Maximum number of conversation messages included in a persisted AgentState snapshot. */
+    private final int maxPersistedContextMessages;
+
     /**
      * Builder-time fallback {@code sessionId}, used only when a call does not supply a
      * {@code sessionId} via its {@link RuntimeContext}. Each call still picks its own active slot
@@ -313,6 +316,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
+        this.maxPersistedContextMessages = builder.maxPersistedContextMessages;
         this.defaultSessionId =
                 builder.defaultSessionId != null && !builder.defaultSessionId.isBlank()
                         ? builder.defaultSessionId
@@ -331,11 +335,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // interrupted request, so persist that session directly rather than the
                     // instance "last-active" CallExecution (which is wrong under concurrency).
                     agentState ->
-                            stateStore.save(
-                                    agentState.getUserId(),
-                                    agentState.getSessionId(),
-                                    "agent_state",
-                                    agentState));
+                            persistAgentState(
+                                    agentState.getUserId(), agentState.getSessionId(), agentState));
         }
     }
 
@@ -432,9 +433,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         syncToolkitToState(scope.state);
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
-        return Mono.<Void>fromRunnable(
-                        () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave))
+        return Mono.<Void>fromRunnable(() -> persistAgentState(ref.userId, ref.sessionId, toSave))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void persistAgentState(String userId, String sessionId, AgentState state) {
+        stateStore.save(userId, sessionId, "agent_state", createPersistenceSnapshot(state));
+    }
+
+    /**
+     * Creates a state snapshot for persistence without mutating the live per-call state.
+     *
+     * <p>The full state is returned when no trimming is necessary. When the configured limit is
+     * exceeded, all non-conversation state is preserved while only the most recent context
+     * messages are copied into the persisted snapshot.
+     */
+    private AgentState createPersistenceSnapshot(AgentState state) {
+        List<Msg> context = state.getContext();
+        if (context.size() <= maxPersistedContextMessages) {
+            return state;
+        }
+
+        int fromIndex = context.size() - maxPersistedContextMessages;
+        return AgentState.builder()
+                .sessionId(state.getSessionId())
+                .userId(state.getUserId())
+                .summary(state.getSummary())
+                .context(context.subList(fromIndex, context.size()))
+                .replyId(state.getReplyId())
+                .curIter(state.getCurIter())
+                .shutdownInterrupted(state.isShutdownInterrupted())
+                .permissionContext(state.getPermissionContext())
+                .toolContext(state.getToolContext())
+                .tasksContext(state.getTasksContext())
+                .planModeContext(state.getPlanModeContext())
+                .build();
     }
 
     /**
@@ -3754,13 +3787,50 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sessionId);
         AgentState s = stateCache.get(slot);
         if (s != null) {
-            stateStore.save(userId, sessionId, "agent_state", s);
+            persistAgentState(userId, sessionId, s);
         }
+    }
+
+    /**
+     * Deletes all persisted state for the session identified by the given runtime context and
+     * evicts the corresponding local caches.
+     *
+     * <p>If a call for the same session is still in flight, that call may persist state again when
+     * it completes. Callers should invoke this method after active work for the session has stopped.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void deleteSessionState(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        deleteSessionState(uid, sid);
+    }
+
+    /**
+     * Deletes all persisted state for a {@code (userId, sessionId)} session and evicts its local
+     * state and permission caches.
+     *
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; uses the default session id when null or blank
+     */
+    public void deleteSessionState(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        if (stateStore != null) {
+            stateStore.delete(userId, sid);
+        }
+        String slot = slotKey(userId, sid);
+        stateCache.remove(slot);
+        permissionEngineCache.remove(slot);
     }
 
     /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
     public AgentStateStore getStateStore() {
         return stateStore;
+    }
+
+    /** Returns the maximum number of context messages included in persisted state snapshots. */
+    public int getMaxPersistedContextMessages() {
+        return maxPersistedContextMessages;
     }
 
     /**
@@ -3875,6 +3945,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Boolean flatStopOnReject;
         private AgentStateStore stateStore;
         private String defaultSessionId;
+        private int maxPersistedContextMessages = Integer.MAX_VALUE;
 
         // ==================== 1.x legacy compatibility fields ====================
         // Below fields back the deprecated `longTermMemory(...)`, `knowledge(...)`,
@@ -4212,6 +4283,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStore = stateStore;
+            return this;
+        }
+
+        /**
+         * Limits the number of recent conversation messages stored inside each persisted
+         * {@code agent_state} snapshot.
+         *
+         * <p>The default is unlimited for backward compatibility. A value of {@code 0} persists
+         * the rest of the agent state without conversation messages. The live state used by the
+         * current call is not modified when a snapshot is trimmed.
+         *
+         * @param maxMessages maximum number of recent context messages to persist
+         * @return this builder instance
+         */
+        public Builder maxPersistedContextMessages(int maxMessages) {
+            if (maxMessages < 0) {
+                throw new IllegalArgumentException(
+                        "maxPersistedContextMessages must be >= 0: " + maxMessages);
+            }
+            this.maxPersistedContextMessages = maxMessages;
             return this;
         }
 
