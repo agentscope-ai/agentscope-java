@@ -18,9 +18,27 @@ package io.agentscope.core.agui.adapter.strategy;
 import io.agentscope.core.event.AgentEvent;
 import java.util.Set;
 
+/**
+ * Extension point for converting AgentScope events to AG-UI protocol events.
+ *
+ * <p>Implementations declare the {@link AgentEvent} types they handle and emit AG-UI events through
+ * the provided {@link AguiStreamContext}. Custom converters can be registered through
+ * {@code AguiAdapterConfig} to extend or override built-in semantic mappings.
+ */
 public interface AgentEventConverter {
 
+    /**
+     * Return the AgentScope event types handled by this converter.
+     *
+     * @return supported AgentScope event types
+     */
     Set<Class<? extends AgentEvent>> eventTypes();
 
+    /**
+     * Convert a source AgentScope event by emitting AG-UI events to the stream context.
+     *
+     * @param event source AgentScope event
+     * @param context stream conversion context used to emit AG-UI events
+     */
     void convert(AgentEvent event, AguiStreamContext context);
 }

@@ -22,10 +22,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Default AG-UI base event properties enricher.
+ * AG-UI base event properties enricher that fills missing event timestamps.
+ *
+ * <p>This enricher preserves existing timestamps and raw event payloads. It does not create a base
+ * {@code rawEvent}; applications that want to expose raw source data should provide a custom
+ * {@link AguiEventEnricher}.
  */
 public class BaseEventPropertiesEnricher implements AguiEventEnricher {
 
+    /**
+     * Add a timestamp to each AG-UI event that does not already have one.
+     *
+     * @param source source AgentScope event, or {@code null} for framework-created events
+     * @param events AG-UI events to enrich
+     * @param context stream conversion context
+     * @return events with AG-UI base properties preserved or filled
+     */
     @Override
     public List<AguiEvent> enrich(
             AgentEvent source, List<AguiEvent> events, AguiStreamContext context) {

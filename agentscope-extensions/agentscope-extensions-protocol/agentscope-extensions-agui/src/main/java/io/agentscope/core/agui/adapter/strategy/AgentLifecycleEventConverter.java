@@ -33,6 +33,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Converts AgentScope lifecycle events to AG-UI run lifecycle events.
+ *
+ * <p>Agent start and end events are the authoritative source for normal AG-UI run lifecycle
+ * messages. Suspended tool results collected from agent results are emitted as AG-UI interrupt
+ * outcomes on run finish.
+ */
 final class AgentLifecycleEventConverter implements AgentEventConverter {
 
     @Override
@@ -44,6 +51,12 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                 ModelCallStartEvent.class);
     }
 
+    /**
+     * Convert AgentScope lifecycle events into AG-UI run started, run finished, or interrupt state.
+     *
+     * @param event source lifecycle event
+     * @param context stream conversion context
+     */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         if (event instanceof AgentStartEvent) {

@@ -19,13 +19,30 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import java.util.Set;
 
+/**
+ * Fallback converter that emits official AG-UI {@code RAW} events for unmapped AgentScope events.
+ *
+ * <p>The AG-UI raw event payload uses the protocol {@code event} and {@code source} fields. Base
+ * event properties such as {@code rawEvent} are left to configured enrichers.
+ */
 final class RawAgentEventConverter implements AgentEventConverter {
 
+    /**
+     * Return an empty type set because this converter is selected as the registry fallback.
+     *
+     * @return no explicitly registered event types
+     */
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
         return Set.of();
     }
 
+    /**
+     * Convert an unmapped AgentScope event into an AG-UI raw event.
+     *
+     * @param event source AgentScope event
+     * @param context stream conversion context
+     */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         context.emit(

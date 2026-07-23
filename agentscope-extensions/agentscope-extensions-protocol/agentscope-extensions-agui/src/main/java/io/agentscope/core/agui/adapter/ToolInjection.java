@@ -22,6 +22,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Scoped registration of AG-UI frontend tools into an AgentScope toolkit.
+ *
+ * <p>Frontend tool definitions are injected for one run and removed afterwards. If an injected tool
+ * temporarily replaced an existing tool with the same name, closing the scope restores the previous
+ * tool when the slot is empty.
+ */
 final class ToolInjection {
 
     private static final ToolInjection EMPTY =
@@ -31,6 +38,13 @@ final class ToolInjection {
     private final List<SchemaOnlyTool> registeredTools;
     private final Map<String, AgentTool> previousTools;
 
+    /**
+     * Create a scoped tool injection.
+     *
+     * @param toolkit target toolkit, or {@code null} for an empty scope
+     * @param registeredTools frontend schema-only tools registered for the run
+     * @param previousTools tools displaced by the frontend tools
+     */
     ToolInjection(
             Toolkit toolkit,
             List<SchemaOnlyTool> registeredTools,
@@ -40,10 +54,18 @@ final class ToolInjection {
         this.previousTools = previousTools;
     }
 
+    /**
+     * Return a no-op injection scope.
+     *
+     * @return empty tool injection
+     */
     static ToolInjection empty() {
         return EMPTY;
     }
 
+    /**
+     * Remove injected frontend tools and restore displaced toolkit entries.
+     */
     void close() {
         if (toolkit == null) {
             return;

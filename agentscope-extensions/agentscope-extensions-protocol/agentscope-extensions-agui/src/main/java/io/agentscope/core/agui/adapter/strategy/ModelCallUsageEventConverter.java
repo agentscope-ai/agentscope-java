@@ -22,6 +22,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Converts model call usage metadata into AG-UI custom token usage events.
+ *
+ * <p>The converter emits only when token usage output is enabled in {@code AguiAdapterConfig}. Each
+ * emitted event contains the current model-call delta and the cumulative usage accumulated in the
+ * stream context.
+ */
 final class ModelCallUsageEventConverter implements AgentEventConverter {
 
     @Override
@@ -29,6 +36,12 @@ final class ModelCallUsageEventConverter implements AgentEventConverter {
         return Set.of(ModelCallEndEvent.class);
     }
 
+    /**
+     * Emit a {@code token_usage} custom event for model call usage data when configured.
+     *
+     * @param event source model call end event
+     * @param context stream conversion context
+     */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         ModelCallEndEvent end = (ModelCallEndEvent) event;

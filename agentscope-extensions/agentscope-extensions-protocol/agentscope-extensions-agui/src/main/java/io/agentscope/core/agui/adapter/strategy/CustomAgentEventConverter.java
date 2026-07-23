@@ -20,6 +20,9 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.CustomEvent;
 import java.util.Set;
 
+/**
+ * Converts AgentScope custom events to AG-UI {@code CUSTOM} events.
+ */
 final class CustomAgentEventConverter implements AgentEventConverter {
 
     @Override
@@ -27,6 +30,12 @@ final class CustomAgentEventConverter implements AgentEventConverter {
         return Set.of(CustomEvent.class);
     }
 
+    /**
+     * Emit an AG-UI custom event with the source event name and value.
+     *
+     * @param event source custom event
+     * @param context stream conversion context
+     */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         CustomEvent customEvent = (CustomEvent) event;
