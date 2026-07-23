@@ -24,11 +24,28 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MessageUtilsToolTranscriptTest {
+
+    @Test
+    void returnsEmptyTranscriptForNullOrEmptyInput() {
+        assertTrue(MessageUtils.normalizeToolCallResults(null).isEmpty());
+        assertTrue(MessageUtils.normalizeToolCallResults(List.of()).isEmpty());
+    }
+
+    @Test
+    void skipsNullMessagesWithoutDroppingOtherTranscriptEntries() {
+        Msg userMessage = Msg.builder().role(MsgRole.USER).textContent("continue").build();
+
+        List<Msg> normalized =
+                MessageUtils.normalizeToolCallResults(Arrays.asList(null, userMessage));
+
+        assertEquals(List.of(userMessage), normalized);
+    }
 
     @Test
     void normalizesDeferredToolResultNextToOwningToolUse() {
@@ -64,6 +81,7 @@ class MessageUtilsToolTranscriptTest {
         ToolResultBlock result = normalized.get(1).getFirstContentBlock(ToolResultBlock.class);
         assertEquals("call-2", result.getId());
         assertEquals("search", result.getName());
+        assertEquals(ToolResultState.ERROR, result.getState());
         assertTrue(
                 result.getOutput().stream()
                         .filter(TextBlock.class::isInstance)
@@ -120,6 +138,31 @@ class MessageUtilsToolTranscriptTest {
         assertToolResult(normalized.get(2), "call-4b", ToolResultState.DENIED);
         assertEquals(MsgRole.USER, normalized.get(3).getRole());
         assertEquals(1, source.getContentBlocks(ToolResultBlock.class).size());
+    }
+
+    @Test
+    void retainsUnrelatedToolResultsAfterRelocatingMatchedResults() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call-5").name("search").input(Map.of()).build();
+        ToolResultBlock matchedResult =
+                ToolResultBlock.of("call-5", "search", TextBlock.builder().text("found").build())
+                        .withState(ToolResultState.SUCCESS);
+        ToolResultBlock unrelatedResult =
+                ToolResultBlock.of("call-6", "calculate", TextBlock.builder().text("42").build())
+                        .withState(ToolResultState.DENIED);
+
+        List<Msg> normalized =
+                MessageUtils.normalizeToolCallResults(
+                        List.of(
+                                Msg.builder().role(MsgRole.ASSISTANT).content(toolUse).build(),
+                                Msg.builder()
+                                        .role(MsgRole.TOOL)
+                                        .content(List.of(matchedResult, unrelatedResult))
+                                        .build()));
+
+        assertEquals(3, normalized.size());
+        assertToolResult(normalized.get(1), "call-5", ToolResultState.SUCCESS);
+        assertToolResult(normalized.get(2), "call-6", ToolResultState.DENIED);
     }
 
     private static void assertToolResult(Msg message, String id, ToolResultState state) {
