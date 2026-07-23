@@ -76,6 +76,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
+    private final boolean sessionPersistenceEnabled;
 
     /**
      * Process-wide per-isolation-key flush timestamps. Static so that the throttle window
@@ -109,7 +110,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 model,
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
-                IsolationScope.USER);
+                IsolationScope.USER,
+                true);
     }
 
     public MemoryFlushMiddleware(
@@ -117,7 +119,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger) {
-        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER);
+        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER, true);
     }
 
     public MemoryFlushMiddleware(
@@ -126,6 +128,16 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope) {
+        this(workspaceManager, model, flushPrompt, flushTrigger, isolationScope, true);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            boolean sessionPersistenceEnabled) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -133,6 +145,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.sessionPersistenceEnabled = sessionPersistenceEnabled;
     }
 
     @Override
@@ -187,18 +200,21 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         String agentId = agent.getName();
         String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-        Mono<Void> offloadMono =
-                Mono.fromRunnable(
-                                () ->
-                                        flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId))
-                        .then()
-                        .doOnSuccess(v -> log.debug("Message offload completed"))
-                        .onErrorResume(
-                                e -> {
-                                    log.warn("Message offload failed: {}", e.getMessage());
-                                    return Mono.empty();
-                                });
+        Mono<Void> offloadMono = Mono.empty();
+        if (sessionPersistenceEnabled) {
+            offloadMono =
+                    Mono.fromRunnable(
+                                    () ->
+                                            flushManager.offloadMessages(
+                                                    rc, messages, agentId, sessionId))
+                            .then()
+                            .doOnSuccess(v -> log.debug("Message offload completed"))
+                            .onErrorResume(
+                                    e -> {
+                                        log.warn("Message offload failed: {}", e.getMessage());
+                                        return Mono.empty();
+                                    });
+        }
 
         return flushMono.then(offloadMono);
     }

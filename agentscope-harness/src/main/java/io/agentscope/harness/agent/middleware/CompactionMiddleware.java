@@ -61,12 +61,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final boolean sessionPersistenceEnabled;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, true);
+    }
+
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            boolean sessionPersistenceEnabled) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.sessionPersistenceEnabled = sessionPersistenceEnabled;
     }
 
     @Override
@@ -103,7 +113,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
-                            new ConversationCompactor(model, flushManager);
+                            new ConversationCompactor(
+                                    model, flushManager, sessionPersistenceEnabled);
                     final Msg sys = systemMsg;
 
                     return compactor

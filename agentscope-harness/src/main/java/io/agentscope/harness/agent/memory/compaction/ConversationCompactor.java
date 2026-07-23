@@ -63,10 +63,17 @@ public class ConversationCompactor {
 
     private final Model model;
     private final MemoryFlushManager flushManager;
+    private final boolean sessionPersistenceEnabled;
 
     public ConversationCompactor(Model model, MemoryFlushManager flushManager) {
+        this(model, flushManager, true);
+    }
+
+    public ConversationCompactor(
+            Model model, MemoryFlushManager flushManager, boolean sessionPersistenceEnabled) {
         this.model = model;
         this.flushManager = flushManager;
+        this.sessionPersistenceEnabled = sessionPersistenceEnabled;
     }
 
     // -------------------------------------------------------------------------
@@ -146,7 +153,7 @@ public class ConversationCompactor {
         // If offload fails, we continue with null — the summary message falls back to the
         // simple format without a file reference.
         Mono<String> offloadStep;
-        if (config.isOffloadBeforeCompact()) {
+        if (sessionPersistenceEnabled && config.isOffloadBeforeCompact()) {
             offloadStep =
                     Mono.fromCallable(
                                     () -> {

@@ -51,6 +51,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -143,6 +144,84 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
         assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void defaultSessionPersistence_memoryFlushOffloadCreatesSessionFiles() throws Exception {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("assistant-done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .disableCompaction()
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("persisted").build()).block();
+
+        assertSessionFilesExist();
+    }
+
+    @Test
+    void disableSessionPersistence_memoryFlushOffloadDoesNotCreateSessionFiles() throws Exception {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("assistant-done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .disableCompaction()
+                        .disableSessionPersistence()
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("not-persisted").build())
+                .block();
+
+        assertNoSessionFiles();
+    }
+
+    @Test
+    void defaultSessionPersistence_compactionOffloadCreatesSessionFiles() throws Exception {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("summary"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
+                        .compaction(compactionThatAlwaysOffloads())
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("compacted").build()).block();
+
+        assertSessionFilesExist();
+    }
+
+    @Test
+    void disableSessionPersistence_compactionOffloadDoesNotCreateSessionFiles() throws Exception {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("summary"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
+                        .compaction(compactionThatAlwaysOffloads())
+                        .disableSessionPersistence()
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("not-compacted").build())
+                .block();
+
+        assertNoSessionFiles();
     }
 
     @Test
@@ -714,6 +793,108 @@ class HarnessAgentTest {
         }
     }
 
+    @Test
+    void remoteFilesystemSpec_doesNotCreateLocalIndexAndScansStore() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
+        InMemoryStore store = new InMemoryStore();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent-a")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new RemoteFilesystemSpec(store))
+                        .stateStore(mock(AgentStateStore.class))
+                        .build()) {
+            assertNull(
+                    agent.getWorkspaceManager().getIndex(),
+                    "remote mode should use store scans instead of a local workspace index");
+            assertFalse(
+                    Files.exists(workspace.resolve(".index/workspace.db")),
+                    "building a remote agent must not create a local SQLite database");
+
+            AbstractFilesystem filesystem = agent.getWorkspaceManager().getFilesystem();
+            assertTrue(
+                    filesystem
+                            .write(
+                                    RuntimeContext.empty(),
+                                    "/memory/remote-note.md",
+                                    "stored remotely")
+                            .isSuccess());
+            assertTrue(
+                    filesystem.ls(RuntimeContext.empty(), "/memory").entries().stream()
+                            .anyMatch(entry -> entry.path().endsWith("remote-note.md")),
+                    "ls should discover remote files via the store-scan fallback");
+            assertEquals(
+                    "stored remotely",
+                    filesystem
+                            .read(
+                                    RuntimeContext.empty(),
+                                    "/memory/remote-note.md",
+                                    0,
+                                    Integer.MAX_VALUE)
+                            .fileData()
+                            .content());
+        }
+    }
+
+    @Test
+    void remoteFilesystemSpec_doesNotCreateLocalSessionTranscripts() throws Exception {
+        Files.createDirectories(workspace);
+        AgentStateStore stateStore = mock(AgentStateStore.class);
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent-a")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new RemoteFilesystemSpec(new InMemoryStore()))
+                        .stateStore(stateStore)
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .disableCompaction()
+                        .build()) {
+            agent.call(userText("hi"), RuntimeContext.builder().sessionId("remote").build())
+                    .block();
+
+            assertNoSessionFiles();
+        }
+    }
+
+    @Test
+    void remoteFilesystemSpec_disablesLocalSessionTranscriptsForSubagents() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("agent-a")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new RemoteFilesystemSpec(new InMemoryStore()))
+                        .stateStore(mock(AgentStateStore.class))
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .disableCompaction();
+
+        HarnessAgent subagent =
+                (HarnessAgent)
+                        builder.buildSubagentEntries(workspace).stream()
+                                .filter(entry -> "general-purpose".equals(entry.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        subagent.call(userText("hi"), RuntimeContext.builder().sessionId("remote-child").build())
+                .block();
+
+        assertNoSessionFiles();
+    }
+
     private static Msg userText(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -1232,6 +1413,56 @@ class HarnessAgentTest {
         assertTrue(
                 decl.getInlineAgentsBody().contains("inline sysPrompt"),
                 "body should be inline agents body when no workspace.path");
+    }
+
+    private static CompactionConfig compactionThatAlwaysOffloads() {
+        return CompactionConfig.builder()
+                .triggerMessages(1)
+                .triggerTokens(Integer.MAX_VALUE)
+                .keepMessages(0)
+                .keepTokens(0)
+                .flushBeforeCompact(false)
+                .offloadBeforeCompact(true)
+                .build();
+    }
+
+    private void assertSessionFilesExist() throws IOException {
+        try (var files = Files.walk(workspace)) {
+            List<Path> sessionFiles =
+                    files.filter(Files::isRegularFile)
+                            .filter(HarnessAgentTest::isSessionFile)
+                            .toList();
+            assertTrue(
+                    sessionFiles.stream()
+                            .anyMatch(
+                                    path -> {
+                                        String filename = path.getFileName().toString();
+                                        return filename.endsWith(".jsonl")
+                                                && !filename.endsWith(".log.jsonl");
+                                    }));
+            assertTrue(
+                    sessionFiles.stream()
+                            .anyMatch(
+                                    path -> path.getFileName().toString().endsWith(".log.jsonl")));
+        }
+    }
+
+    private void assertNoSessionFiles() throws IOException {
+        try (var files = Files.walk(workspace)) {
+            List<Path> sessionFiles =
+                    files.filter(Files::isRegularFile)
+                            .filter(HarnessAgentTest::isSessionFile)
+                            .toList();
+            assertTrue(sessionFiles.isEmpty(), "session persistence created " + sessionFiles);
+        }
+    }
+
+    private static boolean isSessionFile(Path path) {
+        String filename = path.getFileName().toString();
+        Path parent = path.getParent();
+        return parent != null
+                && WorkspaceConstants.SESSIONS_DIR.equals(parent.getFileName().toString())
+                && filename.endsWith(".jsonl");
     }
 
     private static Model stubModel(String assistantText) {
