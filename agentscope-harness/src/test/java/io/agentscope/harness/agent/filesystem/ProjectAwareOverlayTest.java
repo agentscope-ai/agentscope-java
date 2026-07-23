@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
@@ -258,19 +259,46 @@ class ProjectAwareOverlayTest {
         assertShellWorkingDirectory(IsolationScope.GLOBAL, null);
     }
 
+    @Test
+    void execute_withoutNamespaceOrProjectDirectory_startsInWorkspace() throws Exception {
+        LocalFilesystemWithShell shell = new LocalFilesystemWithShell(workspace);
+
+        ExecuteResponse response =
+                shell.execute(RuntimeContext.empty(), printWorkingDirectoryCommand(), 10);
+
+        assertEquals(0, response.exitCode());
+        assertEquals(
+                workspace.toRealPath().toString(),
+                Path.of(response.output().strip()).toRealPath().toString());
+    }
+
+    @Test
+    void execute_nullNamespace_fallsBackToProjectDirectory() throws Exception {
+        LocalFilesystemWithShell shell = createShell(context -> null, project);
+
+        ExecuteResponse response =
+                shell.execute(RuntimeContext.empty(), printWorkingDirectoryCommand(), 10);
+
+        assertEquals(0, response.exitCode());
+        assertEquals(
+                project.toRealPath().toString(),
+                Path.of(response.output().strip()).toRealPath().toString());
+    }
+
+    @Test
+    void execute_namespaceDirectoryCreationFailure_returnsError() throws Exception {
+        Files.writeString(workspace.resolve("blocked"), "not a directory");
+        LocalFilesystemWithShell shell = createShell(context -> List.of("blocked"), project);
+
+        ExecuteResponse response = shell.execute(RuntimeContext.empty(), "echo hello", 10);
+
+        assertEquals(1, response.exitCode());
+        assertTrue(response.output().startsWith("Error executing command (IOException):"));
+    }
+
     private void assertShellWorkingDirectory(IsolationScope isolationScope, String namespace)
             throws Exception {
-        LocalFilesystemWithShell shell =
-                new LocalFilesystemWithShell(
-                        workspace,
-                        LocalFsMode.ROOTED,
-                        PathPolicy.of(project, workspace),
-                        120,
-                        100_000,
-                        null,
-                        false,
-                        isolationScope.toNamespaceFactory(),
-                        project);
+        LocalFilesystemWithShell shell = createShell(isolationScope.toNamespaceFactory(), project);
         RuntimeContext context =
                 RuntimeContext.builder().userId("alice").sessionId("session-1").build();
 
@@ -281,6 +309,19 @@ class ProjectAwareOverlayTest {
         assertEquals(
                 expected.toRealPath().toString(),
                 Path.of(response.output().strip()).toRealPath().toString());
+    }
+
+    private LocalFilesystemWithShell createShell(NamespaceFactory namespaceFactory, Path shellCwd) {
+        return new LocalFilesystemWithShell(
+                workspace,
+                LocalFsMode.ROOTED,
+                PathPolicy.of(project, workspace),
+                120,
+                100_000,
+                null,
+                false,
+                namespaceFactory,
+                shellCwd);
     }
 
     private static String printWorkingDirectoryCommand() {
