@@ -3815,7 +3815,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return !textBlocks.isEmpty()
                     && textBlocks.stream()
                             .map(TextBlock::getText)
-                            .noneMatch(text -> text != null && !text.isBlank());
+                            .noneMatch(text -> !text.isBlank());
         }
 
         /**
