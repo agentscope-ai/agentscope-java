@@ -9537,7 +9537,7 @@ Independent from compaction. When a `tool_call` return text exceeds the threshol
 |-----------|---------|-------------|
 | `maxResultChars` | `80_000` | Evict if exceeded |
 | `previewChars` | `2_000` | Number of head and tail preview characters |
-| `evictionPath` | `/large_tool_results` | Root path for evicted files |
+| `evictionPath` | `large_tool_results` | Workspace-relative root path for evicted files |
 | `excludedToolNames` | Built-in set (includes `read_file` etc.) | Tools excluded from eviction |
 
 ```java
