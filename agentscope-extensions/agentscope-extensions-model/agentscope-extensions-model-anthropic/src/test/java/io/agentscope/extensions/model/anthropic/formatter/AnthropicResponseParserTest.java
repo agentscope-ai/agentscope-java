@@ -26,7 +26,9 @@ import static org.mockito.Mockito.when;
 
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.MessageDeltaUsage;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
+import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.Usage;
@@ -291,6 +293,49 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
         // MessageStart events should be filtered out (empty content)
         StepVerifier.create(responseFlux).verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsReportsUsage() {
+        // message_start carries the input tokens, message_delta the output tokens; the caller
+        // should end up with a response reporting both.
+        RawMessageStreamEvent startEvent = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(startEvent.isMessageStart()).thenReturn(true);
+        when(startEvent.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenReturn("msg_stream_123");
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(5L);
+
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(10L);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(startEvent, deltaEvent), startTime);
+
+        // message_start is still filtered out (no content, no usage of its own); the usage-bearing
+        // message_delta must survive the filter and report both token counts.
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            ChatUsage responseUsage = response.getUsage();
+                            assertNotNull(responseUsage);
+                            assertEquals(5, responseUsage.getInputTokens());
+                            assertEquals(10, responseUsage.getOutputTokens());
+                        })
+                .verifyComplete();
     }
 
     @Test
