@@ -393,7 +393,9 @@ public class GitSkillRepository implements AgentSkillRepository {
         String normalized = url.endsWith(".git") ? url.substring(0, url.length() - 4) : url;
 
         // Handle SSH format: git@host:owner/repo
-        if (normalized.contains("@") && normalized.contains(":")) {
+        // Exclude protocol-based URLs (containing ://) which may have
+        // credentials with @ and :, e.g. https://user:pass@host/repo.git
+        if (normalized.contains("@") && normalized.contains(":") && !normalized.contains("://")) {
             int colonIndex = normalized.lastIndexOf(':');
             return normalized.substring(colonIndex + 1);
         }

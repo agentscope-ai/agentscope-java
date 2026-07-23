@@ -418,6 +418,73 @@ class GitSkillRepositoryTest {
         assertEquals(customSource, source);
     }
 
+    // ==================== Source Identifier Extraction Tests ====================
+
+    @Test
+    @DisplayName("SSH URL: git@host:owner/repo.git → git-owner/repo")
+    void testGetSource_SshUrl() {
+        repository = new GitSkillRepository("git@github.com:owner/repo.git");
+        assertEquals("git-owner/repo", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("SSH URL with branch: git@host:owner/repo.git (develop) → git-owner/repo@develop")
+    void testGetSource_SshUrlWithBranch() {
+        repository = new GitSkillRepository("git@github.com:owner/repo.git", "develop");
+        assertEquals("git-owner/repo@develop", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("HTTPS URL: https://host/owner/repo.git → git-owner/repo")
+    void testGetSource_HttpsUrl() {
+        repository = new GitSkillRepository("https://github.com/owner/repo.git");
+        assertEquals("git-owner/repo", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("HTTPS URL with credentials (contains @ and :) does not enter SSH branch")
+    void testGetSource_HttpsWithCredentials() {
+        repository =
+                new GitSkillRepository(
+                        "https://oauth2:cloud.ketanyun.cn:3ac8df42@cloud.ketanyun.cn"
+                                + "/copilot-plugins/agent-skill/default/minimax-docx.git");
+        String source = repository.getSource();
+        // Must NOT be truncated to password fragment; should extract path after host
+        assertFalse(source.contains("@"), "Source should not contain @ from credentials");
+        assertFalse(
+                source.contains("3ac8df42"),
+                "Source should not contain password fragment from credentials");
+    }
+
+    @Test
+    @DisplayName("Multi-level HTTPS URL: https://host/a/b/c.git → git-a/b/c")
+    void testGetSource_MultiLevelHttpsUrl() {
+        repository = new GitSkillRepository("https://gitlab.com/group/subgroup/project.git");
+        assertEquals("git-group/subgroup/project", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("File URL: file:///path/to/repo.git → git-path/to/repo")
+    void testGetSource_FileUrl() {
+        repository = new GitSkillRepository("file:///tmp/test-repo.git");
+        // file:// has an empty host, so the path after the third / is extracted
+        assertEquals("git-tmp/test-repo", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("URL without .git suffix: https://host/owner/repo → git-owner/repo")
+    void testGetSource_NoDotGitSuffix() {
+        repository = new GitSkillRepository("https://github.com/owner/repo");
+        assertEquals("git-owner/repo", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("SSH URL without .git suffix: git@host:owner/repo → git-owner/repo")
+    void testGetSource_SshNoDotGit() {
+        repository = new GitSkillRepository("git@github.com:owner/repo");
+        assertEquals("git-owner/repo", repository.getSource());
+    }
+
     // ==================== Skills Root Tests ====================
 
     @Test
