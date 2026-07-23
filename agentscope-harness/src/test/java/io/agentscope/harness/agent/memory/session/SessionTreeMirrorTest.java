@@ -35,6 +35,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -238,6 +240,52 @@ class SessionTreeMirrorTest {
             releaseUpload.countDown();
             closer.shutdownNow();
         }
+    }
+
+    @Test
+    void awaitPendingMirrors_restoresInterruptAfterInFlightUploadCompletes() throws Exception {
+        AbstractFilesystem fs = mock(AbstractFilesystem.class);
+        CountDownLatch uploadStarted = new CountDownLatch(1);
+        CountDownLatch releaseUpload = new CountDownLatch(1);
+        doAnswer(
+                        invocation -> {
+                            uploadStarted.countDown();
+                            releaseUpload.await();
+                            return null;
+                        })
+                .when(fs)
+                .uploadFiles(any(), any());
+        Path context = workspace.resolve("agents/agent-a/sessions/interrupted.jsonl");
+        SessionTree tree = new SessionTree(context, workspace, fs);
+        tree.append(new SessionEntry.MessageEntry(null, null, null, "USER", "hi", null));
+        tree.flush();
+        assertTrue(uploadStarted.await(5, TimeUnit.SECONDS));
+
+        ExecutorService closer = Executors.newSingleThreadExecutor();
+        AtomicReference<Thread> worker = new AtomicReference<>();
+        AtomicBoolean interruptedOnReturn = new AtomicBoolean();
+        CountDownLatch returned = new CountDownLatch(1);
+        try {
+            Future<?> barrier =
+                    closer.submit(
+                            () -> {
+                                worker.set(Thread.currentThread());
+                                SessionTree.awaitPendingMirrors();
+                                interruptedOnReturn.set(Thread.currentThread().isInterrupted());
+                                returned.countDown();
+                            });
+            while (worker.get() == null) {
+                Thread.yield();
+            }
+            worker.get().interrupt();
+            releaseUpload.countDown();
+            assertTrue(returned.await(5, TimeUnit.SECONDS));
+            barrier.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseUpload.countDown();
+            closer.shutdownNow();
+        }
+        assertTrue(interruptedOnReturn.get(), "await must restore the interrupt status");
     }
 
     // -----------------------------------------------------------------------

@@ -34,7 +34,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -101,12 +101,12 @@ public class SessionTree {
         try {
             while (true) {
                 try {
-                    MIRROR_EXECUTOR.submit(() -> {}).get();
+                    CountDownLatch barrier = new CountDownLatch(1);
+                    MIRROR_EXECUTOR.execute(barrier::countDown);
+                    barrier.await();
                     return;
                 } catch (InterruptedException e) {
                     interrupted = true;
-                } catch (ExecutionException e) {
-                    throw new IllegalStateException("Failed to await session tree mirrors", e);
                 }
             }
         } finally {
