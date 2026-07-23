@@ -18,6 +18,7 @@ package io.agentscope.core.state;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.legacy.ToolkitState;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Utility for loading v1 session data into the 2.0 {@link AgentState} format.
@@ -47,21 +48,39 @@ public final class LegacyStateLoader {
      */
     public static AgentState loadFromLegacySession(
             AgentStateStore stateStore, String userId, String sessionId) {
+        return loadFromLegacySessionWithPresence(stateStore, userId, sessionId).state();
+    }
+
+    /**
+     * Loads legacy state without discarding the presence of the singleton tool-group key.
+     *
+     * <p>The presence bit is required because an explicitly persisted {@code
+     * toolkit_activeGroups=[]} has different semantics from a missing key even though both produce
+     * an empty {@link ToolContextState}.
+     */
+    public static LegacyLoadResult loadFromLegacySessionWithPresence(
+            AgentStateStore stateStore, String userId, String sessionId) {
         List<Msg> msgs = stateStore.getList(userId, sessionId, "memory_messages", Msg.class);
+        Optional<ToolkitState> toolkitState =
+                stateStore.get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class);
 
         AgentState.Builder builder = AgentState.builder().context(msgs);
 
-        stateStore
-                .get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class)
-                .ifPresent(
-                        toolkitState -> {
-                            ToolContextState.Builder tc = ToolContextState.builder();
-                            for (String group : toolkitState.activeGroups()) {
-                                tc.addActivatedGroup(group);
-                            }
-                            builder.toolContext(tc.build());
-                        });
+        toolkitState.ifPresent(
+                value -> {
+                    ToolContextState.Builder tc = ToolContextState.builder();
+                    for (String group : value.activeGroups()) {
+                        tc.addActivatedGroup(group);
+                    }
+                    builder.toolContext(tc.build());
+                });
 
-        return builder.build();
+        return new LegacyLoadResult(builder.build(), !msgs.isEmpty() || toolkitState.isPresent());
     }
+
+    /**
+     * Result of reading the v1 session keys. {@code found} is true for non-empty legacy messages or
+     * a present tool-group key, including a tool-group value whose list is explicitly empty.
+     */
+    public record LegacyLoadResult(AgentState state, boolean found) {}
 }
