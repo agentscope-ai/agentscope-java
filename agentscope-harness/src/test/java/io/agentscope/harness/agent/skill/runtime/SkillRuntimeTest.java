@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -36,6 +37,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -234,12 +240,13 @@ class SkillRuntimeTest {
         @Test
         void returnsSkillMarkdownForSkillMdPath() {
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("alpha").build();
             HarnessSkillEntry e =
                     HarnessSkillEntry.of(
                             skillWith("alpha", "Alpha description.", "# Body line\n", null), null);
-            r.install(SkillCatalog.of(List.of(e)), null);
+            r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            ToolResultBlock res = invoke(r, "alpha_workspace", "SKILL.md");
+            ToolResultBlock res = invoke(r, ctx, "alpha_workspace", "SKILL.md");
             String text = textOf(res);
             assertTrue(text.contains("Successfully loaded skill: alpha_workspace"));
             assertTrue(text.contains("# Body line"));
@@ -248,14 +255,15 @@ class SkillRuntimeTest {
         @Test
         void inMemoryResourceHitsBeforeLazyFallback() {
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("alpha").build();
             Map<String, String> mem = new HashMap<>();
             mem.put("scripts/run.py", "in-memory-body");
             SkillResources lazy = recording(Map.of("scripts/run.py", "lazy-body"));
             HarnessSkillEntry e =
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", mem), lazy);
-            r.install(SkillCatalog.of(List.of(e)), null);
+            r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String text = textOf(invoke(r, "alpha_workspace", "scripts/run.py"));
+            String text = textOf(invoke(r, ctx, "alpha_workspace", "scripts/run.py"));
             assertTrue(text.contains("in-memory-body"));
             assertFalse(text.contains("lazy-body"));
         }
@@ -263,25 +271,27 @@ class SkillRuntimeTest {
         @Test
         void lazyFallbackUsedWhenInMemoryMisses() {
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("alpha").build();
             SkillResources lazy = recording(Map.of("references/guide.md", "from-fs"));
             HarnessSkillEntry e =
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", null), lazy);
-            r.install(SkillCatalog.of(List.of(e)), null);
+            r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String text = textOf(invoke(r, "alpha_workspace", "references/guide.md"));
+            String text = textOf(invoke(r, ctx, "alpha_workspace", "references/guide.md"));
             assertTrue(text.contains("from-fs"));
         }
 
         @Test
         void notFoundEnumeratesBothSources() {
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("alpha").build();
             Map<String, String> mem = Map.of("references/a.md", "x");
             SkillResources lazy = recording(Map.of("scripts/b.py", "y"));
             HarnessSkillEntry e =
                     HarnessSkillEntry.of(skillWith("alpha", "Alpha desc.", "# body", mem), lazy);
-            r.install(SkillCatalog.of(List.of(e)), null);
+            r.install(SkillCatalog.of(List.of(e)), ctx, null);
 
-            String err = errorOf(invoke(r, "alpha_workspace", "does-not-exist"));
+            String err = errorOf(invoke(r, ctx, "alpha_workspace", "does-not-exist"));
             assertTrue(err.contains("Resource not found"));
             assertTrue(err.contains("SKILL.md"));
             assertTrue(err.contains("references/a.md"));
@@ -291,26 +301,36 @@ class SkillRuntimeTest {
         @Test
         void unknownSkillIdReturnsError() {
             SkillRuntime r = new SkillRuntime();
-            r.install(SkillCatalog.empty(), null);
-            String err = errorOf(invoke(r, "ghost_x", "SKILL.md"));
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("empty").build();
+            r.install(SkillCatalog.empty(), ctx, null);
+            String err = errorOf(invoke(r, ctx, "ghost_x", "SKILL.md"));
             assertTrue(err.contains("Skill not found"));
         }
 
         @Test
         void missingParametersReturnsError() {
             SkillRuntime r = new SkillRuntime();
-            r.install(SkillCatalog.empty(), null);
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("empty").build();
+            r.install(SkillCatalog.empty(), ctx, null);
             String err1 =
                     errorOf(
                             r.loadTool()
-                                    .callAsync(ToolCallParam.builder().input(Map.of()).build())
+                                    .callAsync(
+                                            ToolCallParam.builder()
+                                                    .runtimeContext(ctx)
+                                                    .input(Map.of())
+                                                    .build())
                                     .block());
             assertTrue(err1.contains("skillId"));
         }
 
-        private ToolResultBlock invoke(SkillRuntime r, String skillId, String path) {
+        private ToolResultBlock invoke(
+                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
             ToolCallParam p =
-                    ToolCallParam.builder().input(Map.of("skillId", skillId, "path", path)).build();
+                    ToolCallParam.builder()
+                            .runtimeContext(ctx)
+                            .input(Map.of("skillId", skillId, "path", path))
+                            .build();
             return r.loadTool().callAsync(p).block();
         }
     }
@@ -323,30 +343,147 @@ class SkillRuntimeTest {
     class RuntimeLifecycle {
 
         @Test
-        void firstInstallRegistersToolThenIdempotent() {
+        void firstInstallRegistersUngroupedToolVisibleToPersistedEmptyGroupState() {
             Toolkit tk = new Toolkit();
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("lifecycle").build();
             assertNull(tk.getTool(SkillLoadTool.TOOL_NAME));
-            r.install(SkillCatalog.empty(), tk);
+            r.install(SkillCatalog.empty(), ctx, tk);
             assertNotNull(tk.getTool(SkillLoadTool.TOOL_NAME));
+            assertTrue(tk.getActiveGroups().isEmpty());
+            assertTrue(
+                    tk.getToolSchemas(List.of()).stream()
+                            .anyMatch(schema -> SkillLoadTool.TOOL_NAME.equals(schema.getName())));
             // Second install must not throw or replace with a new instance.
-            r.install(SkillCatalog.empty(), tk);
+            r.install(SkillCatalog.empty(), ctx, tk);
             assertSame(r.loadTool(), tk.getTool(SkillLoadTool.TOOL_NAME));
         }
 
         @Test
-        void catalogSwapVisibleViaToolWithoutReRegistering() {
+        void catalogsRemainIsolatedByRuntimeContextWithoutReRegistering() {
             Toolkit tk = new Toolkit();
             SkillRuntime r = new SkillRuntime();
+            RuntimeContext firstCtx = RuntimeContext.builder().sessionId("first").build();
+            RuntimeContext secondCtx = RuntimeContext.builder().sessionId("second").build();
             HarnessSkillEntry first = HarnessSkillEntry.of(skill("first", "src"), null);
-            r.install(SkillCatalog.of(List.of(first)), tk);
-            assertEquals(List.of("first_src"), r.currentCatalog().ids());
+            r.install(SkillCatalog.of(List.of(first)), firstCtx, tk);
 
             HarnessSkillEntry second = HarnessSkillEntry.of(skill("second", "src"), null);
-            r.install(SkillCatalog.of(List.of(second)), tk);
-            assertEquals(List.of("second_src"), r.currentCatalog().ids());
-            // Same instance still registered.
+            r.install(SkillCatalog.of(List.of(second)), secondCtx, tk);
+
+            assertEquals(List.of("first_src"), r.currentCatalog(firstCtx).ids());
+            assertEquals(List.of("second_src"), r.currentCatalog(secondCtx).ids());
+            assertTrue(
+                    textOf(invoke(r, firstCtx, "first_src", "SKILL.md"))
+                            .contains("Successfully loaded skill"));
+            assertTrue(
+                    errorOf(invoke(r, firstCtx, "second_src", "SKILL.md")).contains("not found"));
+            assertTrue(
+                    textOf(invoke(r, secondCtx, "second_src", "SKILL.md"))
+                            .contains("Successfully loaded skill"));
+            assertTrue(
+                    errorOf(invoke(r, secondCtx, "first_src", "SKILL.md")).contains("not found"));
+
+            // Both contexts use the same stateless registered tool instance.
             assertSame(r.loadTool(), tk.getTool(SkillLoadTool.TOOL_NAME));
+        }
+
+        @Test
+        void concurrentSessionsCannotLoadEachOthersSkills() throws Exception {
+            SkillRuntime r = new SkillRuntime();
+            RuntimeContext firstCtx = RuntimeContext.builder().sessionId("first").build();
+            RuntimeContext secondCtx = RuntimeContext.builder().sessionId("second").build();
+            r.install(
+                    SkillCatalog.of(List.of(HarnessSkillEntry.of(skill("first", "src"), null))),
+                    firstCtx,
+                    null);
+            r.install(
+                    SkillCatalog.of(List.of(HarnessSkillEntry.of(skill("second", "src"), null))),
+                    secondCtx,
+                    null);
+
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            try {
+                Future<Boolean> first =
+                        executor.submit(
+                                () ->
+                                        textOf(invoke(r, firstCtx, "first_src", "SKILL.md"))
+                                                        .contains("Successfully loaded skill")
+                                                && errorOf(
+                                                                invoke(
+                                                                        r,
+                                                                        firstCtx,
+                                                                        "second_src",
+                                                                        "SKILL.md"))
+                                                        .contains("not found"));
+                Future<Boolean> second =
+                        executor.submit(
+                                () ->
+                                        textOf(invoke(r, secondCtx, "second_src", "SKILL.md"))
+                                                        .contains("Successfully loaded skill")
+                                                && errorOf(
+                                                                invoke(
+                                                                        r,
+                                                                        secondCtx,
+                                                                        "first_src",
+                                                                        "SKILL.md"))
+                                                        .contains("not found"));
+
+                assertTrue(first.get(5, TimeUnit.SECONDS));
+                assertTrue(second.get(5, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+
+        @Test
+        void deprecatedRuntimeApiRemainsFunctionalWithoutLeakingIntoScopedCalls() {
+            SkillRuntime r = new SkillRuntime();
+            Toolkit tk = new Toolkit();
+            HarnessSkillEntry legacy = HarnessSkillEntry.of(skill("legacy", "src"), null);
+
+            r.install(SkillCatalog.of(List.of(legacy)), tk);
+
+            assertEquals(List.of("legacy_src"), r.currentCatalog().ids());
+            assertTrue(
+                    textOf(invoke(r, null, "legacy_src", "SKILL.md"))
+                            .contains("Successfully loaded skill"));
+            assertTrue(
+                    errorOf(invoke(r, RuntimeContext.empty(), "legacy_src", "SKILL.md"))
+                            .contains("not found"));
+        }
+
+        @Test
+        void deprecatedLoadToolConstructorRemainsContextFreeOnly() {
+            HarnessSkillEntry legacy = HarnessSkillEntry.of(skill("legacy", "src"), null);
+            AtomicReference<SkillCatalog> ref =
+                    new AtomicReference<>(SkillCatalog.of(List.of(legacy)));
+            SkillLoadTool tool = new SkillLoadTool(ref);
+            Map<String, Object> input = Map.of("skillId", "legacy_src", "path", "SKILL.md");
+
+            ToolResultBlock contextFree =
+                    tool.callAsync(ToolCallParam.builder().input(input).build()).block();
+            ToolResultBlock contextScoped =
+                    tool.callAsync(
+                                    ToolCallParam.builder()
+                                            .runtimeContext(RuntimeContext.empty())
+                                            .input(input)
+                                            .build())
+                            .block();
+
+            assertTrue(textOf(contextFree).contains("Successfully loaded skill"));
+            assertTrue(errorOf(contextScoped).contains("not found"));
+        }
+
+        private ToolResultBlock invoke(
+                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
+            return r.loadTool()
+                    .callAsync(
+                            ToolCallParam.builder()
+                                    .runtimeContext(ctx)
+                                    .input(Map.of("skillId", skillId, "path", path))
+                                    .build())
+                    .block();
         }
     }
 
