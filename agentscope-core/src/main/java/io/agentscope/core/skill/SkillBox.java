@@ -383,7 +383,7 @@ public class SkillBox {
         private Toolkit toolkit;
         private AgentSkill skill;
         private Object toolObject;
-        private AgentTool agentTool;
+        private final List<AgentTool> agentTools = new ArrayList<>();
         private McpClientWrapper mcpClientWrapper;
         private SubAgentProvider<?> subAgentProvider;
         private SubAgentConfig subAgentConfig;
@@ -424,13 +424,15 @@ public class SkillBox {
         }
 
         /**
-         * Set the AgentTool instance to register.
+         * Add an AgentTool instance to register. May be called multiple times to bind several
+         * tools to the same skill — every tool is bound into the skill's gated tool group
+         * (previously each call overwrote the previous one, so only the last tool was bound).
          *
          * @param agentTool The AgentTool instance
          * @return This builder for chaining
          */
         public SkillRegistration agentTool(AgentTool agentTool) {
-            this.agentTool = agentTool;
+            this.agentTools.add(agentTool);
             return this;
         }
 
@@ -511,7 +513,7 @@ public class SkillBox {
          */
         public SkillRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
             if (this.toolObject != null
-                    || this.agentTool != null
+                    || !this.agentTools.isEmpty()
                     || this.mcpClientWrapper != null) {
                 throw new IllegalStateException(
                         "Cannot set multiple registration types. Use only one of: tool(),"
@@ -593,7 +595,7 @@ public class SkillBox {
             skillBox.registerSkill(skill);
 
             if (toolObject != null
-                    || agentTool != null
+                    || !agentTools.isEmpty()
                     || mcpClientWrapper != null
                     || subAgentProvider != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
@@ -604,17 +606,48 @@ public class SkillBox {
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
-                toolkit.registration()
-                        .group(skillToolGroup)
-                        .presetParameters(presetParameters)
-                        .extendedModel(extendedModel)
-                        .enableTools(enableTools)
-                        .disableTools(disableTools)
-                        .agentTool(agentTool)
-                        .tool(toolObject)
-                        .mcpClient(mcpClientWrapper)
-                        .subAgent(subAgentProvider, subAgentConfig)
-                        .apply();
+                // Toolkit.ToolRegistration 每次只能注册一个工具（exactly-one 校验），
+                // 多 tool 的 skill 必须逐个独立注册，否则只有最后一个生效
+                for (AgentTool tool : agentTools) {
+                    toolkit.registration()
+                            .group(skillToolGroup)
+                            .presetParameters(presetParameters)
+                            .extendedModel(extendedModel)
+                            .enableTools(enableTools)
+                            .disableTools(disableTools)
+                            .agentTool(tool)
+                            .apply();
+                }
+                if (toolObject != null) {
+                    toolkit.registration()
+                            .group(skillToolGroup)
+                            .presetParameters(presetParameters)
+                            .extendedModel(extendedModel)
+                            .enableTools(enableTools)
+                            .disableTools(disableTools)
+                            .tool(toolObject)
+                            .apply();
+                }
+                if (mcpClientWrapper != null) {
+                    toolkit.registration()
+                            .group(skillToolGroup)
+                            .presetParameters(presetParameters)
+                            .extendedModel(extendedModel)
+                            .enableTools(enableTools)
+                            .disableTools(disableTools)
+                            .mcpClient(mcpClientWrapper)
+                            .apply();
+                }
+                if (subAgentProvider != null) {
+                    toolkit.registration()
+                            .group(skillToolGroup)
+                            .presetParameters(presetParameters)
+                            .extendedModel(extendedModel)
+                            .enableTools(enableTools)
+                            .disableTools(disableTools)
+                            .subAgent(subAgentProvider, subAgentConfig)
+                            .apply();
+                }
             }
         }
     }
