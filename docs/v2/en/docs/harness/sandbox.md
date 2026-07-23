@@ -203,15 +203,14 @@ The image must provide:
 | Text/search | `sed`, `grep` (with `-rHnF`, `--include`), `find` | `read_file` pagination, `grep_files`, `glob_files` |
 | Metadata | GNU-style `stat -c` (not BSD `stat -f`) | `list_files`, `glob_files` |
 | Archive/encoding | `tar`, `base64` (encode + `-d` decode) | snapshot persist/hydrate, file upload/download |
-| Interpreter | `python3` | `edit_file` (exact string replacement) |
 | Filesystem | writable workspace root (default `/workspace`) | everything |
 
-Images based on `ubuntu:24.04` or `debian` qualify out of the box (`python3` may need installing); `alpine` (BusyBox `stat` / `grep` behave differently) and distroless images do **not**.
+Images based on `ubuntu:24.04` or `debian` qualify out of the box; `alpine` (BusyBox `stat` / `grep` behave differently) and distroless images do **not**.
 
 Quick conformance check (run inside the image; all must succeed):
 
 ```bash
-sh -c 'echo ok' && python3 --version && tar --version \
+sh -c 'echo ok' && tar --version \
   && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
 ```
 
