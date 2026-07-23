@@ -113,6 +113,14 @@ public class AgentSpawnTool {
      */
     public static final String CTX_EXPOSE_TO_USER = "agentscope.subagent.expose_to_user";
 
+    /**
+     * {@link RuntimeContext} string key for the immutable subagent registry selected by the
+     * current parent-agent invocation. {@link
+     * io.agentscope.harness.agent.middleware.SubagentsMiddleware} installs a namespace-scoped
+     * manager here so concurrent callers never overwrite each other's declarations.
+     */
+    public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
+
     private static final String BG_RESULT_TEMPLATE =
             """
             status: accepted
@@ -240,23 +248,24 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
+            if (manager.isPrimaryOnly(agentId)) {
                 return Mono.just(
                         "Error: agent_id '"
                                 + agentId
                                 + "' is PRIMARY-only and cannot be spawned as a subagent.");
             }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
             return Mono.just("Error: Unknown agent_id: " + agentId);
         }
         log.debug("agent_spawn resolved: agentId={}", agentId);
         Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(agentId);
+        var declOpt = manager.getDeclaration(agentId);
         boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
 
         String key;
@@ -353,8 +362,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
@@ -501,7 +509,8 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(spawned.agentId());
+        DefaultAgentManager manager = managerFor(runtimeContext);
+        var declOpt = manager.getDeclaration(spawned.agentId());
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -519,8 +528,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -592,6 +600,14 @@ public class AgentSpawnTool {
     //  Helpers
     // -----------------------------------------------------------------
 
+    private DefaultAgentManager managerFor(RuntimeContext runtimeContext) {
+        DefaultAgentManager scoped =
+                runtimeContext != null
+                        ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
+                        : null;
+        return scoped != null ? scoped : agentManager;
+    }
+
     /**
      * Returns a {@link Mono} that invokes the local subagent.
      *
@@ -621,6 +637,7 @@ public class AgentSpawnTool {
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
                 ctxView -> {
+                    DefaultAgentManager manager = managerFor(parentCtx);
                     // ── Path 1: streamEvents() — AgentEvent forwarding ──
                     Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
                     if (emitterOpt.isPresent()) {
@@ -633,8 +650,7 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
-                        return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
+                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
@@ -652,8 +668,7 @@ public class AgentSpawnTool {
                         SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
                         EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                        return agentManager
-                                .invokeAgentStream(
+                        return manager.invokeAgentStream(
                                         agent,
                                         sessionId,
                                         userId,
@@ -677,13 +692,13 @@ public class AgentSpawnTool {
                                 .switchIfEmpty(
                                         Mono.defer(
                                                 () ->
-                                                        agentManager.invokeAgent(
+                                                        manager.invokeAgent(
                                                                 agent, sessionId, userId, prompt,
                                                                 parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -901,7 +916,7 @@ public class AgentSpawnTool {
             return null;
         }
         Optional<Agent> agentOpt =
-                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+                managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
         if (agentOpt.isEmpty()) {
             log.warn(
                     "Failed to restore subagent from state: agentId={} not found in registry",
@@ -1124,6 +1139,7 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -1141,8 +1157,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,

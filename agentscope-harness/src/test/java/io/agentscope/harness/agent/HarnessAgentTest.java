@@ -480,6 +480,109 @@ class HarnessAgentTest {
     }
 
     @Test
+    void staticSubagentsMiddleware_loadsNamespacedMarkdownDeclarations() throws Exception {
+        Files.createDirectories(workspace.resolve("alice/subagents"));
+        Files.writeString(
+                workspace.resolve("alice/subagents/user-helper.md"),
+                """
+                ---
+                description: User-scoped subagent declaration
+                ---
+                You only reply OK.
+                """);
+
+        Model model = stubModel("done");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .disableDynamicSubagents()
+                        .build();
+
+        agent.call(userText("go"), RuntimeContext.builder().userId("alice").sessionId("s2").build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        String combined =
+                captor.getAllValues().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(s -> s.contains("## Subagents"))
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                combined.contains("`user-helper`"),
+                "static subagent reload must use the calling user's filesystem namespace");
+    }
+
+    @Test
+    void staticSubagentsMiddleware_keepsNamespacedDeclarationsCallScoped() throws Exception {
+        Files.createDirectories(workspace.resolve("alice/subagents"));
+        Files.createDirectories(workspace.resolve("bob/subagents"));
+        Files.writeString(
+                workspace.resolve("alice/subagents/alice-helper.md"),
+                """
+                ---
+                description: Alice-only subagent
+                ---
+                You only reply ALICE.
+                """);
+        Files.writeString(
+                workspace.resolve("bob/subagents/bob-helper.md"),
+                """
+                ---
+                description: Bob-only subagent
+                ---
+                You only reply BOB.
+                """);
+
+        RecordingModel model = new RecordingModel();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .disableDynamicSubagents()
+                        .build();
+
+        Mono<Msg> aliceCall =
+                agent.getDelegate()
+                        .call(
+                                List.of(userText("request-from-alice")),
+                                RuntimeContext.builder()
+                                        .userId("alice")
+                                        .sessionId("alice-s")
+                                        .build());
+        Mono<Msg> bobCall =
+                agent.getDelegate()
+                        .call(
+                                List.of(userText("request-from-bob")),
+                                RuntimeContext.builder().userId("bob").sessionId("bob-s").build());
+
+        aliceCall.block();
+        bobCall.block();
+
+        String alicePrompt =
+                model.inputs().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(input -> input.contains("request-from-alice"))
+                        .findFirst()
+                        .orElseThrow();
+        String bobPrompt =
+                model.inputs().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(input -> input.contains("request-from-bob"))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(alicePrompt.contains("`alice-helper`"));
+        assertFalse(alicePrompt.contains("`bob-helper`"));
+        assertTrue(bobPrompt.contains("`bob-helper`"));
+        assertFalse(bobPrompt.contains("`alice-helper`"));
+    }
+
+    @Test
     void subagentsDir_loadsMarkdownDeclarations() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# w\n");
@@ -1246,6 +1349,35 @@ class HarnessAgentTest {
                         "stop");
         when(model.stream(anyList(), any(), any())).thenReturn(Flux.just(chunk));
         return model;
+    }
+
+    private static final class RecordingModel implements Model {
+
+        private final List<List<Msg>> inputs = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public String getModelName() {
+            return "recording-model";
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                io.agentscope.core.model.GenerateOptions options) {
+            inputs.add(List.copyOf(messages));
+            return Flux.just(
+                    new ChatResponse(
+                            "recording-model",
+                            List.of(TextBlock.builder().text("done").build()),
+                            null,
+                            Map.of(),
+                            "stop"));
+        }
+
+        List<List<Msg>> inputs() {
+            return inputs;
+        }
     }
 
     private static AgentTool mockAgentTool(String name) {
