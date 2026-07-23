@@ -37,6 +37,7 @@ import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.event.AguiEvents;
 import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
@@ -212,6 +213,37 @@ class AguiAgentAdapterV2Test {
             assertEquals("user-1", context.getUserId());
             assertEquals("custom", context.get("subclass"));
             assertEquals("run-v2", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+        }
+
+        @Test
+        void testRunConvertsOfficialResumeToToolResultMessage() {
+            ReActAgent agent = mock(ReActAgent.class);
+            ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<RuntimeContext> contextCaptor =
+                    ArgumentCaptor.forClass(RuntimeContext.class);
+            when(agent.streamEvents(msgsCaptor.capture(), contextCaptor.capture()))
+                    .thenReturn(Flux.empty());
+            AguiResume resume =
+                    new AguiResume(
+                            "reply-1:tool-call-1",
+                            AguiResume.STATUS_RESOLVED,
+                            Map.of("approved", true));
+            RunAgentInput input =
+                    inputBuilder().messages(List.of()).resume(List.of(resume)).build();
+
+            new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                    .run(input)
+                    .collectList()
+                    .block();
+
+            RuntimeContext context = contextCaptor.getValue();
+            assertEquals(List.of(resume), context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_KEY));
+            List<Msg> msgs = msgsCaptor.getValue();
+            assertEquals(1, msgs.size());
+            ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+            assertNotNull(result);
+            assertEquals("tool-call-1", result.getId());
+            assertEquals("reply-1:tool-call-1", result.getMetadata().get("agui.interruptId"));
         }
 
         @Test

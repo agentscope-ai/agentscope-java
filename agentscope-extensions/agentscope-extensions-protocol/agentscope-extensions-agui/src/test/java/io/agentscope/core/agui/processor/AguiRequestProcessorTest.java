@@ -16,6 +16,9 @@
 package io.agentscope.core.agui.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -25,10 +28,16 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
@@ -53,6 +62,12 @@ class AguiRequestProcessorTest {
                                         lastUser))
                         .state(Map.of("cursor", 8))
                         .forwardedProps(Map.of("agentId", "agent-a"))
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "int-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
                         .build();
 
         RunAgentInput extracted = processor.extractLatestUserMessage(input);
@@ -60,6 +75,7 @@ class AguiRequestProcessorTest {
         assertEquals(List.of(lastUser), extracted.getMessages());
         assertEquals(input.getState(), extracted.getState());
         assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
+        assertEquals(input.getResume(), extracted.getResume());
     }
 
     @Test
@@ -94,6 +110,243 @@ class AguiRequestProcessorTest {
         assertEquals(input, context.get(RunAgentInput.class));
         assertEquals("thread-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_THREAD_ID_KEY));
         assertEquals("run-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+    }
+
+    @Test
+    void processRecordsInterruptsAndResolvesOfficialResumeToToolCallId() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.hasMemory("thread-1")).thenReturn(false);
+        ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+        when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AtomicInteger runCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        runCount.getAndIncrement() == 0
+                                                ? new InterruptingAdapter(resolvedAgent, config)
+                                                : new AguiAgentAdapter(resolvedAgent, config))
+                        .build();
+
+        processor.process(input("run-1"), null, null).events().collectList().block();
+        RunAgentInput resumeInput =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "interrupt-from-server",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
+                        .build();
+
+        processor.process(resumeInput, null, null).events().collectList().block();
+
+        ToolResultBlock result =
+                msgsCaptor.getValue().get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tool-call-from-server", result.getId());
+    }
+
+    @Test
+    void processRejectsNewInputWhenThreadHasOpenInterrupts() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        AtomicInteger adapterCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) -> {
+                                    adapterCount.incrementAndGet();
+                                    return new InterruptingAdapter(resolvedAgent, config);
+                                })
+                        .build();
+
+        processor.process(input("run-1"), null, null).events().collectList().block();
+        List<AguiEvent> events =
+                processor
+                        .process(
+                                RunAgentInput.builder()
+                                        .threadId("thread-1")
+                                        .runId("run-2")
+                                        .messages(
+                                                List.of(
+                                                        AguiMessage.userMessage(
+                                                                "msg-2", "new input")))
+                                        .build(),
+                                null,
+                                null)
+                        .events()
+                        .collectList()
+                        .block();
+
+        assertEquals(1, adapterCount.get());
+        assertResumeContractError(events.get(0));
+    }
+
+    @Test
+    void processRejectsPartialResumeWhenMultipleInterruptsAreOpen() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        new InterruptingAdapter(
+                                                resolvedAgent,
+                                                config,
+                                                List.of(
+                                                        interrupt("interrupt-1", "tool-call-1"),
+                                                        interrupt("interrupt-2", "tool-call-2"))))
+                        .build();
+
+        processor.process(input("run-1"), null, null).events().collectList().block();
+        List<AguiEvent> events =
+                processor
+                        .process(
+                                RunAgentInput.builder()
+                                        .threadId("thread-1")
+                                        .runId("run-2")
+                                        .resume(
+                                                List.of(
+                                                        new AguiResume(
+                                                                "interrupt-1",
+                                                                AguiResume.STATUS_RESOLVED,
+                                                                Map.of("approved", true))))
+                                        .build(),
+                                null,
+                                null)
+                        .events()
+                        .collectList()
+                        .block();
+
+        assertResumeContractError(events.get(0));
+    }
+
+    @Test
+    void processRejectsUnsupportedResumeStatus() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(InterruptingAdapter::new)
+                        .build();
+
+        processor.process(input("run-1"), null, null).events().collectList().block();
+        List<AguiEvent> events =
+                processor
+                        .process(
+                                RunAgentInput.builder()
+                                        .threadId("thread-1")
+                                        .runId("run-2")
+                                        .resume(
+                                                List.of(
+                                                        new AguiResume(
+                                                                "interrupt-from-server",
+                                                                "accepted",
+                                                                Map.of("approved", true))))
+                                        .build(),
+                                null,
+                                null)
+                        .events()
+                        .collectList()
+                        .block();
+
+        assertResumeContractError(events.get(0));
+    }
+
+    @Test
+    void processAllowsResumeOnlyWhenAllOpenInterruptsAreCovered() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+        when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AtomicInteger runCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        runCount.getAndIncrement() == 0
+                                                ? new InterruptingAdapter(
+                                                        resolvedAgent,
+                                                        config,
+                                                        List.of(
+                                                                interrupt(
+                                                                        "interrupt-1",
+                                                                        "tool-call-1"),
+                                                                interrupt(
+                                                                        "interrupt-2",
+                                                                        "tool-call-2")))
+                                                : new AguiAgentAdapter(resolvedAgent, config))
+                        .build();
+
+        processor.process(input("run-1"), null, null).events().collectList().block();
+        processor
+                .process(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-1",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true)),
+                                                new AguiResume(
+                                                        "interrupt-2",
+                                                        AguiResume.STATUS_CANCELLED,
+                                                        null)))
+                                .build(),
+                        null,
+                        null)
+                .events()
+                .collectList()
+                .block();
+
+        List<Msg> msgs = msgsCaptor.getValue();
+        assertEquals(
+                "tool-call-1", msgs.get(0).getFirstContentBlock(ToolResultBlock.class).getId());
+        assertEquals(
+                "tool-call-2", msgs.get(1).getFirstContentBlock(ToolResultBlock.class).getId());
+    }
+
+    @Test
+    void processRejectsResumeWhenNoInterruptsAreOpen() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+        RunAgentInput resumeInput =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "interrupt-from-server",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
+                        .build();
+
+        List<AguiEvent> events =
+                processor.process(resumeInput, null, null).events().collectList().block();
+
+        assertResumeContractError(events.get(0));
     }
 
     @Test
@@ -137,5 +390,52 @@ class AguiRequestProcessorTest {
                     .put("adapter", "custom-adapter")
                     .build();
         }
+    }
+
+    private static final class InterruptingAdapter extends AguiAgentAdapter {
+
+        private final List<AguiEvent.Interrupt> interrupts;
+
+        private InterruptingAdapter(Agent agent, AguiAdapterConfig config) {
+            this(
+                    agent,
+                    config,
+                    List.of(interrupt("interrupt-from-server", "tool-call-from-server")));
+        }
+
+        private InterruptingAdapter(
+                Agent agent, AguiAdapterConfig config, List<AguiEvent.Interrupt> interrupts) {
+            super(agent, config);
+            this.interrupts = interrupts;
+        }
+
+        @Override
+        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+            return Flux.just(
+                    new AguiEvent.RunFinished(
+                            input.getThreadId(),
+                            input.getRunId(),
+                            null,
+                            new AguiEvent.RunFinishedInterruptOutcome(interrupts)));
+        }
+    }
+
+    private static void assertResumeContractError(AguiEvent event) {
+        AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, event);
+        assertEquals("AGUI_INTERRUPT_CONTRACT_ERROR", error.code());
+        assertNotNull(error.timestamp());
+    }
+
+    private static AguiEvent.Interrupt interrupt(String interruptId, String toolCallId) {
+        return new AguiEvent.Interrupt(
+                interruptId, "tool_call", "approve", toolCallId, null, null, null);
+    }
+
+    private static RunAgentInput input(String runId) {
+        return RunAgentInput.builder()
+                .threadId("thread-1")
+                .runId(runId)
+                .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                .build();
     }
 }

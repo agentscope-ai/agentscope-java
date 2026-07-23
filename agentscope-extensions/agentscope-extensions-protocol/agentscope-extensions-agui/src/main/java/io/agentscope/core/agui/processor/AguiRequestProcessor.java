@@ -25,6 +25,7 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -62,6 +63,7 @@ public class AguiRequestProcessor {
     private final AgentResolver agentResolver;
     private final AguiAdapterConfig config;
     private final AguiAgentAdapterFactory adapterFactory;
+    private final AguiResumeCoordinator resumeCoordinator;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -71,6 +73,7 @@ public class AguiRequestProcessor {
                 builder.adapterFactory != null
                         ? builder.adapterFactory
                         : AguiAgentAdapterFactory.defaultFactory();
+        this.resumeCoordinator = new AguiResumeCoordinator();
     }
 
     /**
@@ -120,6 +123,14 @@ public class AguiRequestProcessor {
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId);
 
+        AguiResumeCoordinator.ResumeContractResult resumeContract =
+                resumeCoordinator.validate(input);
+        if (resumeContract.isError()) {
+            return new ProcessResult(
+                    agent,
+                    Flux.just(resumeCoordinator.contractError(input, resumeContract.message())));
+        }
+
         // Determine effective input based on server-side memory
         RunAgentInput effectiveInput = input;
         if (agentResolver.hasMemory(threadId)) {
@@ -130,9 +141,21 @@ public class AguiRequestProcessor {
         }
 
         // Create adapter and run
-        AguiAgentAdapter adapter = adapterFactory.create(agent, config);
-        Flux<AguiEvent> events = adapter.run(effectiveInput, runtimeContext);
+        RuntimeContext effectiveRuntimeContext =
+                resumeCoordinator.addResumeToolCallIds(input, runtimeContext);
 
+        AguiAgentAdapter adapter = adapterFactory.create(agent, config);
+        AtomicBoolean runErrorSeen = new AtomicBoolean(false);
+        Flux<AguiEvent> events =
+                adapter.run(effectiveInput, effectiveRuntimeContext)
+                        .doOnNext(
+                                event -> {
+                                    if (event instanceof AguiEvent.RunError) {
+                                        runErrorSeen.set(true);
+                                    }
+                                    resumeCoordinator.trackPendingInterrupts(
+                                            threadId, event, runErrorSeen.get());
+                                });
         return new ProcessResult(agent, events);
     }
 
@@ -223,6 +246,7 @@ public class AguiRequestProcessor {
                 .context(input.getContext())
                 .state(input.getState())
                 .forwardedProps(input.getForwardedProps())
+                .resume(input.getResume())
                 .build();
     }
 

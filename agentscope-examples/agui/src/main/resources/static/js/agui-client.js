@@ -71,6 +71,7 @@ class AguiClient {
      * @param {Array} [input.context] - Optional context
      * @param {Object} [input.state] - Optional state
      * @param {Object} [input.forwardedProps] - Optional forwarded properties
+     * @param {Array} [input.resume] - Optional AG-UI interrupt resume entries
      * @param {Object} callbacks - Event callbacks
      * @param {Function} [callbacks.onReasoningMessageStart] - Called when reasoning message starts
      * @param {Function} [callbacks.onReasoningContent] - Called with reasoning content delta

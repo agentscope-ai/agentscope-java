@@ -164,6 +164,7 @@ agentscope:
 | `agui.context` | `RunAgentInput.context` |
 | `agui.state` | `RunAgentInput.state` |
 | `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
+| `agui.resume` | `RunAgentInput.resume` |
 
 由于 `sessionId` 始终来自 `threadId`，同一个 agent 实例在不同 AG-UI thread 之间保持会话隔离。
 
@@ -243,18 +244,30 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 }
 ```
 
-前端拿到 interrupt 后可以弹出审批或外部执行 UI。用户完成操作后，当前 AgentScope Java 的恢复方式是在下一次 `runAgent` 中带回真实工具结果消息：
+前端拿到 interrupt 后可以弹出审批或外部执行 UI。用户完成操作后，在同一个 `threadId` 的下一次 `runAgent` 请求中带回官方 `resume[]`：
 
 ```json
 {
-  "id": "tool-msg-1",
-  "role": "tool",
-  "toolCallId": "call-1",
-  "content": "{\"approved\":true}"
+  "threadId": "thread-1",
+  "runId": "run-2",
+  "messages": [],
+  "resume": [
+    {
+      "interruptId": "reply-1:call-1",
+      "status": "resolved",
+      "payload": {
+        "approved": true
+      }
+    }
+  ]
 }
 ```
 
-当前 `RunAgentInput` 没有官方 `resume` 字段，因此不要在文档或前端代码中依赖 `resume` 字段。
+`status` 支持官方的 `resolved` 和 `cancelled`。对于用户拒绝某个工具请求的常见审批场景，建议仍使用 `resolved`，并在 `payload` 中表达业务决策，例如 `{ "approved": false }`；`cancelled` 更适合表示该 interrupt 本身被取消。
+
+AgentScope Java 会把 tool-call interrupt 的 `resume[]` 桥接为 core 需要的 `ToolResultBlock`，从而恢复上一次挂起的工具调用。通过 Spring `AguiRequestProcessor` 入口时，processor 会记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，并按 `interruptId` 解析真实 `toolCallId`。
+
+当前内置恢复只覆盖 AG-UI adapter 生成的 tool-call interrupt。自定义 interrupt 如果不是 tool-call 语义，通常需要自定义 `AgentEventConverter` / `AguiEventEnricher` 或请求处理层来解释 `payload`。
 
 ## 示例项目
 

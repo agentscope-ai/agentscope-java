@@ -508,28 +508,26 @@
             const interrupt = pendingApproval;
             const toolCall = activeToolCalls.get(interrupt.toolCallId) || {};
             const args = parseToolArgs(toolCall.args);
-            const content = JSON.stringify({
+            const payload = {
                 approved,
                 action: args.action || null,
                 reason: approved ? 'Approved in the AG-UI example dialog.' : 'Rejected in the AG-UI example dialog.'
-            });
-            const toolMessage = {
-                id: 'tool-msg-' + Date.now(),
-                role: 'tool',
-                toolCallId: interrupt.toolCallId,
-                content
             };
+            const resume = [{
+                interruptId: interrupt.id,
+                status: 'resolved',
+                payload
+            }];
 
             dialog.querySelectorAll('button').forEach(button => button.disabled = true);
             const actions = dialog.querySelector('.approval-actions');
             if (actions) {
                 actions.remove();
             }
-            appendMessage('tool', `${approved ? 'Approved' : 'Rejected'} request_approval\n${content}`);
-            messageHistory.push(toolMessage);
+            appendMessage('tool', `${approved ? 'Approved' : 'Rejected'} request_approval\n${JSON.stringify(payload)}`);
             pendingApproval = null;
 
-            await runAgent([toolMessage]);
+            await runAgent([], resume);
         }
 
         function handleRunFinished(event) {
@@ -545,7 +543,7 @@
             appendApprovalDialog(toolInterrupt);
         }
 
-        async function runAgent(messagesForServer) {
+        async function runAgent(messagesForServer, resumeEntries = []) {
             isRunning = true;
             sendBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
@@ -558,12 +556,17 @@
             let reasoningContent = '';
 
             try {
-                await client.run({
+                const runInput = {
                     threadId: threadId,
                     runId: 'run-' + Date.now(),
                     messages: messagesForServer,
                     tools: frontendTools
-                }, {
+                };
+                if (resumeEntries.length > 0) {
+                    runInput.resume = resumeEntries;
+                }
+
+                await client.run(runInput, {
                     onRunStarted: () => {
                         console.log('Run started');
                         currentAssistantDiv = null;
