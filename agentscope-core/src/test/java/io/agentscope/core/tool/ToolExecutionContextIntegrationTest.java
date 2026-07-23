@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -200,6 +201,50 @@ class ToolExecutionContextIntegrationTest {
         assertNotNull(result);
         assertFalse(isError(result));
         assertEquals("Access granted for user123", getText(result));
+    }
+
+    @Test
+    void mergingToolkitDefaultPreservesRuntimeContextScope() {
+        class RuntimeContextProbe {
+            @Tool(name = "runtime_context_probe", description = "Reads the request context")
+            public ToolResultBlock read(RuntimeContext context) {
+                return ToolResultBlock.text(
+                        context.getSessionId() + ":" + context.get(String.class));
+            }
+        }
+
+        ToolExecutionContext toolkitContext =
+                ToolExecutionContext.builder()
+                        .register(new EnvironmentConfig("development", "1.0"))
+                        .build();
+        Toolkit toolkit =
+                new Toolkit(ToolkitConfig.builder().defaultContext(toolkitContext).build());
+        toolkit.registration().tool(new RuntimeContextProbe()).apply();
+
+        RuntimeContext requestContext =
+                RuntimeContext.builder()
+                        .sessionId("request-session")
+                        .put(String.class, "request-catalog")
+                        .build();
+        Map<String, Object> input = Map.of();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("runtime-context")
+                        .name("runtime_context_probe")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .runtimeContext(requestContext)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        assertEquals("request-session:request-catalog", getText(result));
     }
 
     @Test
