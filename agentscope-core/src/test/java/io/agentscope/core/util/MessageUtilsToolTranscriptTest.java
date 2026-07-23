@@ -157,12 +157,57 @@ class MessageUtilsToolTranscriptTest {
                                 Msg.builder().role(MsgRole.ASSISTANT).content(toolUse).build(),
                                 Msg.builder()
                                         .role(MsgRole.TOOL)
-                                        .content(List.of(matchedResult, unrelatedResult))
+                                        .content(
+                                                List.of(
+                                                        matchedResult,
+                                                        TextBlock.builder()
+                                                                .text("metadata")
+                                                                .build(),
+                                                        unrelatedResult))
                                         .build()));
 
         assertEquals(3, normalized.size());
         assertToolResult(normalized.get(1), "call-5", ToolResultState.SUCCESS);
         assertToolResult(normalized.get(2), "call-6", ToolResultState.DENIED);
+        assertEquals("metadata", normalized.get(2).getFirstContentBlock(TextBlock.class).getText());
+    }
+
+    @Test
+    void preservesToolBlocksWithoutCallIds() {
+        ToolUseBlock toolUse = ToolUseBlock.builder().name("search").input(Map.of()).build();
+        ToolResultBlock result =
+                ToolResultBlock.of(null, "search", TextBlock.builder().text("found").build());
+
+        List<Msg> normalized =
+                MessageUtils.normalizeToolCallResults(
+                        List.of(
+                                Msg.builder().role(MsgRole.ASSISTANT).content(toolUse).build(),
+                                Msg.builder().role(MsgRole.TOOL).content(result).build()));
+
+        assertEquals(2, normalized.size());
+        assertEquals(MsgRole.ASSISTANT, normalized.get(0).getRole());
+        assertEquals(MsgRole.TOOL, normalized.get(1).getRole());
+        assertEquals(1, normalized.get(1).getContentBlocks(ToolResultBlock.class).size());
+    }
+
+    @Test
+    void keepsInlineToolResultsThatBelongToAnotherCall() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call-7").name("search").input(Map.of()).build();
+        ToolResultBlock unrelatedResult =
+                ToolResultBlock.of("call-8", "calculate", TextBlock.builder().text("42").build());
+
+        List<Msg> normalized =
+                MessageUtils.normalizeToolCallResults(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(List.of(toolUse, unrelatedResult))
+                                        .build()));
+
+        assertEquals(2, normalized.size());
+        assertEquals(1, normalized.get(0).getContentBlocks(ToolResultBlock.class).size());
+        assertToolResult(normalized.get(1), "call-7", ToolResultState.ERROR);
     }
 
     private static void assertToolResult(Msg message, String id, ToolResultState state) {
