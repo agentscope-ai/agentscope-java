@@ -292,4 +292,58 @@ class ReActAgentNewLoopE2ETest {
                         .orElseThrow();
         assertEquals(ToolResultState.ERROR, end.getState());
     }
+
+    @Test
+    void retriesAfterModelStreamCompletesWithoutAResponse() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("recovered"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue after an empty response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "recovered".equals(text.getText())));
+    }
+
+    @Test
+    void retriesAfterModelReturnsOnlyBlankText() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(textResponse("   ")),
+                                () -> Flux.just(textResponse("recovered"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue after a blank response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "recovered".equals(text.getText())));
+    }
 }
