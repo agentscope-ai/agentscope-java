@@ -38,6 +38,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -145,6 +146,21 @@ public class McpClientBuilder {
     public McpClientBuilder stdioTransport(
             String command, List<String> args, Map<String, String> env) {
         this.transportConfig = new StdioTransportConfig(command, args, env);
+        return this;
+    }
+
+    /**
+     * Configures StdIO transport with environment variables and a process working directory.
+     *
+     * @param command the executable command
+     * @param args command arguments list
+     * @param env environment variables
+     * @param workingDirectory process working directory
+     * @return this builder
+     */
+    public McpClientBuilder stdioTransport(
+            String command, List<String> args, Map<String, String> env, Path workingDirectory) {
+        this.transportConfig = new StdioTransportConfig(command, args, env, workingDirectory);
         return this;
     }
 
@@ -625,15 +641,22 @@ public class McpClientBuilder {
         private final String command;
         private final List<String> args;
         private final Map<String, String> env;
+        private final Path workingDirectory;
 
         public StdioTransportConfig(String command, List<String> args) {
-            this(command, args, new HashMap<>());
+            this(command, args, new HashMap<>(), null);
         }
 
         public StdioTransportConfig(String command, List<String> args, Map<String, String> env) {
+            this(command, args, env, null);
+        }
+
+        public StdioTransportConfig(
+                String command, List<String> args, Map<String, String> env, Path workingDirectory) {
             this.command = command;
             this.args = new ArrayList<>(args);
             this.env = new HashMap<>(env);
+            this.workingDirectory = workingDirectory;
         }
 
         @Override
@@ -649,7 +672,25 @@ public class McpClientBuilder {
             }
 
             ServerParameters params = paramsBuilder.build();
-            return new StdioClientTransport(params, McpJsonMapper.getDefault());
+            return workingDirectory == null
+                    ? new StdioClientTransport(params, McpJsonMapper.getDefault())
+                    : new WorkingDirectoryStdioClientTransport(params, workingDirectory);
+        }
+    }
+
+    private static final class WorkingDirectoryStdioClientTransport extends StdioClientTransport {
+
+        private final Path workingDirectory;
+
+        private WorkingDirectoryStdioClientTransport(
+                ServerParameters params, Path workingDirectory) {
+            super(params, McpJsonMapper.getDefault());
+            this.workingDirectory = workingDirectory;
+        }
+
+        @Override
+        protected ProcessBuilder getProcessBuilder() {
+            return super.getProcessBuilder().directory(workingDirectory.toFile());
         }
     }
 

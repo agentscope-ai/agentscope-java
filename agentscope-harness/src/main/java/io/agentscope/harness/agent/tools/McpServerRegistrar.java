@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.tools;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +49,14 @@ public final class McpServerRegistrar {
      * empty (no-op).
      */
     public static void register(Toolkit toolkit, Map<String, McpServerConfig> servers) {
+        register(toolkit, servers, null);
+    }
+
+    /** Registers MCP servers with workspace policy available for stdio working directories. */
+    public static void register(
+            Toolkit toolkit,
+            Map<String, McpServerConfig> servers,
+            WorkspaceManager workspaceManager) {
         if (toolkit == null || servers == null || servers.isEmpty()) {
             return;
         }
@@ -58,7 +68,7 @@ public final class McpServerRegistrar {
                 continue;
             }
             try {
-                registerOne(toolkit, name, cfg);
+                registerOne(toolkit, name, cfg, workspaceManager);
             } catch (Exception e) {
                 log.warn(
                         "Failed to register MCP server '{}' ({}): {}",
@@ -69,8 +79,9 @@ public final class McpServerRegistrar {
         }
     }
 
-    private static void registerOne(Toolkit toolkit, String name, McpServerConfig cfg) {
-        McpClientWrapper wrapper = buildClient(name, cfg);
+    private static void registerOne(
+            Toolkit toolkit, String name, McpServerConfig cfg, WorkspaceManager workspaceManager) {
+        McpClientWrapper wrapper = buildClient(name, cfg, workspaceManager);
         Toolkit.ToolRegistration reg = toolkit.registration().mcpClient(wrapper);
         List<String> enableTools = cfg.getEnableTools();
         if (enableTools != null && !enableTools.isEmpty()) {
@@ -84,7 +95,8 @@ public final class McpServerRegistrar {
                 enableTools);
     }
 
-    private static McpClientWrapper buildClient(String name, McpServerConfig cfg) {
+    private static McpClientWrapper buildClient(
+            String name, McpServerConfig cfg, WorkspaceManager workspaceManager) {
         String transport = cfg.getTransport();
         if (transport == null || transport.isBlank()) {
             throw new IllegalArgumentException(
@@ -92,7 +104,7 @@ public final class McpServerRegistrar {
         }
         McpClientBuilder builder = McpClientBuilder.create(name);
         switch (transport.toLowerCase(Locale.ROOT)) {
-            case "stdio" -> configureStdio(builder, name, cfg);
+            case "stdio" -> configureStdio(builder, name, cfg, workspaceManager);
             case "sse" -> configureSse(builder, name, cfg);
             case "http", "streamable-http", "streamablehttp" ->
                     configureStreamableHttp(builder, name, cfg);
@@ -113,14 +125,44 @@ public final class McpServerRegistrar {
         return builder.buildAsync().block();
     }
 
-    private static void configureStdio(McpClientBuilder builder, String name, McpServerConfig cfg) {
+    private static void configureStdio(
+            McpClientBuilder builder,
+            String name,
+            McpServerConfig cfg,
+            WorkspaceManager workspaceManager) {
         if (cfg.getCommand() == null || cfg.getCommand().isBlank()) {
             throw new IllegalArgumentException(
                     "stdio MCP server '" + name + "' requires a 'command'.");
         }
         List<String> args = cfg.getArgs() != null ? cfg.getArgs() : List.of();
         Map<String, String> env = cfg.getEnv() != null ? cfg.getEnv() : Map.of();
-        builder.stdioTransport(cfg.getCommand(), args, env);
+        Path workingDirectory = resolveStdioWorkingDirectory(workspaceManager, cfg.getCwd());
+        if (workingDirectory == null) {
+            builder.stdioTransport(cfg.getCommand(), args, env);
+        } else {
+            builder.stdioTransport(cfg.getCommand(), args, env, workingDirectory);
+        }
+    }
+
+    static Path resolveStdioWorkingDirectory(
+            WorkspaceManager workspaceManager, String configuredCwd) {
+        if (configuredCwd == null || configuredCwd.isBlank()) {
+            return null;
+        }
+        if (workspaceManager == null) {
+            throw new IllegalArgumentException(
+                    "stdio MCP cwd requires a Harness WorkspaceManager.");
+        }
+        Path relative = Path.of(configuredCwd);
+        if (relative.isAbsolute()) {
+            throw new IllegalArgumentException("stdio MCP cwd must be workspace-relative.");
+        }
+        Path workspace = workspaceManager.getWorkspace().toAbsolutePath().normalize();
+        Path resolved = workspace.resolve(relative).normalize();
+        if (!resolved.startsWith(workspace)) {
+            throw new IllegalArgumentException("stdio MCP cwd must stay inside the workspace.");
+        }
+        return resolved;
     }
 
     private static void configureSse(McpClientBuilder builder, String name, McpServerConfig cfg) {
