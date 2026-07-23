@@ -24,6 +24,7 @@ import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
@@ -423,6 +424,22 @@ public class OpenAIClient {
                                                         errorCode,
                                                         data));
                                         return;
+                                    }
+                                    // Some OpenAI-compatible providers (e.g. MiniMax) emit an
+                                    // extra non-chunk chat.completion summary event at the end
+                                    // of the stream whose message restates the entire message.
+                                    // The incremental deltas have already accumulated the full
+                                    // content, so accumulating the summary message again would
+                                    // double reasoning_content / tool_call arguments (arguments
+                                    // become {...}{...}, invalid JSON), which the model rejects
+                                    // on the next round, halting the agent. Drop the summary
+                                    // message content but keep the choice's finish_reason and
+                                    // usage (real token counts only appear in the summary event).
+                                    if (!response.isChunk()) {
+                                        OpenAIChoice summaryChoice = response.getFirstChoice();
+                                        if (summaryChoice != null) {
+                                            summaryChoice.setMessage(null);
+                                        }
                                     }
                                     sink.next(response);
                                 }
