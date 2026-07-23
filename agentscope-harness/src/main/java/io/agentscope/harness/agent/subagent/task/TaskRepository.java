@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.subagent.task;
 import io.agentscope.core.agent.RuntimeContext;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Repository for managing background subagent tasks, scoped by session.
@@ -89,6 +90,42 @@ public interface TaskRepository {
      * @return true if the task was found and cancellation was attempted
      */
     boolean cancelTask(RuntimeContext rc, String sessionId, String taskId);
+
+    /**
+     * Request cancellation and return a typed acknowledgement of underlying execution stop.
+     *
+     * <p>The default implementation preserves compatibility with repositories that only expose
+     * cancellation intent. Such repositories report {@link
+     * TaskCancellation.TerminationStatus#STOP_UNAVAILABLE}; implementations that own execution
+     * handles should override this method with an authoritative completion signal.
+     */
+    default TaskCancellation cancelTaskWithAcknowledgement(
+            RuntimeContext rc, String sessionId, String taskId) {
+        boolean found = cancelTask(rc, sessionId, taskId);
+        TaskCancellation.ExecutionIdentity identity =
+                new TaskCancellation.ExecutionIdentity(
+                        sessionId,
+                        taskId,
+                        null,
+                        null,
+                        TaskCancellation.ExecutionKind.UNKNOWN,
+                        null);
+        CompletableFuture<TaskCancellation.Termination> termination =
+                CompletableFuture.completedFuture(
+                        new TaskCancellation.Termination(
+                                identity,
+                                TaskCancellation.TerminationStatus.STOP_UNAVAILABLE,
+                                found
+                                        ? "Repository accepted cancellation but cannot acknowledge"
+                                                + " execution stop"
+                                        : "Task was not found"));
+        return new TaskCancellation(
+                identity,
+                found
+                        ? TaskCancellation.RequestStatus.ACCEPTED
+                        : TaskCancellation.RequestStatus.NOT_FOUND,
+                termination);
+    }
 
     // ------------------------------------------------------------------------
     // Phase B-3 — push delivery API.
