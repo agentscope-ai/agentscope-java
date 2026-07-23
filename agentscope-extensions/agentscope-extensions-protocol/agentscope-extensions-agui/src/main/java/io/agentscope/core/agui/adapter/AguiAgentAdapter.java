@@ -116,6 +116,21 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
+        return run(input, null);
+    }
+
+    /**
+     * Run the agent with AG-UI protocol input and caller-provided runtime context.
+     *
+     * <p>The provided context is copied and enriched with AG-UI runtime metadata. AG-UI metadata
+     * and the session id are always derived from {@code input} so callers can add custom values
+     * without losing the protocol defaults.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return A Flux of AG-UI events
+     */
+    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
         return Flux.defer(
                 () -> {
                     String threadId = input.getThreadId();
@@ -131,13 +146,15 @@ public class AguiAgentAdapter {
                                     .incremental(true)
                                     .build();
 
-                    RuntimeContext runtimeContext = buildRuntimeContext(input);
+                    RuntimeContext effectiveRuntimeContext =
+                            buildRuntimeContext(input, runtimeContext);
                     ToolInjection toolInjection = ToolInjection.empty();
                     AgentStream agentStream;
                     try {
                         toolInjection = injectFrontendTools(input);
                         agentStream =
-                                streamWithRuntimeContext(msgs, options, runtimeContext, input);
+                                streamWithRuntimeContext(
+                                        msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
                         toolInjection.close();
                         return Flux.concat(
@@ -249,8 +266,19 @@ public class AguiAgentAdapter {
         return false;
     }
 
-    private RuntimeContext buildRuntimeContext(RunAgentInput input) {
-        return RuntimeContext.builder()
+    /**
+     * Build the runtime context used for the agent invocation.
+     *
+     * <p>The caller-provided context is copied first, then AG-UI protocol metadata is applied so
+     * that required request values and session isolation are always preserved.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return The effective runtime context for this run
+     */
+    protected RuntimeContext buildRuntimeContext(
+            RunAgentInput input, RuntimeContext runtimeContext) {
+        return RuntimeContext.builder(runtimeContext)
                 .sessionId(input.getThreadId())
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())

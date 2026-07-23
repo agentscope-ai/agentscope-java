@@ -17,10 +17,12 @@ package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -80,7 +82,9 @@ public class AgentscopeAguiMvcAutoConfiguration {
             ThreadSessionManager sessionManager,
             AguiProperties props,
             ObjectProvider<AgentEventConverter> eventConvertersProvider,
-            ObjectProvider<AguiEventEnricher> eventEnrichersProvider) {
+            ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
+            ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
@@ -100,6 +104,8 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 .serverSideMemory(props.isServerSideMemory())
                 .agentIdHeader(props.getAgentIdHeader())
                 .sseTimeout(props.getSseTimeout())
+                .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
+                .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .config(config)
                 .build();
     }

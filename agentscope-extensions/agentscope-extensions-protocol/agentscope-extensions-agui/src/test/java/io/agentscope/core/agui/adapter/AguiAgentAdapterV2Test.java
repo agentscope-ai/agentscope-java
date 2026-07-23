@@ -35,6 +35,7 @@ import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -134,6 +135,83 @@ class AguiAgentAdapterV2Test {
             assertSame(
                     input.getForwardedProps(),
                     context.get(AguiAgentAdapter.RUNTIME_CONTEXT_FORWARDED_PROPS_KEY));
+        }
+
+        @Test
+        void testRunMergesCustomRuntimeContextWithoutLosingAguiMetadata() {
+            ReActAgent agent = mock(ReActAgent.class);
+            ArgumentCaptor<RuntimeContext> contextCaptor =
+                    ArgumentCaptor.forClass(RuntimeContext.class);
+            when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+            RuntimeContext callerContext =
+                    RuntimeContext.builder()
+                            .sessionId("caller-session")
+                            .userId("user-1")
+                            .put("tenant", "tenant-a")
+                            .put(Integer.class, 42)
+                            .build();
+            RunAgentInput input =
+                    inputBuilder()
+                            .context(List.of(new AguiContext("scope", "demo")))
+                            .state(Map.of("cursor", 1))
+                            .forwardedProps(Map.of("agentId", "agent-a"))
+                            .build();
+
+            new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                    .run(input, callerContext)
+                    .collectList()
+                    .block();
+
+            RuntimeContext context = contextCaptor.getValue();
+            assertNotSame(callerContext, context);
+            assertEquals("thread-v2", context.getSessionId());
+            assertEquals("user-1", context.getUserId());
+            assertEquals("tenant-a", context.get("tenant"));
+            assertEquals(42, context.get(Integer.class));
+            assertSame(input, context.get(RunAgentInput.class));
+            assertEquals("thread-v2", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_THREAD_ID_KEY));
+            assertEquals("run-v2", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+            assertSame(
+                    input.getMessages(),
+                    context.get(AguiAgentAdapter.RUNTIME_CONTEXT_MESSAGES_KEY));
+            assertSame(input.getTools(), context.get(AguiAgentAdapter.RUNTIME_CONTEXT_TOOLS_KEY));
+            assertSame(
+                    input.getContext(), context.get(AguiAgentAdapter.RUNTIME_CONTEXT_CONTEXT_KEY));
+            assertSame(input.getState(), context.get(AguiAgentAdapter.RUNTIME_CONTEXT_STATE_KEY));
+            assertSame(
+                    input.getForwardedProps(),
+                    context.get(AguiAgentAdapter.RUNTIME_CONTEXT_FORWARDED_PROPS_KEY));
+            assertEquals("caller-session", callerContext.getSessionId());
+            assertNull(callerContext.get(AguiAgentAdapter.RUNTIME_CONTEXT_THREAD_ID_KEY));
+        }
+
+        @Test
+        void testBuildRuntimeContextCanBeCustomizedBySubclass() {
+            ReActAgent agent = mock(ReActAgent.class);
+            ArgumentCaptor<RuntimeContext> contextCaptor =
+                    ArgumentCaptor.forClass(RuntimeContext.class);
+            when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+            AguiAgentAdapter adapter =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig()) {
+                        @Override
+                        protected RuntimeContext buildRuntimeContext(
+                                RunAgentInput input, RuntimeContext runtimeContext) {
+                            return RuntimeContext.builder(
+                                            super.buildRuntimeContext(input, runtimeContext))
+                                    .put("subclass", "custom")
+                                    .build();
+                        }
+                    };
+
+            adapter.run(input(), RuntimeContext.builder().userId("user-1").build())
+                    .collectList()
+                    .block();
+
+            RuntimeContext context = contextCaptor.getValue();
+            assertEquals("thread-v2", context.getSessionId());
+            assertEquals("user-1", context.getUserId());
+            assertEquals("custom", context.get("subclass"));
+            assertEquals("run-v2", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
         }
 
         @Test

@@ -15,15 +15,21 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +79,7 @@ public class AguiWebFluxHandler {
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
     private final String agentIdHeader;
+    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
@@ -87,10 +94,12 @@ public class AguiWebFluxHandler {
                                 builder.config != null
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
+                        .adapterFactory(builder.adapterFactory)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
+        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -135,7 +144,11 @@ public class AguiWebFluxHandler {
 
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
-                    processor.process(input, headerAgentId, pathAgentId);
+                    processor.process(
+                            input,
+                            headerAgentId,
+                            pathAgentId,
+                            resolveRuntimeContext(input, headerAgentId, pathAgentId, request));
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
             Flux<ServerSentEvent<String>> sseStream =
@@ -166,6 +179,49 @@ public class AguiWebFluxHandler {
             logger.error("Error processing AG-UI request: {}", e.getMessage());
             return createErrorResponse(threadId, runId, e.getMessage());
         }
+    }
+
+    private RuntimeContext resolveRuntimeContext(
+            RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
+        return runtimeContextResolver != null
+                ? runtimeContextResolver.resolve(
+                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
+                : null;
+    }
+
+    private AguiRuntimeContextRequest runtimeContextRequest(
+            RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
+        return AguiRuntimeContextRequest.builder()
+                .input(input)
+                .headerAgentId(headerAgentId)
+                .pathAgentId(pathAgentId)
+                .transport(AguiRuntimeContextRequest.Transport.WEBFLUX)
+                .method(request != null ? request.method().name() : null)
+                .path(request != null ? request.path() : null)
+                .headers(headers(request))
+                .queryParams(queryParams(request))
+                .nativeRequest(request)
+                .build();
+    }
+
+    private static Map<String, List<String>> headers(ServerRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, List<String>> headers = new LinkedHashMap<>();
+        request.headers()
+                .asHttpHeaders()
+                .forEach((name, values) -> headers.put(name, List.copyOf(values)));
+        return headers;
+    }
+
+    private static Map<String, List<String>> queryParams(ServerRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, List<String>> queryParams = new LinkedHashMap<>();
+        request.queryParams().forEach((name, values) -> queryParams.put(name, List.copyOf(values)));
+        return queryParams;
     }
 
     private Mono<ServerResponse> handleParseError(Throwable error) {
@@ -225,6 +281,8 @@ public class AguiWebFluxHandler {
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
+        private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiAgentAdapterFactory adapterFactory;
 
         /**
          * Set the agent registry.
@@ -278,6 +336,28 @@ public class AguiWebFluxHandler {
          */
         public Builder agentIdHeader(String agentIdHeader) {
             this.agentIdHeader = agentIdHeader;
+            return this;
+        }
+
+        /**
+         * Set the runtime context resolver.
+         *
+         * @param runtimeContextResolver The resolver used for each request
+         * @return This builder
+         */
+        public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
+            this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the adapter factory.
+         *
+         * @param adapterFactory The factory used to create per-request adapters
+         * @return This builder
+         */
+        public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
+            this.adapterFactory = adapterFactory;
             return this;
         }
 

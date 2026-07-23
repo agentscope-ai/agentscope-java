@@ -15,15 +15,20 @@
  */
 package io.agentscope.spring.boot.agui.common;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
+import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -32,8 +37,11 @@ import io.agentscope.spring.boot.agui.mvc.AgentscopeAguiMvcAutoConfiguration;
 import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
 import io.agentscope.spring.boot.agui.webflux.AgentscopeAguiWebFluxAutoConfiguration;
 import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
+import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -43,6 +51,9 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.reactive.function.server.MockServerRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -143,6 +154,170 @@ class AguiAdapterConfigAutoConfigurationTest {
                         });
     }
 
+    @Test
+    @DisplayName("Should register runtime context resolver bean for MVC")
+    void testMvcRegistersRuntimeContextResolver() {
+        mvcContextRunner
+                .withUserConfiguration(RuntimeContextResolverConfig.class)
+                .run(
+                        ctx -> {
+                            AguiRuntimeContextResolver resolver =
+                                    mvcRuntimeContextResolver(ctx.getBean(AguiMvcController.class));
+                            assertSame(RuntimeContextResolverConfig.RESOLVER, resolver);
+                        });
+    }
+
+    @Test
+    @DisplayName("Should register runtime context resolver bean for WebFlux")
+    void testWebFluxRegistersRuntimeContextResolver() {
+        webFluxContextRunner
+                .withUserConfiguration(RuntimeContextResolverConfig.class)
+                .run(
+                        ctx -> {
+                            AguiRuntimeContextResolver resolver =
+                                    webFluxRuntimeContextResolver(
+                                            ctx.getBean(AguiWebFluxHandler.class));
+                            assertSame(RuntimeContextResolverConfig.RESOLVER, resolver);
+                        });
+    }
+
+    @Test
+    @DisplayName("Should register adapter factory bean for MVC")
+    void testMvcRegistersAdapterFactory() {
+        mvcContextRunner
+                .withUserConfiguration(AdapterFactoryConfig.class)
+                .run(
+                        ctx -> {
+                            AguiAgentAdapterFactory adapterFactory =
+                                    mvcAdapterFactory(ctx.getBean(AguiMvcController.class));
+                            assertSame(AdapterFactoryConfig.ADAPTER_FACTORY, adapterFactory);
+                        });
+    }
+
+    @Test
+    @DisplayName("Should register adapter factory bean for WebFlux")
+    void testWebFluxRegistersAdapterFactory() {
+        webFluxContextRunner
+                .withUserConfiguration(AdapterFactoryConfig.class)
+                .run(
+                        ctx -> {
+                            AguiAgentAdapterFactory adapterFactory =
+                                    webFluxAdapterFactory(ctx.getBean(AguiWebFluxHandler.class));
+                            assertSame(AdapterFactoryConfig.ADAPTER_FACTORY, adapterFactory);
+                        });
+    }
+
+    @Test
+    @DisplayName("Should expose servlet request context to MVC runtime context resolver")
+    void testMvcRuntimeContextResolverReceivesServletRequestContext() {
+        AtomicReference<AguiRuntimeContextRequest> seenRequest = new AtomicReference<>();
+        AguiRuntimeContextResolver resolver =
+                request -> {
+                    seenRequest.set(request);
+                    return RuntimeContext.builder()
+                            .put("tenant", request.firstHeader("x-tenant"))
+                            .put("debug", request.firstQueryParam("debug"))
+                            .build();
+                };
+        AguiMvcController controller =
+                AguiMvcController.builder()
+                        .agentRegistry(new AguiAgentRegistry())
+                        .runtimeContextResolver(resolver)
+                        .build();
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/agui/run/path-agent");
+        request.addHeader("X-Tenant", "tenant-a");
+        request.addParameter("debug", "true");
+        RunAgentInput input = input();
+
+        RuntimeContext context =
+                ReflectionTestUtils.invokeMethod(
+                        controller,
+                        "resolveRuntimeContext",
+                        input,
+                        "header-agent",
+                        "path-agent",
+                        request);
+
+        AguiRuntimeContextRequest seen = seenRequest.get();
+        assertEquals("tenant-a", context.get("tenant"));
+        assertEquals("true", context.get("debug"));
+        assertSame(input, seen.getInput());
+        assertEquals("header-agent", seen.getHeaderAgentId());
+        assertEquals("path-agent", seen.getPathAgentId());
+        assertEquals(AguiRuntimeContextRequest.Transport.MVC, seen.getTransport());
+        assertEquals("POST", seen.getMethod());
+        assertEquals("/agui/run/path-agent", seen.getPath());
+        assertEquals("tenant-a", seen.firstHeader("x-tenant"));
+        assertEquals("true", seen.firstQueryParam("debug"));
+        assertSame(request, seen.getNativeRequest(MockHttpServletRequest.class));
+    }
+
+    @Test
+    @DisplayName("Should expose server request context to WebFlux runtime context resolver")
+    void testWebFluxRuntimeContextResolverReceivesServerRequestContext() {
+        AtomicReference<AguiRuntimeContextRequest> seenRequest = new AtomicReference<>();
+        AguiRuntimeContextResolver resolver =
+                request -> {
+                    seenRequest.set(request);
+                    return RuntimeContext.builder()
+                            .put("tenant", request.firstHeader("x-tenant"))
+                            .put("debug", request.firstQueryParam("debug"))
+                            .build();
+                };
+        AguiWebFluxHandler handler =
+                AguiWebFluxHandler.builder()
+                        .agentRegistry(new AguiAgentRegistry())
+                        .runtimeContextResolver(resolver)
+                        .build();
+        MockServerRequest request =
+                MockServerRequest.builder()
+                        .method(HttpMethod.POST)
+                        .uri(URI.create("http://localhost/agui/run/path-agent?debug=true"))
+                        .header("X-Tenant", "tenant-a")
+                        .queryParam("debug", "true")
+                        .build();
+        RunAgentInput input = input();
+
+        RuntimeContext context =
+                ReflectionTestUtils.invokeMethod(
+                        handler,
+                        "resolveRuntimeContext",
+                        input,
+                        "header-agent",
+                        "path-agent",
+                        request);
+
+        AguiRuntimeContextRequest seen = seenRequest.get();
+        assertEquals("tenant-a", context.get("tenant"));
+        assertEquals("true", context.get("debug"));
+        assertSame(input, seen.getInput());
+        assertEquals("header-agent", seen.getHeaderAgentId());
+        assertEquals("path-agent", seen.getPathAgentId());
+        assertEquals(AguiRuntimeContextRequest.Transport.WEBFLUX, seen.getTransport());
+        assertEquals("POST", seen.getMethod());
+        assertEquals("/agui/run/path-agent", seen.getPath());
+        assertEquals("tenant-a", seen.firstHeader("x-tenant"));
+        assertEquals("true", seen.firstQueryParam("debug"));
+        assertSame(request, seen.getNativeRequest(MockServerRequest.class));
+    }
+
+    @Test
+    @DisplayName("Should expose immutable request headers and query params")
+    void testRuntimeContextRequestHelpers() {
+        AguiRuntimeContextRequest request =
+                AguiRuntimeContextRequest.builder()
+                        .input(input())
+                        .headers(Map.of("X-Tenant", List.of("tenant-a")))
+                        .queryParams(Map.of("debug", List.of("true")))
+                        .build();
+
+        assertEquals(AguiRuntimeContextRequest.Transport.CUSTOM, request.getTransport());
+        assertEquals("tenant-a", request.firstHeader("x-tenant"));
+        assertEquals("true", request.firstQueryParam("debug"));
+        assertThrowsUnsupportedOperation(() -> request.getHeaders().put("x", List.of("y")));
+        assertThrowsUnsupportedOperation(() -> request.getQueryParams().put("x", List.of("y")));
+    }
+
     private static AguiAdapterConfig mvcConfig(AguiMvcController controller) {
         Object processor = ReflectionTestUtils.getField(controller, "processor");
         return (AguiAdapterConfig) ReflectionTestUtils.getField(processor, "config");
@@ -151,6 +326,45 @@ class AguiAdapterConfigAutoConfigurationTest {
     private static AguiAdapterConfig webFluxConfig(AguiWebFluxHandler handler) {
         Object processor = ReflectionTestUtils.getField(handler, "processor");
         return (AguiAdapterConfig) ReflectionTestUtils.getField(processor, "config");
+    }
+
+    private static AguiRuntimeContextResolver mvcRuntimeContextResolver(
+            AguiMvcController controller) {
+        return (AguiRuntimeContextResolver)
+                ReflectionTestUtils.getField(controller, "runtimeContextResolver");
+    }
+
+    private static AguiRuntimeContextResolver webFluxRuntimeContextResolver(
+            AguiWebFluxHandler handler) {
+        return (AguiRuntimeContextResolver)
+                ReflectionTestUtils.getField(handler, "runtimeContextResolver");
+    }
+
+    private static AguiAgentAdapterFactory mvcAdapterFactory(AguiMvcController controller) {
+        Object processor = ReflectionTestUtils.getField(controller, "processor");
+        return (AguiAgentAdapterFactory) ReflectionTestUtils.getField(processor, "adapterFactory");
+    }
+
+    private static AguiAgentAdapterFactory webFluxAdapterFactory(AguiWebFluxHandler handler) {
+        Object processor = ReflectionTestUtils.getField(handler, "processor");
+        return (AguiAgentAdapterFactory) ReflectionTestUtils.getField(processor, "adapterFactory");
+    }
+
+    private static RunAgentInput input() {
+        return RunAgentInput.builder()
+                .threadId("thread-1")
+                .runId("run-1")
+                .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                .build();
+    }
+
+    private static void assertThrowsUnsupportedOperation(Runnable action) {
+        try {
+            action.run();
+        } catch (UnsupportedOperationException expected) {
+            return;
+        }
+        throw new AssertionError("Expected UnsupportedOperationException");
     }
 
     @Configuration
@@ -192,6 +406,30 @@ class AguiAdapterConfigAutoConfigurationTest {
         @Order(1)
         public AguiEventEnricher firstEnricher() {
             return FIRST_ENRICHER;
+        }
+    }
+
+    @Configuration
+    static class RuntimeContextResolverConfig {
+
+        static final AguiRuntimeContextResolver RESOLVER =
+                request -> RuntimeContext.builder().put("tenant", "tenant-a").build();
+
+        @Bean
+        public AguiRuntimeContextResolver runtimeContextResolver() {
+            return RESOLVER;
+        }
+    }
+
+    @Configuration
+    static class AdapterFactoryConfig {
+
+        static final AguiAgentAdapterFactory ADAPTER_FACTORY =
+                AguiAgentAdapterFactory.defaultFactory();
+
+        @Bean
+        public AguiAgentAdapterFactory aguiAgentAdapterFactory() {
+            return ADAPTER_FACTORY;
         }
     }
 

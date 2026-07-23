@@ -16,8 +16,10 @@
 package io.agentscope.core.agui.processor;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -59,11 +61,16 @@ public class AguiRequestProcessor {
 
     private final AgentResolver agentResolver;
     private final AguiAdapterConfig config;
+    private final AguiAgentAdapterFactory adapterFactory;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
                 Objects.requireNonNull(builder.agentResolver, "agentResolver cannot be null");
         this.config = builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
+        this.adapterFactory =
+                builder.adapterFactory != null
+                        ? builder.adapterFactory
+                        : AguiAgentAdapterFactory.defaultFactory();
     }
 
     /**
@@ -85,6 +92,26 @@ public class AguiRequestProcessor {
      * @return A ProcessResult containing the agent and event stream
      */
     public ProcessResult process(RunAgentInput input, String headerAgentId, String pathAgentId) {
+        return process(input, headerAgentId, pathAgentId, null);
+    }
+
+    /**
+     * Process an AG-UI request with caller-provided runtime context and return the result.
+     *
+     * <p>The runtime context is copied and enriched by {@link AguiAgentAdapter}; callers can
+     * provide custom attributes without replacing the standard AG-UI metadata.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable (may be null)
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return A ProcessResult containing the agent and event stream
+     */
+    public ProcessResult process(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            RuntimeContext runtimeContext) {
         String threadId = input.getThreadId();
 
         // Resolve agent ID
@@ -103,8 +130,8 @@ public class AguiRequestProcessor {
         }
 
         // Create adapter and run
-        AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-        Flux<AguiEvent> events = adapter.run(effectiveInput);
+        AguiAgentAdapter adapter = adapterFactory.create(agent, config);
+        Flux<AguiEvent> events = adapter.run(effectiveInput, runtimeContext);
 
         return new ProcessResult(agent, events);
     }
@@ -213,6 +240,7 @@ public class AguiRequestProcessor {
 
         private AgentResolver agentResolver;
         private AguiAdapterConfig config;
+        private AguiAgentAdapterFactory adapterFactory;
 
         /**
          * Set the agent resolver.
@@ -233,6 +261,17 @@ public class AguiRequestProcessor {
          */
         public Builder config(AguiAdapterConfig config) {
             this.config = config;
+            return this;
+        }
+
+        /**
+         * Set the adapter factory.
+         *
+         * @param adapterFactory The factory used to create per-request adapters
+         * @return This builder
+         */
+        public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
+            this.adapterFactory = adapterFactory;
             return this;
         }
 

@@ -16,13 +16,22 @@
 package io.agentscope.core.agui.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
 
 /** Unit tests for AguiRequestProcessor. */
 class AguiRequestProcessorTest {
@@ -51,5 +60,82 @@ class AguiRequestProcessorTest {
         assertEquals(List.of(lastUser), extracted.getMessages());
         assertEquals(input.getState(), extracted.getState());
         assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
+    }
+
+    @Test
+    void processPassesCustomRuntimeContextThroughAdapterWithoutLosingAguiMetadata() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        RuntimeContext callerContext =
+                RuntimeContext.builder()
+                        .sessionId("caller-session")
+                        .userId("user-1")
+                        .put("tenant", "tenant-a")
+                        .build();
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                        .build();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        processor.process(input, null, null, callerContext).events().collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("thread-1", context.getSessionId());
+        assertEquals("user-1", context.getUserId());
+        assertEquals("tenant-a", context.get("tenant"));
+        assertEquals(input, context.get(RunAgentInput.class));
+        assertEquals("thread-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_THREAD_ID_KEY));
+        assertEquals("run-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+    }
+
+    @Test
+    void processUsesCustomAdapterFactory() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                        .build();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(CustomAdapter::new)
+                        .build();
+
+        processor.process(input, null, null).events().collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("custom-adapter", context.get("adapter"));
+        assertEquals("thread-1", context.getSessionId());
+        assertEquals("run-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+    }
+
+    private static final class CustomAdapter extends AguiAgentAdapter {
+
+        private CustomAdapter(Agent agent, AguiAdapterConfig config) {
+            super(agent, config);
+        }
+
+        @Override
+        protected RuntimeContext buildRuntimeContext(
+                RunAgentInput input, RuntimeContext runtimeContext) {
+            return RuntimeContext.builder(super.buildRuntimeContext(input, runtimeContext))
+                    .put("adapter", "custom-adapter")
+                    .build();
+        }
     }
 }
