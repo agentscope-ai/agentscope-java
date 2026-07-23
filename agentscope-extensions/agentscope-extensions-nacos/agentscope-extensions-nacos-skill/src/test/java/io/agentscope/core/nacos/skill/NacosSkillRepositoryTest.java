@@ -560,6 +560,8 @@ class NacosSkillRepositoryTest {
             zos.finish();
             return baos.toByteArray();
         }
+    }
+
     @Test
     @DisplayName("null knownSkillNames is treated the same as empty list")
     void testNullKnownSkillNamesTreatedAsEmpty() {
