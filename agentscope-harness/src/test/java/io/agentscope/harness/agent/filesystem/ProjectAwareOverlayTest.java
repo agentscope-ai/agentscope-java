@@ -20,9 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -239,5 +241,49 @@ class ProjectAwareOverlayTest {
         var r = overlay.execute(rc, "echo hello", 10);
         assertTrue(r.output().contains("hello"));
         assertEquals(0, r.exitCode());
+    }
+
+    @Test
+    void execute_sessionIsolation_startsInNamespacedWorkspace() throws Exception {
+        assertShellWorkingDirectory(IsolationScope.SESSION, "session-1");
+    }
+
+    @Test
+    void execute_userIsolation_startsInNamespacedWorkspace() throws Exception {
+        assertShellWorkingDirectory(IsolationScope.USER, "alice");
+    }
+
+    @Test
+    void execute_globalIsolation_startsInProjectDirectory() throws Exception {
+        assertShellWorkingDirectory(IsolationScope.GLOBAL, null);
+    }
+
+    private void assertShellWorkingDirectory(IsolationScope isolationScope, String namespace)
+            throws Exception {
+        LocalFilesystemWithShell shell =
+                new LocalFilesystemWithShell(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.of(project, workspace),
+                        120,
+                        100_000,
+                        null,
+                        false,
+                        isolationScope.toNamespaceFactory(),
+                        project);
+        RuntimeContext context =
+                RuntimeContext.builder().userId("alice").sessionId("session-1").build();
+
+        ExecuteResponse response = shell.execute(context, printWorkingDirectoryCommand(), 10);
+
+        assertEquals(0, response.exitCode());
+        Path expected = namespace == null ? project : workspace.resolve(namespace);
+        assertEquals(
+                expected.toRealPath().toString(),
+                Path.of(response.output().strip()).toRealPath().toString());
+    }
+
+    private static String printWorkingDirectoryCommand() {
+        return System.getProperty("os.name").startsWith("Windows") ? "cd" : "pwd";
     }
 }

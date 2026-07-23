@@ -56,11 +56,10 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     private final Map<String, String> env;
 
     /**
-     * Working directory passed to {@link ProcessBuilder#directory(java.io.File)} for shell
-     * commands. When {@code null}, falls back to {@link #getCwd()} (with per-call namespace
-     * prefix). Decouples shell {@code pwd} from the filesystem root so overlay-mode callers can
-     * keep filesystem operations rooted at the agent workspace while shell sees the user's
-     * project directory.
+     * Shell working directory used when the current call has no namespace. Namespaced calls run
+     * under {@link #getCwd()} with the per-call namespace prefix instead. Decouples the default
+     * shell {@code pwd} from the filesystem root so overlay-mode callers can keep filesystem
+     * operations rooted at the agent workspace while shell sees the user's project directory.
      */
     private final Path shellCwd;
 
@@ -195,8 +194,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
-     * @param shellCwd working directory for shell command execution; when {@code null}, falls
-     *     back to {@code rootDir} (with namespace prefix when configured)
+     * @param shellCwd working directory for shell command execution when no namespace applies;
+     *     when {@code null}, falls back to {@code rootDir}
      */
     public LocalFilesystemWithShell(
             Path rootDir,
@@ -222,7 +221,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     /**
      * Most-complete constructor: filesystem operations follow {@code mode} and {@code pathPolicy}
      * (see {@link LocalFilesystem#LocalFilesystem(Path, LocalFsMode, PathPolicy, int, NamespaceFactory)});
-     * shell commands run with {@code pwd = shellCwd} when set, otherwise the filesystem root.
+     * shell commands run inside the namespaced filesystem root when a namespace applies, or with
+     * {@code pwd = shellCwd} when set otherwise.
      *
      * @param rootDir filesystem root for relative-path operations
      * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
@@ -232,8 +232,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process environment
      * @param namespaceFactory optional per-user/session namespace factory
-     * @param shellCwd shell {@code pwd}; {@code null} falls back to {@code rootDir} (with
-     *     namespace prefix when configured)
+     * @param shellCwd shell {@code pwd} when no namespace applies; {@code null} falls back to
+     *     {@code rootDir}
      */
     public LocalFilesystemWithShell(
             Path rootDir,
@@ -296,9 +296,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     /**
-     * Returns the working directory configured for shell {@code execute()} calls, or {@code null}
-     * when shell falls back to the filesystem root (with namespace prefix). Used by upstream
-     * code that needs to expose the user-visible project directory in prompts or diagnostics.
+     * Returns the working directory configured for non-namespaced shell {@code execute()} calls,
+     * or {@code null} when shell falls back to the filesystem root. Used by upstream code that
+     * needs to expose the user-visible project directory in prompts or diagnostics.
      */
     public Path getShellCwd() {
         return shellCwd;
@@ -408,26 +408,25 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
-        if (shellCwd != null) {
-            return shellCwd;
-        }
         NamespaceFactory nsf = getNamespaceFactory();
-        if (nsf == null) {
-            return getCwd();
+        if (nsf != null) {
+            List<String> ns = nsf.getNamespace(rc);
+            if (ns != null && !ns.isEmpty()) {
+                Path namespaced = getCwd();
+                for (String segment : ns) {
+                    namespaced = namespaced.resolve(segment);
+                }
+                try {
+                    Files.createDirectories(namespaced);
+                } catch (IOException e) {
+                    log.warn(
+                            "Failed to create namespace directory {}: {}",
+                            namespaced,
+                            e.getMessage());
+                }
+                return namespaced;
+            }
         }
-        List<String> ns = nsf.getNamespace(rc);
-        if (ns == null || ns.isEmpty()) {
-            return getCwd();
-        }
-        Path namespaced = getCwd();
-        for (String segment : ns) {
-            namespaced = namespaced.resolve(segment);
-        }
-        try {
-            Files.createDirectories(namespaced);
-        } catch (IOException e) {
-            log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
-        }
-        return namespaced;
+        return shellCwd != null ? shellCwd : getCwd();
     }
 }
