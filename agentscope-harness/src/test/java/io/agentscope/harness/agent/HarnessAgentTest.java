@@ -38,6 +38,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -67,6 +68,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -76,6 +78,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
@@ -561,8 +564,10 @@ class HarnessAgentTest {
                                 List.of(userText("request-from-bob")),
                                 RuntimeContext.builder().userId("bob").sessionId("bob-s").build());
 
-        aliceCall.block();
-        bobCall.block();
+        Mono.when(
+                        aliceCall.subscribeOn(Schedulers.parallel()),
+                        bobCall.subscribeOn(Schedulers.parallel()))
+                .block();
 
         String alicePrompt =
                 model.inputs().stream()
@@ -612,6 +617,32 @@ class HarnessAgentTest {
         assertTrue(
                 names.contains(expectedName),
                 "subagents/*.md declaration should use filename as name");
+    }
+
+    @Test
+    void agentSpecLoader_filesystemOverloadsSupportDefaultAndNullContexts() throws Exception {
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Filesystem-loaded helper
+                ---
+                You are a helper.
+                """);
+
+        AbstractFilesystem filesystem = new LocalFilesystem(workspace);
+        assertEquals(
+                List.of("helper"),
+                AgentSpecLoader.loadFromFilesystem(filesystem, workspace).stream()
+                        .map(SubagentDeclaration::getName)
+                        .toList());
+        assertEquals(
+                List.of("helper"),
+                AgentSpecLoader.loadFromFilesystem(filesystem, null, workspace).stream()
+                        .map(SubagentDeclaration::getName)
+                        .toList());
     }
 
     @Test
@@ -1353,7 +1384,7 @@ class HarnessAgentTest {
 
     private static final class RecordingModel implements Model {
 
-        private final List<List<Msg>> inputs = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final List<List<Msg>> inputs = new CopyOnWriteArrayList<>();
 
         @Override
         public String getModelName() {
@@ -1362,9 +1393,7 @@ class HarnessAgentTest {
 
         @Override
         public Flux<ChatResponse> stream(
-                List<Msg> messages,
-                List<ToolSchema> tools,
-                io.agentscope.core.model.GenerateOptions options) {
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             inputs.add(List.copyOf(messages));
             return Flux.just(
                     new ChatResponse(
