@@ -86,7 +86,9 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    @Override
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+        super.snapshotSpec(snapshotSpec);
         this.snapshotSpec = snapshotSpec;
         return this;
     }
