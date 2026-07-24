@@ -16,7 +16,6 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -25,7 +24,7 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.Base64;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,6 @@ public class E2bSandbox extends AbstractBaseSandbox {
     private static final Logger log = LoggerFactory.getLogger(E2bSandbox.class);
 
     private static final int TAR_TIMEOUT_SECONDS = 300;
-    private static final int B64_CHUNK = 4000;
 
     private final E2bSandboxState e2bState;
     private final E2bSandboxClientOptions opt;
@@ -97,15 +95,40 @@ public class E2bSandbox extends AbstractBaseSandbox {
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
+        String tarPath = "/tmp/agentscope-ws-" + UUID.randomUUID() + ".tar";
         StringBuilder script = new StringBuilder("tar ");
         for (String ex :
                 WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
             script.append(ex).append(' ');
         }
-        script.append("-cf - -C ").append(shellSingleQuote(root)).append(" .");
-        String cmd = script.toString();
-        byte[] tar = envd().runShellBinaryStdout(e2bState, root, cmd, TAR_TIMEOUT_SECONDS);
+        script.append("-cf ")
+                .append(tarPath)
+                .append(" -C ")
+                .append(shellSingleQuote(root))
+                .append(" .");
+        envd().runShell(e2bState, root, script.toString(), TAR_TIMEOUT_SECONDS);
+        byte[] tar = downloadFile(tarPath);
         return new ByteArrayInputStream(tar);
+    }
+
+    /**
+     * Upload a file to the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param remotePath absolute path in the sandbox
+     * @param data       file content
+     */
+    public void uploadFile(String remotePath, byte[] data) throws Exception {
+        envd().uploadFile(e2bState, remotePath, data);
+    }
+
+    /**
+     * Download a file from the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param remotePath absolute path in the sandbox
+     * @return file content
+     */
+    public byte[] downloadFile(String remotePath) throws Exception {
+        return envd().downloadFile(e2bState, remotePath);
     }
 
     @Override
@@ -116,29 +139,16 @@ public class E2bSandbox extends AbstractBaseSandbox {
             restoreSandboxFromSnapshotTemplate(nativeId);
             return;
         }
+        String tarPath = "/tmp/agentscope-ws-" + UUID.randomUUID() + ".tar";
+        envd().uploadFile(e2bState, tarPath, all);
         String root = e2bState.getWorkspaceRoot();
-        String b64 = Base64.getEncoder().encodeToString(all);
-        envd().runShell(e2bState, root, "rm -f /tmp/agentscope-ws.b64", 30);
-        ObjectMapper om = new ObjectMapper();
-        for (int i = 0; i < b64.length(); i += B64_CHUNK) {
-            String chunk = b64.substring(i, Math.min(b64.length(), i + B64_CHUNK));
-            String lit = om.writeValueAsString(chunk);
-            String py =
-                    "import pathlib; pathlib.Path('/tmp/agentscope-ws.b64').open('a').write("
-                            + lit
-                            + ")";
-            envd().runShell(e2bState, root, "python3 -c " + shellSingleQuote(py), 120);
+        StringBuilder script = new StringBuilder("tar ");
+        for (String ex :
+                WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
+            script.append(ex).append(' ');
         }
-        String pyFin =
-                "import base64,pathlib,subprocess; d="
-                        + om.writeValueAsString(root)
-                        + "; raw=base64.standard_b64decode(pathlib.Path('/tmp/agentscope-ws.b64').read_text());"
-                        + " subprocess.run(['tar','xf','-','-C',d],input=raw,check=True)";
-        envd().runShell(
-                        e2bState,
-                        root,
-                        "python3 -c " + shellSingleQuote(pyFin),
-                        TAR_TIMEOUT_SECONDS);
+        script.append("xf ").append(tarPath).append(" -C ").append(shellSingleQuote(root));
+        envd().runShell(e2bState, root, script.toString(), TAR_TIMEOUT_SECONDS);
     }
 
     @Override

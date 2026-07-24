@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.spec;
 
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
@@ -54,6 +55,18 @@ public abstract class SandboxFilesystemSpec {
     protected abstract SandboxSnapshotSpec snapshotSpec();
 
     protected abstract WorkspaceSpec workspaceSpec();
+
+    /**
+     * Create a sandbox-backed filesystem for this spec.
+     *
+     * <p>Subclasses may override to provide a custom filesystem implementation (e.g. one that uses
+     * native binary I/O instead of shell-based base64 transfers).
+     *
+     * @return a new sandbox-backed filesystem
+     */
+    public SandboxBackedFilesystem createFilesystem() {
+        return new SandboxBackedFilesystem();
+    }
 
     public SandboxFilesystemSpec isolationScope(IsolationScope scope) {
         this.isolationScope = scope;

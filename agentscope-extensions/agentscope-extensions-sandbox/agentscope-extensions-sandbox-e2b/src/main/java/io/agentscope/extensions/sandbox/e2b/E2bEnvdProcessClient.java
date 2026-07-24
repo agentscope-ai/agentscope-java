@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -38,10 +39,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal Connect client for envd {@code process.Process/Start} (server streaming), sufficient
@@ -49,8 +53,12 @@ import okhttp3.Response;
  */
 final class E2bEnvdProcessClient {
 
+    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
+
     private static final MediaType CONNECT_JSON = MediaType.get("application/connect+json");
     private static final MediaType CONNECT_PROTO = MediaType.get("application/connect+proto");
+    private static final MediaType APPLICATION_OCTET_STREAM =
+            MediaType.get("application/octet-stream");
     private static final int ENVD_PORT = 49983;
     private static final int OUTPUT_TRUNCATE_BYTES = 512 * 1024;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -126,26 +134,14 @@ final class E2bEnvdProcessClient {
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request.Builder rb =
-                new Request.Builder()
-                        .url(url)
-                        .post(RequestBody.create(envelope, connectMediaType()))
-                        .addHeader("Connect-Protocol-Version", "1")
-                        .addHeader("User-Agent", "agentscope-java-e2b")
-                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
-                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
-                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
-        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
-            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
-        }
-        Request req = rb.build();
+        Request req = buildEnvdRequest(url, envelope, connectMediaType(), state).build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = Integer.MIN_VALUE;
+        int exit;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body() != null ? res.body().string() : "";
+                String err = res.body().string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
@@ -178,7 +174,9 @@ final class E2bEnvdProcessClient {
             if (lenB.length < 4) {
                 break;
             }
-            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt() & 0x7FFFFFFF;
+            // Connect protocol: Message-Length is 4-byte unsigned integer, big-endian
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt();
             if (len < 0 || len > 64 * 1024 * 1024) {
                 throw new IOException("Invalid connect frame length: " + len);
             }
@@ -186,12 +184,37 @@ final class E2bEnvdProcessClient {
             if (data.length < len) {
                 break;
             }
-            if (flags != 0x00) {
+            // Connect protocol: flags bit 1 = end_stream — final envelope carries EndStreamMessage
+            // JSON
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0x02) != 0) {
+                EndStreamMessage endMsg = parseEndStreamResponse(data);
+                if (endMsg.hasError()) {
+                    log.debug(
+                            "drainStartStream: endStream error code={} msg={}",
+                            endMsg.code(),
+                            endMsg.message());
+                    throw new SandboxException.SandboxRuntimeException(
+                            SandboxErrorCode.WORKSPACE_START_ERROR,
+                            "Process start failed: " + endMsg.code() + ": " + endMsg.message());
+                }
+                log.debug("drainStartStream: endStream ok, exit={}", exit);
+                break;
+            }
+            // Connect protocol: flags bit 0 = compressed
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0x01) != 0) {
+                throw new IOException("Compressed connect frames not supported");
+            }
+            // Connect protocol: flags bits 2-7 reserved for future extensions
+            // https://connectrpc.com/docs/protocol/#streaming-rpcs
+            if ((flags & 0xFC) != 0) {
                 continue;
             }
             try {
                 DynamicMessage sr = parseStartResponseFrame(data);
                 if (!sr.hasField(srEventF)) {
+                    log.debug("drainStartStream: frame with no event");
                     continue;
                 }
                 DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
@@ -202,15 +225,27 @@ final class E2bEnvdProcessClient {
                 }
                 if (pe.hasField(peEndF)) {
                     DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
-                    Descriptors.FieldDescriptor ec =
-                            end.getDescriptorForType().findFieldByName("exit_code");
-                    if (end.hasField(ec)) {
-                        Object v = end.getField(ec);
-                        exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    Descriptors.Descriptor endDesc = end.getDescriptorForType();
+                    // Proto3: scalar sint32 defaults to 0, omitted from wire when 0.
+                    // getField() returns proto3 default (0) when absent; hasField() returns false.
+                    // https://protobuf.dev/programming-guides/proto3/#default
+                    Descriptors.FieldDescriptor ecF = endDesc.findFieldByName("exit_code");
+                    Object v = end.getField(ecF);
+                    exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    // EndEvent.error — populated when cmd.Wait() returns ExitError
+                    // (non-zero exit code or signal). Go handler: ProcessEvent_EndEvent.Error =
+                    // errMsg
+                    // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+                    // Python SDK: error=event.event.end.error
+                    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+                    Descriptors.FieldDescriptor errF = endDesc.findFieldByName("error");
+                    if (end.hasField(errF)) {
+                        stderr.write(
+                                String.valueOf(end.getField(errF))
+                                        .getBytes(StandardCharsets.UTF_8));
                     }
                 }
-            } catch (IOException e) {
-                continue;
+            } catch (IOException ignored) {
             }
         }
         return exit;
@@ -228,6 +263,34 @@ final class E2bEnvdProcessClient {
                 ((ByteString) v).writeTo(out);
             }
             return;
+        }
+    }
+
+    // Connect protocol EndStreamMessage JSON: {"error":{"code":"...","message":"..."}}
+    // Python SDK ServerStreamParser also parses end_stream envelope as JSON error:
+    //   if EnvelopeFlags.end_stream in flags:
+    //       data = json.loads(data)
+    //       if "error" in data: raise make_error(data["error"])
+    //       return  # no error → stop iteration
+    // https://connectrpc.com/docs/protocol/#error-end-stream
+    // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b_connect/client.py#L230-L238
+    private static EndStreamMessage parseEndStreamResponse(byte[] data) throws IOException {
+        JsonNode root = JSON.readTree(data);
+        if (root == null || root.isNull()) {
+            return new EndStreamMessage(null, null);
+        }
+        JsonNode errorNode = root.path("error");
+        if (errorNode.isMissingNode() || errorNode.isNull()) {
+            return new EndStreamMessage(null, null);
+        }
+        String code = errorNode.path("code").asText(null);
+        String message = errorNode.path("message").asText(null);
+        return new EndStreamMessage(code, message);
+    }
+
+    private record EndStreamMessage(String code, String message) {
+        boolean hasError() {
+            return code != null;
         }
     }
 
@@ -281,6 +344,101 @@ final class E2bEnvdProcessClient {
         ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(msg.length);
         System.arraycopy(msg, 0, out, 5, msg.length);
         return out;
+    }
+
+    // ---- filesystem helpers (REST API) ----
+
+    /**
+     * Upload a file to the sandbox filesystem via the E2B Filesystem REST API. Creates parent
+     * directories automatically and overwrites existing files.
+     *
+     * @param state      sandbox state
+     * @param remotePath absolute path in the sandbox
+     * @param data       file content
+     */
+    public void uploadFile(E2bSandboxState state, String remotePath, byte[] data) throws Exception {
+        String host = filesystemHost(state);
+        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+
+        RequestBody fileBody = RequestBody.create(data, APPLICATION_OCTET_STREAM);
+        RequestBody multipart =
+                new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("file", filenameFromPath(remotePath), fileBody)
+                        .build();
+        Request req = buildFilesystemRequest(url, state).post(multipart).build();
+
+        try (Response res = http.newCall(req).execute()) {
+            if (!res.isSuccessful()) {
+                String err = res.body().string();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
+                        "envd upload file failed HTTP " + res.code() + ": " + err);
+            }
+        }
+    }
+
+    /**
+     * Download a file from the sandbox filesystem via the E2B Filesystem REST API.
+     *
+     * @param state      sandbox state
+     * @param remotePath absolute path in the sandbox
+     * @return file content
+     */
+    public byte[] downloadFile(E2bSandboxState state, String remotePath) throws Exception {
+        String host = filesystemHost(state);
+        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+        Request req = buildFilesystemRequest(url, state).get().build();
+        try (Response res = http.newCall(req).execute()) {
+            if (!res.isSuccessful()) {
+                String err = res.body().string();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                        "envd download file failed HTTP " + res.code() + ": " + err);
+            }
+            return res.body().bytes();
+        }
+    }
+
+    private static String filenameFromPath(String path) {
+        int idx = path.lastIndexOf('/');
+        return idx >= 0 ? path.substring(idx + 1) : path;
+    }
+
+    private Request.Builder buildEnvdRequest(
+            String url, byte[] body, MediaType mediaType, E2bSandboxState state) {
+        Request.Builder rb =
+                new Request.Builder()
+                        .url(url)
+                        .post(RequestBody.create(body, mediaType))
+                        .addHeader("Connect-Protocol-Version", "1")
+                        .addHeader("User-Agent", "agentscope-java-e2b")
+                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
+                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
+            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
+        }
+        return rb;
+    }
+
+    private Request.Builder buildFilesystemRequest(String url, E2bSandboxState state) {
+        Request.Builder rb =
+                new Request.Builder()
+                        .url(url)
+                        .addHeader("User-Agent", "agentscope-java-e2b")
+                        .addHeader("E2b-Sandbox-Id", state.getSandboxId())
+                        .addHeader("E2b-Sandbox-Port", Integer.toString(ENVD_PORT))
+                        .addHeader("Authorization", basicAuthUser(opt.getRunUser()));
+        if (state.getEnvdAccessToken() != null && !state.getEnvdAccessToken().isBlank()) {
+            rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
+        }
+        return rb;
+    }
+
+    private static String filesystemHost(E2bSandboxState state) {
+        String dom = state.getSandboxDomain();
+        return "https://sandbox." + (dom != null && !dom.isBlank() ? dom : "e2b.app");
     }
 
     private E2bCodec codec() {
@@ -338,6 +496,12 @@ final class E2bEnvdProcessClient {
 
         JsonNode endNode = eventNode.path("end");
         if (!endNode.isMissingNode() && !endNode.isNull()) {
+            // Always set end on event when node exists, even if sub-fields are empty
+            // (proto3 default 0 for sint32, empty string for proto3_optional).
+            // Also parse "error" field for signal-killed processes.
+            // Python SDK reads exit_code/error directly without presence check:
+            //   exit_code=event.event.end.exit_code, error=event.event.end.error
+            // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
             Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
@@ -345,9 +509,17 @@ final class E2bEnvdProcessClient {
             if (exitCodeNode.canConvertToInt()) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
             }
-            if (!endBuilder.getAllFields().isEmpty()) {
-                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
+            Descriptors.FieldDescriptor errorField = endDesc.findFieldByName("error");
+            // EndEvent.error — populated when cmd.Wait() returns ExitError
+            // (non-zero exit code or signal). Go handler: Error = errMsg.
+            // https://github.com/e2b-dev/infra/blob/main/packages/envd/internal/services/process/handler/handler.go
+            // Python SDK: error=event.event.end.error
+            // https://github.com/e2b-dev/e2b/blob/main/packages/python-sdk/e2b/sandbox_sync/commands/command_handle.py#L115
+            JsonNode errorNode = endNode.path("error");
+            if (errorNode.isTextual()) {
+                endBuilder.setField(errorField, errorNode.textValue());
             }
+            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
         }
 
         if (!event.getAllFields().isEmpty()) {
