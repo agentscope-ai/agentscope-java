@@ -1,6 +1,6 @@
 # 技能仓库（Skill Repository）
 
-`AgentSkill` 是 AgentScope 用 Markdown + 资源文件来描述一个可复用"技能"的格式（参考 [Harness · 技能](../../docs/harness/skill)）。`AgentSkillRepository` 接口负责把这些技能从外部存储里加载进来，再交给 `Toolkit` / `ReActAgent` 使用。
+`AgentSkill` 是 AgentScope 用 Markdown + 资源文件来描述一个可复用"技能"的格式（参考 [Harness · 技能](../../docs/harness/skill.md)）。`AgentSkillRepository` 接口负责把这些技能从外部存储里加载进来，再交给 `Toolkit` / `ReActAgent` 使用。
 
 `agentscope-extensions-*` 仓库提供了以下开箱即用的实现：
 
@@ -10,7 +10,7 @@
 | [MySQL Repository](mysql-repository.md) | MySQL 数据库 | 通过控制台 / 业务系统在线编辑、动态发布 |
 | [PostgreSQL Repository](postgresql-repository.md) | PostgreSQL 数据库 | 已有 PostgreSQL 基础设施，在线编辑、动态发布 |
 
-> Nacos 也提供了一个 `AgentSkillRepository` 实现：见 [Nacos](../infrastructure/nacos)。
+> Nacos 也提供了一个 `AgentSkillRepository` 实现：见 [Nacos](../infrastructure/nacos.md)。
 
 ## 接入方式
 
