@@ -15,33 +15,16 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.ToolChoice;
-import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
-import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
-import java.util.List;
-
 /**
  * Multi-agent formatter for Zhipu GLM models.
  *
- * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with GLM-specific handling:
- * <ul>
- *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>Only supports "auto" tool_choice</li>
- *   <li>Does NOT support strict parameter in tool definitions</li>
- * </ul>
- *
- * <p>Usage:
- * <pre>{@code
- * OpenAIChatModel.builder()
- *     .formatter(new GLMMultiAgentFormatter())
- *     .modelName("glm-4")
- *     .baseUrl("https://open.bigmodel.cn/api/paas/v4")
- *     .apiKey(apiKey)
- *     .build();
- * }</pre>
+ * @deprecated use {@link io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter}
+ *     instead. All behavior is inherited from the new implementation; this class only remains for
+ *     backwards compatibility and will be removed in a future release.
  */
-public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
+@Deprecated
+public class GLMMultiAgentFormatter
+        extends io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter {
 
     public GLMMultiAgentFormatter() {
         super();
@@ -49,21 +32,5 @@ public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     public GLMMultiAgentFormatter(String conversationHistoryPrompt) {
         super(conversationHistoryPrompt);
-    }
-
-    @Override
-    protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> messages = super.doFormat(msgs);
-        return GLMFormatter.ensureUserMessage(messages);
-    }
-
-    @Override
-    protected boolean supportsStrict() {
-        return false;
-    }
-
-    @Override
-    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
-        GLMFormatter.applyGLMToolChoice(request, toolChoice);
     }
 }

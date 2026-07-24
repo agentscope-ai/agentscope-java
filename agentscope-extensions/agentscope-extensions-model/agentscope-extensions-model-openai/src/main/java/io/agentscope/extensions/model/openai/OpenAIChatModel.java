@@ -62,7 +62,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
  *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
- *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.glm.GLMFormatter} - Zhipu GLM models</li>
  * </ul>
  */
 public class OpenAIChatModel extends ChatModelBase {
@@ -304,7 +304,7 @@ public class OpenAIChatModel extends ChatModelBase {
          * <ul>
          *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
          *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
-         *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.glm.GLMFormatter} - Zhipu GLM models</li>
          * </ul>
          *
          * @param formatter the formatter (null for default OpenAI formatter)
