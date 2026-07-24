@@ -116,6 +116,22 @@ public final class GracefulShutdownManager {
     }
 
     /**
+     * Remove the {@link ShutdownStateSaver} previously registered for the given agent.
+     *
+     * <p>Must be called from {@link io.agentscope.core.ReActAgent#close()} (or equivalent
+     * lifecycle hook) so that ephemeral / per-call agent instances do not accumulate
+     * indefinitely in {@link #stateSavers}.
+     *
+     * @param agent the agent whose saver should be removed; no-op if {@code null}
+     */
+    public void unbindStateSaver(Agent agent) {
+        if (agent == null) {
+            return;
+        }
+        stateSavers.remove(agent.getAgentId());
+    }
+
+    /**
      * Check whether the agent was previously interrupted by shutdown, and clear the flag.
      *
      * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
