@@ -73,8 +73,12 @@ agentscope:
 ```
 
 该 starter 依赖 `agentscope-spring-boot-starter` 提供 `ReActAgent` bean。每次请求通过
-`ObjectProvider<ReActAgent>` 获取 fresh agent，response/conversation 状态由
-`ResponsesStateService` 管理。
+`ObjectProvider<ReActAgent>` 获取已配置的 bean。请求级 hook、仅含 schema 的工具以及临时
+agent 状态都存放在 invocation-local `RuntimeContext` 中，因此默认 singleton 和自定义
+prototype bean 均受支持。response/conversation 状态由 `ResponsesStateService` 管理。
+
+使用 singleton agent 时，应用配置的 `Model`、hook 和 `AgentTool` 实现必须支持并发调用。
+如果这些应用侧依赖持有请求级可变状态，应改用 prototype bean。
 
 ## Endpoints
 

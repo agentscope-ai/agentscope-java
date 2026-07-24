@@ -77,6 +77,7 @@ class SkillToolFactory {
      * @return AgentTool for loading skill resources (including SKILL.md)
      */
     AgentTool createSkillAccessToolAgentTool() {
+        Toolkit executionToolkit = toolkit;
         return new AgentTool() {
             @Override
             public String getName() {
@@ -148,7 +149,7 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    String result = loadSkillResourceImpl(skillId, path);
+                    String result = loadSkillResourceImpl(skillId, path, executionToolkit);
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
                     logger.error("Error loading skill resource", e);
@@ -169,19 +170,19 @@ class SkillToolFactory {
      * @return The formatted resource content or error message with available resources
      * @throws IllegalArgumentException if skill doesn't exist or resource not found
      */
-    private String loadSkillResourceImpl(String skillId, String path) {
+    private String loadSkillResourceImpl(String skillId, String path, Toolkit executionToolkit) {
         AgentSkill skill = validateSkillExists(skillId);
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
-            activateSkill(skillId);
+            activateSkill(skillId, executionToolkit);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
         // 1. In-memory map (eager FS repos, classpath repos, marketplace prefetch).
         Map<String, String> resources = skill.getResources();
         if (resources != null && resources.containsKey(path)) {
-            activateSkill(skillId);
+            activateSkill(skillId, executionToolkit);
             return buildResourceResponse(skillId, path, resources.get(path));
         }
 
@@ -193,7 +194,7 @@ class SkillToolFactory {
             Optional<String> diskContent =
                     readFromOriginDir(skill.getOriginDir().get(), sanitized.get());
             if (diskContent.isPresent()) {
-                activateSkill(skillId);
+                activateSkill(skillId, executionToolkit);
                 return buildResourceResponse(skillId, path, diskContent.get());
             }
         }
@@ -367,29 +368,29 @@ class SkillToolFactory {
         return skill;
     }
 
-    private void activateSkill(String skillId) {
+    private void activateSkill(String skillId, Toolkit executionToolkit) {
         skillRegistry.setSkillActive(skillId, true);
         logger.info("Activated skill: {}", skillId);
 
         String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
-        if (toolkit.getToolGroup(toolsGroupName) != null) {
-            toolkit.updateToolGroups(List.of(toolsGroupName), true);
+        if (executionToolkit.getToolGroup(toolsGroupName) != null) {
+            executionToolkit.updateToolGroups(List.of(toolsGroupName), true);
             logger.info(
                     "Activated skill tool group: {} and its tools: {}",
                     toolsGroupName,
-                    toolkit.getToolGroup(toolsGroupName).getTools());
+                    executionToolkit.getToolGroup(toolsGroupName).getTools());
         }
 
         // Also activate any SkillToolGroup bound to this skill via activateOnSkill
         AgentSkill agentSkill = skillRegistry.getSkill(skillId);
         if (agentSkill != null) {
             List<String> boundGroups =
-                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+                    executionToolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
             for (String group : boundGroups) {
                 if (!group.equals(toolsGroupName)
-                        && toolkit.getToolGroup(group) != null
-                        && !toolkit.getToolGroup(group).isActive()) {
-                    toolkit.updateToolGroups(List.of(group), true);
+                        && executionToolkit.getToolGroup(group) != null
+                        && !executionToolkit.getToolGroup(group).isActive()) {
+                    executionToolkit.updateToolGroups(List.of(group), true);
                     logger.info(
                             "Activated skill-bound tool group: {} for skill: {}",
                             group,

@@ -16,7 +16,8 @@
 package io.agentscope.spring.boot.responses.web;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.hook.Hook;
+import io.agentscope.core.agent.AgentCallOptions;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
@@ -35,7 +36,6 @@ import io.agentscope.spring.boot.responses.service.ResponsesStateService;
 import io.agentscope.spring.boot.responses.service.ResponsesStateService.PreparedRequest;
 import io.agentscope.spring.boot.responses.service.ResponsesStreamingService;
 import jakarta.validation.Valid;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -71,8 +71,8 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Client sends {@code input}, optional {@code instructions}, optional tools, and optional
  *       output formatting
  *   <li>Controller converts the HTTP DTO into AgentScope messages and request-scoped options
- *   <li>Server creates a fresh {@link ReActAgent}, registers schema-only tools when requested, and
- *       attaches per-request options
+ *   <li>Server obtains a {@link ReActAgent} and supplies hooks, tools, and state through an
+ *       invocation-local context
  *   <li>Agent runs in normal, structured-output, or streaming mode
  *   <li>Response builder returns a Responses-shaped JSON object or Responses-style SSE events
  * </ol>
@@ -111,7 +111,7 @@ public class ResponsesController {
     /**
      * Constructs a new {@code ResponsesController}.
      *
-     * @param agentProvider Provider for creating prototype-scoped agent instances
+     * @param agentProvider Provider for resolving the configured agent
      * @param inputConverter Converter for Responses request DTOs to AgentScope messages
      * @param toolConverter Converter for Responses function tools to ToolSchema
      * @param generationOptionsConverter Converter for request generation parameters
@@ -154,21 +154,34 @@ public class ResponsesController {
     public Object createResponse(@Valid @RequestBody ResponsesRequest request) {
         String responseId = responseId();
         try {
-            PreparedConversion preparedConversion = prepareRequest(request);
+            PreparedConversion preparedConversion = prepareRequest(request, responseId);
             PreparedRequest prepared = preparedConversion.prepared();
             ResponsesConversionResult conversion = preparedConversion.conversion();
             if (Boolean.TRUE.equals(prepared.request().getStream())) {
                 Flux<ServerSentEvent<String>> stream =
-                        createResponseStream(prepared.request(), conversion, responseId, prepared);
+                        createResponseStream(
+                                prepared.request(),
+                                conversion,
+                                responseId,
+                                prepared,
+                                preparedConversion.runtimeContext());
                 return ResponseEntity.ok()
                         .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
                         .body(stream);
             }
             if (Boolean.TRUE.equals(prepared.request().getBackground())) {
                 return createBackgroundResponse(
-                        prepared.request(), conversion, responseId, prepared);
+                        prepared.request(),
+                        conversion,
+                        responseId,
+                        prepared,
+                        preparedConversion.runtimeContext());
             }
-            return createNonStreamingResponse(prepared.request(), conversion, responseId)
+            return createNonStreamingResponse(
+                            prepared.request(),
+                            conversion,
+                            responseId,
+                            preparedConversion.runtimeContext())
                     .map(response -> stateService.save(response, prepared));
         } catch (ResponsesValidationException e) {
             return ResponseEntity.status(responseStatus(e))
@@ -195,14 +208,18 @@ public class ResponsesController {
     public Object createResponseStream(@Valid @RequestBody ResponsesRequest request) {
         String responseId = responseId();
         try {
-            PreparedConversion preparedConversion = prepareRequest(request);
+            PreparedConversion preparedConversion = prepareRequest(request, responseId);
             PreparedRequest prepared = preparedConversion.prepared();
             ResponsesConversionResult conversion = preparedConversion.conversion();
             return ResponseEntity.ok()
                     .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
                     .body(
                             createResponseStream(
-                                    prepared.request(), conversion, responseId, prepared));
+                                    prepared.request(),
+                                    conversion,
+                                    responseId,
+                                    prepared,
+                                    preparedConversion.runtimeContext()));
         } catch (ResponsesValidationException e) {
             return ResponseEntity.status(responseStatus(e))
                     .body(responseBuilder.buildErrorResponse(e));
@@ -326,11 +343,15 @@ public class ResponsesController {
                 throw ResponsesValidationException.unsupported(
                         "background is not supported for response compaction", "background");
             }
-            PreparedConversion preparedConversion = prepareRequest(request);
+            request.setStream(false);
+            PreparedConversion preparedConversion = prepareRequest(request, responseId);
             PreparedRequest prepared = preparedConversion.prepared();
-            prepared.request().setStream(false);
             ResponsesConversionResult conversion = preparedConversion.conversion();
-            return createNonStreamingResponse(prepared.request(), conversion, responseId)
+            return createNonStreamingResponse(
+                            prepared.request(),
+                            conversion,
+                            responseId,
+                            preparedConversion.runtimeContext())
                     .map(response -> stateService.save(response, prepared));
         } catch (ResponsesValidationException e) {
             return ResponseEntity.status(responseStatus(e))
@@ -349,14 +370,24 @@ public class ResponsesController {
      * @return Mono containing completed or failed response
      */
     private Mono<ResponsesResponse> createNonStreamingResponse(
-            ResponsesRequest request, ResponsesConversionResult conversion, String responseId) {
+            ResponsesRequest request,
+            ResponsesConversionResult conversion,
+            String responseId,
+            RuntimeContext runtimeContext) {
         try {
-            ReActAgent agent = prepareAgent(request, conversion);
+            PreparedAgentCall preparedCall = prepareAgentCall(runtimeContext);
             long startedAt = System.currentTimeMillis();
             Mono<Msg> call =
                     conversion.structuredOutputSchema() != null
-                            ? agent.call(conversion.messages(), conversion.structuredOutputSchema())
-                            : agent.call(conversion.messages());
+                            ? preparedCall
+                                    .agent()
+                                    .call(
+                                            conversion.messages(),
+                                            conversion.structuredOutputSchema(),
+                                            preparedCall.runtimeContext())
+                            : preparedCall
+                                    .agent()
+                                    .call(conversion.messages(), preparedCall.runtimeContext());
             return call.map(
                             reply -> {
                                 log.debug(
@@ -389,22 +420,25 @@ public class ResponsesController {
      * @param conversion Converted messages and structured-output metadata
      * @param responseId Response ID
      * @param prepared Prepared state metadata for storage
+     * @param runtimeContext Validated invocation-local context
      * @return Flux of Spring SSE events
      */
     private Flux<ServerSentEvent<String>> createResponseStream(
             ResponsesRequest request,
             ResponsesConversionResult conversion,
             String responseId,
-            PreparedRequest prepared) {
+            PreparedRequest prepared,
+            RuntimeContext runtimeContext) {
         try {
-            ReActAgent agent = prepareAgent(request, conversion);
+            PreparedAgentCall preparedCall = prepareAgentCall(runtimeContext);
             return streamingService
                     .streamAsSse(
-                            agent,
+                            preparedCall.agent(),
                             conversion.messages(),
                             conversion.structuredOutputSchema(),
                             request,
                             responseId,
+                            preparedCall.runtimeContext(),
                             event -> {
                                 // The stream itself carries the final response object, so persist
                                 // only when the adapter emits a terminal event.
@@ -415,16 +449,23 @@ public class ResponsesController {
                                 }
                             })
                     .onErrorResume(
-                            error ->
-                                    Flux.just(
-                                            streamingService.createErrorSseEvent(
-                                                    error, request, responseId)));
+                            error -> failedResponseStream(error, request, responseId, prepared));
         } catch (Exception e) {
             if (e instanceof ResponsesValidationException validationException) {
                 throw validationException;
             }
-            return Flux.just(streamingService.createErrorSseEvent(e, request, responseId));
+            return failedResponseStream(e, request, responseId, prepared);
         }
+    }
+
+    private Flux<ServerSentEvent<String>> failedResponseStream(
+            Throwable error,
+            ResponsesRequest request,
+            String responseId,
+            PreparedRequest prepared) {
+        ResponsesResponse failed = responseBuilder.buildFailedResponse(request, error, responseId);
+        stateService.save(failed, prepared);
+        return Flux.just(streamingService.createErrorSseEvent(failed));
     }
 
     /**
@@ -434,13 +475,15 @@ public class ResponsesController {
      * @param conversion Converted messages and structured-output metadata
      * @param responseId Response ID
      * @param prepared Prepared state metadata for storage
+     * @param runtimeContext Validated invocation-local context
      * @return Mono containing the queued response placeholder
      */
     private Mono<ResponsesResponse> createBackgroundResponse(
             ResponsesRequest request,
             ResponsesConversionResult conversion,
             String responseId,
-            PreparedRequest prepared) {
+            PreparedRequest prepared,
+            RuntimeContext runtimeContext) {
         ResponsesResponse queued = responseBuilder.baseResponse(request, responseId, "queued");
         queued.setBackground(true);
         queued.setStore(true);
@@ -449,7 +492,15 @@ public class ResponsesController {
         Disposable.Swap task = Disposables.swap();
         stateService.saveBackground(queued, prepared, task);
         Disposable subscription =
-                Mono.defer(() -> createNonStreamingResponse(request, conversion, responseId))
+                Mono.defer(
+                                () ->
+                                        createNonStreamingResponse(
+                                                request, conversion, responseId, runtimeContext))
+                        .onErrorResume(
+                                error ->
+                                        Mono.just(
+                                                responseBuilder.buildFailedResponse(
+                                                        request, error, responseId)))
                         .map(response -> stateService.completeBackground(response, prepared))
                         .doFinally(signal -> task.dispose())
                         .subscribeOn(Schedulers.boundedElastic())
@@ -459,38 +510,42 @@ public class ResponsesController {
     }
 
     /**
-     * Create and configure a fresh agent for one request.
+     * Resolve the configured agent for a validated invocation-local context.
      *
-     * @param request Prepared Responses request
-     * @param conversion Converted messages and request-scoped system fragments
-     * @return Configured agent
+     * @param runtimeContext Validated invocation-local context
+     * @return Agent and runtime context for this invocation
      */
-    private ReActAgent prepareAgent(
-            ResponsesRequest request, ResponsesConversionResult conversion) {
+    private PreparedAgentCall prepareAgentCall(RuntimeContext runtimeContext) {
         ReActAgent agent = agentProvider.getObject();
         if (agent == null) {
             throw new IllegalStateException("Failed to create ReActAgent: provider returned null");
         }
+        return new PreparedAgentCall(agent, runtimeContext);
+    }
+
+    private RuntimeContext prepareRuntimeContext(
+            ResponsesRequest request, ResponsesConversionResult conversion, String responseId) {
+        AgentCallOptions.Builder options = AgentCallOptions.builder().stateless(true);
         if (request.getTools() != null && !request.getTools().isEmpty()) {
-            agent.getToolkit()
-                    .registerSchemas(toolConverter.convertToToolSchemas(request.getTools()));
+            options.externalToolSchemas(toolConverter.convertToToolSchemas(request.getTools()));
         }
         GenerateOptions requestOptions = generationOptionsConverter.convert(request);
         ResponsesRequestHook hook =
                 new ResponsesRequestHook(conversion.systemFragments(), requestOptions);
-        List<Hook> hooks = agent.getHooks();
-        // The starter uses a prototype agent, but hooks are still sorted to respect application
-        // hook priority when users add their own request customizations.
-        hooks.add(hook);
-        hooks.sort(Comparator.comparingInt(Hook::priority));
-        return agent;
+        options.hook(hook);
+        return RuntimeContext.builder()
+                .sessionId(responseId)
+                .put(AgentCallOptions.class, options.build())
+                .build();
     }
 
-    private PreparedConversion prepareRequest(ResponsesRequest request) {
+    private PreparedConversion prepareRequest(ResponsesRequest request, String responseId) {
         PreparedRequest prepared = stateService.prepare(request);
         ResponsesConversionResult conversion = inputConverter.convert(prepared.request());
+        RuntimeContext runtimeContext =
+                prepareRuntimeContext(prepared.request(), conversion, responseId);
         stateService.commitConversation(prepared);
-        return new PreparedConversion(prepared, conversion);
+        return new PreparedConversion(prepared, conversion, runtimeContext);
     }
 
     private String responseId() {
@@ -504,5 +559,9 @@ public class ResponsesController {
     }
 
     private record PreparedConversion(
-            PreparedRequest prepared, ResponsesConversionResult conversion) {}
+            PreparedRequest prepared,
+            ResponsesConversionResult conversion,
+            RuntimeContext runtimeContext) {}
+
+    private record PreparedAgentCall(ReActAgent agent, RuntimeContext runtimeContext) {}
 }

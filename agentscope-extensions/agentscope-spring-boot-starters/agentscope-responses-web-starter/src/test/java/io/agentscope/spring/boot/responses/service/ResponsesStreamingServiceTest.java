@@ -18,18 +18,21 @@ package io.agentscope.spring.boot.responses.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
 import io.agentscope.core.responses.model.ResponsesRequest;
 import io.agentscope.core.responses.model.ResponsesResponse;
 import io.agentscope.core.responses.model.ResponsesStreamEvent;
 import io.agentscope.core.responses.streaming.ResponsesStreamingAdapter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +78,45 @@ class ResponsesStreamingServiceTest {
         assertThat(data.path("response").path("status").asText()).isEqualTo("failed");
         assertThat(data.path("response").path("error").path("code").asText())
                 .isEqualTo("runtime_error");
+    }
+
+    @Test
+    void shouldNotifyObserverWithFailedEventWhenSseSerializationFails() {
+        ResponsesStreamingAdapter streamingAdapter = mock(ResponsesStreamingAdapter.class);
+        ResponsesStreamingAdapter realAdapter =
+                new ResponsesStreamingAdapter(new ResponsesResponseBuilder());
+        ResponsesStreamingService service = new ResponsesStreamingService(streamingAdapter);
+        ReActAgent agent = mock(ReActAgent.class);
+        List<Msg> messages = List.of();
+        ResponsesRequest request = new ResponsesRequest();
+        request.setModel("test-model");
+        String responseId = "resp_observed_failure";
+        List<ResponsesStreamEvent> observed = new ArrayList<>();
+
+        when(streamingAdapter.stream(
+                        eq(agent),
+                        eq(messages),
+                        isNull(JsonNode.class),
+                        eq(request),
+                        eq(responseId),
+                        isNull(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(unserializableEvent(responseId), serializableEvent(responseId)));
+        when(streamingAdapter.createFailedEvent(any(Throwable.class), eq(request), eq(responseId)))
+                .thenAnswer(
+                        invocation ->
+                                realAdapter.createFailedEvent(
+                                        invocation.getArgument(0), request, responseId));
+
+        List<ServerSentEvent<String>> events =
+                service.streamAsSse(agent, messages, null, request, responseId, observed::add)
+                        .collectList()
+                        .block();
+
+        assertThat(events).hasSize(1);
+        assertThat(observed).hasSize(1);
+        assertThat(observed.get(0).getType()).isEqualTo("response.failed");
+        assertThat(observed.get(0).getResponse().getStatus()).isEqualTo("failed");
     }
 
     private ResponsesStreamEvent unserializableEvent(String responseId) {

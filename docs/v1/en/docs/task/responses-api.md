@@ -74,9 +74,15 @@ agentscope:
     base-path: /v1/conversations
 ```
 
-The starter expects a `ReActAgent` bean from `agentscope-spring-boot-starter`. Each request obtains
-a fresh agent instance through `ObjectProvider<ReActAgent>`, while response/conversation state is
-managed by `ResponsesStateService`.
+The starter expects a `ReActAgent` bean from `agentscope-spring-boot-starter`. Each request resolves
+the configured bean through `ObjectProvider<ReActAgent>`. Request-specific hooks, schema-only tools,
+and transient agent state are carried in an invocation-local `RuntimeContext`, so both the default
+singleton and custom prototype beans are supported. Response/conversation state is managed by
+`ResponsesStateService`.
+
+When using a singleton agent, configured `Model`, hook, and `AgentTool` implementations must support
+concurrent invocation. Use a prototype bean when those application-provided dependencies own
+request-specific mutable state.
 
 ## Endpoints
 

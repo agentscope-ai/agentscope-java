@@ -117,6 +117,24 @@ class ResponsesStateServiceTest {
     }
 
     @Test
+    void shouldPageAfterCursorWithoutOverflowingLargeLimit() {
+        ResponsesStateService service = new ResponsesStateService();
+        ResponsesConversation conversation = service.createConversation(null);
+        ResponsesList<Object> created =
+                service.createConversationItems(
+                        conversation.getId(), List.of(message(0), message(1)));
+        String firstItemId = itemId(created.getData().get(0));
+
+        ResponsesList<Object> page =
+                service.listConversationItems(
+                        conversation.getId(), firstItemId, Integer.MAX_VALUE, "asc");
+
+        assertThat(page.getData()).hasSize(1);
+        assertThat(itemContent(page.getData().get(0))).isEqualTo("item-1");
+        assertThat(page.isHasMore()).isFalse();
+    }
+
+    @Test
     void shouldIgnoreLateBackgroundCompletionAfterCancellation() {
         ResponsesStateService service = new ResponsesStateService();
         ResponsesConversation conversation = service.createConversation(null);

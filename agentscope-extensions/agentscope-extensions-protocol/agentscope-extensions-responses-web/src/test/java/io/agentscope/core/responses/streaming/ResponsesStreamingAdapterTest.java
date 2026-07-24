@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -97,6 +99,33 @@ class ResponsesStreamingAdapterTest {
                         .getContent()
                         .get(0)
                         .getText());
+    }
+
+    @Test
+    void shouldPassRuntimeContextToAgentStream() {
+        ReActAgent agent = mock(ReActAgent.class);
+        RuntimeContext context = RuntimeContext.builder().sessionId("resp_context").build();
+        when(agent.stream(anyList(), any(StreamOptions.class), same(context)))
+                .thenReturn(
+                        Flux.just(
+                                new Event(
+                                        EventType.REASONING,
+                                        assistantText("context response"),
+                                        true)));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(
+                                agent,
+                                List.of(userText("Hello")),
+                                request(),
+                                "resp_context",
+                                context)
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals("response.completed", events.get(events.size() - 1).getType());
+        verify(agent).stream(anyList(), any(StreamOptions.class), same(context));
     }
 
     @Test

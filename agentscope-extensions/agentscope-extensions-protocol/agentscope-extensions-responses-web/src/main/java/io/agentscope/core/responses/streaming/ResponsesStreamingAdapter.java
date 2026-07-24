@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -83,7 +84,17 @@ public class ResponsesStreamingAdapter {
      */
     public Flux<ResponsesStreamEvent> stream(
             ReActAgent agent, List<Msg> messages, ResponsesRequest request, String responseId) {
-        return stream(agent, messages, null, request, responseId);
+        return stream(agent, messages, null, request, responseId, null);
+    }
+
+    /** Stream a normal text/tool request with invocation-local runtime context. */
+    public Flux<ResponsesStreamEvent> stream(
+            ReActAgent agent,
+            List<Msg> messages,
+            ResponsesRequest request,
+            String responseId,
+            RuntimeContext runtimeContext) {
+        return stream(agent, messages, null, request, responseId, runtimeContext);
     }
 
     /**
@@ -107,8 +118,26 @@ public class ResponsesStreamingAdapter {
             JsonNode structuredOutputSchema,
             ResponsesRequest request,
             String responseId) {
+        return stream(agent, messages, structuredOutputSchema, request, responseId, null);
+    }
+
+    /** Stream a request with invocation-local runtime context. */
+    public Flux<ResponsesStreamEvent> stream(
+            ReActAgent agent,
+            List<Msg> messages,
+            JsonNode structuredOutputSchema,
+            ResponsesRequest request,
+            String responseId,
+            RuntimeContext runtimeContext) {
         return Flux.defer(
-                () -> createStream(agent, messages, structuredOutputSchema, request, responseId));
+                () ->
+                        createStream(
+                                agent,
+                                messages,
+                                structuredOutputSchema,
+                                request,
+                                responseId,
+                                runtimeContext));
     }
 
     private Flux<ResponsesStreamEvent> createStream(
@@ -116,7 +145,8 @@ public class ResponsesStreamingAdapter {
             List<Msg> messages,
             JsonNode structuredOutputSchema,
             ResponsesRequest request,
-            String responseId) {
+            String responseId,
+            RuntimeContext runtimeContext) {
         boolean structuredStream = structuredOutputSchema != null;
         StreamOptions options =
                 StreamOptions.builder()
@@ -133,7 +163,7 @@ public class ResponsesStreamingAdapter {
         // AgentScope incremental streams often include a final accumulated REASONING event. Track
         // whether we saw true deltas so the final accumulated text is not duplicated.
         Flux<ResponsesStreamEvent> body =
-                agentStream(agent, messages, options, structuredOutputSchema)
+                agentStream(agent, messages, options, structuredOutputSchema, runtimeContext)
                         .filter(event -> event.getMessage() != null)
                         .doOnNext(
                                 event -> {
@@ -334,7 +364,13 @@ public class ResponsesStreamingAdapter {
             ReActAgent agent,
             List<Msg> messages,
             StreamOptions options,
-            JsonNode structuredOutputSchema) {
+            JsonNode structuredOutputSchema,
+            RuntimeContext runtimeContext) {
+        if (runtimeContext != null) {
+            return structuredOutputSchema != null
+                    ? agent.stream(messages, options, structuredOutputSchema, runtimeContext)
+                    : agent.stream(messages, options, runtimeContext);
+        }
         return structuredOutputSchema != null
                 ? agent.stream(messages, options, structuredOutputSchema)
                 : agent.stream(messages, options);

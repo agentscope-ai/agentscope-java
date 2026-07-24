@@ -32,13 +32,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.AgentCallOptions;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
 import io.agentscope.core.responses.converter.ResponsesGenerationOptionsConverter;
 import io.agentscope.core.responses.converter.ResponsesInputConverter;
@@ -50,7 +56,6 @@ import io.agentscope.core.responses.model.ResponsesResponse;
 import io.agentscope.core.responses.streaming.ResponsesStreamingAdapter;
 import io.agentscope.spring.boot.responses.service.ResponsesStateService;
 import io.agentscope.spring.boot.responses.service.ResponsesStreamingService;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,6 +63,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -118,7 +124,110 @@ class ResponsesControllerTest {
         assertThat(events)
                 .extracting(ServerSentEvent::event)
                 .contains("response.output_text.delta");
-        verify(agent).stream(anyList(), any(StreamOptions.class), any(JsonNode.class));
+        verify(agent).stream(
+                anyList(),
+                any(StreamOptions.class),
+                any(JsonNode.class),
+                any(RuntimeContext.class));
+    }
+
+    @Test
+    void shouldReturnExternalFunctionCallWithoutCallingModelAgain() throws Exception {
+        AtomicInteger modelCallCount = new AtomicInteger();
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
+                .thenAnswer(
+                        invocation -> {
+                            if (modelCallCount.incrementAndGet() > 1) {
+                                return Flux.error(
+                                        new AssertionError(
+                                                "Model must wait for the external tool result"));
+                            }
+                            Map<String, Object> input = Map.of("city", "Hangzhou");
+                            return Flux.just(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_weather")
+                                                                    .name("get_weather")
+                                                                    .input(input)
+                                                                    .content(
+                                                                            "{\"city\":\"Hangzhou\"}")
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent = ReActAgent.builder().name("tool-agent").model(model).maxIters(3).build();
+        when(agentProvider.getObject()).thenReturn(agent);
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "model": "qwen3-max",
+                                                  "input": "Call get_weather for Hangzhou.",
+                                                  "tools": [{
+                                                    "type": "function",
+                                                    "name": "get_weather",
+                                                    "description": "Get the current weather for a city",
+                                                    "parameters": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "city": {"type": "string"}
+                                                      },
+                                                      "required": ["city"],
+                                                      "additionalProperties": false
+                                                    },
+                                                    "strict": true
+                                                  }],
+                                                  "tool_choice": {
+                                                    "type": "function",
+                                                    "name": "get_weather"
+                                                  },
+                                                  "store": true
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(modelCallCount).hasValue(1);
+        assertThat(response.getStatus()).isEqualTo("completed");
+        assertThat(response.getOutput()).hasSize(1);
+        assertThat(response.getOutput().get(0).getType()).isEqualTo("function_call");
+        assertThat(response.getOutput().get(0).getCallId()).isEqualTo("call_weather");
+        assertThat(response.getOutput().get(0).getName()).isEqualTo("get_weather");
+        assertThat(response.getOutput().get(0).getArguments()).isEqualTo("{\"city\":\"Hangzhou\"}");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStoreFailedStreamingResponseWhenAgentResolutionFails() throws Exception {
+        when(agentProvider.getObject()).thenThrow(new IllegalStateException("agent unavailable"));
+
+        Object result =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": "Hello",
+                                  "stream": true
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> entity = (ResponseEntity<?>) result;
+        List<ServerSentEvent<String>> events =
+                ((Flux<ServerSentEvent<String>>) entity.getBody()).collectList().block();
+        assertThat(events).extracting(ServerSentEvent::event).containsExactly("response.failed");
+        ArgumentCaptor<ResponsesResponse> responseCaptor =
+                ArgumentCaptor.forClass(ResponsesResponse.class);
+        verify(stateService).save(responseCaptor.capture(), any());
+        assertThat(responseCaptor.getValue().getStatus()).isEqualTo("failed");
+        assertThat(responseCaptor.getValue().getConversation()).isNotNull();
     }
 
     @Test
@@ -155,6 +264,31 @@ class ResponsesControllerTest {
                                     "type": "message",
                                     "role": "unsupported",
                                     "content": "Hello"
+                                  }]
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(stateService, never()).commitConversation(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldNotCommitAutoConversationWhenToolValidationFails() throws Exception {
+        when(agentProvider.getObject()).thenReturn(mock(ReActAgent.class));
+
+        Object response =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": "Hello",
+                                  "tools": [{
+                                    "type": "function",
+                                    "parameters": {"type": "object"}
                                   }]
                                 }
                                 """));
@@ -248,9 +382,62 @@ class ResponsesControllerTest {
         assertThat(second.getPreviousResponseId()).isEqualTo(first.getId());
         assertThat(second.getOutputText()).isEqualTo("Second answer");
         ArgumentCaptor<List<Msg>> messagesCaptor = ArgumentCaptor.forClass(List.class);
-        verify(agent, times(2)).call(messagesCaptor.capture());
+        verify(agent, times(2)).call(messagesCaptor.capture(), any(RuntimeContext.class));
         assertThat(messagesCaptor.getAllValues().get(1))
                 .hasSizeGreaterThan(messagesCaptor.getAllValues().get(0).size());
+    }
+
+    @Test
+    void shouldKeepRequestHooksAndToolsInPerCallContext() throws Exception {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        when(agent.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Mono.just(assistantText("first response")),
+                        Mono.just(assistantText("second response")));
+
+        responseMono(
+                        controller.createResponse(
+                                request(
+                                        """
+                                        {
+                                          "input": "first",
+                                          "instructions": "instruction-a",
+                                          "tools": [{
+                                            "type": "function",
+                                            "name": "tool_a",
+                                            "description": "first tool",
+                                            "parameters": {"type": "object"}
+                                          }]
+                                        }
+                                        """)))
+                .block();
+        responseMono(
+                        controller.createResponse(
+                                request(
+                                        """
+                                        {
+                                          "input": "second",
+                                          "instructions": "instruction-b",
+                                          "tools": [{
+                                            "type": "function",
+                                            "name": "tool_b",
+                                            "description": "second tool",
+                                            "parameters": {"type": "object"}
+                                          }]
+                                        }
+                                        """)))
+                .block();
+
+        ArgumentCaptor<RuntimeContext> contexts = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent, times(2)).call(anyList(), contexts.capture());
+        assertThat(contexts.getAllValues())
+                .extracting(RuntimeContext::getSessionId)
+                .doesNotHaveDuplicates();
+        assertCallOptions(contexts.getAllValues().get(0), "tool_a", "tool_b");
+        assertCallOptions(contexts.getAllValues().get(1), "tool_b", "tool_a");
+        verify(agent, never()).getHooks();
+        verify(agent, never()).getToolkit();
     }
 
     @Test
@@ -278,13 +465,36 @@ class ResponsesControllerTest {
     }
 
     @Test
+    void shouldRejectInvalidBackgroundRequestBeforeQueueing() throws Exception {
+        when(agentProvider.getObject()).thenReturn(mock(ReActAgent.class));
+
+        Object result =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "input": "Hello",
+                                  "background": true,
+                                  "tool_choice": "invalid"
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> response = (ResponseEntity<?>) result;
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("unsupported_parameter");
+        verify(stateService, never()).saveBackground(any(), any(), any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
     void shouldNotRunBlockingBackgroundCallOnRequestThread() throws Exception {
         ReActAgent agent = mock(ReActAgent.class);
         when(agentProvider.getObject()).thenReturn(agent);
-        when(agent.getHooks()).thenAnswer(invocation -> new ArrayList<>());
         CountDownLatch callStarted = new CountDownLatch(1);
         CountDownLatch releaseCall = new CountDownLatch(1);
-        when(agent.call(anyList()))
+        when(agent.call(anyList(), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
                             callStarted.countDown();
@@ -454,14 +664,21 @@ class ResponsesControllerTest {
         assertThat(events)
                 .extracting(ServerSentEvent::event)
                 .contains("response.output_text.delta");
-        verify(agent).stream(anyList(), any(StreamOptions.class), any(JsonNode.class));
+        verify(agent).stream(
+                anyList(),
+                any(StreamOptions.class),
+                any(JsonNode.class),
+                any(RuntimeContext.class));
     }
 
     private ReActAgent prepareStructuredStreamingAgent() {
         ReActAgent agent = mock(ReActAgent.class);
         when(agentProvider.getObject()).thenReturn(agent);
-        when(agent.getHooks()).thenReturn(new ArrayList<>());
-        when(agent.stream(anyList(), any(StreamOptions.class), any(JsonNode.class)))
+        when(agent.stream(
+                        anyList(),
+                        any(StreamOptions.class),
+                        any(JsonNode.class),
+                        any(RuntimeContext.class)))
                 .thenReturn(
                         Flux.just(new Event(EventType.AGENT_RESULT, structuredAssistant(), true)));
         return agent;
@@ -470,13 +687,12 @@ class ResponsesControllerTest {
     private ReActAgent prepareTextAgent(String... replies) {
         ReActAgent agent = mock(ReActAgent.class);
         when(agentProvider.getObject()).thenReturn(agent);
-        when(agent.getHooks()).thenAnswer(invocation -> new ArrayList<>());
         @SuppressWarnings("unchecked")
         Mono<Msg>[] monos = new Mono[replies.length];
         for (int i = 0; i < replies.length; i++) {
             monos[i] = Mono.just(assistantText(replies[i]));
         }
-        when(agent.call(anyList()))
+        when(agent.call(anyList(), any(RuntimeContext.class)))
                 .thenReturn(monos[0], Arrays.copyOfRange(monos, 1, monos.length));
         return agent;
     }
@@ -488,6 +704,18 @@ class ResponsesControllerTest {
                 .role(MsgRole.ASSISTANT)
                 .metadata(Map.of(MessageMetadataKeys.STRUCTURED_OUTPUT, structuredOutput))
                 .build();
+    }
+
+    private void assertCallOptions(
+            RuntimeContext context, String expectedTool, String unexpectedTool) {
+        AgentCallOptions options = context.get(AgentCallOptions.class);
+        assertThat(options).isNotNull();
+        assertThat(options.isStateless()).isTrue();
+        assertThat(options.getHooks()).hasSize(1);
+        assertThat(options.getExternalToolSchemas())
+                .extracting(schema -> schema.getName())
+                .contains(expectedTool)
+                .doesNotContain(unexpectedTool);
     }
 
     private Msg assistantText(String text) {

@@ -28,6 +28,8 @@ import reactor.core.publisher.Mono;
  */
 class MetaToolFactory {
 
+    static final String RESET_EQUIPPED_TOOLS_NAME = "reset_equipped_tools";
+
     private final ToolGroupManager groupManager;
     private final ToolRegistry toolRegistry;
 
@@ -42,10 +44,10 @@ class MetaToolFactory {
      * @return AgentTool for reset_equipped_tools
      */
     AgentTool createResetEquippedToolsAgentTool() {
-        return new AgentTool() {
+        return new ResetEquippedToolsAgentTool() {
             @Override
             public String getName() {
-                return "reset_equipped_tools";
+                return RESET_EQUIPPED_TOOLS_NAME;
             }
 
             @Override
@@ -115,6 +117,12 @@ class MetaToolFactory {
             }
         };
     }
+
+    boolean isResetEquippedToolsAgentTool(AgentTool tool) {
+        return tool instanceof ResetEquippedToolsAgentTool;
+    }
+
+    private abstract static class ResetEquippedToolsAgentTool implements AgentTool {}
 
     /**
      * Implementation of reset_equipped_tools logic.

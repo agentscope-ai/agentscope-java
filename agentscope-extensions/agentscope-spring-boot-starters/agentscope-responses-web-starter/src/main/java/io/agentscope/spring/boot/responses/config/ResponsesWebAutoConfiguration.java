@@ -37,8 +37,9 @@ import org.springframework.context.annotation.Bean;
  * Auto-configuration for exposing Responses and Conversations API endpoints.
  *
  * <p>The starter contributes only the web-facing Responses API beans. It relies on
- * {@code agentscope-spring-boot-starter} to provide prototype-scoped {@link ReActAgent} instances,
- * so applications can enable this starter without writing their own controller.
+ * {@code agentscope-spring-boot-starter} to provide a {@link ReActAgent}. Request hooks, external
+ * tool schemas, and transient execution state are isolated per invocation, so both singleton and
+ * prototype agent beans are supported.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ResponsesProperties.class)

@@ -19,8 +19,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.responses.model.ResponsesRequest;
+import io.agentscope.core.responses.model.ResponsesResponse;
 import io.agentscope.core.responses.model.ResponsesStreamEvent;
 import io.agentscope.core.responses.streaming.ResponsesStreamingAdapter;
 import java.util.List;
@@ -130,12 +132,41 @@ public class ResponsesStreamingService {
             ResponsesRequest request,
             String responseId,
             Consumer<ResponsesStreamEvent> eventConsumer) {
+        return streamAsSse(
+                agent, messages, structuredOutputSchema, request, responseId, null, eventConsumer);
+    }
+
+    /**
+     * Stream agent events with invocation-local runtime context and observe each raw event.
+     *
+     * @param agent The agent to stream from
+     * @param messages The messages to send to the agent
+     * @param structuredOutputSchema Optional JSON Schema for structured output
+     * @param request The original Responses API request
+     * @param responseId The response ID used across the stream
+     * @param runtimeContext Invocation-local agent context
+     * @param eventConsumer Observer invoked for each Responses stream event
+     * @return A {@link Flux} of Spring SSE events
+     */
+    public Flux<ServerSentEvent<String>> streamAsSse(
+            ReActAgent agent,
+            List<Msg> messages,
+            JsonNode structuredOutputSchema,
+            ResponsesRequest request,
+            String responseId,
+            RuntimeContext runtimeContext,
+            Consumer<ResponsesStreamEvent> eventConsumer) {
         return toSseStream(
                 streamingAdapter.stream(
-                                agent, messages, structuredOutputSchema, request, responseId)
-                        .doOnNext(eventConsumer),
+                        agent,
+                        messages,
+                        structuredOutputSchema,
+                        request,
+                        responseId,
+                        runtimeContext),
                 request,
-                responseId);
+                responseId,
+                eventConsumer);
     }
 
     /**
@@ -151,6 +182,11 @@ public class ResponsesStreamingService {
         return failedSse(streamingAdapter.createFailedEvent(error, request, responseId));
     }
 
+    /** Create an SSE event from an already-built failed response. */
+    public ServerSentEvent<String> createErrorSseEvent(ResponsesResponse response) {
+        return failedSse(ResponsesStreamEvent.responseEvent("response.failed", response));
+    }
+
     /**
      * Convert a Responses stream event to a Spring SSE event.
      *
@@ -159,14 +195,28 @@ public class ResponsesStreamingService {
      */
     private Flux<ServerSentEvent<String>> toSseStream(
             Flux<ResponsesStreamEvent> events, ResponsesRequest request, String responseId) {
-        return events.map(this::toSse)
+        return toSseStream(events, request, responseId, ignored -> {});
+    }
+
+    private Flux<ServerSentEvent<String>> toSseStream(
+            Flux<ResponsesStreamEvent> events,
+            ResponsesRequest request,
+            String responseId,
+            Consumer<ResponsesStreamEvent> eventConsumer) {
+        Consumer<ResponsesStreamEvent> observer =
+                eventConsumer != null ? eventConsumer : ignored -> {};
+        return events.map(event -> new SerializedEvent(event, toSse(event)))
+                .doOnNext(serialized -> observer.accept(serialized.event()))
+                .map(SerializedEvent::sse)
                 .onErrorResume(
                         StreamSerializationException.class,
-                        error ->
-                                Flux.just(
-                                        failedSse(
-                                                streamingAdapter.createFailedEvent(
-                                                        error.getCause(), request, responseId))));
+                        error -> {
+                            ResponsesStreamEvent failed =
+                                    streamingAdapter.createFailedEvent(
+                                            error.getCause(), request, responseId);
+                            observer.accept(failed);
+                            return Flux.just(failedSse(failed));
+                        });
     }
 
     private ServerSentEvent<String> toSse(ResponsesStreamEvent event) {
@@ -204,4 +254,6 @@ public class ResponsesStreamingService {
             super(cause);
         }
     }
+
+    private record SerializedEvent(ResponsesStreamEvent event, ServerSentEvent<String> sse) {}
 }

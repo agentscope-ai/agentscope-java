@@ -492,7 +492,7 @@ public class ResponsesStateService {
         }
 
         int max = limit != null ? limit : ordered.size();
-        int end = Math.min(ordered.size(), start + max);
+        int end = start + Math.min(max, ordered.size() - start);
         return new ResponsesList<>(
                 new ArrayList<>(ordered.subList(start, end)), end < ordered.size());
     }

@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -91,6 +93,29 @@ class AgentStreamingTest {
         }
     }
 
+    static class LegacyHookDispatchAgent extends TestStreamingAgent {
+
+        LegacyHookDispatchAgent(String name) {
+            super(name);
+        }
+
+        @Override
+        protected Mono<Msg> doCall(List<Msg> msgs) {
+            Msg response =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("legacy response").build())
+                            .build();
+            Mono<PostReasoningEvent> event =
+                    Mono.just(new PostReasoningEvent(this, "legacy-model", null, response));
+            for (Hook hook : getSortedHooks()) {
+                event = event.flatMap(hook::onEvent);
+            }
+            return event.thenReturn(response);
+        }
+    }
+
     @Test
     void testStreamWithIncludeAgentResult() {
         TestStreamingAgent agent = new TestStreamingAgent("test-agent");
@@ -136,6 +161,21 @@ class AgentStreamingTest {
         // agent
         assertTrue(events.stream().noneMatch(e -> e.getType() == EventType.TOOL_RESULT));
         assertTrue(events.stream().noneMatch(e -> e.getType() == EventType.HINT));
+    }
+
+    @Test
+    void legacyCustomAgentShouldSeeInvocationStreamingHook() {
+        LegacyHookDispatchAgent agent = new LegacyHookDispatchAgent("legacy-agent");
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Test").build())
+                        .build();
+
+        List<Event> events = agent.stream(inputMsg).collectList().block(Duration.ofSeconds(5));
+
+        assertTrue(events.stream().anyMatch(event -> event.getType() == EventType.REASONING));
     }
 
     @Test
