@@ -42,6 +42,7 @@ final class AguiResumeCoordinator {
 
     private final ConcurrentMap<String, Map<String, AguiEvent.Interrupt>>
             pendingInterruptsByThread = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> activeRunsByThread = new ConcurrentHashMap<>();
 
     /**
      * Validate whether the input satisfies the currently supported AG-UI resume contract.
@@ -97,6 +98,42 @@ final class AguiResumeCoordinator {
     }
 
     /**
+     * Mark a run as active for its thread.
+     *
+     * <p>AG-UI thread execution is intentionally serialized because unresolved interrupt state and
+     * AgentScope session state are both scoped by {@code threadId}. Allowing multiple active runs
+     * for one thread would make the final interrupt state depend on completion order.
+     *
+     * @param input The run input to begin
+     * @return A validation result describing whether the run can start
+     */
+    ResumeContractResult beginRun(RunAgentInput input) {
+        ResumeContractResult resumeContract = validate(input);
+        if (resumeContract.isError()) {
+            return resumeContract;
+        }
+        String previousRunId =
+                activeRunsByThread.putIfAbsent(input.getThreadId(), input.getRunId());
+        if (previousRunId == null) {
+            return ResumeContractResult.proceed();
+        }
+        return ResumeContractResult.error(
+                "Thread already has an active run; wait for run "
+                        + previousRunId
+                        + " to finish before starting another run on the same thread");
+    }
+
+    /**
+     * Clear the active run marker if it still belongs to the finishing run.
+     *
+     * @param threadId The AG-UI thread ID
+     * @param runId The finishing run ID
+     */
+    void finishRun(String threadId, String runId) {
+        activeRunsByThread.remove(threadId, runId);
+    }
+
+    /**
      * Add known interrupt-to-tool-call mappings to the runtime context for resume conversion.
      *
      * @param input The run input containing resume entries
@@ -136,11 +173,16 @@ final class AguiResumeCoordinator {
      * Track interrupt outcomes emitted by the adapter for subsequent resume requests.
      *
      * @param threadId The AG-UI thread ID
+     * @param runId The AG-UI run ID that emitted the event
      * @param event The outgoing AG-UI event
      * @param runErrorSeen Whether this stream has already emitted {@code RUN_ERROR}
      */
-    void trackPendingInterrupts(String threadId, AguiEvent event, boolean runErrorSeen) {
+    void trackPendingInterrupts(
+            String threadId, String runId, AguiEvent event, boolean runErrorSeen) {
         if (!(event instanceof AguiEvent.RunFinished runFinished)) {
+            return;
+        }
+        if (!runId.equals(activeRunsByThread.get(threadId))) {
             return;
         }
         if (runFinished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome interruptOutcome

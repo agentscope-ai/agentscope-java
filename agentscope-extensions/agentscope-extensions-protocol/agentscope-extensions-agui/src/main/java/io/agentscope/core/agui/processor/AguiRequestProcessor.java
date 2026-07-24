@@ -116,6 +116,7 @@ public class AguiRequestProcessor {
             String pathAgentId,
             RuntimeContext runtimeContext) {
         String threadId = input.getThreadId();
+        String runId = input.getRunId();
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
@@ -123,12 +124,11 @@ public class AguiRequestProcessor {
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId);
 
-        AguiResumeCoordinator.ResumeContractResult resumeContract =
-                resumeCoordinator.validate(input);
-        if (resumeContract.isError()) {
+        AguiResumeCoordinator.ResumeContractResult beginResult = resumeCoordinator.beginRun(input);
+        if (beginResult.isError()) {
             return new ProcessResult(
                     agent,
-                    Flux.just(resumeCoordinator.contractError(input, resumeContract.message())));
+                    Flux.just(resumeCoordinator.contractError(input, beginResult.message())));
         }
 
         // Determine effective input based on server-side memory
@@ -140,10 +140,10 @@ public class AguiRequestProcessor {
             effectiveInput = extractLatestUserMessage(input);
         }
 
-        // Create adapter and run
         RuntimeContext effectiveRuntimeContext =
                 resumeCoordinator.addResumeToolCallIds(input, runtimeContext);
 
+        // Create adapter and run
         AguiAgentAdapter adapter = adapterFactory.create(agent, config);
         AtomicBoolean runErrorSeen = new AtomicBoolean(false);
         Flux<AguiEvent> events =
@@ -154,8 +154,9 @@ public class AguiRequestProcessor {
                                         runErrorSeen.set(true);
                                     }
                                     resumeCoordinator.trackPendingInterrupts(
-                                            threadId, event, runErrorSeen.get());
-                                });
+                                            threadId, runId, event, runErrorSeen.get());
+                                })
+                        .doFinally(signalType -> resumeCoordinator.finishRun(threadId, runId));
         return new ProcessResult(agent, events);
     }
 

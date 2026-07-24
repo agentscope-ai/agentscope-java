@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 /** Unit tests for AguiRequestProcessor. */
@@ -189,6 +190,41 @@ class AguiRequestProcessorTest {
 
         assertEquals(1, adapterCount.get());
         assertResumeContractError(events.get(0));
+    }
+
+    @Test
+    void processRejectsConcurrentRunOnSameThreadUntilActiveRunFinishes() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        AtomicInteger adapterCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) -> {
+                                    adapterCount.incrementAndGet();
+                                    return new NeverEndingAdapter(resolvedAgent, config);
+                                })
+                        .build();
+
+        Disposable activeRun = processor.process(input("run-1"), null, null).events().subscribe();
+        try {
+            List<AguiEvent> rejectedEvents =
+                    processor.process(input("run-2"), null, null).events().collectList().block();
+
+            assertEquals(1, adapterCount.get());
+            assertResumeContractError(rejectedEvents.get(0));
+        } finally {
+            activeRun.dispose();
+        }
+
+        Disposable nextRun = processor.process(input("run-3"), null, null).events().subscribe();
+        try {
+            assertEquals(2, adapterCount.get());
+        } finally {
+            nextRun.dispose();
+        }
     }
 
     @Test
@@ -417,6 +453,18 @@ class AguiRequestProcessorTest {
                             input.getRunId(),
                             null,
                             new AguiEvent.RunFinishedInterruptOutcome(interrupts)));
+        }
+    }
+
+    private static final class NeverEndingAdapter extends AguiAgentAdapter {
+
+        private NeverEndingAdapter(Agent agent, AguiAdapterConfig config) {
+            super(agent, config);
+        }
+
+        @Override
+        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+            return Flux.never();
         }
     }
 

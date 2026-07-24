@@ -36,7 +36,7 @@ class AguiResumeCoordinatorTest {
     @Test
     void validateRejectsNewInputWhenThreadHasOpenInterrupts() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        coordinator.trackPendingInterrupts("thread-1", interruptedFinished("interrupt-1"), false);
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
 
         AguiResumeCoordinator.ResumeContractResult result =
                 coordinator.validate(
@@ -52,11 +52,10 @@ class AguiResumeCoordinatorTest {
     @Test
     void validateRequiresResumeToCoverAllOpenInterrupts() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        coordinator.trackPendingInterrupts(
-                "thread-1",
-                interruptedFinished(
-                        interrupt("interrupt-1", "tool-call-1"),
-                        interrupt("interrupt-2", "tool-call-2")),
+        track(
+                coordinator,
+                "run-1",
+                interruptedFinished("run-1", interrupt("interrupt-1"), interrupt("interrupt-2")),
                 false);
 
         AguiResumeCoordinator.ResumeContractResult result =
@@ -78,7 +77,7 @@ class AguiResumeCoordinatorTest {
     @Test
     void addResumeToolCallIdsAddsKnownToolMappingsToRuntimeContext() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        coordinator.trackPendingInterrupts("thread-1", interruptedFinished("interrupt-1"), false);
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
 
         RuntimeContext context =
                 coordinator.addResumeToolCallIds(
@@ -103,9 +102,8 @@ class AguiResumeCoordinatorTest {
     @Test
     void trackDoesNotClearPendingInterruptsAfterRunError() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        coordinator.trackPendingInterrupts("thread-1", interruptedFinished("interrupt-1"), false);
-        coordinator.trackPendingInterrupts(
-                "thread-1", new AguiEvent.RunFinished("thread-1", "run-2"), true);
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+        track(coordinator, "run-2", new AguiEvent.RunFinished("thread-1", "run-2"), true);
 
         AguiResumeCoordinator.ResumeContractResult result =
                 coordinator.validate(
@@ -124,6 +122,57 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
+    void beginRunRejectsConcurrentRunOnSameThread() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+
+        AguiResumeCoordinator.ResumeContractResult first = coordinator.beginRun(input("run-1"));
+        AguiResumeCoordinator.ResumeContractResult second = coordinator.beginRun(input("run-2"));
+
+        assertFalse(first.isError());
+        assertTrue(second.isError());
+    }
+
+    @Test
+    void beginRunRejectsDuplicateActiveRunOnSameThread() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+
+        coordinator.beginRun(input("run-1"));
+        AguiResumeCoordinator.ResumeContractResult duplicate = coordinator.beginRun(input("run-1"));
+
+        assertTrue(duplicate.isError());
+    }
+
+    @Test
+    void finishRunDoesNotReleaseDifferentActiveRun() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        coordinator.beginRun(input("run-1"));
+
+        coordinator.finishRun("thread-1", "run-2");
+        AguiResumeCoordinator.ResumeContractResult result = coordinator.beginRun(input("run-3"));
+
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void trackIgnoresEventsFromInactiveRun() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        coordinator.beginRun(input("run-2"));
+
+        coordinator.trackPendingInterrupts(
+                "thread-1", "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+
+        AguiResumeCoordinator.ResumeContractResult result =
+                coordinator.validate(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-3")
+                                .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                                .build());
+
+        assertFalse(result.isError());
+    }
+
+    @Test
     void contractErrorUsesAguiResumeErrorCodeAndTimestamp() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
@@ -135,14 +184,25 @@ class AguiResumeCoordinatorTest {
         assertNotNull(error.timestamp());
     }
 
-    private static AguiEvent.RunFinished interruptedFinished(String interruptId) {
-        return interruptedFinished(interrupt(interruptId, "tool-call-1"));
+    private static void track(
+            AguiResumeCoordinator coordinator,
+            String runId,
+            AguiEvent.RunFinished event,
+            boolean runErrorSeen) {
+        coordinator.beginRun(input(runId));
+        coordinator.trackPendingInterrupts("thread-1", runId, event, runErrorSeen);
+        coordinator.finishRun("thread-1", runId);
     }
 
-    private static AguiEvent.RunFinished interruptedFinished(AguiEvent.Interrupt... interrupts) {
+    private static AguiEvent.Interrupt interrupt(String interruptId) {
+        return interrupt(interruptId, "tool-call-1");
+    }
+
+    private static AguiEvent.RunFinished interruptedFinished(
+            String runId, AguiEvent.Interrupt... interrupts) {
         return new AguiEvent.RunFinished(
                 "thread-1",
-                "run-1",
+                runId,
                 null,
                 new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupts)));
     }
