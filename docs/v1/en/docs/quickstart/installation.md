@@ -225,6 +225,7 @@ Additional starters:
 | agentscope-a2a-spring-boot-starter | A2A Integration | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI Integration | `io.agentscope:agentscope-agui-spring-boot-starter` |
 | agentscope-chat-completions-web-starter | Chat Completions Web Integration | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-responses-web-starter | Responses Web Integration | `io.agentscope:agentscope-responses-web-starter` |
 | agentscope-nacos-spring-boot-starter | Nacos Integration | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus

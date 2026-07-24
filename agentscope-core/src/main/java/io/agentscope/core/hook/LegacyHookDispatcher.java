@@ -16,6 +16,8 @@
 package io.agentscope.core.hook;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -29,6 +31,7 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * Encapsulates all legacy {@link HookEvent} construction and dispatch logic.
@@ -52,11 +55,32 @@ public final class LegacyHookDispatcher {
     // ==================== Generic dispatch ====================
 
     public <T extends HookEvent> Mono<T> fire(T event) {
-        Mono<T> result = Mono.just(event);
-        for (Hook hook : agent.getSortedHooks()) {
-            result = result.flatMap(hook::onEvent);
-        }
-        return result;
+        return Mono.deferContextual(
+                contextView -> {
+                    Mono<T> result = Mono.just(event);
+                    for (Hook hook : hooks(contextView)) {
+                        result = result.flatMap(hook::onEvent);
+                    }
+                    return result;
+                });
+    }
+
+    private List<Hook> hooks(ContextView contextView) {
+        Object value = contextView.getOrDefault(AgentBase.RUNTIME_CONTEXT_KEY, null);
+        RuntimeContext runtimeContext = value instanceof RuntimeContext rc ? rc : null;
+        Object callHookValue = contextView.getOrDefault(AgentBase.CALL_HOOKS_KEY, List.of());
+        List<Hook> callHooks =
+                callHookValue instanceof List<?> values
+                        ? values.stream()
+                                .filter(Hook.class::isInstance)
+                                .map(Hook.class::cast)
+                                .toList()
+                        : List.of();
+        return agent.getSortedHooks(runtimeContext, callHooks);
+    }
+
+    private Flux<Hook> hooks() {
+        return Flux.deferContextual(contextView -> Flux.fromIterable(hooks(contextView)));
     }
 
     // ==================== Reasoning hooks ====================
@@ -101,9 +125,7 @@ public final class LegacyHookDispatcher {
             }
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(agent, modelName, null, chunkMsg, accumulated);
-            return Flux.fromIterable(agent.getSortedHooks())
-                    .flatMap(hook -> hook.onEvent(event))
-                    .then();
+            return hooks().flatMap(hook -> hook.onEvent(event)).then();
         }
 
         return Mono.empty();
@@ -133,9 +155,7 @@ public final class LegacyHookDispatcher {
                         toolkit,
                         toolUse,
                         chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
-        return Flux.fromIterable(agent.getSortedHooks())
-                .flatMap(hook -> hook.onEvent(event))
-                .then();
+        return hooks().flatMap(hook -> hook.onEvent(event)).then();
     }
 
     // ==================== Summary hooks ====================
@@ -187,9 +207,7 @@ public final class LegacyHookDispatcher {
             }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(agent, modelName, generateOptions, chunkMsg, accumulated);
-            return Flux.fromIterable(agent.getSortedHooks())
-                    .flatMap(hook -> hook.onEvent(event))
-                    .then();
+            return hooks().flatMap(hook -> hook.onEvent(event)).then();
         }
 
         return Mono.empty();

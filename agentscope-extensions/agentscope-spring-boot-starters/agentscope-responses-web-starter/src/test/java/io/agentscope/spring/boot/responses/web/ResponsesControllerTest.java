@@ -1,0 +1,772 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.spring.boot.responses.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.AgentCallOptions;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
+import io.agentscope.core.responses.converter.ResponsesGenerationOptionsConverter;
+import io.agentscope.core.responses.converter.ResponsesInputConverter;
+import io.agentscope.core.responses.converter.ResponsesToolConverter;
+import io.agentscope.core.responses.model.ResponsesErrorResponse;
+import io.agentscope.core.responses.model.ResponsesList;
+import io.agentscope.core.responses.model.ResponsesRequest;
+import io.agentscope.core.responses.model.ResponsesResponse;
+import io.agentscope.core.responses.streaming.ResponsesStreamingAdapter;
+import io.agentscope.spring.boot.responses.service.ResponsesStateService;
+import io.agentscope.spring.boot.responses.service.ResponsesStreamingService;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+class ResponsesControllerTest {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private ObjectProvider<ReActAgent> agentProvider;
+    private ResponsesStateService stateService;
+    private ResponsesController controller;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        ResponsesToolConverter toolConverter = new ResponsesToolConverter();
+        ResponsesResponseBuilder responseBuilder = new ResponsesResponseBuilder();
+        ResponsesStreamingService streamingService =
+                new ResponsesStreamingService(new ResponsesStreamingAdapter(responseBuilder));
+        stateService = spy(new ResponsesStateService());
+        agentProvider = mock(ObjectProvider.class);
+        controller =
+                new ResponsesController(
+                        agentProvider,
+                        new ResponsesInputConverter(),
+                        toolConverter,
+                        new ResponsesGenerationOptionsConverter(toolConverter),
+                        responseBuilder,
+                        streamingService,
+                        stateService);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStreamJsonSchemaFromJsonEndpoint() throws Exception {
+        ReActAgent agent = prepareStructuredStreamingAgent();
+
+        Object response = controller.createResponse(streamingJsonSchemaRequest());
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> entity = (ResponseEntity<?>) response;
+        assertThat(entity.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(entity.getBody()).isInstanceOf(Flux.class);
+
+        List<ServerSentEvent<String>> events =
+                ((Flux<ServerSentEvent<String>>) entity.getBody()).collectList().block();
+        assertThat(events).isNotNull();
+        assertThat(events).extracting(ServerSentEvent::event).contains("response.completed");
+        assertThat(events)
+                .extracting(ServerSentEvent::event)
+                .contains("response.output_text.delta");
+        verify(agent).stream(
+                anyList(),
+                any(StreamOptions.class),
+                any(JsonNode.class),
+                any(RuntimeContext.class));
+    }
+
+    @Test
+    void shouldReturnExternalFunctionCallWithoutCallingModelAgain() throws Exception {
+        AtomicInteger modelCallCount = new AtomicInteger();
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
+                .thenAnswer(
+                        invocation -> {
+                            if (modelCallCount.incrementAndGet() > 1) {
+                                return Flux.error(
+                                        new AssertionError(
+                                                "Model must wait for the external tool result"));
+                            }
+                            Map<String, Object> input = Map.of("city", "Hangzhou");
+                            return Flux.just(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_weather")
+                                                                    .name("get_weather")
+                                                                    .input(input)
+                                                                    .content(
+                                                                            "{\"city\":\"Hangzhou\"}")
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent = ReActAgent.builder().name("tool-agent").model(model).maxIters(3).build();
+        when(agentProvider.getObject()).thenReturn(agent);
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "model": "qwen3-max",
+                                                  "input": "Call get_weather for Hangzhou.",
+                                                  "tools": [{
+                                                    "type": "function",
+                                                    "name": "get_weather",
+                                                    "description": "Get the current weather for a city",
+                                                    "parameters": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "city": {"type": "string"}
+                                                      },
+                                                      "required": ["city"],
+                                                      "additionalProperties": false
+                                                    },
+                                                    "strict": true
+                                                  }],
+                                                  "tool_choice": {
+                                                    "type": "function",
+                                                    "name": "get_weather"
+                                                  },
+                                                  "store": true
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(modelCallCount).hasValue(1);
+        assertThat(response.getStatus()).isEqualTo("completed");
+        assertThat(response.getOutput()).hasSize(1);
+        assertThat(response.getOutput().get(0).getType()).isEqualTo("function_call");
+        assertThat(response.getOutput().get(0).getCallId()).isEqualTo("call_weather");
+        assertThat(response.getOutput().get(0).getName()).isEqualTo("get_weather");
+        assertThat(response.getOutput().get(0).getArguments()).isEqualTo("{\"city\":\"Hangzhou\"}");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStoreFailedStreamingResponseWhenAgentResolutionFails() throws Exception {
+        when(agentProvider.getObject()).thenThrow(new IllegalStateException("agent unavailable"));
+
+        Object result =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": "Hello",
+                                  "stream": true
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> entity = (ResponseEntity<?>) result;
+        List<ServerSentEvent<String>> events =
+                ((Flux<ServerSentEvent<String>>) entity.getBody()).collectList().block();
+        assertThat(events).extracting(ServerSentEvent::event).containsExactly("response.failed");
+        ArgumentCaptor<ResponsesResponse> responseCaptor =
+                ArgumentCaptor.forClass(ResponsesResponse.class);
+        verify(stateService).save(responseCaptor.capture(), any());
+        assertThat(responseCaptor.getValue().getStatus()).isEqualTo("failed");
+        assertThat(responseCaptor.getValue().getConversation()).isNotNull();
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownPreviousResponseIdThroughSpringMvc() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+        mockMvc.perform(
+                        post("/v1/responses")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                        {
+                                          "model": "gpt-4.1-mini",
+                                          "previous_response_id": "resp_old",
+                                          "input": "Hello"
+                                        }
+                                        """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("not_found"))
+                .andExpect(jsonPath("$.error.param").value("response_id"));
+
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldNotCommitAutoConversationWhenInputConversionFails() throws Exception {
+        Object response =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": [{
+                                    "type": "message",
+                                    "role": "unsupported",
+                                    "content": "Hello"
+                                  }]
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(stateService, never()).commitConversation(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldNotCommitAutoConversationWhenToolValidationFails() throws Exception {
+        when(agentProvider.getObject()).thenReturn(mock(ReActAgent.class));
+
+        Object response =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "conversation": "auto",
+                                  "input": "Hello",
+                                  "tools": [{
+                                    "type": "function",
+                                    "parameters": {"type": "object"}
+                                  }]
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(stateService, never()).commitConversation(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldCommitAutoConversationAfterInputConversionSucceeds() throws Exception {
+        prepareTextAgent("Hello back");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "conversation": "auto",
+                                                  "input": "Hello"
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getConversation()).isInstanceOf(String.class);
+        String conversationId = (String) response.getConversation();
+        assertThat(conversationId).startsWith("conv_");
+        assertThat(stateService.retrieveConversation(conversationId).getId())
+                .isEqualTo(conversationId);
+        verify(stateService).commitConversation(any());
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownPreviousResponseIdFromSseEndpoint() throws Exception {
+        Object response =
+                controller.createResponseStream(
+                        request(
+                                """
+                                {
+                                  "previous_response_id": "resp_old",
+                                  "input": "Hello"
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStoreResponseAndUsePreviousResponseId() throws Exception {
+        ReActAgent agent = prepareTextAgent("First answer", "Second answer");
+
+        ResponsesResponse first =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "input": "Hello",
+                                                  "store": true
+                                                }
+                                                """)))
+                        .block();
+        assertThat(first).isNotNull();
+        assertThat(first.getStore()).isTrue();
+
+        Object retrieved = controller.retrieveResponse(first.getId());
+        assertThat(retrieved).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) retrieved).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponsesResponse second =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "input": "Continue",
+                                                  "previous_response_id": "%s"
+                                                }
+                                                """
+                                                        .formatted(first.getId()))))
+                        .block();
+
+        assertThat(second).isNotNull();
+        assertThat(second.getPreviousResponseId()).isEqualTo(first.getId());
+        assertThat(second.getOutputText()).isEqualTo("Second answer");
+        ArgumentCaptor<List<Msg>> messagesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(agent, times(2)).call(messagesCaptor.capture(), any(RuntimeContext.class));
+        assertThat(messagesCaptor.getAllValues().get(1))
+                .hasSizeGreaterThan(messagesCaptor.getAllValues().get(0).size());
+    }
+
+    @Test
+    void shouldKeepRequestHooksAndToolsInPerCallContext() throws Exception {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        when(agent.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Mono.just(assistantText("first response")),
+                        Mono.just(assistantText("second response")));
+
+        responseMono(
+                        controller.createResponse(
+                                request(
+                                        """
+                                        {
+                                          "input": "first",
+                                          "instructions": "instruction-a",
+                                          "tools": [{
+                                            "type": "function",
+                                            "name": "tool_a",
+                                            "description": "first tool",
+                                            "parameters": {"type": "object"}
+                                          }]
+                                        }
+                                        """)))
+                .block();
+        responseMono(
+                        controller.createResponse(
+                                request(
+                                        """
+                                        {
+                                          "input": "second",
+                                          "instructions": "instruction-b",
+                                          "tools": [{
+                                            "type": "function",
+                                            "name": "tool_b",
+                                            "description": "second tool",
+                                            "parameters": {"type": "object"}
+                                          }]
+                                        }
+                                        """)))
+                .block();
+
+        ArgumentCaptor<RuntimeContext> contexts = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent, times(2)).call(anyList(), contexts.capture());
+        assertThat(contexts.getAllValues())
+                .extracting(RuntimeContext::getSessionId)
+                .doesNotHaveDuplicates();
+        assertCallOptions(contexts.getAllValues().get(0), "tool_a", "tool_b");
+        assertCallOptions(contexts.getAllValues().get(1), "tool_b", "tool_a");
+        verify(agent, never()).getHooks();
+        verify(agent, never()).getToolkit();
+    }
+
+    @Test
+    void shouldCreateQueuedBackgroundResponse() throws Exception {
+        prepareTextAgent("Background answer");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "input": "Run later",
+                                                  "background": true
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getStatus()).isEqualTo("queued");
+        assertThat(response.getBackground()).isTrue();
+        assertThat(response.getStore()).isTrue();
+        assertThat(controller.retrieveResponse(response.getId()))
+                .isInstanceOf(ResponseEntity.class);
+    }
+
+    @Test
+    void shouldRejectInvalidBackgroundRequestBeforeQueueing() throws Exception {
+        when(agentProvider.getObject()).thenReturn(mock(ReActAgent.class));
+
+        Object result =
+                controller.createResponse(
+                        request(
+                                """
+                                {
+                                  "input": "Hello",
+                                  "background": true,
+                                  "tool_choice": "invalid"
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> response = (ResponseEntity<?>) result;
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("unsupported_parameter");
+        verify(stateService, never()).saveBackground(any(), any(), any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldNotRunBlockingBackgroundCallOnRequestThread() throws Exception {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        CountDownLatch callStarted = new CountDownLatch(1);
+        CountDownLatch releaseCall = new CountDownLatch(1);
+        when(agent.call(anyList(), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            callStarted.countDown();
+                            assertThat(releaseCall.await(2, TimeUnit.SECONDS)).isTrue();
+                            return Mono.just(assistantText("Background answer"));
+                        });
+
+        CompletableFuture<ResponsesResponse> queuedFuture =
+                CompletableFuture.supplyAsync(
+                        () -> {
+                            try {
+                                return responseMono(
+                                                controller.createResponse(
+                                                        request(
+                                                                """
+                                                                {
+                                                                  "input": "Run later",
+                                                                  "background": true
+                                                                }
+                                                                """)))
+                                        .block();
+                            } catch (Exception e) {
+                                throw new AssertionError(e);
+                            }
+                        });
+
+        try {
+            ResponsesResponse queued = queuedFuture.get(1, TimeUnit.SECONDS);
+            assertThat(queued).isNotNull();
+            assertThat(queued.getStatus()).isEqualTo("queued");
+            assertThat(callStarted.await(2, TimeUnit.SECONDS)).isTrue();
+
+            ResponseEntity<?> running =
+                    (ResponseEntity<?>) controller.retrieveResponse(queued.getId());
+            assertThat(((ResponsesResponse) running.getBody()).getStatus()).isEqualTo("queued");
+
+            releaseCall.countDown();
+            assertThat(awaitOutputText(queued.getId(), "Background answer")).isTrue();
+        } finally {
+            releaseCall.countDown();
+        }
+    }
+
+    @Test
+    void shouldReturnStoredResponseInputItems() throws Exception {
+        prepareTextAgent("Stored");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "input": "Remember this",
+                                                  "store": true
+                                                }
+                                                """)))
+                        .block();
+
+        Object result = controller.listResponseInputItems(response.getId(), null, null, null);
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) result).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void shouldCompactResponseInputThroughAgentCall() throws Exception {
+        prepareTextAgent("Compacted answer");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.compactResponseInput(
+                                        request(
+                                                """
+                                                {
+                                                  "input": "Summarize this context"
+                                                }
+                                                """)))
+                        .block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getOutputText()).isEqualTo("Compacted answer");
+    }
+
+    @Test
+    void shouldRejectBackgroundResponseCompaction() throws Exception {
+        Object result =
+                controller.compactResponseInput(
+                        request(
+                                """
+                                {
+                                  "input": "Summarize this context",
+                                  "background": true
+                                }
+                                """));
+
+        assertThat(result).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> response = (ResponseEntity<?>) result;
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponsesErrorResponse error = (ResponsesErrorResponse) response.getBody();
+        assertThat(error.getError().getCode()).isEqualTo("unsupported_parameter");
+        assertThat(error.getError().getParam()).isEqualTo("background");
+        verify(stateService, never()).prepare(any());
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    void shouldReturnNotFoundForUnknownPreviousResponseIdWhenCompacting() throws Exception {
+        Object response =
+                controller.compactResponseInput(
+                        request(
+                                """
+                                {
+                                  "previous_response_id": "resp_old",
+                                  "input": "Summarize this context"
+                                }
+                                """));
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        verifyNoInteractions(agentProvider);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldPageStoredResponseInputItems() throws Exception {
+        prepareTextAgent("Stored");
+
+        ResponsesResponse response =
+                responseMono(
+                                controller.createResponse(
+                                        request(
+                                                """
+                                                {
+                                                  "input": [
+                                                    {"role": "user", "content": "First"},
+                                                    {"role": "user", "content": "Second"}
+                                                  ],
+                                                  "store": true
+                                                }
+                                                """)))
+                        .block();
+
+        ResponseEntity<?> result =
+                (ResponseEntity<?>)
+                        controller.listResponseInputItems(response.getId(), null, 1, "asc");
+        ResponsesList<Object> page = (ResponsesList<Object>) result.getBody();
+        assertThat(page.getData()).hasSize(1);
+        assertThat(page.isHasMore()).isTrue();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStreamJsonSchemaFromSseEndpoint() throws Exception {
+        ReActAgent agent = prepareStructuredStreamingAgent();
+
+        Object response = controller.createResponseStream(streamingJsonSchemaRequest());
+
+        assertThat(response).isInstanceOf(ResponseEntity.class);
+        ResponseEntity<?> entity = (ResponseEntity<?>) response;
+        assertThat(entity.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(entity.getBody()).isInstanceOf(Flux.class);
+
+        List<ServerSentEvent<String>> events =
+                ((Flux<ServerSentEvent<String>>) entity.getBody()).collectList().block();
+        assertThat(events).isNotNull();
+        assertThat(events).extracting(ServerSentEvent::event).contains("response.completed");
+        assertThat(events)
+                .extracting(ServerSentEvent::event)
+                .contains("response.output_text.delta");
+        verify(agent).stream(
+                anyList(),
+                any(StreamOptions.class),
+                any(JsonNode.class),
+                any(RuntimeContext.class));
+    }
+
+    private ReActAgent prepareStructuredStreamingAgent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        when(agent.stream(
+                        anyList(),
+                        any(StreamOptions.class),
+                        any(JsonNode.class),
+                        any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(new Event(EventType.AGENT_RESULT, structuredAssistant(), true)));
+        return agent;
+    }
+
+    private ReActAgent prepareTextAgent(String... replies) {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(agent);
+        @SuppressWarnings("unchecked")
+        Mono<Msg>[] monos = new Mono[replies.length];
+        for (int i = 0; i < replies.length; i++) {
+            monos[i] = Mono.just(assistantText(replies[i]));
+        }
+        when(agent.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(monos[0], Arrays.copyOfRange(monos, 1, monos.length));
+        return agent;
+    }
+
+    private Msg structuredAssistant() {
+        Map<String, Object> structuredOutput = new LinkedHashMap<>();
+        structuredOutput.put("answer", "42");
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .metadata(Map.of(MessageMetadataKeys.STRUCTURED_OUTPUT, structuredOutput))
+                .build();
+    }
+
+    private void assertCallOptions(
+            RuntimeContext context, String expectedTool, String unexpectedTool) {
+        AgentCallOptions options = context.get(AgentCallOptions.class);
+        assertThat(options).isNotNull();
+        assertThat(options.isStateless()).isTrue();
+        assertThat(options.getHooks()).hasSize(1);
+        assertThat(options.getExternalToolSchemas())
+                .extracting(schema -> schema.getName())
+                .contains(expectedTool)
+                .doesNotContain(unexpectedTool);
+    }
+
+    private Msg assistantText(String text) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private ResponsesRequest streamingJsonSchemaRequest() throws Exception {
+        return OBJECT_MAPPER.readValue(
+                """
+                {
+                  "input": "Return JSON",
+                  "stream": true,
+                  "text": {
+                    "format": {
+                      "type": "json_schema",
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "answer": {"type": "string"}
+                        },
+                        "required": ["answer"]
+                      }
+                    }
+                  }
+                }
+                """,
+                ResponsesRequest.class);
+    }
+
+    private ResponsesRequest request(String json) throws Exception {
+        return OBJECT_MAPPER.readValue(json, ResponsesRequest.class);
+    }
+
+    private boolean awaitOutputText(String responseId, String outputText)
+            throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            ResponseEntity<?> result = (ResponseEntity<?>) controller.retrieveResponse(responseId);
+            ResponsesResponse response = (ResponsesResponse) result.getBody();
+            if (outputText.equals(response.getOutputText())) {
+                return true;
+            }
+            TimeUnit.MILLISECONDS.sleep(50);
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Mono<ResponsesResponse> responseMono(Object response) {
+        return (Mono<ResponsesResponse>) response;
+    }
+}

@@ -58,6 +58,8 @@ parts:
     title: Multimodal
   - file: v1/en/docs/task/structured-output
     title: Structured Output
+  - file: v1/en/docs/task/responses-api
+    title: Responses API
   - file: v1/en/docs/task/observability
     title: Observability & Studio
   - file: v1/en/docs/task/agui
@@ -182,6 +184,8 @@ parts:
     title: 多模态
   - file: v1/zh/docs/task/structured-output
     title: 结构化输出
+  - file: v1/zh/docs/task/responses-api
+    title: Responses API
   - file: v1/zh/docs/task/observability
     title: 可观测与调试
   - file: v1/zh/docs/task/agui

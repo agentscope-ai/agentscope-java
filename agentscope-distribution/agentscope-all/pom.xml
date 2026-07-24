@@ -82,6 +82,13 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-responses-web</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-agent-protocol</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
