@@ -22,6 +22,7 @@ import io.agentscope.core.tool.ToolSuspendException;
 import java.beans.Transient;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents the result of a tool execution.
@@ -315,6 +316,26 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public ToolResultBlock withIdAndName(String id, String name) {
         return new ToolResultBlock(id, name, this.output, this.metadata, this.state);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolResultBlock)) {
+            return false;
+        }
+        ToolResultBlock that = (ToolResultBlock) o;
+        return Objects.equals(this.id, that.id)
+                && Objects.equals(this.name, that.name)
+                && Objects.equals(this.output, that.output)
+                && Objects.equals(this.metadata, that.metadata);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.id, this.name, this.output, this.metadata);
     }
 
     /**

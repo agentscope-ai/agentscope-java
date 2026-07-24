@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -279,6 +280,21 @@ class OpenAIChatModelTest {
     @DisplayName("Should return model name")
     void testGetModelName() {
         assertEquals("gpt-4", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should compare chat usage by value")
+    void testChatUsageEqualsAndHashCodeUseValues() {
+        ChatUsage first = ChatUsage.builder().inputTokens(10).outputTokens(20).time(1.5).build();
+        ChatUsage second = ChatUsage.builder().inputTokens(10).outputTokens(20).time(1.5).build();
+        ChatUsage different =
+                ChatUsage.builder().inputTokens(10).outputTokens(21).time(1.5).build();
+
+        assertEquals(first, first);
+        assertNotEquals(first, null);
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+        assertNotEquals(first, different);
     }
 
     @Test

@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openai.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * OpenAI Reasoning Detail DTO (OpenRouter specific for Gemini).
@@ -89,5 +90,27 @@ public class OpenAIReasoningDetail {
 
     public void setIndex(Integer index) {
         this.index = index;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof OpenAIReasoningDetail)) {
+            return false;
+        }
+        OpenAIReasoningDetail that = (OpenAIReasoningDetail) o;
+        return Objects.equals(this.id, that.id)
+                && Objects.equals(this.type, that.type)
+                && Objects.equals(this.data, that.data)
+                && Objects.equals(this.text, that.text)
+                && Objects.equals(this.format, that.format)
+                && Objects.equals(this.index, that.index);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.id, this.type, this.data, this.text, this.format, this.index);
     }
 }

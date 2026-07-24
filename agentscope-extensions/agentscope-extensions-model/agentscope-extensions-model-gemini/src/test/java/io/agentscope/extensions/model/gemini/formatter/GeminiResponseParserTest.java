@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.model.gemini.formatter;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,6 +33,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -353,9 +353,9 @@ class GeminiResponseParserTest {
         // Verify thought signature is stored in metadata
         assertNotNull(toolUse.getMetadata());
         assertTrue(toolUse.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
-        byte[] extractedSig =
-                (byte[]) toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-        assertArrayEquals(thoughtSignature, extractedSig);
+        String extractedSig =
+                (String) toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertEquals(Base64.getEncoder().encodeToString(thoughtSignature), extractedSig);
     }
 
     @Test
@@ -432,6 +432,9 @@ class GeminiResponseParserTest {
         ToolUseBlock toolUse1 = (ToolUseBlock) chatResponse.getContent().get(0);
         assertEquals("call-1", toolUse1.getId());
         assertTrue(toolUse1.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        assertEquals(
+                Base64.getEncoder().encodeToString(thoughtSignature),
+                toolUse1.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
 
         // Second tool call should not have signature
         ToolUseBlock toolUse2 = (ToolUseBlock) chatResponse.getContent().get(1);

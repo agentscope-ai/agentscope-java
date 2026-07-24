@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.dto;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -167,5 +168,32 @@ class OpenAIMessageReasoningFieldTest {
         OpenAIMessage delta = response.getFirstChoice().getDelta();
 
         assertEquals("Step 1: parse the input...", delta.getReasoningContent());
+    }
+
+    @Test
+    @DisplayName("Should compare reasoning details by value")
+    void testReasoningDetailEqualsAndHashCodeUseValues() {
+        OpenAIReasoningDetail first = reasoningDetail("reasoning.text");
+        OpenAIReasoningDetail second = reasoningDetail("reasoning.text");
+        OpenAIReasoningDetail different = reasoningDetail("reasoning.summary");
+
+        assertEquals(first, first);
+        assertNotEquals(first, null);
+        assertNotEquals(first, "other");
+        assertEquals(first, second);
+        assertEquals(second, first);
+        assertEquals(first.hashCode(), second.hashCode());
+        assertNotEquals(first, different);
+    }
+
+    private OpenAIReasoningDetail reasoningDetail(String type) {
+        OpenAIReasoningDetail detail = new OpenAIReasoningDetail();
+        detail.setId("reasoning-1");
+        detail.setType(type);
+        detail.setData("encrypted-data");
+        detail.setText("visible reasoning");
+        detail.setFormat("openai-responses-v1");
+        detail.setIndex(0);
+        return detail;
     }
 }

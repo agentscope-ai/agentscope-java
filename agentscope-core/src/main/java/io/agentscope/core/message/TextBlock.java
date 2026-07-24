@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents plain text content in a message.
@@ -54,6 +55,23 @@ public final class TextBlock extends ContentBlock {
     @Override
     public String toString() {
         return text;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        } else if (!(o instanceof TextBlock)) {
+            return false;
+        } else {
+            TextBlock that = (TextBlock) o;
+            return Objects.equals(this.text, that.text);
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.text);
     }
 
     /**

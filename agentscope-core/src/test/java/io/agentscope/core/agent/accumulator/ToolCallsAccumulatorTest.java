@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.agent.accumulator;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +46,7 @@ class ToolCallsAccumulatorTest {
     @DisplayName("Should accumulate metadata from tool call chunks")
     void testAccumulateMetadata() {
         // First chunk with thoughtSignature
-        byte[] signature = "test-thought-signature".getBytes();
+        String signature = Base64.getEncoder().encodeToString("test-thought-signature".getBytes());
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
 
@@ -77,9 +77,8 @@ class ToolCallsAccumulatorTest {
         // Verify metadata is preserved
         assertNotNull(toolCall.getMetadata());
         assertTrue(toolCall.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
-        assertArrayEquals(
-                signature,
-                (byte[]) toolCall.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        assertEquals(
+                signature, toolCall.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
     }
 
     @Test
@@ -107,7 +106,7 @@ class ToolCallsAccumulatorTest {
     @DisplayName("Should handle parallel tool calls with different metadata")
     void testParallelToolCallsWithMetadata() {
         // First tool call with metadata
-        byte[] sig1 = "sig-1".getBytes();
+        String sig1 = Base64.getEncoder().encodeToString("sig-1".getBytes());
         Map<String, Object> metadata1 = new HashMap<>();
         metadata1.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, sig1);
 
@@ -139,6 +138,7 @@ class ToolCallsAccumulatorTest {
                 result.stream().filter(t -> "call_a".equals(t.getId())).findFirst().orElse(null);
         assertNotNull(resultA);
         assertTrue(resultA.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        assertEquals(sig1, resultA.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
 
         // Second call should not have metadata
         ToolUseBlock resultB =
