@@ -116,6 +116,25 @@ public final class GracefulShutdownManager {
     }
 
     /**
+     * Remove the {@link ShutdownStateSaver} previously registered for the given agent, if any.
+     *
+     * <p>Should be invoked from {@code Agent.close()} so that short-lived agent instances are not
+     * retained by this manager's process-wide singleton map. Without this, every agent built with
+     * a {@code stateStore} pins its entire object graph (model/HttpClient, toolkit, stateCache)
+     * forever, since {@link #bindStateSaver} registers by {@code agentId} (a fresh UUID per
+     * instance) and there is no other removal path. No-op when {@code agent} is {@code null} or no
+     * saver is registered for the agent.
+     *
+     * @param agent the agent whose saver should be removed
+     */
+    public void unbindStateSaver(Agent agent) {
+        if (agent == null) {
+            return;
+        }
+        stateSavers.remove(agent.getAgentId());
+    }
+
+    /**
      * Check whether the agent was previously interrupted by shutdown, and clear the flag.
      *
      * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
