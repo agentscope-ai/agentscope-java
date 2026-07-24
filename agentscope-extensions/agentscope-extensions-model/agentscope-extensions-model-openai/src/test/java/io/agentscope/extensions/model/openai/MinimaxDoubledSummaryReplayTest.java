@@ -132,12 +132,32 @@ class MinimaxDoubledSummaryReplayTest {
                 "tool args must not be doubled into {...}{...}");
     }
 
+    @Test
+    void chatCompletionOnlyStreamPreservesMessage() {
+        String completionOnlyPayload =
+                "{\"id\":\"chatcmpl-full\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello"
+                    + " from a full SSE"
+                    + " completion\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":7,\"total_tokens\":8}}";
+
+        List<OpenAIResponse> responses = runStream(completionOnlyPayload);
+
+        assertEquals(1, responses.size());
+        OpenAIChoice choice = responses.get(0).getFirstChoice();
+        assertNotNull(choice);
+        assertNotNull(choice.getMessage(), "full completion messages must be preserved");
+        assertEquals("Hello from a full SSE completion", choice.getMessage().getContentAsString());
+    }
+
     private List<OpenAIResponse> runStream() {
+        return runStream(SSE_PAYLOADS);
+    }
+
+    private List<OpenAIResponse> runStream(String... payloads) {
         HttpTransport transport =
                 new HttpTransport() {
                     @Override
                     public Flux<String> stream(HttpRequest request) {
-                        return Flux.fromArray(SSE_PAYLOADS).concatWith(Flux.just("[DONE]"));
+                        return Flux.fromArray(payloads).concatWith(Flux.just("[DONE]"));
                     }
 
                     @Override
