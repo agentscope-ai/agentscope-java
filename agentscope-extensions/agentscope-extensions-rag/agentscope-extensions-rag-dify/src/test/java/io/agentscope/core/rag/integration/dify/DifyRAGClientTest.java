@@ -75,6 +75,31 @@ class DifyRAGClientTest {
                 .setBody(responseBody);
     }
 
+    private MockResponse createSuccessResponseWithQuery(String queryJson) {
+        String responseBody =
+                String.format(
+                        """
+                        {
+                            "query": %s,
+                            "records": [
+                                {
+                                    "segment": {
+                                        "id": "seg-1",
+                                        "content": "Test content",
+                                        "document_id": "doc-1"
+                                    },
+                                    "score": 0.95
+                                }
+                            ]
+                        }
+                        """,
+                        queryJson);
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(responseBody);
+    }
+
     private MockResponse createEmptyResponse() {
         return new MockResponse()
                 .setResponseCode(200)
@@ -406,6 +431,34 @@ class DifyRAGClientTest {
         assertEquals(1, response.getRecords().size());
         assertEquals("seg-1", response.getRecords().get(0).getSegment().getId());
         assertEquals(0.95, response.getRecords().get(0).getScore(), 0.001);
+    }
+
+    @Test
+    void testParseStringQueryResponse() throws Exception {
+        mockWebServer.enqueue(createSuccessResponseWithQuery("\"ping\""));
+
+        DifyRAGClient client = new DifyRAGClient(createConfig());
+        DifyResponse response = client.retrieve("test query", 5).block();
+
+        assertNotNull(response);
+        assertNotNull(response.getQuery());
+        assertEquals("ping", response.getQuery().getContent());
+        assertNotNull(response.getRecords());
+        assertEquals(1, response.getRecords().size());
+    }
+
+    @Test
+    void testParseObjectQueryResponse() throws Exception {
+        mockWebServer.enqueue(createSuccessResponseWithQuery("{\"content\":\"ping\"}"));
+
+        DifyRAGClient client = new DifyRAGClient(createConfig());
+        DifyResponse response = client.retrieve("test query", 5).block();
+
+        assertNotNull(response);
+        assertNotNull(response.getQuery());
+        assertEquals("ping", response.getQuery().getContent());
+        assertNotNull(response.getRecords());
+        assertEquals(1, response.getRecords().size());
     }
 
     @Test
