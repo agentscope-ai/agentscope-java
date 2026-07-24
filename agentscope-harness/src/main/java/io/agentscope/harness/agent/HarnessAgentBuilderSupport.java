@@ -399,6 +399,8 @@ final class HarnessAgentBuilderSupport {
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
+        final CompactionConfig capturedCompactionConfig = b.compactionConfig;
+        final boolean capturedDisableCompaction = b.disableCompaction;
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
@@ -469,6 +471,15 @@ final class HarnessAgentBuilderSupport {
 
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
+
+            CompactionConfig declaredCompactionConfig = decl.getCompactionConfig();
+            if (declaredCompactionConfig != null) {
+                sub.compaction(declaredCompactionConfig);
+            } else if (capturedDisableCompaction) {
+                sub.disableCompaction();
+            } else if (capturedCompactionConfig != null) {
+                sub.compaction(capturedCompactionConfig);
+            }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();

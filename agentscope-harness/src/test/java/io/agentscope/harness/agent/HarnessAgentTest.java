@@ -943,6 +943,74 @@ class HarnessAgentTest {
                 "declared subagent must inherit parent modelExecutionConfig");
     }
 
+    @Test
+    void declaredSubagent_explicitCompactionOverridesDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        CompactionConfig subagentCompaction = CompactionConfig.builder().triggerMessages(5).build();
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("compact-worker")
+                        .description("worker with independent compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .compaction(subagentCompaction)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "compact-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertSame(subagentCompaction, decl.getCompactionConfig());
+        assertNotNull(
+                child.getCompactionHook(),
+                "declaration-level compaction must override the disabled parent");
+    }
+
+    @Test
+    void declaredSubagent_withoutCompactionOverrideInheritsDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("non-compacting-worker")
+                        .description("worker inheriting disabled compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "non-compacting-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertNull(decl.getCompactionConfig());
+        assertNull(
+                child.getCompactionHook(),
+                "subagent without an override must inherit disabled compaction");
+    }
+
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
