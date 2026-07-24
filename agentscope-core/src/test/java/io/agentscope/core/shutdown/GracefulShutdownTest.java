@@ -27,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -354,6 +356,49 @@ class GracefulShutdownTest {
 
             assertDoesNotThrow(() -> manager.bindStateSaver(null, s -> {}));
             assertDoesNotThrow(() -> manager.bindStateSaver(agent, null));
+        }
+
+        @Test
+        @DisplayName("unbindStateSaver removes the agent saver")
+        void unbindStateSaverRemovesSaver() {
+            TestableAgent agent = createTestAgent("agent-1");
+            AtomicReference<AgentState> savedState = new AtomicReference<>();
+            manager.bindStateSaver(agent, savedState::set);
+
+            manager.unbindStateSaver(agent);
+            String requestId = manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(requestId);
+
+            assertNull(savedState.get());
+        }
+
+        @Test
+        @DisplayName("unbindStateSaver is idempotent and accepts null")
+        void unbindStateSaverIsIdempotent() {
+            TestableAgent agent = createTestAgent("agent-1");
+            manager.bindStateSaver(agent, state -> {});
+
+            assertDoesNotThrow(() -> manager.unbindStateSaver(agent));
+            assertDoesNotThrow(() -> manager.unbindStateSaver(agent));
+            assertDoesNotThrow(() -> manager.unbindStateSaver(null));
+        }
+
+        @Test
+        @DisplayName("closing ReActAgent unregisters its state saver")
+        void closingReActAgentUnregistersStateSaver() {
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("short-lived")
+                            .sysPrompt("test")
+                            .model(new MockModel("ok"))
+                            .stateStore(new InMemoryAgentStateStore())
+                            .build();
+
+            agent.close();
+            String requestId = manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(requestId);
+
+            assertFalse(agent.getAgentState().isShutdownInterrupted());
         }
 
         @Test

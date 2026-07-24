@@ -116,6 +116,19 @@ public final class GracefulShutdownManager {
     }
 
     /**
+     * Unregister the {@link ShutdownStateSaver} for the given agent.
+     *
+     * <p>Agents must call this when they are closed so the process-wide shutdown manager does not
+     * retain short-lived agent instances through their saver callbacks.
+     */
+    public void unbindStateSaver(Agent agent) {
+        if (agent == null) {
+            return;
+        }
+        stateSavers.remove(agent.getAgentId());
+    }
+
+    /**
      * Check whether the agent was previously interrupted by shutdown, and clear the flag.
      *
      * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
