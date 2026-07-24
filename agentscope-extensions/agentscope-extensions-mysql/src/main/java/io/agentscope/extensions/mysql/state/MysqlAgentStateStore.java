@@ -812,9 +812,6 @@ public class MysqlAgentStateStore implements AgentStateStore {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("AgentStateStore ID cannot be null or empty");
         }
-        if (sessionId.contains("/") || sessionId.contains("\\")) {
-            throw new IllegalArgumentException("AgentStateStore ID cannot contain path separators");
-        }
         if (sessionId.length() > 255) {
             throw new IllegalArgumentException("AgentStateStore ID cannot exceed 255 characters");
         }
