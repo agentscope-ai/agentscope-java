@@ -48,13 +48,13 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
     private final AgentRunSandboxState arState;
     private final AgentRunSandboxClientOptions options;
     private final AgentRunDataPlaneHttp http;
-    private final AgentRunMcpChannel mcp;
+    private final AgentRunExecutor mcp;
 
     public AgentRunSandbox(
             AgentRunSandboxState state,
             AgentRunSandboxClientOptions options,
             AgentRunDataPlaneHttp http,
-            AgentRunMcpChannel mcp) {
+            AgentRunExecutor mcp) {
         super(state);
         this.arState = state;
         this.options = options;
@@ -155,6 +155,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
         if (all.length == 0) {
             return;
         }
+        ensureWorkspaceRoot();
         String b64 = Base64.getEncoder().encodeToString(all);
         mcp.exec("rm -f /tmp/agentscope-ws.b64", null, 30);
         for (int i = 0; i < b64.length(); i += B64_CHUNK) {
@@ -187,7 +188,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        mcp.exec("mkdir -p " + shellSingleQuote(arState.getWorkspaceRoot()), null, 30);
+        ensureWorkspaceRoot();
     }
 
     @Override
@@ -206,6 +207,16 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
     @Override
     protected String getWorkspaceRoot() {
         return arState.getWorkspaceRoot();
+    }
+
+    private void ensureWorkspaceRoot() throws Exception {
+        AgentRunMcpChannel.ExecResult r =
+                mcp.exec("mkdir -p " + shellSingleQuote(arState.getWorkspaceRoot()), null, 30);
+        if (r.exitCode != 0) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "AgentRun workspace root setup failed (exit=" + r.exitCode + "): " + r.stderr);
+        }
     }
 
     private void ensureSandbox() throws Exception {
@@ -262,5 +273,14 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
         }
         sb.append('\'');
         return sb.toString();
+    }
+
+    interface AgentRunExecutor extends AutoCloseable {
+        void connect();
+
+        AgentRunMcpChannel.ExecResult exec(String command, String cwd, int timeoutSeconds);
+
+        @Override
+        void close();
     }
 }
