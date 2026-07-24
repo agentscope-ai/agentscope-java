@@ -39,6 +39,7 @@ class MemoryConfigTest {
         assertEquals(MemoryConfig.DEFAULT_DAILY_FILE_RETENTION_DAYS, cfg.dailyFileRetentionDays());
         assertEquals(MemoryConfig.DEFAULT_SESSION_RETENTION_DAYS, cfg.sessionRetentionDays());
         assertEquals(MemoryConfig.FlushMode.ALWAYS, cfg.flushTrigger().mode());
+        assertEquals(MemoryConfig.ExecutionMode.BLOCKING, cfg.executionMode());
     }
 
     @Test
@@ -81,6 +82,7 @@ class MemoryConfigTest {
                         .dailyFileRetentionDays(30)
                         .sessionRetentionDays(60)
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(Duration.ofMinutes(10)))
+                        .executionMode(MemoryConfig.ExecutionMode.ASYNC)
                         .build();
 
         assertEquals("custom flush", cfg.flushPrompt());
@@ -90,6 +92,7 @@ class MemoryConfigTest {
         assertEquals(60, cfg.sessionRetentionDays());
         assertEquals(MemoryConfig.FlushMode.THROTTLED, cfg.flushTrigger().mode());
         assertEquals(Duration.ofMinutes(10), cfg.flushTrigger().minGap());
+        assertEquals(MemoryConfig.ExecutionMode.ASYNC, cfg.executionMode());
     }
 
     @Test
@@ -140,6 +143,8 @@ class MemoryConfigTest {
                 () -> MemoryConfig.builder().consolidationMinGap(Duration.ofSeconds(-1)));
         assertThrows(
                 IllegalArgumentException.class, () -> MemoryConfig.builder().flushTrigger(null));
+        assertThrows(
+                IllegalArgumentException.class, () -> MemoryConfig.builder().executionMode(null));
     }
 
     @Test

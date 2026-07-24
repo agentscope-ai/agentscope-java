@@ -193,6 +193,22 @@ HarnessAgent.builder()
 
 `model(String)` resolves via `ModelRegistry.resolve()`; you can also pass a `Model` instance. When not set, falls back to the agent's primary model.
 
+### Example 7: complete calls before memory LLM work
+
+By default, flush and maintenance remain in the agent completion path. For latency-sensitive
+streaming or orchestration, queue them after the call completes:
+
+```java
+.memory(MemoryConfig.builder()
+    .executionMode(MemoryConfig.ExecutionMode.ASYNC)
+    .build())
+```
+
+Asynchronous operations are serialized per configured isolation key, so writes for one user or
+session keep their call order while independent keys can run concurrently. The raw session JSONL
+is offloaded before LLM extraction, and `HarnessAgent.close()` waits for accepted memory work.
+Applications using this mode should close the agent during shutdown.
+
 ### `MemoryConfig` field reference
 
 | Field | Default | Purpose |
@@ -205,6 +221,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `executionMode` | `BLOCKING` | `BLOCKING` keeps historical completion semantics; `ASYNC` queues ordered post-call memory work |
 
 ## Large tool-result offloading
 

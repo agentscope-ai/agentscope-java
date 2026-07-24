@@ -56,6 +56,7 @@ import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.memory.MemoryOperationScheduler;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
@@ -168,6 +169,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final MemoryOperationScheduler memoryOperationScheduler;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -199,6 +201,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
+            MemoryOperationScheduler memoryOperationScheduler,
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer) {
@@ -217,6 +220,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.memoryOperationScheduler = memoryOperationScheduler;
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
@@ -378,11 +382,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
             shutdownTaskRepository();
         } finally {
             try {
-                if (ownedWorkspaceIndex != null) {
-                    ownedWorkspaceIndex.close();
+                if (memoryOperationScheduler != null) {
+                    memoryOperationScheduler.close();
                 }
             } finally {
-                delegate.close();
+                try {
+                    if (ownedWorkspaceIndex != null) {
+                        ownedWorkspaceIndex.close();
+                    }
+                } finally {
+                    delegate.close();
+                }
             }
         }
     }
@@ -2180,21 +2190,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new AtPathExpansionMiddleware(wsManager));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
+            MemoryOperationScheduler memoryOperationScheduler = null;
             if (memoryModel != null && !disableMemoryHooks) {
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
+                if (memoryConfig.executionMode() == MemoryConfig.ExecutionMode.ASYNC) {
+                    memoryOperationScheduler = new MemoryOperationScheduler();
+                }
 
                 String effectiveFlushPrompt =
                         memoryConfig.flushPrompt() != null
                                 ? memoryConfig.flushPrompt()
                                 : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
-                inner.middleware(
-                        new MemoryFlushMiddleware(
-                                wsManager,
-                                memoryModel,
-                                effectiveFlushPrompt,
-                                memoryConfig.flushTrigger(),
-                                effectiveIsolationScope));
-
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
                                 ? memoryConfig.consolidationPrompt()
@@ -2205,6 +2211,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryModel,
                                 effectiveConsolidationPrompt,
                                 memoryConfig.consolidationMaxTokens());
+                // Middleware completion callbacks run from the last registered middleware
+                // outward. Register maintenance first so raw offload + flush is queued before
+                // consolidation for the same isolation key.
                 inner.middleware(
                         new MemoryMaintenanceMiddleware(
                                 wsManager,
@@ -2212,7 +2221,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryConfig.dailyFileRetentionDays(),
                                 memoryConfig.sessionRetentionDays(),
                                 memoryConfig.consolidationMinGap(),
-                                effectiveIsolationScope));
+                                effectiveIsolationScope,
+                                memoryConfig.executionMode(),
+                                memoryOperationScheduler));
+                inner.middleware(
+                        new MemoryFlushMiddleware(
+                                wsManager,
+                                memoryModel,
+                                effectiveFlushPrompt,
+                                memoryConfig.flushTrigger(),
+                                effectiveIsolationScope,
+                                memoryConfig.executionMode(),
+                                memoryOperationScheduler));
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
@@ -2548,6 +2568,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillCurator,
                     pendingSkillAuditLog,
                     memoryConfig,
+                    memoryOperationScheduler,
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer);

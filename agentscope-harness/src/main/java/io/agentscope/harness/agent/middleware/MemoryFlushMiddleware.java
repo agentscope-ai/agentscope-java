@@ -25,6 +25,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
+import io.agentscope.harness.agent.memory.MemoryOperationScheduler;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,10 +42,12 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that triggers memory flush and message offload at the end of each agent call.
  *
- * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
- * persisted after every call, even when conversation compaction was not triggered during that
- * call. When {@link CompactionMiddleware} is active, it handles flush/offload for the messages
- * it summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
+ * <p>Runs after the main agent event stream. In {@link MemoryConfig.ExecutionMode#ASYNC} it uses
+ * {@link #onAgent}'s {@code doOnComplete}; in blocking mode it remains concatenated to the
+ * completion path. Long-term memories are therefore persisted even when conversation compaction
+ * was not triggered during that call. When {@link CompactionMiddleware} is active, it handles
+ * flush/offload for the messages it summarizes; this middleware covers the remaining tail of
+ * messages that were kept verbatim.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
  * <ul>
@@ -76,6 +79,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
+    private final MemoryConfig.ExecutionMode executionMode;
+    private final MemoryOperationScheduler operationScheduler;
 
     /**
      * Process-wide per-isolation-key flush timestamps. Static so that the throttle window
@@ -109,7 +114,9 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 model,
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
-                IsolationScope.USER);
+                IsolationScope.USER,
+                MemoryConfig.ExecutionMode.BLOCKING,
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -117,7 +124,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger) {
-        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER);
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                IsolationScope.USER,
+                MemoryConfig.ExecutionMode.BLOCKING,
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -126,6 +140,24 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                MemoryConfig.ExecutionMode.BLOCKING,
+                null);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            MemoryConfig.ExecutionMode executionMode,
+            MemoryOperationScheduler operationScheduler) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -133,6 +165,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.executionMode =
+                executionMode != null ? executionMode : MemoryConfig.ExecutionMode.BLOCKING;
+        if (this.executionMode == MemoryConfig.ExecutionMode.ASYNC && operationScheduler == null) {
+            throw new IllegalArgumentException(
+                    "operationScheduler is required for asynchronous memory execution");
+        }
+        this.operationScheduler = operationScheduler;
     }
 
     @Override
@@ -142,27 +181,50 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input)
-                .concatWith(
-                        Mono.defer(() -> doFlush(agent, rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn("Memory flush failed: {}", e.getMessage());
-                                            return Mono.empty();
-                                        })
-                                .then(Mono.<AgentEvent>empty()));
+        Flux<AgentEvent> events = next.apply(input);
+        if (executionMode == MemoryConfig.ExecutionMode.ASYNC) {
+            return events.doOnComplete(
+                    () -> {
+                        FlushRequest request = captureFlushRequest(agent, rc);
+                        if (request != null) {
+                            operationScheduler.submit(
+                                    compositeTimerKey(rc), () -> doFlush(request));
+                        }
+                    });
+        }
+        return events.concatWith(
+                Mono.defer(() -> doFlush(captureFlushRequest(agent, rc)))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .onErrorResume(
+                                e -> {
+                                    log.warn("Memory flush failed: {}", e.getMessage());
+                                    return Mono.empty();
+                                })
+                        .then(Mono.<AgentEvent>empty()));
     }
 
-    private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
+    private FlushRequest captureFlushRequest(Agent agent, RuntimeContext rc) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
-            return Mono.empty();
+            return null;
         }
         List<Msg> messages = state.getContext();
         if (messages.isEmpty()) {
+            return null;
+        }
+        return new FlushRequest(
+                agent.getName(),
+                rc.getSessionId() != null ? rc.getSessionId() : "default",
+                rc,
+                List.copyOf(messages));
+    }
+
+    private Mono<Void> doFlush(FlushRequest request) {
+        if (request == null) {
             return Mono.empty();
         }
+        RuntimeContext rc = request.runtimeContext();
+        List<Msg> messages = request.messages();
 
         MemoryFlushManager flushManager =
                 new MemoryFlushManager(workspaceManager, model, flushPrompt);
@@ -184,14 +246,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             flushMono = Mono.empty();
         }
 
-        String agentId = agent.getName();
-        String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
-
         Mono<Void> offloadMono =
                 Mono.fromRunnable(
                                 () ->
                                         flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId))
+                                                rc,
+                                                messages,
+                                                request.agentId(),
+                                                request.sessionId()))
                         .then()
                         .doOnSuccess(v -> log.debug("Message offload completed"))
                         .onErrorResume(
@@ -200,8 +262,12 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                                     return Mono.empty();
                                 });
 
-        return flushMono.then(offloadMono);
+        // Persist the irreplaceable raw conversation before invoking the optional extraction LLM.
+        return offloadMono.then(flushMono);
     }
+
+    private record FlushRequest(
+            String agentId, String sessionId, RuntimeContext runtimeContext, List<Msg> messages) {}
 
     /**
      * Returns whether this call should trigger a flush, applying the configured trigger policy.
