@@ -38,6 +38,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
  *     enable-reasoning: false
+ *     emit-token-usage: false
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -63,6 +64,9 @@ public class AguiProperties {
 
     /** Whether to emit tool call argument events. */
     private boolean emitToolCallArgs = true;
+
+    /** Whether to emit token usage events. */
+    private boolean emitTokenUsage = false;
 
     /**
      * Whether to enable reasoning/thinking content output.
@@ -166,6 +170,14 @@ public class AguiProperties {
 
     public void setEmitToolCallArgs(boolean emitToolCallArgs) {
         this.emitToolCallArgs = emitToolCallArgs;
+    }
+
+    public boolean isEmitTokenUsage() {
+        return emitTokenUsage;
+    }
+
+    public void setEmitTokenUsage(boolean emitTokenUsage) {
+        this.emitTokenUsage = emitTokenUsage;
     }
 
     public boolean isEnableReasoning() {

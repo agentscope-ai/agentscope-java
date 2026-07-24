@@ -247,6 +247,16 @@ Detail → [Harness filesystem](harness/filesystem.md)
 
 The capabilities below are additive in 2.0 — none of them break 1.x code. The Migration Guide above already covers the event system, message refactor, and middleware mechanism, so they are not repeated here.
 
+### AG-UI v2
+
+- The AG-UI adapter now uses the v2 `streamEvents()` path. Normal `RUN_STARTED` / `RUN_FINISHED` events are converted from `AgentStartEvent` / `AgentEndEvent`; error paths emit `RUN_ERROR` and a fallback `RUN_FINISHED`.
+- New `AgentEventConverter` and `AguiEventEnricher` extension points: converters handle semantic mapping, while enrichers handle cross-cutting properties such as `timestamp` / `rawEvent`. The Spring Boot starter automatically collects both bean types.
+- Every `AguiEvent` supports AG-UI base event properties. `BaseEventPropertiesEnricher` is disabled by default; when explicitly enabled, it only fills missing `timestamp` values and does not default `rawEvent`.
+- `AguiAdapterConfig.emitTokenUsage` can emit `CUSTOM token_usage` events with model-call delta and run-level cumulative token usage.
+- The Spring Boot starter supports `AguiRuntimeContextResolver`, custom `AguiAgentAdapterFactory`, frontend tool injection / merge mode, and HITL interrupt output.
+
+Detail → [AG-UI](../integration/protocol/agui.md)
+
 ### Toolkit & Permission
 
 Tool execution is the main extension surface in 2.0, and the permission system sits directly on its execution path — so we present them together.

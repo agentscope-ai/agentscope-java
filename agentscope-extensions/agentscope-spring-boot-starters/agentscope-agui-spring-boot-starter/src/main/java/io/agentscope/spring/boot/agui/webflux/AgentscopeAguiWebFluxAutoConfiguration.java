@@ -17,9 +17,14 @@ package io.agentscope.spring.boot.agui.webflux;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
+import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -76,15 +81,24 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AguiWebFluxHandler aguiWebFluxHandler(
-            AguiAgentRegistry registry, ThreadSessionManager sessionManager, AguiProperties props) {
+            AguiAgentRegistry registry,
+            ThreadSessionManager sessionManager,
+            AguiProperties props,
+            ObjectProvider<AgentEventConverter> eventConvertersProvider,
+            ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
+            ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
                         .runTimeout(props.getRunTimeout())
                         .emitStateEvents(props.isEmitStateEvents())
                         .emitToolCallArgs(props.isEmitToolCallArgs())
+                        .emitTokenUsage(props.isEmitTokenUsage())
                         .enableReasoning(props.isEnableReasoning())
                         .defaultAgentId(props.getDefaultAgentId())
+                        .eventConverters(eventConvertersProvider.orderedStream().toList())
+                        .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
                         .build();
 
         return AguiWebFluxHandler.builder()
@@ -92,6 +106,8 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                 .sessionManager(sessionManager)
                 .serverSideMemory(props.isServerSideMemory())
                 .agentIdHeader(props.getAgentIdHeader())
+                .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
+                .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .config(config)
                 .build();
     }

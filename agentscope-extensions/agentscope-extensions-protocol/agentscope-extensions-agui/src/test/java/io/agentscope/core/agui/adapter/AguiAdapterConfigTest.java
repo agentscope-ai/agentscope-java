@@ -19,10 +19,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
+import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
+import io.agentscope.core.agui.adapter.strategy.BaseEventPropertiesEnricher;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.event.AgentEvent;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,9 +45,13 @@ class AguiAdapterConfigTest {
         assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
+        assertFalse(config.isEmitTokenUsage());
         assertFalse(config.isEnableReasoning()); // Default should be false
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertNull(config.getDefaultAgentId());
+        assertFalse(config.isBaseEventPropertiesEnricherEnabled());
+        assertTrue(config.getEventConverters().isEmpty());
+        assertTrue(config.getEventEnrichers().isEmpty());
     }
 
     @Test
@@ -51,7 +62,10 @@ class AguiAdapterConfigTest {
         assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
+        assertFalse(config.isEmitTokenUsage());
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
+        assertFalse(config.isBaseEventPropertiesEnricherEnabled());
+        assertTrue(config.getEventEnrichers().isEmpty());
     }
 
     @Test
@@ -96,6 +110,18 @@ class AguiAdapterConfigTest {
     }
 
     @Test
+    void testBuilderEmitTokenUsage() {
+        AguiAdapterConfig configDisabled =
+                AguiAdapterConfig.builder().emitTokenUsage(false).build();
+
+        assertFalse(configDisabled.isEmitTokenUsage());
+
+        AguiAdapterConfig configEnabled = AguiAdapterConfig.builder().emitTokenUsage(true).build();
+
+        assertTrue(configEnabled.isEmitTokenUsage());
+    }
+
+    @Test
     void testBuilderRunTimeout() {
         Duration customTimeout = Duration.ofMinutes(30);
         AguiAdapterConfig config = AguiAdapterConfig.builder().runTimeout(customTimeout).build();
@@ -132,17 +158,22 @@ class AguiAdapterConfigTest {
                         .toolMergeMode(ToolMergeMode.AGENT_ONLY)
                         .emitStateEvents(false)
                         .emitToolCallArgs(false)
+                        .emitTokenUsage(true)
                         .enableReasoning(true)
                         .runTimeout(Duration.ofHours(1))
                         .defaultAgentId("my-agent")
+                        .baseEventPropertiesEnricherEnabled(false)
                         .build();
 
         assertEquals(ToolMergeMode.AGENT_ONLY, config.getToolMergeMode());
         assertFalse(config.isEmitStateEvents());
         assertFalse(config.isEmitToolCallArgs());
+        assertTrue(config.isEmitTokenUsage());
         assertTrue(config.isEnableReasoning());
         assertEquals(Duration.ofHours(1), config.getRunTimeout());
         assertEquals("my-agent", config.getDefaultAgentId());
+        assertFalse(config.isBaseEventPropertiesEnricherEnabled());
+        assertTrue(config.getEventEnrichers().isEmpty());
     }
 
     @Test
@@ -161,6 +192,7 @@ class AguiAdapterConfigTest {
                 builder.toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
                         .emitStateEvents(true)
                         .emitToolCallArgs(true)
+                        .emitTokenUsage(true)
                         .runTimeout(Duration.ofMinutes(5))
                         .defaultAgentId("agent");
 
@@ -218,5 +250,89 @@ class AguiAdapterConfigTest {
             AguiAdapterConfig config = AguiAdapterConfig.builder().toolMergeMode(mode).build();
             assertEquals(mode, config.getToolMergeMode());
         }
+    }
+
+    @Test
+    void testBuilderEventConverters() {
+        AgentEventConverter converter = noopConverter();
+        AguiAdapterConfig config = AguiAdapterConfig.builder().addEventConverter(converter).build();
+
+        assertEquals(1, config.getEventConverters().size());
+        assertSame(converter, config.getEventConverters().get(0));
+    }
+
+    @Test
+    void testBuilderEventConvertersReplaceList() {
+        AgentEventConverter first = noopConverter();
+        AgentEventConverter second = noopConverter();
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder()
+                        .addEventConverter(first)
+                        .eventConverters(Collections.singletonList(second))
+                        .build();
+
+        assertEquals(1, config.getEventConverters().size());
+        assertSame(second, config.getEventConverters().get(0));
+    }
+
+    @Test
+    void testBuilderEventEnrichers() {
+        AguiEventEnricher enricher = (source, events, context) -> events;
+        AguiAdapterConfig config = AguiAdapterConfig.builder().addEventEnricher(enricher).build();
+
+        assertEquals(1, config.getEventEnrichers().size());
+        assertSame(enricher, config.getEventEnrichers().get(0));
+    }
+
+    @Test
+    void testBaseEventPropertiesEnricherCanBeEnabled() {
+        AguiEventEnricher enricher = (source, events, context) -> events;
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder()
+                        .baseEventPropertiesEnricherEnabled(true)
+                        .addEventEnricher(enricher)
+                        .build();
+
+        assertTrue(config.isBaseEventPropertiesEnricherEnabled());
+        assertEquals(2, config.getEventEnrichers().size());
+        assertTrue(config.getEventEnrichers().get(0) instanceof BaseEventPropertiesEnricher);
+        assertSame(enricher, config.getEventEnrichers().get(1));
+    }
+
+    @Test
+    void testBuilderEventEnrichersReplaceList() {
+        AguiEventEnricher first = (source, events, context) -> events;
+        AguiEventEnricher second = (source, events, context) -> events;
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder()
+                        .baseEventPropertiesEnricherEnabled(false)
+                        .addEventEnricher(first)
+                        .eventEnrichers(Collections.singletonList(second))
+                        .build();
+
+        assertEquals(1, config.getEventEnrichers().size());
+        assertSame(second, config.getEventEnrichers().get(0));
+    }
+
+    @Test
+    void testBaseEventPropertiesEnricherDisabledByDefault() {
+        AguiAdapterConfig config = AguiAdapterConfig.builder().build();
+
+        assertFalse(config.isBaseEventPropertiesEnricherEnabled());
+        assertTrue(config.getEventEnrichers().isEmpty());
+    }
+
+    private AgentEventConverter noopConverter() {
+        return new AgentEventConverter() {
+            @Override
+            public Set<Class<? extends AgentEvent>> eventTypes() {
+                return Set.of();
+            }
+
+            @Override
+            public void convert(
+                    AgentEvent event,
+                    io.agentscope.core.agui.adapter.strategy.AguiStreamContext context) {}
+        };
     }
 }
