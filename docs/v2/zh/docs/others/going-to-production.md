@@ -10,7 +10,7 @@ description: "从单机原型到多副本分布式部署：AgentStateStore / Fil
 ```java
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 // 或 MysqlDistributedStore.create(dataSource);
-// 或 OssDistributedStore.create(ossClient, bucket, prefix);
+// 或 AliyunOssDistributedStore.create(ossClient, bucket, prefix);
 
 HarnessAgent.builder()
     .distributedStore(store)
@@ -43,11 +43,11 @@ DistributedStore store = DistributedStore.builder()
 
 ### DistributedStore 能力矩阵
 
-| 能力 | Redis (`agentscope-extensions-redis`) | OSS (`agentscope-extensions-oss`) | MySQL (`agentscope-extensions-mysql`) |
+| 能力 | Redis (`agentscope-extensions-redis`) | OSS (`agentscope-extensions-oss-aliyun`) | MySQL (`agentscope-extensions-mysql`) |
 |------|:-----:|:---:|:-----:|
-| `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
+| `AgentStateStore` | `RedisAgentStateStore` | `AliyunOssAgentStateStore` / `AwsS3AgentStateStore` / `TencentCosAgentStateStore` | `MysqlAgentStateStore` |
+| `BaseStore` | `RedisStore` | `AliyunOssBaseStore` / `AwsS3BaseStore` / `TencentCosBaseStore` | `JdbcStore` |
+| `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | `JdbcSnapshotSpec` |
 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — (对象存储不适合做锁) | `JdbcSandboxExecutionGuard` |
 
 这些组件分别解决不同的生产问题：
@@ -176,7 +176,7 @@ DistributedStore mysqlStore = MysqlDistributedStore.create(dataSource);
 | 数据形态 | Store | 谁来管 |
 |---------|------|-------|
 | 高频小 KV（记忆、会话快照、任务记录） | Redis / MySQL（`BaseStore`） | `RemoteFilesystemSpec` |
-| 大对象（沙箱整个 workspace tar archive，几十 MB） | OSS / S3 | `OssSnapshotSpec` / 自定义 `RemoteSnapshotSpec` |
+| 大对象（沙箱整个 workspace tar archive，几十 MB） | OSS / S3 | `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` / 自定义 `RemoteSnapshotSpec` |
 | 跨节点共享卷（多个沙箱实例挂同一份目录） | NAS / EFS | `AgentRunFilesystemSpec.nasConfig(...)`（仅 AgentRun 原生支持） |
 
 ### `RemoteFilesystemSpec` 的路由表
@@ -286,14 +286,16 @@ HarnessAgent agent = HarnessAgent.builder()
 |------|------|------|--------|
 | `NoopSnapshotSpec` | — | `agentscope-harness` | 不要在生产用；容器丢了就走冷启动 |
 | `LocalSnapshotSpec(Path)` | 本地目录 `tar` 文件 | `agentscope-harness` | 单机调试 |
-| `OssSnapshotSpec` | 阿里云 OSS | `agentscope-extensions-oss` | **大对象首选**；天然适合对象存储 |
+| `AliyunOssSnapshotSpec` | 阿里云 OSS | `agentscope-extensions-oss-aliyun` | **大对象首选**；天然适合对象存储 |
+| `AwsS3SnapshotSpec` | AWS S3 | `agentscope-extensions-oss-aws` | AWS 上的大对象存储；与 OSS 用法一致 |
+| `TencentCosSnapshotSpec` | 腾讯云 COS | `agentscope-extensions-oss-tencent` | 腾讯云上的大对象存储；与 OSS 用法一致 |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | 小工作区 + 短 TTL（注意 Redis 内存代价） |
 | `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | 已有关系型数据库、不想引入额外中间件 |
 | 自实现 `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | 不在内置列表里 |
 
 ```java
 DistributedStore redisStore = RedisDistributedStore.fromJedis(jedis);
-DistributedStore ossStore = OssDistributedStore.create(
+DistributedStore ossStore = AliyunOssDistributedStore.create(
         ossClient,
         "agentscope-sandbox-snapshots",
         "prod/");                         // key 前缀，多环境隔离
@@ -316,7 +318,7 @@ HarnessAgent agent = HarnessAgent.builder()
         .build();
 ```
 
-使用 `distributedStore(...)` 后，快照和执行锁都会自动注入，不需要在 `SandboxFilesystemSpec` 上手动配置。如果只是要改 OSS bucket / prefix，优先在创建 `OssDistributedStore` 时配置；只有需要完全自定义 `SandboxSnapshotSpec` 时，才在 `SandboxFilesystemSpec` 上显式覆盖。
+使用 `distributedStore(...)` 后，快照和执行锁都会自动注入，不需要在 `SandboxFilesystemSpec` 上手动配置。如果只是要改 OSS bucket / prefix，优先在创建 `AliyunOssDistributedStore` 时配置；只有需要完全自定义 `SandboxSnapshotSpec` 时，才在 `SandboxFilesystemSpec` 上显式覆盖。
 
 ### 沙箱执行节点串行化：`SandboxExecutionGuard`
 
@@ -392,7 +394,7 @@ HarnessAgent.builder()
 |-------|----------|
 | 会话 / `AgentState` | `RedisDistributedStore` 或混合 `DistributedStore` 注入 `AgentStateStore`；`(userId, sessionId)` 承载租户/用户/agent 维度 |
 | 工作区文件 | `distributedStore(...)` 注入 `BaseStore` + `RemoteFilesystemSpec` + `WorkspaceIndex` + `IsolationScope.USER` |
-| 大对象 / 快照 | 混合 `DistributedStore` 中使用 `OssDistributedStore.sandboxSnapshotSpec()`（不要把大快照写 Redis） |
+| 大对象 / 快照 | 混合 `DistributedStore` 中使用 `AliyunOssDistributedStore` / `AwsS3DistributedStore` / `TencentCosDistributedStore` 的 `sandboxSnapshotSpec()`（不要把大快照写 Redis） |
 | 跨节点 sandbox 共享 | AgentRun + NAS mount，或自管 K8s + `distributedStore(...)` 注入的 `SandboxExecutionGuard` |
 | Skill 治理 | `MysqlSkillRepository(writeable=false)` 或 `NacosSkillRepository`；agent 端禁用 autoPromote |
 | 子 agent 任务记录 | 自动用 `WorkspaceTaskRepository`，落 Remote / Sandbox；不需要额外配 |
@@ -466,7 +468,7 @@ agent.call(msg, RuntimeContext.builder()
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
 - **本地 `AgentStateStore` 单机限制**：K8s 多副本部署里如果把分布式文件系统和本地 `JsonFileAgentStateStore` 搭配，第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。
 - **`NacosSkillRepository` 不关闭**——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 `@PreDestroy` 或 `destroyMethod="close"`。
-- **OSS / NAS 走完 IAM 再上线**——`OssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
+- **OSS / NAS 走完 IAM 再上线**——`AliyunOssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
 - **本地 `AgentStateStore` + 沙箱模式仅用于开发**——构建时的 warning 日志是故意的，生产环境别忽略。
 
 ## 相关文档

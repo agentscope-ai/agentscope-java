@@ -27,7 +27,7 @@ Full-stack distributed storage components for multi-replica production deploymen
 - [Distributed Storage Overview](distributed/index.md) — `DistributedStore` API, capability matrix, mixed stores
 - [Redis](distributed/redis.md) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
 - [MySQL / JDBC](distributed/mysql.md) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
-- [Alibaba Cloud OSS](distributed/oss.md) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
+- [Alibaba Cloud OSS](distributed/oss.md) — `AgentStateStore` + `AliyunOssBaseStore` + `AliyunOssSnapshotSpec`
 
 ## Sandbox Execution Environments
 

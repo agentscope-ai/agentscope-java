@@ -2,7 +2,6 @@
 title: "Going to Production"
 description: "From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability"
 ---
-
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
 
 **Fastest path to production**: use `DistributedStore` to configure all distributed components at once:
@@ -10,7 +9,7 @@ description: "From single-node prototype to multi-replica deployment: component 
 ```java
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 // or MysqlDistributedStore.create(dataSource);
-// or OssDistributedStore.create(ossClient, bucket, prefix);
+// or AliyunOssDistributedStore.create(ossClient, bucket, prefix);
 
 HarnessAgent.builder()
     .distributedStore(store)
@@ -31,24 +30,26 @@ DistributedStore store = DistributedStore.builder()
 
 ## At a glance: single-node defaults vs. distributed production
 
-| Dimension | Single-node default (dev / demo) | Distributed production swap |
-|-----------|----------------------------------|-----------------------------|
-| **One-line config** | not needed | **`.distributedStore(RedisDistributedStore.fromJedis(jedis))`** |
-| `AgentStateStore` | `JsonFileAgentStateStore` (local JSON) | auto-wired by `distributedStore` |
-| Filesystem | `LocalFilesystemSpec` (no call) | `RemoteFilesystemSpec` or `SandboxFilesystemSpec` (`baseStore` auto-injected from store) |
-| Sandbox snapshots | `NoopSnapshotSpec` / `LocalSnapshotSpec` | auto-wired by `distributedStore` |
-| Sandbox exec serialization | none needed in-process | auto-wired by `distributedStore` |
-| Skill source | `workspace/skills/` | `GitSkillRepository` / `MysqlSkillRepository` / `NacosSkillRepository` |
-| Observability | no tracing by default | `OtelTracingMiddleware` + OpenTelemetry SDK |
+
+| Dimension                  | Single-node default (dev / demo)         | Distributed production swap                                                              |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **One-line config**        | not needed                               | **`.distributedStore(RedisDistributedStore.fromJedis(jedis))`**                          |
+| `AgentStateStore`          | `JsonFileAgentStateStore` (local JSON)   | auto-wired by`distributedStore`                                                          |
+| Filesystem                 | `LocalFilesystemSpec` (no call)          | `RemoteFilesystemSpec` or `SandboxFilesystemSpec` (`baseStore` auto-injected from store) |
+| Sandbox snapshots          | `NoopSnapshotSpec` / `LocalSnapshotSpec` | auto-wired by`distributedStore`                                                          |
+| Sandbox exec serialization | none needed in-process                   | auto-wired by`distributedStore`                                                          |
+| Skill source               | `workspace/skills/`                      | `GitSkillRepository` / `MysqlSkillRepository` / `NacosSkillRepository`                   |
+| Observability              | no tracing by default                    | `OtelTracingMiddleware` + OpenTelemetry SDK                                              |
 
 ### DistributedStore capability matrix
 
-| Capability | Redis (`agentscope-extensions-redis`) | OSS (`agentscope-extensions-oss`) | MySQL (`agentscope-extensions-mysql`) |
-|------------|:-----:|:---:|:-----:|
-| `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — (object storage can't do locks) | `JdbcSandboxExecutionGuard` |
+
+| Capability              | Redis (`agentscope-extensions-redis`) |                        OSS (`agentscope-extensions-oss-*`)                        | MySQL (`agentscope-extensions-mysql`) |
+| ----------------------- | :-----------------------------------: | :-------------------------------------------------------------------------------: | :-----------------------------------: |
+| `AgentStateStore`       |        `RedisAgentStateStore`        | `AliyunOssAgentStateStore` / `AwsS3AgentStateStore` / `TencentCosAgentStateStore` |        `MysqlAgentStateStore`        |
+| `BaseStore`             |             `RedisStore`             |          `AliyunOssBaseStore` / `AwsS3BaseStore` / `TencentCosBaseStore`          |              `JdbcStore`              |
+| `SandboxSnapshotSpec`   |          `RedisSnapshotSpec`          |     `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec`     |          `JdbcSnapshotSpec`          |
+| `SandboxExecutionGuard` |     `RedisSandboxExecutionGuard`     |                        — (object storage can't do locks)                        |      `JdbcSandboxExecutionGuard`      |
 
 Each component solves a different production problem:
 
@@ -60,6 +61,7 @@ Each component solves a different production problem:
 > OSS does not provide a `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. OSS users who need sandbox concurrency control can mix in a Redis guard via `DistributedStore.builder()`.
 
 **The key validation chain:**
+
 - `filesystem(RemoteFilesystemSpec)` without `stateStore(...)` or `distributedStore(...)` → `build()` throws `IllegalStateException`.
 - `filesystem(SandboxFilesystemSpec)` with a local `AgentStateStore` → `build()` logs a **warning**; in production always supply a `distributedStore`.
 
@@ -69,12 +71,13 @@ Each component solves a different production problem:
 
 `AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](../../integration/session/index.md).
 
-| Implementation | Module | When to use |
-|----------------|--------|-------------|
-| `InMemoryAgentStateStore` | `agentscope-core` | unit tests; everything dies on process exit |
-| `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; one directory per `(userId, sessionId)`. **HarnessAgent default**, rooted at `~/.agentscope/state/<agentId>/`; **single-machine** |
-| `RedisAgentStateStore` | `agentscope-extensions-redis` | **multi-replica production default**; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | when state must live in a relational store (audit / reporting / joins) |
+
+| Implementation            | Module                        | When to use                                                                                                                                          |
+| ------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InMemoryAgentStateStore` | `agentscope-core`             | unit tests; everything dies on process exit                                                                                                          |
+| `JsonFileAgentStateStore` | `agentscope-core`             | single-machine dev; one directory per`(userId, sessionId)`. **HarnessAgent default**, rooted at `~/.agentscope/state/<agentId>/`; **single-machine** |
+| `RedisAgentStateStore`    | `agentscope-extensions-redis` | **multi-replica production default**; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel)                                          |
+| `MysqlAgentStateStore`    | `agentscope-extensions-mysql` | when state must live in a relational store (audit / reporting / joins)                                                                               |
 
 **Redis with any of the three client adapters** through `RedisAgentStateStore.builder()`:
 
@@ -111,20 +114,22 @@ Full mechanics in [Context & AgentState](../building-blocks/context.md).
 
 Three modes recap (details in [Filesystem](../harness/filesystem.md)):
 
-| Mode | Config | Shell? | Use it when |
-|------|--------|--------|-------------|
-| **Local + shell** | `filesystem(new LocalFilesystemSpec()...)` or omit | ✅ host `sh -c` | single process / trusted environment |
-| **Shared store** | `filesystem(new RemoteFilesystemSpec(store))` | ❌ (use sandbox if you need shell) | multi-replica / multi-pod sharing long-term memory |
-| **Sandbox** | `filesystem(new DockerFilesystemSpec()...)` and four siblings | ✅ inside the sandbox | untrusted code / cross-call recovery / hard user isolation |
+
+| Mode              | Config                                                        | Shell?                             | Use it when                                                |
+| ----------------- | ------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| **Local + shell** | `filesystem(new LocalFilesystemSpec()...)` or omit            | ✅ host`sh -c`                     | single process / trusted environment                       |
+| **Shared store**  | `filesystem(new RemoteFilesystemSpec(store))`                 | ❌ (use sandbox if you need shell) | multi-replica / multi-pod sharing long-term memory         |
+| **Sandbox**       | `filesystem(new DockerFilesystemSpec()...)` and four siblings | ✅ inside the sandbox              | untrusted code / cross-call recovery / hard user isolation |
 
 **`IsolationScope` is the multi-user isolation key.** Both shared-store and sandbox modes use the same scope to decide how namespaces are bucketed:
 
-| Scope | Meaning | Typical use |
-|-------|---------|-------------|
-| `SESSION` (sandbox default) | one slot per sessionId | multi-user SaaS, each conversation independent |
-| `USER` (Remote default) | same `userId` shares across sessions | one user on multiple devices sharing long-term memory |
-| `AGENT` | all users/sessions of the agent share | public-knowledge-base agents |
-| `GLOBAL` | one shared slot for everything | use with care |
+
+| Scope                       | Meaning                               | Typical use                                           |
+| --------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| `SESSION` (sandbox default) | one slot per sessionId                | multi-user SaaS, each conversation independent        |
+| `USER` (Remote default)     | same`userId` shares across sessions   | one user on multiple devices sharing long-term memory |
+| `AGENT`                     | all users/sessions of the agent share | public-knowledge-base agents                          |
+| `GLOBAL`                    | one shared slot for everything        | use with care                                         |
 
 ```java
 // distributedStore auto-injects baseStore into RemoteFilesystemSpec
@@ -144,11 +149,12 @@ HarnessAgent.builder()
 
 `RemoteFilesystemSpec` sits on top of a `BaseStore` interface. Two built-in implementations:
 
-| Implementation | Dependency | Concurrency safety | Use it when |
-|----------------|------------|--------------------|-------------|
-| `RedisStore` | `agentscope-extensions-redis` | Lua-based CAS `putIfVersion`, `ZRANGEBYLEX` for prefix search | the default; multi-replica sharing |
-| `JdbcStore` | `agentscope-extensions-mysql`; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect | single-statement CAS UPDATE | existing relational infra / need joins |
-| `InMemoryStore` | — | — | tests |
+
+| Implementation  | Dependency                                                                           | Concurrency safety                                           | Use it when                            |
+| --------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------------------- |
+| `RedisStore`    | `agentscope-extensions-redis`                                                        | Lua-based CAS`putIfVersion`, `ZRANGEBYLEX` for prefix search | the default; multi-replica sharing     |
+| `JdbcStore`     | `agentscope-extensions-mysql`; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect | single-statement CAS UPDATE                                  | existing relational infra / need joins |
+| `InMemoryStore` | —                                                                                   | —                                                           | tests                                  |
 
 ```java
 // Recommended: one-line configuration via DistributedStore
@@ -173,26 +179,28 @@ DistributedStore mysqlStore = MysqlDistributedStore.create(dataSource);
 
 **Do not implement a `BaseStore` against OSS** — `MEMORY.md` / `memory/YYYY-MM-DD.md` / `agents/<id>/context/<sid>/` get written several times a second; OSS latency and per-request cost will blow up immediately. The correct division of labour:
 
-| Data shape | Store | Owner |
-|------------|---------|-------|
-| High-frequency small KV (memory, session snapshots, task records) | Redis / MySQL (`BaseStore`) | `RemoteFilesystemSpec` |
-| Large objects (whole sandbox workspace tar, tens of MB) | OSS / S3 | `OssSnapshotSpec` / custom `RemoteSnapshotSpec` |
-| Cross-node shared volume (multiple sandbox instances mounting the same dir) | NAS / EFS | `AgentRunFilesystemSpec.nasConfig(...)` (only AgentRun natively supports this) |
+
+| Data shape                                                                  | Store                       | Owner                                                                                                  |
+| --------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| High-frequency small KV (memory, session snapshots, task records)           | Redis / MySQL (`BaseStore`) | `RemoteFilesystemSpec`                                                                                 |
+| Large objects (whole sandbox workspace tar, tens of MB)                     | OSS / S3                    | `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` / custom `RemoteSnapshotSpec` |
+| Cross-node shared volume (multiple sandbox instances mounting the same dir) | NAS / EFS                   | `AgentRunFilesystemSpec.nasConfig(...)` (only AgentRun natively supports this)                         |
 
 ### `RemoteFilesystemSpec` routing table
 
 To prevent key collisions across subsystems, the spec slices the workspace into independent namespace segments:
 
-| Workspace path | Namespace segment |
-|----------------|-------------------|
-| `AGENTS.md` / `MEMORY.md` / `tools.json` | `root` |
-| `memory/` | `memory` |
-| `skills/` | `skills` |
-| `subagents/` | `subagents` |
-| `knowledge/` | `knowledge` |
-| `agents/<agentId>/sessions/` | `sessions` |
-| `agents/<agentId>/tasks/` | `tasks` |
-| Extra: `.addSharedPrefix("prompts/")` | derived automatically |
+
+| Workspace path                           | Namespace segment     |
+| ---------------------------------------- | --------------------- |
+| `AGENTS.md` / `MEMORY.md` / `tools.json` | `root`                |
+| `memory/`                                | `memory`              |
+| `skills/`                                | `skills`              |
+| `subagents/`                             | `subagents`           |
+| `knowledge/`                             | `knowledge`           |
+| `agents/<agentId>/sessions/`             | `sessions`            |
+| `agents/<agentId>/tasks/`                | `tasks`               |
+| Extra:`.addSharedPrefix("prompts/")`     | derived automatically |
 
 Each segment is then bucketed by `IsolationScope` (`USER` → `agents/<agentId>/users/<userId>/`). A Redis key ends up looking like `agentscope:store:item:agents\0X\0users\0alice\0memory\0memory/2026-06-02.md`.
 
@@ -214,21 +222,23 @@ Speeds up `ls` / `glob` / `exists` / `grep` under Remote mode — without it eve
 
 Skills compose from low to high priority (details in [Skill](../harness/skill.md)):
 
-| Layer | Source | Configured by | Use it for |
-|-------|--------|---------------|------------|
-| 1 | Project global | `.projectGlobalSkillsDir(Path)` | personal dev box; `~/.agentscope/skills/` |
-| 2 | Marketplace | `.skillRepository(...)` | cross-project sharing |
-| 3 | Workspace shared | `workspace/skills/` | project-specific; checked into git |
-| 4 | Per-user | `<userId>/skills/` | user-level override |
+
+| Layer | Source           | Configured by                   | Use it for                               |
+| ----- | ---------------- | ------------------------------- | ---------------------------------------- |
+| 1     | Project global   | `.projectGlobalSkillsDir(Path)` | personal dev box;`~/.agentscope/skills/` |
+| 2     | Marketplace      | `.skillRepository(...)`         | cross-project sharing                    |
+| 3     | Workspace shared | `workspace/skills/`             | project-specific; checked into git       |
+| 4     | Per-user         | `<userId>/skills/`              | user-level override                      |
 
 ### Marketplace stores
 
-| Repository | Module | Notes | Best for |
-|-----------|--------|-------|----------|
-| `GitSkillRepository` | `agentscope-extensions-skill-git-repository` | team git repo; pulls only when HEAD changes; read-only distribution | early stage / small teams; review skill changes via PR |
-| `MysqlSkillRepository` | `agentscope-extensions-skill-mysql-repository` | `DataSource`-driven; `writeable(true/false)` toggle; agent can write back | platform-side central governance; multi-team multi-agent |
-| `NacosSkillRepository` | `agentscope-extensions-nacos-skill` | online distribution + config-center change subscription; `AutoCloseable` | Aliyun ecosystem; "change once, take effect fleet-wide" |
-| `ClasspathSkillRepository` | `agentscope-core` | shipped with the JAR; Spring Boot fat-JAR compatible | hard-bound capabilities baked into the product |
+
+| Repository                 | Module                                         | Notes                                                                     | Best for                                                 |
+| -------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `GitSkillRepository`       | `agentscope-extensions-skill-git-repository`   | team git repo; pulls only when HEAD changes; read-only distribution       | early stage / small teams; review skill changes via PR   |
+| `MysqlSkillRepository`     | `agentscope-extensions-skill-mysql-repository` | `DataSource`-driven; `writeable(true/false)` toggle; agent can write back | platform-side central governance; multi-team multi-agent |
+| `NacosSkillRepository`     | `agentscope-extensions-nacos-skill`            | online distribution + config-center change subscription;`AutoCloseable`   | Aliyun ecosystem; "change once, take effect fleet-wide"  |
+| `ClasspathSkillRepository` | `agentscope-core`                              | shipped with the JAR; Spring Boot fat-JAR compatible                      | hard-bound capabilities baked into the product           |
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -262,13 +272,14 @@ When you must use a sandbox:
 
 ### Five sandbox stores
 
-| Spec | Module | Use it for |
-|------|--------|------------|
-| `DockerFilesystemSpec` | `io.agentscope.harness.agent.sandbox.impl.docker` | single-machine / local cluster; container from an image; most familiar |
-| `KubernetesFilesystemSpec` | `...impl.kubernetes` | already running K8s; pods / Jobs |
-| `DaytonaFilesystemSpec` | `...impl.daytona` | Daytona (dev-env-as-a-service) |
-| `E2bFilesystemSpec` | `...impl.e2b` | E2B cloud sandboxes; fastest to ship, no self-managed infra |
-| `AgentRunFilesystemSpec` | `...impl.agentrun` | **Aliyun AgentRun**; native NAS / OSS mounts; enterprise-grade |
+
+| Spec                       | Module                                            | Use it for                                                             |
+| -------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| `DockerFilesystemSpec`     | `io.agentscope.harness.agent.sandbox.impl.docker` | single-machine / local cluster; container from an image; most familiar |
+| `KubernetesFilesystemSpec` | `...impl.kubernetes`                              | already running K8s; pods / Jobs                                       |
+| `DaytonaFilesystemSpec`    | `...impl.daytona`                                 | Daytona (dev-env-as-a-service)                                         |
+| `E2bFilesystemSpec`        | `...impl.e2b`                                     | E2B cloud sandboxes; fastest to ship, no self-managed infra            |
+| `AgentRunFilesystemSpec`   | `...impl.agentrun`                                | **Aliyun AgentRun**; native NAS / OSS mounts; enterprise-grade         |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -280,18 +291,21 @@ When you must use a sandbox:
 
 Sandboxes are ephemeral by default — the next `call()` may land on a different node in a fresh container, losing every `pip install` and generated file. `SandboxSnapshotSpec` archives the workspace as tar so the next `call()` hydrates it back into a new container.
 
-| Spec | Store | Module | When to use |
-|------|-------|--------|-------------|
-| `NoopSnapshotSpec` | — | `agentscope-harness` | not for production; sandbox cold-starts every time the container is lost |
-| `LocalSnapshotSpec(Path)` | local directory `tar` files | `agentscope-harness` | single-node debugging |
-| `OssSnapshotSpec` | Alibaba Cloud OSS | `agentscope-extensions-oss` | **large objects first choice**; natural fit for object storage |
-| `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | small workspaces + short TTL (watch Redis memory cost) |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | existing relational DB, no extra middleware |
-| Custom `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | anything not in the built-in list |
+
+| Spec                                                 | Store                      | Module                              | When to use                                                              |
+| ---------------------------------------------------- | -------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| `NoopSnapshotSpec`                                   | —                         | `agentscope-harness`                | not for production; sandbox cold-starts every time the container is lost |
+| `LocalSnapshotSpec(Path)`                            | local directory`tar` files | `agentscope-harness`                | single-node debugging                                                    |
+| `AliyunOssSnapshotSpec`                              | Alibaba Cloud OSS          | `agentscope-extensions-oss-aliyun`  | **large objects first choice**; natural fit for object storage           |
+| `AwsS3SnapshotSpec`                                  | AWS S3                     | `agentscope-extensions-oss-aws`     | large objects on AWS; drop-in replacement for OSS                        |
+| `TencentCosSnapshotSpec`                             | Tencent Cloud COS          | `agentscope-extensions-oss-tencent` | large objects on Tencent Cloud; drop-in replacement for OSS              |
+| `RedisSnapshotSpec`                                  | Redis                      | `agentscope-extensions-redis`       | small workspaces + short TTL (watch Redis memory cost)                   |
+| `JdbcSnapshotSpec`                                   | MySQL / JDBC BLOB          | `agentscope-extensions-mysql`       | existing relational DB, no extra middleware                              |
+| Custom`RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO           | —                                  | anything not in the built-in list                                        |
 
 ```java
 DistributedStore redisStore = RedisDistributedStore.fromJedis(jedis);
-DistributedStore ossStore = OssDistributedStore.create(
+DistributedStore ossStore = AliyunOssDistributedStore.create(
         ossClient,
         "agentscope-sandbox-snapshots",
         "prod/");                         // key prefix for environment isolation
@@ -314,16 +328,17 @@ HarnessAgent agent = HarnessAgent.builder()
         .build();
 ```
 
-With `distributedStore(...)`, the snapshot spec and execution guard are auto-injected — no manual configuration needed. To customize the OSS bucket or prefix, prefer configuring `OssDistributedStore` when you create it; only set `SandboxSnapshotSpec` explicitly on `SandboxFilesystemSpec` when you need a fully custom snapshot implementation.
+With `distributedStore(...)`, the snapshot spec and execution guard are auto-injected — no manual configuration needed. To customize the OSS bucket or prefix, prefer configuring `AliyunOssDistributedStore` when you create it; only set `SandboxSnapshotSpec` explicitly on `SandboxFilesystemSpec` when you need a fully custom snapshot implementation.
 
 ### Sandbox exec serialization: `SandboxExecutionGuard`
 
 Under `SESSION` / `USER` scope, buckets are already partitioned by session/user and concurrent `exec`s don't collide. Under `AGENT` / `GLOBAL` scope with multiple replicas, N nodes can race to `exec` on the same sandbox slot. `distributedStore(...)` auto-injects the appropriate execution guard:
 
-| Implementation | Module | Mechanism |
-|---------------|--------|-----------|
-| `RedisSandboxExecutionGuard` | `agentscope-extensions-redis` | Redis `SET NX PX` lease |
-| `JdbcSandboxExecutionGuard` | `agentscope-extensions-mysql` | MySQL `GET_LOCK()` / `RELEASE_LOCK()` |
+
+| Implementation               | Module                        | Mechanism                            |
+| ---------------------------- | ----------------------------- | ------------------------------------ |
+| `RedisSandboxExecutionGuard` | `agentscope-extensions-redis` | Redis`SET NX PX` lease               |
+| `JdbcSandboxExecutionGuard`  | `agentscope-extensions-mysql` | MySQL`GET_LOCK()` / `RELEASE_LOCK()` |
 
 The recommended path is still to inject the guard through `DistributedStore`:
 
@@ -386,18 +401,19 @@ Full fields in the `AgentRunNasMountConfig` / `AgentRunOssMountConfig` source.
 
 Pulling the single-component picks above into one table:
 
-| Concern | Recommended combo |
-|---------|-------------------|
-| Sessions / `AgentState` | `RedisDistributedStore` or a mixed `DistributedStore` injecting `AgentStateStore`; `(userId, sessionId)` carries tenant/user/agent dimensions |
-| Workspace files | `BaseStore` injected by `distributedStore(...)` + `RemoteFilesystemSpec` + `WorkspaceIndex` + `IsolationScope.USER` |
-| Large objects / snapshots | Use `OssDistributedStore.sandboxSnapshotSpec()` in a mixed `DistributedStore` (do not write large snapshots to Redis) |
-| Cross-node sandbox sharing | AgentRun + NAS mount, or self-managed K8s + `SandboxExecutionGuard` injected by `distributedStore(...)` |
-| Skill governance | `MysqlSkillRepository(writeable=false)` or `NacosSkillRepository`; disable agent-side autoPromote |
-| Subagent task records | automatic via `WorkspaceTaskRepository` over Remote / Sandbox; no extra config |
-| Exposed subagents (user talks to a subagent directly) | registry auto-wired by `distributedStore` — the `subagentId` resolves and the subagent recovers on any replica / after restart; route a `subagentId`'s messages back to the same node (sticky) so recovery is only the failover path. For `GatewayBootstrap`, pass `.distributedStore(...)` |
-| Graceful shutdown | `GracefulShutdownManager` (auto-registers JVM hook); handle SIGTERM; tune in-flight wait via `setConfig(...)` |
-| Observability | `OtelTracingMiddleware` + OpenTelemetry SDK + OTLP exporter |
-| Rate limiting | custom `MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](../building-blocks/middleware.md#rate-limit-middleware) |
+
+| Concern                                               | Recommended combo                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sessions /`AgentState`                                | `RedisDistributedStore` or a mixed `DistributedStore` injecting `AgentStateStore`; `(userId, sessionId)` carries tenant/user/agent dimensions                                                                                                                                               |
+| Workspace files                                       | `BaseStore` injected by `distributedStore(...)` + `RemoteFilesystemSpec` + `WorkspaceIndex` + `IsolationScope.USER`                                                                                                                                                                         |
+| Large objects / snapshots                             | Use`AliyunOssDistributedStore` / `AwsS3DistributedStore` / `TencentCosDistributedStore`s `sandboxSnapshotSpec()` in a mixed `DistributedStore` (do not write large snapshots to Redis)                                                                                                      |
+| Cross-node sandbox sharing                            | AgentRun + NAS mount, or self-managed K8s +`SandboxExecutionGuard` injected by `distributedStore(...)`                                                                                                                                                                                      |
+| Skill governance                                      | `MysqlSkillRepository(writeable=false)` or `NacosSkillRepository`; disable agent-side autoPromote                                                                                                                                                                                           |
+| Subagent task records                                 | automatic via`WorkspaceTaskRepository` over Remote / Sandbox; no extra config                                                                                                                                                                                                               |
+| Exposed subagents (user talks to a subagent directly) | registry auto-wired by`distributedStore` — the `subagentId` resolves and the subagent recovers on any replica / after restart; route a `subagentId`'s messages back to the same node (sticky) so recovery is only the failover path. For `GatewayBootstrap`, pass `.distributedStore(...)` |
+| Graceful shutdown                                     | `GracefulShutdownManager` (auto-registers JVM hook); handle SIGTERM; tune in-flight wait via `setConfig(...)`                                                                                                                                                                               |
+| Observability                                         | `OtelTracingMiddleware` + OpenTelemetry SDK + OTLP exporter                                                                                                                                                                                                                                 |
+| Rate limiting                                         | custom`MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](../building-blocks/middleware.md#rate-limit-middleware)                                                                                                                                                     |
 
 ## 7. A complete production builder template
 
@@ -464,7 +480,7 @@ agent.call(msg, RuntimeContext.builder()
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
 - **Local `AgentStateStore` single-machine constraint**: a K8s multi-replica build that pairs a distributed filesystem with a local `JsonFileAgentStateStore` throws `IllegalStateException` on the very first `build()`. **This is intentional** — you can't park agent state on one pod's local disk.
 - **`NacosSkillRepository` not closed** — subscriptions leak; at fleet scale Nacos complains. Use Spring `@PreDestroy` or `destroyMethod="close"`.
-- **OSS / NAS without IAM** — `OssSnapshotSpec` takes platform AK/SK; RAM Role + STS temporary credentials is more robust.
+- **OSS / NAS without IAM** — `AliyunOssSnapshotSpec` takes platform AK/SK; RAM Role + STS temporary credentials is more robust.
 - **Local `AgentStateStore` with sandbox mode is dev-only** — the build-time warning is intentional; don't ignore it in production.
 
 ## Related pages

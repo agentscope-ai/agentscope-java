@@ -228,14 +228,23 @@
             <!-- AgentScope Extensions OSS (AgentStateStore + BaseStore) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-oss</artifactId>
+                <artifactId>agentscope-extensions-oss-base</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-oss-aliyun</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions COS (AgentStateStore + BaseStore) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-cos</artifactId>
+                <artifactId>agentscope-extensions-oss-tencent</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-oss-aws</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -334,11 +343,11 @@
                 <artifactId>agentscope-extensions-model-openai</artifactId>
                 <version>${project.version}</version>
             </dependency>
-<!--            <dependency>-->
-<!--                <groupId>io.agentscope</groupId>-->
-<!--                <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--                <version>${project.version}</version>-->
-<!--            </dependency>-->
+            <!--            <dependency>-->
+            <!--                <groupId>io.agentscope</groupId>-->
+            <!--                <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
+            <!--                <version>${project.version}</version>-->
+            <!--            </dependency>-->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-model-gemini</artifactId>
@@ -539,9 +548,9 @@
                     </formats>
                     <!-- define a language-specific format -->
                     <java>
-                        <removeUnusedImports />
-                        <forbidWildcardImports />
-                        <importOrder />
+                        <removeUnusedImports/>
+                        <forbidWildcardImports/>
+                        <importOrder/>
                         <!-- apply a specific flavor of google-java-format and reflow long strings -->
                         <googleJavaFormat>
                             <version>${google-java-format.version}</version>
