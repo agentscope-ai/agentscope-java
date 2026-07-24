@@ -25,12 +25,17 @@ import java.util.function.Supplier;
  * <p>{@link LocalTaskRunSpec} runs the supplier on a local executor. {@link RemoteTaskRunSpec}
  * delegates to an AgentScope task HTTP API (see {@code agentscope-extensions-agent-protocol}).
  * {@link AdoptedTaskRunSpec} wraps an already-running {@link CompletableFuture} (used when a sync
- * execution is promoted to async on timeout).
+ * execution is promoted to async on timeout). {@link SuspensibleLocalTaskRunSpec} returns a typed
+ * outcome so permission HITL pauses remain non-terminal.
  */
 public sealed interface TaskRunSpec {
 
     /** In-process execution via {@link Supplier}. */
     record LocalTaskRunSpec(Supplier<String> execution) implements TaskRunSpec {}
+
+    /** In-process child execution that may suspend for permission approval. */
+    record SuspensibleLocalTaskRunSpec(Supplier<TaskRunOutcome> execution, String subSessionId)
+            implements TaskRunSpec {}
 
     /**
      * Remote HTTP task execution. The {@code taskId} is chosen by the client and used as the

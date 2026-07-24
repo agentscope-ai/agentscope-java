@@ -26,10 +26,11 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.permission.PermissionContextState;
-import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -41,8 +42,12 @@ import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.TaskRunOutcome;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import io.agentscope.harness.agent.subagent.task.TaskSuspension;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -240,20 +245,6 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
-
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
-        if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
-                return Mono.just(
-                        "Error: agent_id '"
-                                + agentId
-                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
-            }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
-            return Mono.just("Error: Unknown agent_id: " + agentId);
-        }
-        log.debug("agent_spawn resolved: agentId={}", agentId);
-        Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = agentManager.getDeclaration(agentId);
@@ -268,6 +259,8 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                inheritParentPermissionContext(
+                        parentState, existing.agent(), currentUserId, sessionId, declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -280,6 +273,20 @@ public class AgentSpawnTool {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
             sessionId = "sub-" + UUID.randomUUID();
         }
+
+        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        if (agentOpt.isEmpty()) {
+            if (agentManager.isPrimaryOnly(agentId)) {
+                return Mono.just(
+                        "Error: agent_id '"
+                                + agentId
+                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
+            }
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            return Mono.just("Error: Unknown agent_id: " + agentId);
+        }
+        log.debug("agent_spawn resolved: agentId={}", agentId);
+        Agent agent = agentOpt.get();
 
         // Label uniqueness check — skipped above for persist=true reuse path (already returned).
         if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
@@ -301,11 +308,7 @@ public class AgentSpawnTool {
             ha.enterPlanMode(currentUserId, sessionId);
         }
 
-        // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        inheritParentPermissionContext(parentState, agent, currentUserId, sessionId, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -319,7 +322,8 @@ public class AgentSpawnTool {
                             ? runtimeContext.get("outboundAddress", OutboundAddress.class)
                             : null;
             SubagentGatewayBridge.ExposeResult er =
-                    gatewayBridge.expose(agentId, sessionId, agent, replyTo);
+                    gatewayBridge.expose(
+                            agentId, sessionId, agent, replyTo, currentUserId, parentSessionId);
             subagentId = er.subagentId();
         }
 
@@ -335,93 +339,12 @@ public class AgentSpawnTool {
                     canonLabel);
         }
 
-        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
-        boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
-
-        if (timeoutMs == 0) {
-            String taskId = "task_" + UUID.randomUUID();
-            final String capturedTask = task;
-            TaskRunSpec spec;
-            if (remote) {
-                SubagentDeclaration d = declOpt.get();
-                spec =
-                        new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), agentId, capturedTask);
-            } else {
-                spec =
-                        new TaskRunSpec.LocalTaskRunSpec(
-                                () -> {
-                                    try {
-                                        Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
-                                                                agent,
-                                                                sessionId,
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
-                                });
-            }
-            taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
-            return withSubagentExposedEvent(
-                    Mono.just(
-                            spawnInfo
-                                    + "\n"
-                                    + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId)),
-                    subagentId,
-                    agentId,
-                    sessionId,
-                    canonLabel);
-        }
-
-        if (remote) {
-            final String finalTask = task;
-            return withSubagentExposedEvent(
-                    Mono.fromCallable(
-                            () ->
-                                    runRemoteSync(
-                                            runtimeContext,
-                                            spawnInfo,
-                                            agentId,
-                                            parentSessionId,
-                                            declOpt.get(),
-                                            finalTask.trim(),
-                                            timeoutMs)),
-                    subagentId,
-                    agentId,
-                    sessionId,
-                    canonLabel);
-        }
-
-        // Sync-local execution with timeout promotion: if the agent doesn't finish within the
-        // timeout, its in-flight execution is promoted to an async task instead of being lost.
-        final String finalTask = task.trim();
-        final String finalSpawnInfo = spawnInfo;
-        final String finalSubagentId = subagentId;
-        final String finalLabel = canonLabel;
         return withSubagentExposedEvent(
-                execWithTimeoutPromotion(
-                        agent,
-                        sessionId,
-                        currentUserId,
-                        finalTask,
-                        spawned,
-                        runtimeContext,
-                        finalSpawnInfo,
-                        timeoutMs,
-                        agentId),
-                finalSubagentId,
+                execSpawnTask(spawned, runtimeContext, spawnInfo, task, timeoutSeconds, declOpt),
+                subagentId,
                 agentId,
                 sessionId,
-                finalLabel);
+                canonLabel);
     }
 
     @Tool(
@@ -1137,26 +1060,15 @@ public class AgentSpawnTool {
                                 d.getUrl(), d.getHeaders(), spawned.agentId(), capturedTask);
             } else {
                 spec =
-                        new TaskRunSpec.LocalTaskRunSpec(
-                                () -> {
-                                    try {
-                                        Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
-                                                                spawned.agent(),
-                                                                spawned.sessionId(),
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
-                                });
+                        new TaskRunSpec.SuspensibleLocalTaskRunSpec(
+                                () ->
+                                        agentManager.invokeAgentTask(
+                                                spawned.agent(),
+                                                spawned.sessionId(),
+                                                currentUserId,
+                                                capturedTask,
+                                                runtimeContext),
+                                spawned.sessionId());
             }
             taskRepository.putTask(
                     runtimeContext, taskId, spawned.agentId(), parentSessionId, spec);
@@ -1193,6 +1105,111 @@ public class AgentSpawnTool {
     }
 
     /**
+     * Resumes an async subagent task suspended for permission approval.
+     *
+     * <p>The task repository owns scheduling and lifecycle transitions. This method validates the
+     * complete user/parent/child/reply/tool lineage before re-materializing and resuming the same
+     * child slot.
+     */
+    public boolean resumeSuspendedTask(
+            RuntimeContext parentContext,
+            AgentState parentState,
+            String taskId,
+            String replyId,
+            List<ConfirmResult> confirmResults) {
+        if (taskRepository == null || parentContext == null || parentState == null) {
+            return false;
+        }
+        String parentSessionId = parentContext.getSessionId();
+        Optional<TaskSuspension> suspensionOpt =
+                taskRepository.getTaskSuspension(parentContext, parentSessionId, taskId);
+        if (suspensionOpt.isEmpty()) {
+            return false;
+        }
+        TaskSuspension suspension = suspensionOpt.get();
+        if (!Objects.equals(parentContext.getUserId(), suspension.userId())
+                || !Objects.equals(parentSessionId, suspension.parentSessionId())
+                || !Objects.equals(replyId, suspension.replyId())
+                || !matchesPendingTools(suspension, confirmResults)) {
+            return false;
+        }
+        SpawnedAgent spawned =
+                findSpawnedBySession(parentState, suspension.subSessionId(), parentContext);
+        if (spawned == null) {
+            return false;
+        }
+        Msg confirmation = confirmationMessage(confirmResults);
+        boolean allDenied = confirmResults.stream().noneMatch(ConfirmResult::isConfirmed);
+        return taskRepository.resumeTask(
+                parentContext,
+                parentSessionId,
+                taskId,
+                () -> {
+                    TaskRunOutcome outcome =
+                            agentManager.invokeAgentTask(
+                                    spawned.agent(),
+                                    spawned.sessionId(),
+                                    parentContext.getUserId(),
+                                    List.of(confirmation),
+                                    parentContext);
+                    if (allDenied && outcome instanceof TaskRunOutcome.Completed completed) {
+                        return new TaskRunOutcome.Denied(completed.result());
+                    }
+                    return outcome;
+                });
+    }
+
+    private SpawnedAgent findSpawnedBySession(
+            AgentState parentState, String childSessionId, RuntimeContext runtimeContext) {
+        for (SpawnedAgent spawned : agentsByKey.values()) {
+            if (Objects.equals(childSessionId, spawned.sessionId())) {
+                return spawned;
+            }
+        }
+        for (Map.Entry<String, io.agentscope.core.state.ToolContextState.SpawnEntry> entry :
+                parentState.getToolContext().getSpawnRegistry().entrySet()) {
+            if (Objects.equals(childSessionId, entry.getValue().sessionId())) {
+                return tryRestoreFromState(parentState, entry.getKey(), runtimeContext);
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesPendingTools(
+            TaskSuspension suspension, List<ConfirmResult> confirmResults) {
+        if (confirmResults == null || confirmResults.isEmpty()) {
+            return false;
+        }
+        LinkedHashSet<PendingToolIdentity> expected = new LinkedHashSet<>();
+        for (TaskSuspension.PendingToolCall pending : suspension.pendingToolCalls()) {
+            expected.add(new PendingToolIdentity(pending.toolCallId(), pending.toolName()));
+        }
+        LinkedHashSet<PendingToolIdentity> actual = new LinkedHashSet<>();
+        for (ConfirmResult result : confirmResults) {
+            if (result == null || result.getToolCall() == null) {
+                return false;
+            }
+            actual.add(
+                    new PendingToolIdentity(
+                            result.getToolCall().getId(), result.getToolCall().getName()));
+        }
+        return expected.equals(actual);
+    }
+
+    private record PendingToolIdentity(String toolCallId, String toolName) {}
+
+    private static Msg confirmationMessage(List<ConfirmResult> confirmResults) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(Msg.METADATA_CONFIRM_RESULTS, List.copyOf(confirmResults));
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("[confirm]")
+                .metadata(metadata)
+                .build();
+    }
+
+    /**
      * Derives a deterministic 12-char hex hash from (parentSessionId, agentId, label). Same inputs
      * always produce the same key, enabling subagent state recovery across parent calls.
      */
@@ -1203,25 +1220,34 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
-    /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
-     */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
+    private static void inheritParentPermissionContext(
+            AgentState parentState,
+            Agent childAgent,
+            String userId,
+            String childSessionId,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
             return;
         }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
+        ReActAgent child = reactAgent(childAgent);
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (child == null || parentPermissions == null) {
             return;
         }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState inherited = childPermissions.inheritFrom(parentPermissions);
+        if (!inherited.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, inherited);
         }
+    }
+
+    private static ReActAgent reactAgent(Agent agent) {
+        if (agent instanceof HarnessAgent harnessAgent) {
+            return harnessAgent.getDelegate();
+        }
+        return agent instanceof ReActAgent reactAgent ? reactAgent : null;
     }
 }

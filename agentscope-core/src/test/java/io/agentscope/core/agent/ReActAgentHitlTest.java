@@ -39,9 +39,12 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -396,5 +399,49 @@ class ReActAgentHitlTest {
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
+    }
+
+    @Test
+    void replacePermissionContextUpdatesPersistedStateAndNextCallEngine() {
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "allow", "x"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AllowingTool("allow")))
+                        .stateStore(stateStore)
+                        .build();
+        agent.getAgentState("user-a", "slot-a");
+        AgentState otherUserState = agent.getAgentState("user-b", "slot-a");
+        PermissionContextState replacement =
+                PermissionContextState.builder()
+                        .addAskRule(
+                                "allow",
+                                new PermissionRule("allow", null, PermissionBehavior.ASK, "parent"))
+                        .build();
+
+        agent.replacePermissionContext("user-a", "slot-a", replacement);
+
+        AgentState persisted =
+                stateStore.get("user-a", "slot-a", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(replacement, persisted.getPermissionContext());
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(),
+                                RuntimeContext.builder()
+                                        .userId("user-a")
+                                        .sessionId("slot-a")
+                                        .build())
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        assertTrue(indexOf(events, RequireUserConfirmEvent.class) >= 0);
+        assertTrue(indexOf(events, RequestStopEvent.class) >= 0);
+        assertTrue(otherUserState.getPermissionContext().isTrivial());
+        assertThrows(
+                NullPointerException.class,
+                () -> agent.replacePermissionContext("user-a", "slot-a", null));
     }
 }

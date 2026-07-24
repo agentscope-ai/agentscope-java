@@ -41,7 +41,9 @@ public class TaskRecord {
     private String parentAgentId;
     private String parentSessionId;
     private String subSessionId;
+    private String userId;
     private TaskStatus status;
+    private TaskSuspension suspension;
     private String result;
     private String errorMessage;
     private boolean cancelRequested;
@@ -123,6 +125,22 @@ public class TaskRecord {
 
     public void setSubSessionId(String subSessionId) {
         this.subSessionId = subSessionId;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public TaskSuspension getSuspension() {
+        return suspension;
+    }
+
+    public void setSuspension(TaskSuspension suspension) {
+        this.suspension = suspension;
     }
 
     public TaskStatus getStatus() {

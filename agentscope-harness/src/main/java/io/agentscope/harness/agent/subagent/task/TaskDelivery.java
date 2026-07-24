@@ -30,9 +30,9 @@ import java.time.Instant;
  * @param taskId        task identifier
  * @param agentId       which subagent type produced this result (may be {@code null} on legacy
  *                      records)
- * @param status        terminal status — one of COMPLETED / FAILED / CANCELLED
+ * @param status        terminal status — one of COMPLETED / FAILED / CANCELLED / DENIED
  * @param result        completion payload; {@code null} for FAILED / CANCELLED
- * @param errorMessage  failure message; {@code null} for COMPLETED / CANCELLED
+ * @param errorMessage  failure message; {@code null} for COMPLETED / CANCELLED / DENIED
  * @param completedAt   wall-clock instant the task reached its terminal status (best-effort —
  *                      typically {@link TaskRecord#getLastUpdatedAt()})
  */

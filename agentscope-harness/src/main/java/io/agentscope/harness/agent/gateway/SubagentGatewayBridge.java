@@ -44,7 +44,15 @@ public interface SubagentGatewayBridge {
      * @param agent the agent instance
      * @param replyTo the outbound address for delivering replies back to the user's channel;
      *     may be null if no outbound channel context is available
+     * @param userId the owning user namespace
+     * @param parentSessionId the parent runtime session that spawned the child
      * @return the expose result containing the subagentId handle
      */
-    ExposeResult expose(String agentId, String sessionId, Agent agent, OutboundAddress replyTo);
+    ExposeResult expose(
+            String agentId,
+            String sessionId,
+            Agent agent,
+            OutboundAddress replyTo,
+            String userId,
+            String parentSessionId);
 }

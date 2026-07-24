@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.subagent.task;
 import io.agentscope.core.agent.RuntimeContext;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Repository for managing background subagent tasks, scoped by session.
@@ -89,6 +91,35 @@ public interface TaskRepository {
      * @return true if the task was found and cancellation was attempted
      */
     boolean cancelTask(RuntimeContext rc, String sessionId, String taskId);
+
+    /**
+     * Resume a task that is durably suspended in {@link TaskStatus#WAITING_FOR_APPROVAL}.
+     *
+     * <p>The repository owns continuation scheduling and all lifecycle transitions. The supplier
+     * is invoked only after the persisted waiting record is atomically claimed on this repository
+     * instance. Implementations that do not support durable suspension return {@code false}.
+     */
+    default boolean resumeTask(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            Supplier<TaskRunOutcome> continuation) {
+        return false;
+    }
+
+    /** Read the durable permission suspension for one waiting task. */
+    default Optional<TaskSuspension> getTaskSuspension(
+            RuntimeContext rc, String sessionId, String taskId) {
+        return Optional.empty();
+    }
+
+    /** Identifies one waiting task by its exact owning user and child session. */
+    default Optional<SuspendedTaskRef> findSuspendedTaskByChildSession(
+            RuntimeContext childContext, String childSessionId) {
+        return Optional.empty();
+    }
+
+    record SuspendedTaskRef(String taskId, String parentSessionId, TaskSuspension suspension) {}
 
     // ------------------------------------------------------------------------
     // Phase B-3 — push delivery API.

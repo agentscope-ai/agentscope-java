@@ -3694,10 +3694,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
         AgentState s = getAgentState(userId, sid);
-        s.setPermissionContext(s.getPermissionContext().withMode(mode));
-        permissionEngineCache.put(slot, new PermissionEngine(s.getPermissionContext()));
+        replacePermissionContext(userId, sid, s.getPermissionContext().withMode(mode));
+    }
+
+    /**
+     * Replaces the permission context for one {@code (userId, sessionId)} slot, rebuilds that
+     * slot's permission engine and persists the updated state.
+     *
+     * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
+     * to subsequent calls on this slot and does not affect any other user or session.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param permissionContext complete replacement context
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        Objects.requireNonNull(permissionContext, "permissionContext must not be null");
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        AgentState state = getAgentState(userId, sid);
+        state.setPermissionContext(permissionContext);
+        permissionEngineCache.put(slot, new PermissionEngine(permissionContext));
         saveAgentState(userId, sid);
     }
 

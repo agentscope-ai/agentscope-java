@@ -16,6 +16,7 @@
 package io.agentscope.core.permission;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -117,5 +118,108 @@ class PermissionContextStateTest {
         String json = mapper.writeValueAsString(original);
         PermissionContextState decoded = mapper.readValue(json, PermissionContextState.class);
         assertEquals(original, decoded);
+        assertTrue(!json.contains("inherited_"));
+    }
+
+    @Test
+    void inheritFromMergesParentScopeAndRulesWithoutMutatingEitherContext() {
+        AdditionalWorkingDirectory childShared =
+                new AdditionalWorkingDirectory("/child/shared", "child");
+        AdditionalWorkingDirectory parentShared =
+                new AdditionalWorkingDirectory("/parent/shared", "parent");
+        AdditionalWorkingDirectory parentOnly =
+                new AdditionalWorkingDirectory("/parent/only", "parent");
+        PermissionRule duplicateAllow =
+                new PermissionRule("Bash", "git status", PermissionBehavior.ALLOW, "shared");
+        PermissionRule parentDeny =
+                new PermissionRule("Bash", "rm -rf", PermissionBehavior.DENY, "parent");
+        PermissionRule parentAsk =
+                new PermissionRule("Write", "/etc/**", PermissionBehavior.ASK, "parent");
+        PermissionContextState child =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.ACCEPT_EDITS)
+                        .addWorkingDirectory("shared", childShared)
+                        .addAllowRule("Bash", duplicateAllow)
+                        .build();
+        PermissionContextState parent =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.DONT_ASK)
+                        .addWorkingDirectory("shared", parentShared)
+                        .addWorkingDirectory("parent-only", parentOnly)
+                        .addAllowRule("Bash", duplicateAllow)
+                        .addDenyRule("Bash", parentDeny)
+                        .addAskRule("Write", parentAsk)
+                        .build();
+
+        PermissionContextState inherited = child.inheritFrom(parent);
+
+        assertNotSame(child, inherited);
+        assertEquals(PermissionMode.ACCEPT_EDITS, inherited.getMode());
+        assertEquals(childShared, inherited.getWorkingDirectories().get("shared"));
+        assertEquals(parentOnly, inherited.getWorkingDirectories().get("parent-only"));
+        assertEquals(java.util.List.of(duplicateAllow), inherited.getAllowRules().get("Bash"));
+        assertEquals(java.util.List.of(parentDeny), inherited.getDenyRules().get("Bash"));
+        assertEquals(java.util.List.of(parentAsk), inherited.getAskRules().get("Write"));
+        assertEquals(1, child.getWorkingDirectories().size());
+        assertEquals(2, parent.getWorkingDirectories().size());
+    }
+
+    @Test
+    void inheritFromRejectsNullParent() {
+        PermissionContextState child = PermissionContextState.builder().build();
+
+        assertThrows(NullPointerException.class, () -> child.inheritFrom(null));
+    }
+
+    @Test
+    void reinheritFromReplacesOnlyPreviouslyInheritedEntries() throws Exception {
+        PermissionRule childRule =
+                new PermissionRule("Read", "child/**", PermissionBehavior.ALLOW, "child");
+        PermissionRule duplicateChildRule =
+                new PermissionRule("Bash", "git status", PermissionBehavior.ALLOW, "shared");
+        PermissionRule parentV1Rule =
+                new PermissionRule("Read", "parent-v1/**", PermissionBehavior.ALLOW, "parent-v1");
+        PermissionRule parentV2Rule =
+                new PermissionRule("Read", "parent-v2/**", PermissionBehavior.ALLOW, "parent-v2");
+        PermissionContextState child =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "child", new AdditionalWorkingDirectory("/child", "child"))
+                        .addAllowRule("Read", childRule)
+                        .addAllowRule("Bash", duplicateChildRule)
+                        .build();
+        PermissionContextState parentV1 =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "parent-v1",
+                                new AdditionalWorkingDirectory("/parent-v1", "parent-v1"))
+                        .addAllowRule("Read", parentV1Rule)
+                        .addAllowRule("Bash", duplicateChildRule)
+                        .build();
+        PermissionContextState persisted =
+                mapper.readValue(
+                        mapper.writeValueAsString(child.inheritFrom(parentV1)),
+                        PermissionContextState.class);
+        PermissionContextState parentV2 =
+                PermissionContextState.builder()
+                        .addWorkingDirectory(
+                                "parent-v2",
+                                new AdditionalWorkingDirectory("/parent-v2", "parent-v2"))
+                        .addAllowRule("Read", parentV2Rule)
+                        .build();
+
+        PermissionContextState reinherited = persisted.inheritFrom(parentV2);
+
+        assertEquals(
+                java.util.List.of(childRule, parentV2Rule),
+                reinherited.getAllowRules().get("Read"));
+        assertEquals(
+                java.util.List.of(duplicateChildRule), reinherited.getAllowRules().get("Bash"));
+        assertTrue(reinherited.getWorkingDirectories().containsKey("child"));
+        assertTrue(reinherited.getWorkingDirectories().containsKey("parent-v2"));
+        assertTrue(!reinherited.getWorkingDirectories().containsKey("parent-v1"));
+        assertEquals(
+                java.util.List.of(parentV2Rule), reinherited.getInheritedAllowRules().get("Read"));
+        assertTrue(!reinherited.getInheritedAllowRules().containsKey("Bash"));
     }
 }

@@ -24,6 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -114,6 +115,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -447,6 +449,81 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return null;
     }
 
+    /** Installs a customization applied after each native child materialization. */
+    public void setSubagentMaterializationCustomizer(
+            java.util.function.Consumer<Agent> customizer) {
+        io.agentscope.harness.agent.subagent.DefaultAgentManager manager =
+                getSubagentAgentManager();
+        if (manager != null) {
+            manager.setMaterializationCustomizer(customizer);
+        }
+    }
+
+    /**
+     * Resumes a background subagent task suspended for permission approval through the native
+     * Harness task lifecycle.
+     */
+    public boolean resumeSubagentTask(
+            RuntimeContext parentContext,
+            String taskId,
+            String replyId,
+            List<ConfirmResult> confirmResults) {
+        if (parentContext == null) {
+            return false;
+        }
+        AgentState parentState = delegate.getAgentState(parentContext);
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.resumeSubagentTask(
+                    parentContext, parentState, taskId, replyId, confirmResults);
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            return dm.resumeSubagentTask(
+                    parentContext, parentState, taskId, replyId, confirmResults);
+        }
+        return false;
+    }
+
+    /**
+     * Resolves and resumes a waiting subagent task from the child-session approval context.
+     * Repository lookup remains user-scoped and owns the task-to-parent lineage.
+     */
+    public boolean resumeSubagentTask(
+            RuntimeContext childContext,
+            String childSessionId,
+            List<ConfirmResult> confirmResults) {
+        if (childContext == null || childSessionId == null || childSessionId.isBlank()) {
+            return false;
+        }
+        Optional<TaskRepository.SuspendedTaskRef> suspended =
+                findSuspendedSubagentTask(childContext, childSessionId);
+        if (suspended.isEmpty()) {
+            return false;
+        }
+        TaskRepository.SuspendedTaskRef ref = suspended.get();
+        RuntimeContext parentContext =
+                RuntimeContext.builder(childContext).sessionId(ref.parentSessionId()).build();
+        return resumeSubagentTask(
+                parentContext, ref.taskId(), ref.suspension().replyId(), confirmResults);
+    }
+
+    /** Finds one waiting task by exact user and child-session lineage. */
+    public Optional<TaskRepository.SuspendedTaskRef> findSuspendedSubagentTask(
+            RuntimeContext childContext, String childSessionId) {
+        if (childContext == null || childSessionId == null || childSessionId.isBlank()) {
+            return Optional.empty();
+        }
+        TaskRepository repository = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            repository = sm.getTaskRepository();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            repository = dm.getTaskRepository();
+        }
+        if (repository == null) {
+            return Optional.empty();
+        }
+        return repository.findSuspendedTaskByChildSession(childContext, childSessionId);
+    }
+
     /** @see ReActAgent#getDefaultSessionId() */
     public String getDefaultSessionId() {
         return delegate.getDefaultSessionId();
@@ -531,8 +608,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         gw.bindMainAgent(this);
 
         SubagentGatewayBridge bridge =
-                (agentId, sessionId, agent, replyTo) -> {
-                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
+                (agentId, sessionId, agent, replyTo, userId, parentSessionId) -> {
+                    String subagentId =
+                            gw.exposeSubagent(
+                                    agentId, sessionId, agent, replyTo, userId, parentSessionId);
                     return new SubagentGatewayBridge.ExposeResult(subagentId);
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
@@ -2237,7 +2316,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsMiddleware dynMw =
                             HarnessAgentBuilderSupport.buildDynamicSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this, wsManager, resolvedWorkspace, filesystem);
                     if (dynMw != null) {
                         if (messageBus != null) {
                             wireTaskRepositoryMessageBus(
@@ -2252,7 +2331,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else {
                     SubagentsMiddleware subagentsMw =
                             HarnessAgentBuilderSupport.buildSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this, wsManager, resolvedWorkspace, filesystem);
                     if (subagentsMw != null) {
                         if (messageBus != null) {
                             subagentsMw.wireMessageBus(messageBus, agentId);

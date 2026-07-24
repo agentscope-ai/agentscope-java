@@ -99,4 +99,24 @@ class DefaultAgentManagerRuntimeContextTest {
         // We don't assert .equals() here — empty() may return a fresh instance — only that the
         // factory never sees null.
     }
+
+    @Test
+    void materializationCustomizerRunsForEveryPublicCreationPath() {
+        Agent stub = org.mockito.Mockito.mock(Agent.class);
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(
+                                new SubagentEntry(
+                                        "worker", "desc", ignored -> stub, plainDecl("worker"))),
+                        null);
+        AtomicReference<Agent> customized = new AtomicReference<>();
+        manager.setMaterializationCustomizer(customized::set);
+
+        assertSame(
+                stub, manager.createAgentIfPresent("worker", RuntimeContext.empty()).orElseThrow());
+        assertSame(stub, customized.get());
+        customized.set(null);
+        assertSame(stub, manager.createAgent("worker", RuntimeContext.empty()));
+        assertSame(stub, customized.get());
+    }
 }
