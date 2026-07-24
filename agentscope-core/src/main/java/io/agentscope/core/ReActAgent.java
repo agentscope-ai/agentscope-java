@@ -727,6 +727,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * @param ctx the runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         interrupt(ctx, null);
     }
@@ -738,6 +739,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context identifying the session to interrupt
      * @param msg optional user message to attach to the interrupt signal
      */
+    @Override
     public void interrupt(RuntimeContext ctx, Msg msg) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;

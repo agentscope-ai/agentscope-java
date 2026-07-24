@@ -487,6 +487,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         delegate.interrupt(msg);
     }
 
+    @Override
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    @Override
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
+    }
+
     // -----------------------------------------------------------------
     //  Channel / Gateway
     // -----------------------------------------------------------------

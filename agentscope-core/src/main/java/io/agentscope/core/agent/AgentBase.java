@@ -440,28 +440,44 @@ public abstract class AgentBase implements Agent {
         systemHooks.remove(hook);
     }
 
-    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0, use {@link #interrupt(RuntimeContext)} with explicit runtime context
+     *     to ensure the interruption targets the correct session slot.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public void interrupt() {}
 
-    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0, use {@link #interrupt(RuntimeContext, Msg)} with explicit runtime
+     *     context to ensure the interruption targets the correct session slot.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public void interrupt(Msg msg) {}
 
-    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0, use {@link #interrupt(RuntimeContext)} with explicit runtime
+     *     context to ensure the interruption targets the correct session slot.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public void interrupt(InterruptSource source) {}
 
-    /** @deprecated No longer needed; ReActAgent uses per-session InterruptControl. */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0; no longer needed. ReActAgent uses per-session
+     *     {@link io.agentscope.core.interruption.InterruptControl} on its per-call
+     *     {@link io.agentscope.core.state.AgentState}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     protected Mono<Void> checkInterruptedAsync() {
         return Mono.empty();
     }
 
-    /** @deprecated No-op; per-session interrupt state is managed by AgentState.interruptControl(). */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0; no-op. Per-session interrupt state is managed by
+     *     {@link io.agentscope.core.interruption.InterruptControl}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     protected void resetInterruptFlag() {}
 
     private InterruptContext createInterruptContext() {
@@ -502,14 +518,21 @@ public abstract class AgentBase implements Agent {
         };
     }
 
-    /** @deprecated No-op stub. */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0; returns a detached flag that is never read. Use
+     *     {@link io.agentscope.core.interruption.InterruptControl#isInterrupted()} on the
+     *     session's {@link io.agentscope.core.state.AgentState} instead.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     protected AtomicBoolean getInterruptFlag() {
         return new AtomicBoolean(false);
     }
 
-    /** @deprecated Returns USER. Per-session interrupt source is on AgentState.interruptControl(). */
-    @Deprecated
+    /**
+     * @deprecated since 2.0.0; always returns {@link InterruptSource#USER}. Per-session
+     *     interrupt source is on {@link io.agentscope.core.interruption.InterruptControl}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     protected InterruptSource getInterruptSource() {
         return InterruptSource.USER;
     }
