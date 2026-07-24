@@ -59,6 +59,7 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.memory.session.SessionTree;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
@@ -115,6 +116,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -382,7 +384,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     ownedWorkspaceIndex.close();
                 }
             } finally {
-                delegate.close();
+                try {
+                    // Drain fire-and-forget session mirrors so they cannot race TempDir / workspace
+                    // cleanup after the agent is closed (see #2251).
+                    SessionTree.awaitPendingMirrors(30, TimeUnit.SECONDS);
+                } finally {
+                    delegate.close();
+                }
             }
         }
     }
