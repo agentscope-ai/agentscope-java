@@ -16,8 +16,14 @@
 package io.agentscope.extensions.sandbox.kubernetes;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.sandbox.kubernetes.client.CreateSandboxOptions;
+import io.agentscope.extensions.sandbox.kubernetes.client.SandboxClient;
+import io.agentscope.extensions.sandbox.kubernetes.client.config.DirectConnectionConfig;
+import io.agentscope.extensions.sandbox.kubernetes.client.config.GatewayConnectionConfig;
+import io.agentscope.extensions.sandbox.kubernetes.client.config.LocalTunnelConnectionConfig;
+import io.agentscope.extensions.sandbox.kubernetes.client.config.SandboxConnectionConfig;
 import io.agentscope.harness.agent.sandbox.Sandbox;
-import io.agentscope.harness.agent.sandbox.SandboxClient;
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -25,12 +31,21 @@ import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import java.time.Duration;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** {@link SandboxClient} for Kubernetes Pods. */
-public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxClientOptions> {
+/**
+ * Harness {@link io.agentscope.harness.agent.sandbox.SandboxClient} for
+ * agent-sandbox backed Kubernetes sandboxes.
+ *
+ * <p>Delegates lifecycle and transport to the Java agent-sandbox client SDK
+ * ({@link SandboxClient}).
+ */
+public class KubernetesSandboxClient
+        implements io.agentscope.harness.agent.sandbox.SandboxClient<
+                KubernetesSandboxClientOptions> {
 
     private static final Logger log = LoggerFactory.getLogger(KubernetesSandboxClient.class);
 
@@ -75,22 +90,56 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
         state.setNamespace(merged.getNamespace());
-        state.setContainerName(merged.getContainerName());
-        state.setImage(merged.getImage());
-        state.setPodOwned(true);
+        state.setFileApiBaseDir(merged.getFileApiBaseDir());
+        state.setWarmPoolName(merged.getWarmPoolName());
+        state.setClaimOwned(true);
         state.setWorkspaceRootReady(false);
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));
         }
 
-        KubernetesClient kc = resolveClient(merged);
-        Fabric8KubernetesPodRuntime runtime = new Fabric8KubernetesPodRuntime(kc, merged);
+        String claimName =
+                "as-sbx-"
+                        + sessionId
+                                .replace("-", "")
+                                .substring(0, Math.min(20, sessionId.replace("-", "").length()));
+        state.setClaimName(claimName);
+
         log.debug(
-                "[sandbox-k8s] Creating sandbox sessionId={} ns={}",
+                "[sandbox-k8s] Creating sandbox sessionId={} ns={} warmPool={} claim={}",
                 sessionId,
-                state.getNamespace());
-        return new KubernetesSandbox(state, runtime);
+                state.getNamespace(),
+                state.getWarmPoolName(),
+                claimName);
+
+        try {
+            SandboxClient sdkClient = buildSdkClient(merged);
+            io.agentscope.extensions.sandbox.kubernetes.client.Sandbox sdkSandbox =
+                    sdkClient.createSandbox(
+                            CreateSandboxOptions.builder(merged.getWarmPoolName())
+                                    .namespace(merged.getNamespace())
+                                    .claimName(claimName)
+                                    .sandboxReadyTimeoutSeconds(
+                                            merged.getSandboxReadyTimeoutSeconds())
+                                    .build());
+            state.setSandboxName(sdkSandbox.sandboxId());
+            String podIp = sdkSandbox.getPodIp();
+            if (podIp != null) {
+                state.setPodIP(podIp);
+            }
+            try {
+                state.setPodName(sdkSandbox.getPodName());
+            } catch (Exception e) {
+                log.debug("[sandbox-k8s] Could not resolve pod name: {}", e.getMessage());
+            }
+            return new KubernetesSandbox(state, sdkSandbox);
+        } catch (Exception e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "Failed to create agent-sandbox client: " + e.getMessage(),
+                    e);
+        }
     }
 
     @Override
@@ -100,14 +149,22 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
                     "Expected KubernetesSandboxState but got: " + state.getClass().getName());
         }
         KubernetesSandboxClientOptions merged = merge(null);
-        KubernetesClient kc = resolveClient(merged);
-        Fabric8KubernetesPodRuntime runtime = new Fabric8KubernetesPodRuntime(kc, merged);
-        return new KubernetesSandbox(k8s, runtime);
+        try {
+            SandboxClient sdkClient = buildSdkClient(merged);
+            io.agentscope.extensions.sandbox.kubernetes.client.Sandbox sdkSandbox =
+                    sdkClient.getSandbox(k8s.getClaimName(), k8s.getNamespace());
+            return new KubernetesSandbox(k8s, sdkSandbox);
+        } catch (Exception e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "Failed to resume agent-sandbox client: " + e.getMessage(),
+                    e);
+        }
     }
 
     @Override
     public void delete(Sandbox sandbox) {
-        // shutdown performs deletion for owned pods
+        // shutdown performs deletion for owned claims
     }
 
     @Override
@@ -130,6 +187,45 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         }
     }
 
+    private SandboxClient buildSdkClient(KubernetesSandboxClientOptions opts) {
+        KubernetesClient kc = resolveClient(opts);
+        SandboxConnectionConfig connectionConfig = toConnectionConfig(opts);
+        return new SandboxClient(
+                connectionConfig,
+                kc,
+                Duration.ofSeconds(opts.getRequestTimeoutSeconds()),
+                Duration.ofSeconds(opts.getPerAttemptTimeoutSeconds()));
+    }
+
+    /**
+     * Maps harness options to an SDK connection config.
+     *
+     * @param opts harness options
+     * @return SDK connection config
+     */
+    public static SandboxConnectionConfig toConnectionConfig(KubernetesSandboxClientOptions opts) {
+        if (opts.getApiUrl() != null && !opts.getApiUrl().isBlank()) {
+            return new DirectConnectionConfig(opts.getApiUrl(), opts.getServerPort());
+        }
+        if (opts.getGatewayName() != null && !opts.getGatewayName().isBlank()) {
+            String gwNs =
+                    opts.getGatewayNamespace() != null
+                            ? opts.getGatewayNamespace()
+                            : opts.getNamespace();
+            return new GatewayConnectionConfig(
+                    opts.getGatewayName(),
+                    gwNs,
+                    opts.getGatewayScheme(),
+                    opts.getSandboxReadyTimeoutSeconds(),
+                    opts.getServerPort());
+        }
+        // Preserve prior harness behaviour: port-forward into the sandbox namespace.
+        return new LocalTunnelConnectionConfig(
+                opts.getPortForwardTimeoutSeconds(),
+                opts.getServerPort(),
+                opts.getNamespace() != null ? opts.getNamespace() : "default");
+    }
+
     private KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
         KubernetesSandboxClientOptions base =
                 defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
@@ -146,26 +242,26 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         if (callOptions.getNamespace() != null) {
             o.setNamespace(callOptions.getNamespace());
         }
-        if (callOptions.getImage() != null) {
-            o.setImage(callOptions.getImage());
+        if (callOptions.getWarmPoolName() != null) {
+            o.setWarmPoolName(callOptions.getWarmPoolName());
         }
-        if (callOptions.getContainerName() != null) {
-            o.setContainerName(callOptions.getContainerName());
+        if (callOptions.getFileApiBaseDir() != null) {
+            o.setFileApiBaseDir(callOptions.getFileApiBaseDir());
         }
-        if (callOptions.getServiceAccount() != null) {
-            o.setServiceAccount(callOptions.getServiceAccount());
+        if (callOptions.getApiUrl() != null) {
+            o.setApiUrl(callOptions.getApiUrl());
         }
-        if (callOptions.getNodeSelector() != null && !callOptions.getNodeSelector().isEmpty()) {
-            o.setNodeSelector(callOptions.getNodeSelector());
+        if (callOptions.getGatewayName() != null) {
+            o.setGatewayName(callOptions.getGatewayName());
         }
-        if (callOptions.getPodLabels() != null && !callOptions.getPodLabels().isEmpty()) {
-            o.setPodLabels(callOptions.getPodLabels());
+        if (callOptions.getGatewayNamespace() != null) {
+            o.setGatewayNamespace(callOptions.getGatewayNamespace());
         }
-        if (callOptions.getCpuRequest() != null) {
-            o.setCpuRequest(callOptions.getCpuRequest());
+        if (callOptions.getGatewayScheme() != null) {
+            o.setGatewayScheme(callOptions.getGatewayScheme());
         }
-        if (callOptions.getMemoryRequest() != null) {
-            o.setMemoryRequest(callOptions.getMemoryRequest());
+        if (callOptions.getServerPort() > 0) {
+            o.setServerPort(callOptions.getServerPort());
         }
         return o;
     }
@@ -175,13 +271,18 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         o.setKubernetesClient(src.getKubernetesClient());
         o.setKubernetesConfig(src.getKubernetesConfig());
         o.setNamespace(src.getNamespace());
-        o.setImage(src.getImage());
-        o.setContainerName(src.getContainerName());
-        o.setServiceAccount(src.getServiceAccount());
-        o.setNodeSelector(src.getNodeSelector());
-        o.setPodLabels(src.getPodLabels());
-        o.setCpuRequest(src.getCpuRequest());
-        o.setMemoryRequest(src.getMemoryRequest());
+        o.setWarmPoolName(src.getWarmPoolName());
+        o.setFileApiBaseDir(src.getFileApiBaseDir());
+        o.setApiUrl(src.getApiUrl());
+        o.setGatewayName(src.getGatewayName());
+        o.setGatewayNamespace(src.getGatewayNamespace());
+        o.setGatewayScheme(src.getGatewayScheme());
+        o.setServerPort(src.getServerPort());
+        o.setSandboxReadyTimeoutSeconds(src.getSandboxReadyTimeoutSeconds());
+        o.setCleanupTimeoutSeconds(src.getCleanupTimeoutSeconds());
+        o.setRequestTimeoutSeconds(src.getRequestTimeoutSeconds());
+        o.setPerAttemptTimeoutSeconds(src.getPerAttemptTimeoutSeconds());
+        o.setPortForwardTimeoutSeconds(src.getPortForwardTimeoutSeconds());
         return o;
     }
 

@@ -35,8 +35,13 @@ class KubernetesSandboxStateSerdeTest {
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId("s1");
         state.setNamespace("ns1");
-        state.setPodName("p1");
-        state.setImage("ubuntu:22.04");
+        state.setClaimName("claim-1");
+        state.setSandboxName("sandbox-1");
+        state.setWarmPoolName("pool-1");
+        state.setPodName("pod-1");
+        state.setPodIP("10.0.0.1");
+        state.setFileApiBaseDir("/workspace");
+        state.setClaimOwned(true);
         WorkspaceSpec ws = new WorkspaceSpec();
         ws.setRoot("/tmp/host");
         state.setWorkspaceSpec(ws);
@@ -46,6 +51,13 @@ class KubernetesSandboxStateSerdeTest {
         Assertions.assertInstanceOf(KubernetesSandboxState.class, read);
         KubernetesSandboxState k = (KubernetesSandboxState) read;
         Assertions.assertEquals("ns1", k.getNamespace());
-        Assertions.assertEquals("p1", k.getPodName());
+        Assertions.assertEquals("claim-1", k.getClaimName());
+        Assertions.assertEquals("sandbox-1", k.getSandboxName());
+        Assertions.assertEquals("pool-1", k.getWarmPoolName());
+        Assertions.assertEquals("pod-1", k.getPodName());
+        Assertions.assertEquals("10.0.0.1", k.getPodIP());
+        Assertions.assertEquals("/tmp/host", k.getWorkspaceSpec().getRoot());
+        Assertions.assertEquals("/workspace", k.getFileApiBaseDir());
+        Assertions.assertTrue(k.isClaimOwned());
     }
 }

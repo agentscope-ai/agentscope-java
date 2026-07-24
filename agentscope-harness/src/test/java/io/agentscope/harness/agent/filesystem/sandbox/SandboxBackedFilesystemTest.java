@@ -21,11 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class SandboxBackedFilesystemTest {
@@ -98,13 +102,112 @@ class SandboxBackedFilesystemTest {
         assertEquals("[stderr] boom", responses.get(0).error());
     }
 
-    private static final class FakeSandbox implements Sandbox {
+    @Test
+    void uploadFiles_prefersNativeTransferWhenSupported() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
 
-        private final ExecResult execResult;
-        private String lastCommand;
-        private String workspaceRoot = "/workspace";
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(Map.entry("/workspace/a.txt", new byte[] {7, 8})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArrayEquals(new byte[] {7, 8}, sandbox.uploaded.get("/workspace/a.txt"));
+        assertEquals(null, sandbox.lastCommand);
+    }
+
+    @Test
+    void uploadFiles_fallsBackToExecForUnsupportedPaths() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("/etc/other.txt", new byte[] {1})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertTrue(sandbox.lastCommand.contains("base64 -d > '/etc/other.txt'"));
+    }
+
+    @Test
+    void downloadFiles_prefersNativeTransferWhenSupported() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        sandbox.uploaded.put("/workspace/b.bin", new byte[] {9, 9});
+        filesystem.setSandbox(sandbox);
+
+        List<FileDownloadResponse> responses =
+                filesystem.downloadFiles(RT, List.of("/workspace/b.bin"));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArrayEquals(new byte[] {9, 9}, responses.get(0).content());
+        assertEquals(null, sandbox.lastCommand);
+    }
+
+    @Test
+    void uploadFiles_reportsNativeTransferFailure() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        sandbox.failTransfers = true;
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("/workspace/c.txt", new byte[] {1})));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("transfer down", responses.get(0).error());
+    }
+
+    private static final class FakeTransferSandbox extends BaseFakeSandbox
+            implements SandboxFileTransfer {
+
+        private final String rootPrefix;
+        private final Map<String, byte[]> uploaded = new HashMap<>();
+        private boolean failTransfers;
+
+        private FakeTransferSandbox(String root) {
+            super(new ExecResult(0, "", "", false));
+            this.rootPrefix = root + "/";
+        }
+
+        @Override
+        public boolean supportsFileTransfer(String absolutePath) {
+            return absolutePath.startsWith(rootPrefix);
+        }
+
+        @Override
+        public void uploadFile(String absolutePath, byte[] content) throws Exception {
+            if (failTransfers) {
+                throw new IllegalStateException("transfer down");
+            }
+            uploaded.put(absolutePath, content);
+        }
+
+        @Override
+        public byte[] downloadFile(String absolutePath) throws Exception {
+            if (failTransfers) {
+                throw new IllegalStateException("transfer down");
+            }
+            return uploaded.get(absolutePath);
+        }
+    }
+
+    private static final class FakeSandbox extends BaseFakeSandbox {
 
         private FakeSandbox(ExecResult execResult) {
+            super(execResult);
+        }
+    }
+
+    private static class BaseFakeSandbox implements Sandbox {
+
+        private final ExecResult execResult;
+        protected String lastCommand;
+        protected String workspaceRoot = "/workspace";
+
+        protected BaseFakeSandbox(ExecResult execResult) {
             this.execResult = execResult;
         }
 

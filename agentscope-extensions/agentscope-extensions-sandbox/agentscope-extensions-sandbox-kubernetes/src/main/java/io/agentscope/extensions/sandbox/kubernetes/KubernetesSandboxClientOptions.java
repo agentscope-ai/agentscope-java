@@ -19,22 +19,39 @@ import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
-import java.util.HashMap;
-import java.util.Map;
 
-/** Options for {@link KubernetesSandboxClient}. */
+/** Options for {@link KubernetesSandboxClient} (agent-sandbox mode). */
 public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     private KubernetesClient kubernetesClient;
     private Config kubernetesConfig;
+
+    // agent-sandbox core
     private String namespace = "default";
-    private String image = "ubuntu:22.04";
-    private String containerName = "workspace";
-    private String serviceAccount;
-    private Map<String, String> nodeSelector = new HashMap<>();
-    private Map<String, String> podLabels = new HashMap<>();
-    private String cpuRequest;
-    private String memoryRequest;
+    private String warmPoolName;
+
+    /**
+     * Base directory of the runtime file API ({@code /upload} / {@code /download}), as
+     * required by the AgentScope runtime image contract. Defaults to {@code /workspace},
+     * matching the default workspace root. Workspace archives are transferred through the
+     * file API using temp files under this directory; set to null or blank to disable and
+     * use base64-over-exec instead.
+     */
+    private String fileApiBaseDir = "/workspace";
+
+    // connection strategy
+    private String apiUrl;
+    private String gatewayName;
+    private String gatewayNamespace;
+    private String gatewayScheme = "http";
+    private int serverPort = 8888;
+
+    // timeouts
+    private long sandboxReadyTimeoutSeconds = 180;
+    private long cleanupTimeoutSeconds = 30;
+    private long requestTimeoutSeconds = 180;
+    private long perAttemptTimeoutSeconds = 60;
+    private long portForwardTimeoutSeconds = 30;
 
     @Override
     public String getType() {
@@ -46,10 +63,6 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
         return new KubernetesSandboxClient(this, null);
     }
 
-    /**
-     * Returns an explicit Kubernetes client. When {@code null}, a client is built from {@link
-     * #getKubernetesConfig()} or the in-cluster / default kubeconfig chain.
-     */
     public KubernetesClient getKubernetesClient() {
         return kubernetesClient;
     }
@@ -74,59 +87,99 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
         this.namespace = namespace != null ? namespace : "default";
     }
 
-    public String getImage() {
-        return image;
+    public String getWarmPoolName() {
+        return warmPoolName;
     }
 
-    public void setImage(String image) {
-        this.image = image;
+    public void setWarmPoolName(String warmPoolName) {
+        this.warmPoolName = warmPoolName;
     }
 
-    public String getContainerName() {
-        return containerName;
+    public String getFileApiBaseDir() {
+        return fileApiBaseDir;
     }
 
-    public void setContainerName(String containerName) {
-        this.containerName = containerName != null ? containerName : "workspace";
+    public void setFileApiBaseDir(String fileApiBaseDir) {
+        this.fileApiBaseDir = fileApiBaseDir;
     }
 
-    public String getServiceAccount() {
-        return serviceAccount;
+    public String getApiUrl() {
+        return apiUrl;
     }
 
-    public void setServiceAccount(String serviceAccount) {
-        this.serviceAccount = serviceAccount;
+    public void setApiUrl(String apiUrl) {
+        this.apiUrl = apiUrl;
     }
 
-    public Map<String, String> getNodeSelector() {
-        return nodeSelector;
+    public String getGatewayName() {
+        return gatewayName;
     }
 
-    public void setNodeSelector(Map<String, String> nodeSelector) {
-        this.nodeSelector = nodeSelector != null ? new HashMap<>(nodeSelector) : new HashMap<>();
+    public void setGatewayName(String gatewayName) {
+        this.gatewayName = gatewayName;
     }
 
-    public Map<String, String> getPodLabels() {
-        return podLabels;
+    public String getGatewayNamespace() {
+        return gatewayNamespace;
     }
 
-    public void setPodLabels(Map<String, String> podLabels) {
-        this.podLabels = podLabels != null ? new HashMap<>(podLabels) : new HashMap<>();
+    public void setGatewayNamespace(String gatewayNamespace) {
+        this.gatewayNamespace = gatewayNamespace;
     }
 
-    public String getCpuRequest() {
-        return cpuRequest;
+    public String getGatewayScheme() {
+        return gatewayScheme;
     }
 
-    public void setCpuRequest(String cpuRequest) {
-        this.cpuRequest = cpuRequest;
+    public void setGatewayScheme(String gatewayScheme) {
+        this.gatewayScheme = gatewayScheme;
     }
 
-    public String getMemoryRequest() {
-        return memoryRequest;
+    public int getServerPort() {
+        return serverPort;
     }
 
-    public void setMemoryRequest(String memoryRequest) {
-        this.memoryRequest = memoryRequest;
+    public void setServerPort(int serverPort) {
+        this.serverPort = serverPort;
+    }
+
+    public long getSandboxReadyTimeoutSeconds() {
+        return sandboxReadyTimeoutSeconds;
+    }
+
+    public void setSandboxReadyTimeoutSeconds(long sandboxReadyTimeoutSeconds) {
+        this.sandboxReadyTimeoutSeconds = sandboxReadyTimeoutSeconds;
+    }
+
+    public long getCleanupTimeoutSeconds() {
+        return cleanupTimeoutSeconds;
+    }
+
+    public void setCleanupTimeoutSeconds(long cleanupTimeoutSeconds) {
+        this.cleanupTimeoutSeconds = cleanupTimeoutSeconds;
+    }
+
+    public long getRequestTimeoutSeconds() {
+        return requestTimeoutSeconds;
+    }
+
+    public void setRequestTimeoutSeconds(long requestTimeoutSeconds) {
+        this.requestTimeoutSeconds = requestTimeoutSeconds;
+    }
+
+    public long getPerAttemptTimeoutSeconds() {
+        return perAttemptTimeoutSeconds;
+    }
+
+    public void setPerAttemptTimeoutSeconds(long perAttemptTimeoutSeconds) {
+        this.perAttemptTimeoutSeconds = perAttemptTimeoutSeconds;
+    }
+
+    public long getPortForwardTimeoutSeconds() {
+        return portForwardTimeoutSeconds;
+    }
+
+    public void setPortForwardTimeoutSeconds(long portForwardTimeoutSeconds) {
+        this.portForwardTimeoutSeconds = portForwardTimeoutSeconds;
     }
 }

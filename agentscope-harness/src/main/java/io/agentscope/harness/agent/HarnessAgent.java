@@ -989,6 +989,41 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return root.resolve(agentId);
     }
 
+    /** System property that overrides the default workspace directory. */
+    static final String WORKSPACE_PROPERTY = "agentscope.workspace";
+
+    /** Environment variable that overrides the default workspace directory. */
+    static final String WORKSPACE_ENV = "AGENTSCOPE_WORKSPACE";
+
+    /**
+     * Resolves the workspace directory to use when {@link Builder#workspace(Path)} /
+     * {@link Builder#workspace(String)} was not set explicitly.
+     *
+     * <p>Resolution order (highest priority first):
+     * <ol>
+     *   <li>{@code agentscope.workspace} system property</li>
+     *   <li>{@code AGENTSCOPE_WORKSPACE} environment variable</li>
+     *   <li>{@code ${user.dir}/.agentscope/workspace} (built-in default)</li>
+     * </ol>
+     *
+     * <p>The system property / environment variable are primarily useful for container image
+     * deployments, where the workspace location is injected at run time rather than hard-coded
+     * in application code.
+     *
+     * @return the resolved default workspace directory; never {@code null}
+     */
+    static Path resolveDefaultWorkspace() {
+        String property = System.getProperty(WORKSPACE_PROPERTY);
+        if (property != null && !property.isBlank()) {
+            return Paths.get(property.strip());
+        }
+        String env = System.getenv(WORKSPACE_ENV);
+        if (env != null && !env.isBlank()) {
+            return Paths.get(env.strip());
+        }
+        return Paths.get(System.getProperty("user.dir")).resolve(".agentscope/workspace");
+    }
+
     /**
      * Returns true when the given session is a local in-process implementation that cannot share
      * state across nodes. Used by sandbox / remote-filesystem fail-fast checks to reject
@@ -1513,6 +1548,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * Sets the workspace directory. Pass {@code null} to use the default
          * {@code ${cwd}/.agentscope/workspace}.
          */
+        /**
+         * Sets the workspace directory.
+         *
+         * <p>When left unset, the workspace is resolved at {@link #build()} time via
+         * {@link HarnessAgent#resolveDefaultWorkspace()}: the {@code agentscope.workspace} system
+         * property, then the {@code AGENTSCOPE_WORKSPACE} environment variable, then
+         * {@code ${user.dir}/.agentscope/workspace}. Setting a value here takes precedence over
+         * both the system property and the environment variable.
+         *
+         * @param workspace the workspace directory, or {@code null} to fall back to the resolved
+         *     default
+         * @return this builder
+         */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
             return this;
@@ -1520,6 +1568,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /**
          * Sets the workspace directory from a filesystem path string.
+         *
+         * <p>See {@link #workspace(Path)} for the fallback behaviour when unset.
+         *
+         * @param path the workspace directory path, or {@code null} to fall back to the resolved
+         *     default
+         * @return this builder
          */
         public Builder workspace(String path) {
             if (path == null) {
@@ -1973,11 +2027,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         "abstractFilesystem() is an escape hatch and is mutually exclusive with"
                                 + " filesystem(...) specs");
             }
-            Path resolvedWorkspace =
-                    workspace != null
-                            ? workspace
-                            : Paths.get(System.getProperty("user.dir"))
-                                    .resolve(".agentscope/workspace");
+            Path resolvedWorkspace = workspace != null ? workspace : resolveDefaultWorkspace();
             String resolvedAgentId =
                     agentId != null && !agentId.isBlank()
                             ? agentId
@@ -2399,10 +2449,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
             }
 
-            if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                // Always opt out of core's auto-install; harness owns the skill middleware.
-                inner.dynamicSkillsEnabled(false);
-
+            if (!orderedSkillRepos.isEmpty()) {
                 io.agentscope.harness.agent.skill.runtime.MarketplaceStager stager =
                         resolvedWorkspace != null
                                 ? new io.agentscope.harness.agent.skill.runtime.MarketplaceStager(
@@ -2438,14 +2485,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
 
                 HarnessSkillMiddleware skillMiddleware =
-                        new HarnessSkillMiddleware(
-                                orderedSkillRepos,
-                                agentToolkit,
-                                skillFilter,
-                                visibilityFilter,
-                                stager,
-                                shellPolicy);
+                        disableDynamicSkills
+                                ? HarnessSkillMiddleware.frozen(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy)
+                                : new HarnessSkillMiddleware(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy);
                 inner.middleware(skillMiddleware);
+
+                // Harness owns both the live and frozen repository paths.
+                inner.dynamicSkillsEnabled(false);
 
                 // Wire pre-start staging so sandbox projection picks up .skills-cache content
                 // that MarketplaceStager materialises from database-backed repositories.
@@ -2454,8 +2512,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             skillMiddleware::prestageMarketplaceSkills);
                 }
             } else if (disableDynamicSkills) {
-                // Suppress core's auto-install so the static SkillBox fallback (constructed
-                // below by staticSkillBoxFromRepos) remains the only skill source.
+                // No composed repositories exist, but preserve the explicit core opt-out.
                 inner.dynamicSkillsEnabled(false);
             }
 

@@ -17,14 +17,23 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import io.agentscope.harness.agent.sandbox.SandboxState;
 
-/** Serializable state for a Kubernetes Pod-backed sandbox. */
+/** Serializable state for an agent-sandbox-backed Kubernetes sandbox. */
 public class KubernetesSandboxState extends SandboxState {
 
     private String namespace;
+    private String claimName;
+    private String sandboxName;
+    private String warmPoolName;
     private String podName;
-    private String containerName = "workspace";
-    private boolean podOwned = true;
-    private String image = "ubuntu:22.04";
+    private String podIP;
+
+    /**
+     * Base directory of the runtime file API ({@code /upload}, {@code /download}); paths sent
+     * to the file API are resolved relative to it. Null or blank disables file-API transfer.
+     */
+    private String fileApiBaseDir = "/workspace";
+
+    private boolean claimOwned = true;
 
     public String getNamespace() {
         return namespace;
@@ -32,6 +41,30 @@ public class KubernetesSandboxState extends SandboxState {
 
     public void setNamespace(String namespace) {
         this.namespace = namespace;
+    }
+
+    public String getClaimName() {
+        return claimName;
+    }
+
+    public void setClaimName(String claimName) {
+        this.claimName = claimName;
+    }
+
+    public String getSandboxName() {
+        return sandboxName;
+    }
+
+    public void setSandboxName(String sandboxName) {
+        this.sandboxName = sandboxName;
+    }
+
+    public String getWarmPoolName() {
+        return warmPoolName;
+    }
+
+    public void setWarmPoolName(String warmPoolName) {
+        this.warmPoolName = warmPoolName;
     }
 
     public String getPodName() {
@@ -42,27 +75,27 @@ public class KubernetesSandboxState extends SandboxState {
         this.podName = podName;
     }
 
-    public String getContainerName() {
-        return containerName;
+    public String getPodIP() {
+        return podIP;
     }
 
-    public void setContainerName(String containerName) {
-        this.containerName = containerName;
+    public void setPodIP(String podIP) {
+        this.podIP = podIP;
     }
 
-    public boolean isPodOwned() {
-        return podOwned;
+    public String getFileApiBaseDir() {
+        return fileApiBaseDir;
     }
 
-    public void setPodOwned(boolean podOwned) {
-        this.podOwned = podOwned;
+    public void setFileApiBaseDir(String fileApiBaseDir) {
+        this.fileApiBaseDir = fileApiBaseDir;
     }
 
-    public String getImage() {
-        return image;
+    public boolean isClaimOwned() {
+        return claimOwned;
     }
 
-    public void setImage(String image) {
-        this.image = image;
+    public void setClaimOwned(boolean claimOwned) {
+        this.claimOwned = claimOwned;
     }
 }
