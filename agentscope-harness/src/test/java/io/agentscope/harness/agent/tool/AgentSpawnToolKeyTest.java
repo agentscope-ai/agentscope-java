@@ -88,6 +88,49 @@ class AgentSpawnToolKeyTest {
                         .block();
         assertTrue(defaultSpawn.contains("agent_id: default-agent"));
 
+        SubagentDeclaration primaryDeclaration =
+                SubagentDeclaration.builder()
+                        .name("primary-agent")
+                        .description("primary")
+                        .inlineAgentsBody("primary")
+                        .mode(SubagentDeclaration.Mode.PRIMARY)
+                        .build();
+        DefaultAgentManager restrictedManager =
+                new DefaultAgentManager(
+                        List.of(
+                                new SubagentEntry(
+                                        "primary-agent",
+                                        "primary",
+                                        rc -> child,
+                                        primaryDeclaration)),
+                        null);
+        AgentSpawnTool validationTool =
+                new AgentSpawnTool(restrictedManager, new NoopTaskRepository(), 0);
+        assertTrue(
+                validationTool
+                        .agentSpawn(
+                                RuntimeContext.empty(),
+                                null,
+                                "primary-agent",
+                                "ignored",
+                                null,
+                                1,
+                                null)
+                        .block()
+                        .contains("PRIMARY-only"));
+        assertTrue(
+                validationTool
+                        .agentSpawn(
+                                RuntimeContext.empty(),
+                                null,
+                                "unknown-agent",
+                                "ignored",
+                                null,
+                                1,
+                                null)
+                        .block()
+                        .contains("Unknown agent_id"));
+
         RuntimeContext scopedContext =
                 RuntimeContext.builder().sessionId("s1").userId("u1").build();
         scopedContext.put(AgentSpawnTool.CTX_AGENT_MANAGER, scopedManager);
