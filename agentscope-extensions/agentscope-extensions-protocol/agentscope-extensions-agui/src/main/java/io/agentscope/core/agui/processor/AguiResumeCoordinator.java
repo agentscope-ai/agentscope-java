@@ -198,20 +198,23 @@ final class AguiResumeCoordinator {
     }
 
     /**
-     * Build the AG-UI error event used when the resume contract is violated.
+     * Build the AG-UI error lifecycle used when the resume contract is violated.
      *
      * @param input The invalid run input
      * @param message The validation error message
-     * @return The protocol error event
+     * @return The protocol error lifecycle events
      */
-    AguiEvent.RunError contractError(RunAgentInput input, String message) {
-        return new AguiEvent.RunError(
-                input.getThreadId(),
-                input.getRunId(),
-                message,
-                CONTRACT_ERROR_CODE,
-                System.currentTimeMillis(),
-                null);
+    List<AguiEvent> contractErrorEvents(RunAgentInput input, String message) {
+        return List.of(
+                new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
+                new AguiEvent.RunError(
+                        input.getThreadId(),
+                        input.getRunId(),
+                        message,
+                        CONTRACT_ERROR_CODE,
+                        System.currentTimeMillis(),
+                        null),
+                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
     }
 
     private ResumeContractResult validateResumeStatuses(List<AguiResume> resumes) {

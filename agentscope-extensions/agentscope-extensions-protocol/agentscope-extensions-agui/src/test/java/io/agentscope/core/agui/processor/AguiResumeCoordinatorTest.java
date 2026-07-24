@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -173,12 +174,19 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void contractErrorUsesAguiResumeErrorCodeAndTimestamp() {
+    void contractErrorEventsUseAguiResumeErrorLifecycleCodeAndTimestamp() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
-        AguiEvent.RunError error =
-                coordinator.contractError(input("run-1"), "resume contract failed");
+        List<AguiEvent> events =
+                coordinator.contractErrorEvents(input("run-1"), "resume contract failed");
 
+        assertEquals(
+                List.of(
+                        AguiEventType.RUN_STARTED,
+                        AguiEventType.RUN_ERROR,
+                        AguiEventType.RUN_FINISHED),
+                events.stream().map(AguiEvent::getType).toList());
+        AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
         assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());
         assertEquals("resume contract failed", error.message());
         assertNotNull(error.timestamp());

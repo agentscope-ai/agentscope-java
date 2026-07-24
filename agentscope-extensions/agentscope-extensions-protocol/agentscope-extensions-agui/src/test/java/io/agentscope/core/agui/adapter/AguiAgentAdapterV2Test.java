@@ -1292,18 +1292,36 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testRunEmitsErrorEventsWhenStreamEventsFailsMidStream() {
+        void testRunEmitsStartedErrorEventsWhenStreamEventsFailsBeforeFirstEvent() {
             ReActAgent agent = mock(ReActAgent.class);
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenReturn(Flux.error(new RuntimeException("boom")));
 
+            RunAgentInput input = input();
             List<AguiEvent> events =
                     new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
-                            .run(input())
+                            .run(input)
                             .collectList()
                             .block();
 
-            assertErrorRun(events, "boom", "INTERNAL_ERROR");
+            assertStartupErrorRun(events, input, "boom", "INTERNAL_ERROR");
+        }
+
+        @Test
+        void testRunDoesNotDuplicateRunStartedWhenStreamEventsFailsAfterAgentStart() {
+            List<AguiEvent> events =
+                    runReActFlux(
+                            Flux.concat(
+                                    Flux.just(new AgentStartEvent("thread-v2", "reply", "react")),
+                                    Flux.error(new RuntimeException("boom"))));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.RUN_ERROR,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertErrorRun(events.subList(1, 3), "boom", "INTERNAL_ERROR");
         }
 
         @Test
@@ -1313,8 +1331,8 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> interruptedEvents =
                     runReActFlux(Flux.error(new InterruptedException("cancelled")));
 
-            assertErrorRun(timeoutEvents, "too slow", "TIMEOUT_ERROR");
-            assertErrorRun(interruptedEvents, "cancelled", "INTERRUPTED_ERROR");
+            assertStartedErrorRun(timeoutEvents, "too slow", "TIMEOUT_ERROR");
+            assertStartedErrorRun(interruptedEvents, "cancelled", "INTERRUPTED_ERROR");
         }
 
         @Test
@@ -1397,6 +1415,31 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.RUN_FINISHED),
                     types(events));
         }
+
+        @Test
+        void testRunEnrichesPendingTextEndBeforeErrorWhenBasePropertiesAreEnabled() {
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder().baseEventPropertiesEnricherEnabled(true).build();
+            List<AguiEvent> events =
+                    runReActFlux(
+                            config,
+                            Flux.concat(
+                                    Flux.just(
+                                            new TextBlockDeltaEvent("reply-text", "text-1", "hi")),
+                                    Flux.error(new RuntimeException("boom"))));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.RUN_ERROR,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertNotNull(events.get(2).timestamp());
+            assertNotNull(events.get(3).timestamp());
+            assertNull(events.get(4).timestamp());
+        }
     }
 
     @Nested
@@ -1437,7 +1480,7 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testFinishPendingEventsAreNotEnrichedWithoutAgentEndEvent() {
+        void testFinishPendingEventsAreEnrichedWithoutAgentEndEvent() {
             AguiAdapterConfig config =
                     AguiAdapterConfig.builder().baseEventPropertiesEnricherEnabled(true).build();
             List<AguiEvent> events =
@@ -1452,7 +1495,7 @@ class AguiAgentAdapterV2Test {
                     types(events));
             assertNotNull(events.get(0).timestamp());
             assertNotNull(events.get(1).timestamp());
-            assertNull(events.get(2).timestamp());
+            assertNotNull(events.get(2).timestamp());
         }
 
         @Test
@@ -1574,11 +1617,16 @@ class AguiAgentAdapterV2Test {
 
     private static void assertStartupErrorRun(
             List<AguiEvent> events, RunAgentInput input, String message, String code) {
-        assertNotNull(events);
-        assertEquals(3, events.size());
+        assertStartedErrorRun(events, message, code);
         AguiEvent.RunStarted runStarted =
                 assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         assertSame(input, runStarted.input());
+    }
+
+    private static void assertStartedErrorRun(List<AguiEvent> events, String message, String code) {
+        assertNotNull(events);
+        assertEquals(3, events.size());
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals(message, runError.message());
         assertEquals(code, runError.code());

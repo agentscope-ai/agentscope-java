@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
@@ -29,6 +31,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -189,7 +192,7 @@ class AguiRequestProcessorTest {
                         .block();
 
         assertEquals(1, adapterCount.get());
-        assertResumeContractError(events.get(0));
+        assertResumeContractErrorLifecycle(events);
     }
 
     @Test
@@ -214,7 +217,7 @@ class AguiRequestProcessorTest {
                     processor.process(input("run-2"), null, null).events().collectList().block();
 
             assertEquals(1, adapterCount.get());
-            assertResumeContractError(rejectedEvents.get(0));
+            assertResumeContractErrorLifecycle(rejectedEvents);
         } finally {
             activeRun.dispose();
         }
@@ -225,6 +228,69 @@ class AguiRequestProcessorTest {
         } finally {
             nextRun.dispose();
         }
+    }
+
+    @Test
+    void processDoesNotBeginRunUntilEventsAreSubscribed() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        processor.process(input("run-1"), null, null);
+        processor.process(input("run-2"), null, null).events().collectList().block();
+
+        verify(agent, times(1)).streamEvents(anyList(), any(RuntimeContext.class));
+    }
+
+    @Test
+    void processCreatesIndependentRunStateForEachEventsSubscription() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+        AguiRequestProcessor.ProcessResult result =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .build()
+                        .process(input("run-1"), null, null);
+
+        result.events().collectList().block();
+        result.events().collectList().block();
+
+        verify(agent, times(2)).streamEvents(anyList(), any(RuntimeContext.class));
+    }
+
+    @Test
+    void processReleasesActiveRunWhenSynchronousSetupFailsAfterBeginRun() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+        AtomicInteger adapterCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) -> {
+                                    if (adapterCount.getAndIncrement() == 0) {
+                                        throw new IllegalStateException("adapter setup failed");
+                                    }
+                                    return new AguiAgentAdapter(resolvedAgent, config);
+                                })
+                        .build();
+
+        List<AguiEvent> setupErrorEvents =
+                processor.process(input("run-1"), null, null).events().collectList().block();
+        List<AguiEvent> nextRunEvents =
+                processor.process(input("run-2"), null, null).events().collectList().block();
+
+        assertProcessorErrorLifecycle(
+                setupErrorEvents, "adapter setup failed", "INVALID_INPUT_ERROR");
+        assertEquals(List.of(), nextRunEvents);
+        verify(agent, times(1)).streamEvents(anyList(), any(RuntimeContext.class));
     }
 
     @Test
@@ -265,7 +331,7 @@ class AguiRequestProcessorTest {
                         .collectList()
                         .block();
 
-        assertResumeContractError(events.get(0));
+        assertResumeContractErrorLifecycle(events);
     }
 
     @Test
@@ -299,7 +365,7 @@ class AguiRequestProcessorTest {
                         .collectList()
                         .block();
 
-        assertResumeContractError(events.get(0));
+        assertResumeContractErrorLifecycle(events);
     }
 
     @Test
@@ -382,7 +448,7 @@ class AguiRequestProcessorTest {
         List<AguiEvent> events =
                 processor.process(resumeInput, null, null).events().collectList().block();
 
-        assertResumeContractError(events.get(0));
+        assertResumeContractErrorLifecycle(events);
     }
 
     @Test
@@ -468,9 +534,29 @@ class AguiRequestProcessorTest {
         }
     }
 
-    private static void assertResumeContractError(AguiEvent event) {
-        AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, event);
+    private static void assertResumeContractErrorLifecycle(List<AguiEvent> events) {
+        assertEquals(
+                List.of(
+                        AguiEventType.RUN_STARTED,
+                        AguiEventType.RUN_ERROR,
+                        AguiEventType.RUN_FINISHED),
+                events.stream().map(AguiEvent::getType).toList());
+        AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals("AGUI_INTERRUPT_CONTRACT_ERROR", error.code());
+        assertNotNull(error.timestamp());
+    }
+
+    private static void assertProcessorErrorLifecycle(
+            List<AguiEvent> events, String message, String code) {
+        assertEquals(
+                List.of(
+                        AguiEventType.RUN_STARTED,
+                        AguiEventType.RUN_ERROR,
+                        AguiEventType.RUN_FINISHED),
+                events.stream().map(AguiEvent::getType).toList());
+        AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
+        assertEquals(message, error.message());
+        assertEquals(code, error.code());
         assertNotNull(error.timestamp());
     }
 

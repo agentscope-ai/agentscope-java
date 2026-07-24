@@ -49,6 +49,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 
@@ -162,18 +163,29 @@ public class AguiAgentAdapter {
                                         msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
                         toolInjection.close();
-                        return Flux.concat(
-                                Flux.just(new AguiEvent.RunStarted(threadId, runId, null, input)),
-                                errorEvents(threadId, runId, error));
+                        return errorEvents(threadId, runId, input, error, true);
                     }
 
                     ToolInjection activeToolInjection = toolInjection;
+                    AtomicBoolean eventSeen = new AtomicBoolean(false);
 
                     return Flux.concat(
-                                    agentStream.events(),
+                                    agentStream
+                                            .events()
+                                            .doOnNext(
+                                                    event -> {
+                                                        eventSeen.set(true);
+                                                    }),
                                     Flux.defer(() -> agentStream.finish().get()))
                             .doFinally(signalType -> activeToolInjection.close())
-                            .onErrorResume(error -> errorEvents(threadId, runId, error));
+                            .onErrorResume(
+                                    error ->
+                                            errorEvents(
+                                                    threadId,
+                                                    runId,
+                                                    input,
+                                                    error,
+                                                    !eventSeen.get()));
                 });
     }
 
@@ -191,8 +203,7 @@ public class AguiAgentAdapter {
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
             return new AgentStream(
-                    convertAgentEvents(events, context),
-                    () -> Flux.fromIterable(context.finishPendingEvents()));
+                    convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
         if (isHarnessAgent(agent)) {
             AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
@@ -201,8 +212,7 @@ public class AguiAgentAdapter {
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
                             "agent stream is null");
             return new AgentStream(
-                    convertAgentEvents(events, context),
-                    () -> Flux.fromIterable(context.finishPendingEvents()));
+                    convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
 
         // fallback 1.x
@@ -224,10 +234,12 @@ public class AguiAgentAdapter {
                 // Use concatMapIterable to preserve strict event ordering
                 .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
                 .onErrorResume(
-                        error ->
-                                Flux.concat(
-                                        Flux.fromIterable(context.finishPendingEvents()),
-                                        Flux.error(error)));
+                        error -> Flux.concat(finishPendingEvents(context), Flux.error(error)));
+    }
+
+    private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {
+        return Flux.fromIterable(
+                agentEventConverterRegistry.enrich(null, context.finishPendingEvents(), context));
     }
 
     private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
@@ -359,18 +371,28 @@ public class AguiAgentAdapter {
         return new ToolInjection(toolkit, registeredTools, previousTools);
     }
 
-    private Flux<AguiEvent> errorEvents(String threadId, String runId, Throwable error) {
+    private Flux<AguiEvent> errorEvents(
+            String threadId,
+            String runId,
+            RunAgentInput input,
+            Throwable error,
+            boolean includeRunStarted) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
-        return Flux.just(
+        List<AguiEvent> events = new ArrayList<>();
+        if (includeRunStarted) {
+            events.add(new AguiEvent.RunStarted(threadId, runId, null, input));
+        }
+        events.add(
                 new AguiEvent.RunError(
                         threadId,
                         runId,
                         errorMessage,
                         mapErrorCode(error),
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(threadId, runId));
+                        null));
+        events.add(new AguiEvent.RunFinished(threadId, runId));
+        return Flux.fromIterable(events);
     }
 
     private static String mapErrorCode(Throwable error) {

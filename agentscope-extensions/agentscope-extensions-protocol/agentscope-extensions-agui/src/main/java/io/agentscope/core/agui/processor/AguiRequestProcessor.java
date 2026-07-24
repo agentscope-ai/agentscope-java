@@ -124,40 +124,88 @@ public class AguiRequestProcessor {
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId);
 
-        AguiResumeCoordinator.ResumeContractResult beginResult = resumeCoordinator.beginRun(input);
-        if (beginResult.isError()) {
-            return new ProcessResult(
-                    agent,
-                    Flux.just(resumeCoordinator.contractError(input, beginResult.message())));
-        }
-
-        // Determine effective input based on server-side memory
-        RunAgentInput effectiveInput = input;
-        if (agentResolver.hasMemory(threadId)) {
-            logger.debug(
-                    "Using server-side memory for thread {}, extracting latest user message",
-                    threadId);
-            effectiveInput = extractLatestUserMessage(input);
-        }
-
-        RuntimeContext effectiveRuntimeContext =
-                resumeCoordinator.addResumeToolCallIds(input, runtimeContext);
-
-        // Create adapter and run
-        AguiAgentAdapter adapter = adapterFactory.create(agent, config);
-        AtomicBoolean runErrorSeen = new AtomicBoolean(false);
         Flux<AguiEvent> events =
-                adapter.run(effectiveInput, effectiveRuntimeContext)
-                        .doOnNext(
-                                event -> {
-                                    if (event instanceof AguiEvent.RunError) {
-                                        runErrorSeen.set(true);
-                                    }
-                                    resumeCoordinator.trackPendingInterrupts(
-                                            threadId, runId, event, runErrorSeen.get());
-                                })
-                        .doFinally(signalType -> resumeCoordinator.finishRun(threadId, runId));
+                Flux.defer(
+                        () -> {
+                            AguiResumeCoordinator.ResumeContractResult beginResult =
+                                    resumeCoordinator.beginRun(input);
+                            if (beginResult.isError()) {
+                                return Flux.fromIterable(
+                                        resumeCoordinator.contractErrorEvents(
+                                                input, beginResult.message()));
+                            }
+
+                            try {
+                                // Determine effective input based on server-side memory
+                                RunAgentInput effectiveInput = input;
+                                if (agentResolver.hasMemory(threadId)) {
+                                    logger.debug(
+                                            "Using server-side memory for thread {}, extracting"
+                                                    + " latest user message",
+                                            threadId);
+                                    effectiveInput = extractLatestUserMessage(input);
+                                }
+
+                                RuntimeContext effectiveRuntimeContext =
+                                        resumeCoordinator.addResumeToolCallIds(
+                                                input, runtimeContext);
+
+                                // Create adapter and run
+                                AguiAgentAdapter adapter = adapterFactory.create(agent, config);
+                                AtomicBoolean runErrorSeen = new AtomicBoolean(false);
+                                return Objects.requireNonNull(
+                                                adapter.run(
+                                                        effectiveInput, effectiveRuntimeContext),
+                                                "adapter event stream is null")
+                                        .doOnNext(
+                                                event -> {
+                                                    if (event instanceof AguiEvent.RunError) {
+                                                        runErrorSeen.set(true);
+                                                    }
+                                                    resumeCoordinator.trackPendingInterrupts(
+                                                            threadId,
+                                                            runId,
+                                                            event,
+                                                            runErrorSeen.get());
+                                                })
+                                        .doFinally(
+                                                signalType ->
+                                                        resumeCoordinator.finishRun(
+                                                                threadId, runId));
+                            } catch (Throwable error) {
+                                resumeCoordinator.finishRun(threadId, runId);
+                                return processorErrorEvents(input, error);
+                            }
+                        });
         return new ProcessResult(agent, events);
+    }
+
+    private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
+        String errorMessage =
+                error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+        return Flux.just(
+                new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
+                new AguiEvent.RunError(
+                        input.getThreadId(),
+                        input.getRunId(),
+                        errorMessage,
+                        mapErrorCode(error),
+                        System.currentTimeMillis(),
+                        null),
+                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+    }
+
+    private static String mapErrorCode(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "TIMEOUT_ERROR";
+        }
+        if (error instanceof java.lang.InterruptedException) {
+            return "INTERRUPTED_ERROR";
+        }
+        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
+            return "INVALID_INPUT_ERROR";
+        }
+        return "INTERNAL_ERROR";
     }
 
     /**
