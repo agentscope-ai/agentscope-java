@@ -23,6 +23,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -158,6 +160,43 @@ class ReActAgentMiddlewareIntegrationTest {
         assertTrue(trace.contains("A:reply:exit"), trace.toString());
         assertTrue(trace.contains("A:reasoning:exit"), trace.toString());
         assertTrue(trace.contains("A:modelCall:exit"), trace.toString());
+    }
+
+    @Test
+    void reasoningMiddlewareEventsAreForwardedExactlyOnce() {
+        MiddlewareBase hintMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        HintBlockEvent hint =
+                                new HintBlockEvent(
+                                        "reply-hint", "block-hint", "child-agent", "completed");
+                        return Flux.concat(Flux.just(hint), next.apply(input));
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(hintMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        List<HintBlockEvent> hints =
+                events.stream()
+                        .filter(HintBlockEvent.class::isInstance)
+                        .map(HintBlockEvent.class::cast)
+                        .toList();
+        assertEquals(1, hints.size());
+        assertEquals("reply-hint", hints.get(0).getReplyId());
+        assertEquals("block-hint", hints.get(0).getBlockId());
+        assertEquals("child-agent", hints.get(0).getHintSource());
+        assertEquals("completed", hints.get(0).getHint());
+        assertEquals(
+                1,
+                events.stream().filter(ModelCallStartEvent.class::isInstance).count(),
+                "core model events must not be published twice");
     }
 
     @Test

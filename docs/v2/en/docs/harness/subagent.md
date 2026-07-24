@@ -203,7 +203,7 @@ chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate
 chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
 ```
 
-This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel#talking-to-exposed-subagents) for the full Channel-side API.
+This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel.md#talking-to-exposed-subagents) for the full Channel-side API.
 
 ### How to enable
 
@@ -219,7 +219,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
-Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel#thread-exposure-with-gatewaybootstrap).
+Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel.md#thread-exposure-with-gatewaybootstrap).
 
 ### Controlling exposure from code
 
@@ -426,9 +426,9 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 
 ## Related pages
 
-- [Channel](./channel) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
-- [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
-- [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
-- [Architecture](./architecture) — how parent and child cooperate
+- [Channel](./channel.md) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
+- [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
+- [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
+- [Architecture](./architecture.md) — how parent and child cooperate
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
 - [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

@@ -27,7 +27,6 @@ import java.util.List;
  * <p>DeepSeek API has the following specific requirements:
  * <ul>
  *   <li>No name field in messages (returns HTTP 400 if present)</li>
- *   <li>System messages should be converted to user messages</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
  * </ul>
@@ -84,7 +83,6 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * <p>DeepSeek API requires:
      * <ul>
      *   <li>No name field in messages</li>
-     *   <li>System messages converted to user</li>
      *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
      *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
      * </ul>
@@ -169,20 +167,18 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
 
     @SuppressWarnings("unchecked")
     private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean needReasoning) {
-        boolean isSystem = "system".equals(msg.getRole());
         boolean hasName = msg.getName() != null;
         boolean hasReasoning = msg.getReasoningContent() != null;
         // needReasoning is determined by applyDeepSeekFixes:
         // true = current turn, or segment had tool calls in thinking mode
         boolean shouldRemoveReasoning = hasReasoning && !needReasoning;
 
-        if (!isSystem && !hasName && !shouldRemoveReasoning) {
+        if (!hasName && !shouldRemoveReasoning) {
             return msg;
         }
 
-        // Build new message: convert system to user, remove name field
-        OpenAIMessage.Builder builder =
-                OpenAIMessage.builder().role(isSystem ? "user" : msg.getRole());
+        // Build new message without the name field or stale reasoning content
+        OpenAIMessage.Builder builder = OpenAIMessage.builder().role(msg.getRole());
 
         Object content = msg.getContent();
         if (content instanceof String s) {
