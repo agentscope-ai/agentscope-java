@@ -2365,9 +2365,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             })
                     .flatMap(
                             results -> {
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
+                                        results.stream()
+                                                .filter(e -> !e.getValue().isSuspended())
+                                                .toList();
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs =
+                                        results.stream()
+                                                .filter(e -> e.getValue().isSuspended())
+                                                .toList();
+
                                 // Middleware requested stop during acting — return immediately with
-                                // the requested GenerateReason, preserving any results already
-                                // collected.
+                                // the requested GenerateReason. Persist completed tool results
+                                // through the same post-acting path as a normal iteration first,
+                                // otherwise the preceding tool_use remains orphaned in history.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
                                     if (rs.getGenerateReason()
@@ -2379,17 +2389,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             GenerateReason.PERMISSION_ASKING));
                                         }
                                     }
-                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                    return Mono.just(stopMsg);
+                                    Mono<Void> persistResults =
+                                            successPairs.isEmpty()
+                                                    ? Mono.empty()
+                                                    : Flux.fromIterable(successPairs)
+                                                            .concatMap(this::notifyPostActingHook)
+                                                            .then();
+                                    return persistResults.then(
+                                            Mono.fromSupplier(
+                                                    () -> {
+                                                        syncToolkitToState(state);
+                                                        return buildStopMsg(
+                                                                results, rs.getGenerateReason());
+                                                    }));
                                 }
-                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
-                                        results.stream()
-                                                .filter(e -> !e.getValue().isSuspended())
-                                                .toList();
-                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs =
-                                        results.stream()
-                                                .filter(e -> e.getValue().isSuspended())
-                                                .toList();
 
                                 if (successPairs.isEmpty()) {
                                     if (!pendingPairs.isEmpty()) {
