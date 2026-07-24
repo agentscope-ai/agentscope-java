@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -95,6 +96,7 @@ public final class SubagentDeclaration {
     private final Boolean exposeToUser;
     private final List<String> tools;
     private final List<String> skills;
+    private final CompactionConfig compactionConfig;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
     private final String url;
@@ -119,6 +121,7 @@ public final class SubagentDeclaration {
         this.exposeToUser = b.exposeToUser;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
+        this.compactionConfig = b.compactionConfig;
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
     }
@@ -280,6 +283,16 @@ public final class SubagentDeclaration {
         return skills;
     }
 
+    /**
+     * Optional compaction configuration for this subagent.
+     *
+     * <p>When {@code null}, the subagent inherits the parent agent's compaction configuration and
+     * enabled/disabled state.
+     */
+    public CompactionConfig getCompactionConfig() {
+        return compactionConfig;
+    }
+
     /** Returns {@code true} when this declaration targets a remote task HTTP server. */
     public boolean isRemote() {
         return url != null && !url.isBlank();
@@ -328,6 +341,7 @@ public final class SubagentDeclaration {
         private Boolean exposeToUser;
         private List<String> tools;
         private List<String> skills;
+        private CompactionConfig compactionConfig;
         private String url;
         private Map<String, String> headers;
 
@@ -498,6 +512,18 @@ public final class SubagentDeclaration {
 
         public Builder skills(List<String> skills) {
             this.skills = skills;
+            return this;
+        }
+
+        /**
+         * Sets a compaction configuration for this subagent.
+         *
+         * <p>An explicit declaration-level configuration takes precedence over the parent agent's
+         * compaction configuration and can enable compaction for this subagent even when the parent
+         * disables it.
+         */
+        public Builder compaction(CompactionConfig compactionConfig) {
+            this.compactionConfig = compactionConfig;
             return this;
         }
 
