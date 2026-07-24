@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -72,7 +73,22 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     @Override
     public List<TReq> format(List<Msg> msgs) {
-        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
+        return formatWithTracing(msgs, () -> doFormat(msgs));
+    }
+
+    /**
+     * Execute a formatting action within the standard tracing context.
+     *
+     * <p>Subclasses with request-scoped options (e.g. citation mode) can use this helper to run
+     * a custom formatting action while preserving tracing behavior, without depending on the
+     * tracing implementation directly.
+     *
+     * @param msgs messages being formatted
+     * @param formattingAction the formatting action to execute
+     * @return formatted provider request messages
+     */
+    protected List<TReq> formatWithTracing(List<Msg> msgs, Supplier<List<TReq>> formattingAction) {
+        return TracerRegistry.get().callFormat(this, msgs, formattingAction);
     }
 
     protected abstract List<TReq> doFormat(List<Msg> msgs);

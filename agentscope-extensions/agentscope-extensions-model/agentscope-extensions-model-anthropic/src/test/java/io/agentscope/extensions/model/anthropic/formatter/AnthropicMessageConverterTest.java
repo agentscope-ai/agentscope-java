@@ -24,7 +24,9 @@ import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -94,6 +96,32 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         MessageParam param = result.get(0);
         assertEquals(MessageParam.Role.ASSISTANT, param.role());
+    }
+
+    @Test
+    void testConvertAssistantMessagePreservesPdfCitation() {
+        Citation.PageLocation citation =
+                new Citation.PageLocation("Source text", 0, "guide.pdf", null, 3, 4);
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Cited answer")
+                                        .citations(List.of(citation))
+                                        .build())
+                        .build();
+
+        ContentBlockParam converted =
+                converter.convert(List.of(msg)).get(0).content().asBlockParams().get(0);
+
+        var convertedCitation =
+                converted.asText().citations().orElseThrow().get(0).asPageLocation();
+        assertEquals("Source text", convertedCitation.citedText());
+        assertEquals("guide.pdf", convertedCitation.documentTitle().orElseThrow());
+        assertEquals(3, convertedCitation.startPageNumber());
+        assertEquals(4, convertedCitation.endPageNumber());
     }
 
     @Test
@@ -320,6 +348,53 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
         assertTrue(blocks.get(0).isToolResult());
+    }
+
+    @Test
+    void testConvertToolResultBlockWithPdfDataBlock() {
+        DataBlock pdf =
+                DataBlock.builder()
+                        .name("tool-output.pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .data("JVBERi0xLjQK")
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_pdf")
+                                        .name("read_pdf")
+                                        .output(List.of(pdf))
+                                        .build())
+                        .build();
+
+        AnthropicMessageConverter citationsConverter =
+                new AnthropicMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    sb.append(tb.getText());
+                                }
+                            }
+                            return sb.toString();
+                        },
+                        CitationMode.ENABLED);
+        List<MessageParam> result = citationsConverter.convert(List.of(msg));
+
+        ToolResultBlockParam toolResult =
+                result.get(0).content().asBlockParams().get(0).asToolResult();
+        var toolContent = toolResult.content().orElseThrow().asBlocks();
+        assertEquals(1, toolContent.size());
+        assertTrue(toolContent.get(0).isDocument());
+        assertEquals("JVBERi0xLjQK", toolContent.get(0).asDocument().source().asBase64().data());
+        assertTrue(
+                toolContent.get(0).asDocument().citations().orElseThrow().enabled().orElseThrow());
     }
 
     @Test

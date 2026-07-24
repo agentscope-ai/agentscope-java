@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,8 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -499,5 +502,63 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         // Tool results are converted to USER messages
         assertEquals(MessageParam.Role.USER, result.get(0).role());
+    }
+
+    @Test
+    void testFormatPdfWithRequestLevelCitations() {
+        DataBlock pdf =
+                DataBlock.builder()
+                        .name("guide.pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf")
+                                        .data("JVBERi0xLjQK")
+                                        .build())
+                        .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).content(pdf).build();
+
+        List<MessageParam> result =
+                formatter.format(
+                        List.of(msg),
+                        GenerateOptions.builder().citationsEnabled(true).build(),
+                        null);
+
+        ContentBlockParam document = result.get(0).content().asBlockParams().get(0);
+        assertTrue(document.isDocument());
+        assertTrue(document.asDocument().citations().orElseThrow().enabled().orElseThrow());
+
+        ContentBlockParam withoutCitations =
+                formatter.format(List.of(msg)).get(0).content().asBlockParams().get(0);
+        assertTrue(withoutCitations.asDocument().citations().isEmpty());
+    }
+
+    @Test
+    void testFormatWithCitationsDisabledDelegatesToSingleParamFormat() {
+        RecordingChatFormatter recordingFormatter = new RecordingChatFormatter();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("Hello").build())
+                                .build());
+
+        List<MessageParam> result =
+                recordingFormatter.format(
+                        messages, GenerateOptions.builder().citationsEnabled(false).build(), null);
+
+        assertTrue(recordingFormatter.singleArgumentFormatCalled);
+        assertSame(recordingFormatter.formattedMessages, result);
+    }
+
+    private static final class RecordingChatFormatter extends AnthropicChatFormatter {
+
+        private final List<MessageParam> formattedMessages = List.of();
+        private boolean singleArgumentFormatCalled;
+
+        @Override
+        public List<MessageParam> format(List<Msg> msgs) {
+            singleArgumentFormatCalled = true;
+            return formattedMessages;
+        }
     }
 }
