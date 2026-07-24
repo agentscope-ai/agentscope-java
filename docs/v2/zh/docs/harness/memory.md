@@ -193,6 +193,21 @@ HarnessAgent.builder()
 
 `model(String)` 走 `ModelRegistry.resolve()`，也可以传 `Model` 实例。不设则 fallback 到 agent 主模型。
 
+### 例 7：先完成调用，再执行记忆 LLM
+
+默认情况下，flush 和 maintenance 仍属于 agent 的完成路径。对延迟敏感的流式响应或
+编排场景，可以把它们放到调用完成后的后台队列：
+
+```java
+.memory(MemoryConfig.builder()
+    .executionMode(MemoryConfig.ExecutionMode.ASYNC)
+    .build())
+```
+
+异步操作会按配置的隔离键串行执行，因此同一 user/session 的写入顺序与调用顺序一致，
+不同隔离键仍可并发。原始 session JSONL 会先于 LLM 提炼写入；`HarnessAgent.close()`
+会等待已经接收的记忆任务完成。使用该模式的应用应在停机时关闭 agent。
+
 ### `MemoryConfig` 字段速查
 
 | 字段 | 默认 | 作用 |
@@ -205,6 +220,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `executionMode` | `BLOCKING` | `BLOCKING` 保留历史完成语义；`ASYNC` 把有序的记忆任务放到调用完成后执行 |
 
 ## 大工具结果卸载
 
