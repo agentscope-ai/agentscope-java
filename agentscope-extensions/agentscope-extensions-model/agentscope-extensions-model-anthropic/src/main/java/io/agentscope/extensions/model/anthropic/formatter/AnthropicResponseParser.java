@@ -29,6 +29,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -50,7 +51,9 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (var block : message.content()) {
+        for (int index = 0; index < message.content().size(); index++) {
+            final int blockIndex = index;
+            var block = message.content().get(index);
             // Text block
             block.text()
                     .ifPresent(
@@ -83,6 +86,25 @@ public class AnthropicResponseParser {
                                     contentBlocks.add(
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata.thinking(
+                                                                    blockIndex,
+                                                                    thinking.thinking(),
+                                                                    thinking.signature()))
+                                                    .build()));
+
+            // Redacted thinking block
+            block.redactedThinking()
+                    .ifPresent(
+                            redactedThinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata
+                                                                    .redactedThinking(
+                                                                            blockIndex,
+                                                                            redactedThinking
+                                                                                    .data()))
                                                     .build()));
         }
 
@@ -102,23 +124,33 @@ public class AnthropicResponseParser {
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
-        return eventFlux
-                .flatMap(
-                        event -> {
-                            try {
-                                return Flux.just(parseStreamEvent(event, startTime));
-                            } catch (Exception e) {
-                                log.warn("Error parsing stream event: {}", e.getMessage());
-                                return Flux.empty();
-                            }
-                        })
-                .filter(response -> response != null && !response.getContent().isEmpty());
+        return Flux.defer(
+                () -> {
+                    StreamState streamState = new StreamState();
+                    return eventFlux.<ChatResponse>handle(
+                            (event, sink) -> {
+                                try {
+                                    ChatResponse response =
+                                            parseStreamEvent(event, startTime, streamState);
+                                    if (response != null && !response.getContent().isEmpty()) {
+                                        sink.next(response);
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("Error parsing stream event: {}", e.getMessage());
+                                }
+                            });
+                });
     }
 
     /**
      * Parse single stream event.
      */
     private static ChatResponse parseStreamEvent(RawMessageStreamEvent event, Instant startTime) {
+        return parseStreamEvent(event, startTime, new StreamState());
+    }
+
+    private static ChatResponse parseStreamEvent(
+            RawMessageStreamEvent event, Instant startTime, StreamState streamState) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String messageId = null;
@@ -144,10 +176,28 @@ public class AnthropicResponseParser {
                     .delta()
                     .thinking()
                     .ifPresent(
-                            thinkingDelta ->
+                            thinkingDelta -> {
+                                streamState.appendThinking(
+                                        deltaEvent.index(), thinkingDelta.thinking());
+                                contentBlocks.add(
+                                        ThinkingBlock.builder()
+                                                .thinking(thinkingDelta.thinking())
+                                                .build());
+                            });
+
+            deltaEvent
+                    .delta()
+                    .signature()
+                    .ifPresent(
+                            signatureDelta ->
                                     contentBlocks.add(
                                             ThinkingBlock.builder()
-                                                    .thinking(thinkingDelta.thinking())
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata.thinking(
+                                                                    deltaEvent.index(),
+                                                                    streamState.getThinking(
+                                                                            deltaEvent.index()),
+                                                                    signatureDelta.signature()))
                                                     .build()));
 
             // Input JSON delta (tool calling)
@@ -170,6 +220,21 @@ public class AnthropicResponseParser {
         // Content block start - tool use
         if (event.isContentBlockStart()) {
             var startEvent = event.asContentBlockStart();
+
+            startEvent
+                    .contentBlock()
+                    .redactedThinking()
+                    .ifPresent(
+                            redactedThinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata
+                                                                    .redactedThinking(
+                                                                            startEvent.index(),
+                                                                            redactedThinking
+                                                                                    .data()))
+                                                    .build()));
 
             startEvent
                     .contentBlock()
@@ -197,6 +262,24 @@ public class AnthropicResponseParser {
         }
 
         return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+    }
+
+    private static final class StreamState {
+
+        private final Map<Long, StringBuilder> thinkingByIndex = new HashMap<>();
+
+        private void appendThinking(long index, String thinking) {
+            if (thinking != null && !thinking.isEmpty()) {
+                thinkingByIndex
+                        .computeIfAbsent(index, ignored -> new StringBuilder())
+                        .append(thinking);
+            }
+        }
+
+        private String getThinking(long index) {
+            StringBuilder thinking = thinkingByIndex.get(index);
+            return thinking != null ? thinking.toString() : "";
+        }
     }
 
     /**

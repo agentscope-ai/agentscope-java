@@ -24,12 +24,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
+import com.anthropic.models.messages.RawContentBlockStartEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.agent.accumulator.ReasoningContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -51,11 +55,22 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     private static com.anthropic.models.messages.ThinkingBlock mockThinkingBlock() {
-        return mock(com.anthropic.models.messages.ThinkingBlock.class);
+        var thinkingBlock = mock(com.anthropic.models.messages.ThinkingBlock.class);
+        when(thinkingBlock.signature()).thenReturn("signature-123");
+        return thinkingBlock;
     }
 
     private static com.anthropic.models.messages.ToolUseBlock mockToolUseBlock() {
         return mock(com.anthropic.models.messages.ToolUseBlock.class);
+    }
+
+    private static ContentBlock mockContentBlock() {
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        when(contentBlock.text()).thenReturn(Optional.empty());
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
+        return contentBlock;
     }
 
     /**
@@ -76,7 +91,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         // Create mock Message with text content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
+        ContentBlock contentBlock = mockContentBlock();
         var textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_123");
@@ -111,7 +126,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
+        ContentBlock contentBlock = mockContentBlock();
         var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_456");
@@ -148,7 +163,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         // Create mock Message with thinking content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
+        ContentBlock contentBlock = mockContentBlock();
         var thinkingBlock = mockThinkingBlock();
 
         when(message.id()).thenReturn("msg_789");
@@ -171,6 +186,53 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ThinkingBlock parsedThinking =
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me think about this...", parsedThinking.getThinking());
+        assertEquals(
+                "signature-123",
+                AnthropicThinkingMetadata.toContentBlockParams(parsedThinking)
+                        .get(0)
+                        .asThinking()
+                        .signature());
+    }
+
+    @Test
+    void testParseMessagePreservesThinkingAndRedactedBlocks() throws Exception {
+        String json =
+                """
+                {
+                  "id": "msg_reasoning",
+                  "type": "message",
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "thinking",
+                      "thinking": "Reasoning",
+                      "signature": "signature-123"
+                    },
+                    {
+                      "type": "redacted_thinking",
+                      "data": "encrypted-data"
+                    }
+                  ],
+                  "model": "claude-sonnet-4-5-20250929",
+                  "stop_reason": "end_turn",
+                  "stop_sequence": null,
+                  "usage": {"input_tokens": 10, "output_tokens": 20}
+                }
+                """;
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(2, response.getContent().size());
+        ThinkingBlock thinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        ThinkingBlock redacted =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(1));
+        assertTrue(AnthropicThinkingMetadata.toContentBlockParams(thinking).get(0).isThinking());
+        assertTrue(
+                AnthropicThinkingMetadata.toContentBlockParams(redacted)
+                        .get(0)
+                        .isRedactedThinking());
     }
 
     @Test
@@ -179,10 +241,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
 
-        ContentBlock textContentBlock = mock(ContentBlock.class);
+        ContentBlock textContentBlock = mockContentBlock();
         var textBlock = mockTextBlock();
 
-        ContentBlock toolContentBlock = mock(ContentBlock.class);
+        ContentBlock toolContentBlock = mockContentBlock();
         var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_mixed");
@@ -241,7 +303,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         // Create mock Message with null tool input
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
+        ContentBlock contentBlock = mockContentBlock();
         var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_null_input");
@@ -335,6 +397,62 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamPreservesSignatureAndRedactedThinking() {
+        RawMessageStreamEvent firstThinking =
+                RawMessageStreamEvent.ofContentBlockDelta(
+                        RawContentBlockDeltaEvent.builder()
+                                .index(0)
+                                .thinkingDelta("Let me ")
+                                .build());
+        RawMessageStreamEvent secondThinking =
+                RawMessageStreamEvent.ofContentBlockDelta(
+                        RawContentBlockDeltaEvent.builder()
+                                .index(0)
+                                .thinkingDelta("reason")
+                                .build());
+        RawMessageStreamEvent signature =
+                RawMessageStreamEvent.ofContentBlockDelta(
+                        RawContentBlockDeltaEvent.builder()
+                                .index(0)
+                                .signatureDelta("signature-123")
+                                .build());
+        RawMessageStreamEvent redacted =
+                RawMessageStreamEvent.ofContentBlockStart(
+                        RawContentBlockStartEvent.builder()
+                                .index(1)
+                                .redactedThinkingContentBlock("encrypted-data")
+                                .build());
+
+        Flux<ChatResponse> responses =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(firstThinking, secondThinking, signature, redacted),
+                        Instant.now());
+
+        StepVerifier.create(responses.collectList())
+                .assertNext(
+                        chunks -> {
+                            ReasoningContext context = new ReasoningContext("Assistant");
+                            chunks.forEach(context::processChunk);
+                            Msg message = context.buildFinalMessage();
+                            ThinkingBlock thinking =
+                                    message.getFirstContentBlock(ThinkingBlock.class);
+
+                            assertEquals("Let me reason", thinking.getThinking());
+                            var nativeBlocks =
+                                    AnthropicThinkingMetadata.toContentBlockParams(thinking);
+                            assertEquals(2, nativeBlocks.size());
+                            assertTrue(nativeBlocks.get(0).isThinking());
+                            assertEquals(
+                                    "signature-123", nativeBlocks.get(0).asThinking().signature());
+                            assertTrue(nativeBlocks.get(1).isRedactedThinking());
+                            assertEquals(
+                                    "encrypted-data",
+                                    nativeBlocks.get(1).asRedactedThinking().data());
+                        })
+                .verifyComplete();
     }
 
     @Test

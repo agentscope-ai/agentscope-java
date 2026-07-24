@@ -257,12 +257,18 @@ public class AnthropicMessageConverter {
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Anthropic supports thinking blocks natively
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(thinkingBlock.getThinking())
-                                        .build()));
+                List<ContentBlockParam> nativeThinkingBlocks =
+                        AnthropicThinkingMetadata.toContentBlockParams(thinkingBlock);
+                if (!nativeThinkingBlocks.isEmpty()) {
+                    contentBlocks.addAll(nativeThinkingBlocks);
+                } else {
+                    // Preserve compatibility with thinking blocks produced by other providers.
+                    contentBlocks.add(
+                            ContentBlockParam.ofText(
+                                    TextBlockParam.builder()
+                                            .text(thinkingBlock.getThinking())
+                                            .build()));
+                }
             } else if (block instanceof ImageBlock ib) {
                 try {
                     ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
