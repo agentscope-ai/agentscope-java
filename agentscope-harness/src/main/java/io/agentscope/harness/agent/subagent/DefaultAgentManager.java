@@ -67,11 +67,7 @@ public final class DefaultAgentManager {
         this.workspaceManager = workspaceManager;
     }
 
-    /**
-     * Replaces the current set of entries with a new snapshot. Called per-call from
-     * {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to reflect per-user subagent
-     * configurations.
-     */
+    /** Replaces the current set of entries with a new snapshot. */
     public void refreshEntries(List<SubagentEntry> entries) {
         Map<String, SubagentFactory> factories = new HashMap<>();
         Map<String, SubagentDeclaration> decls = new HashMap<>();
