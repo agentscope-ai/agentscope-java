@@ -45,7 +45,8 @@ public class E2bSandboxFilesystem extends SandboxBackedFilesystem {
         for (Map.Entry<String, byte[]> file : files) {
             String path = file.getKey();
             try {
-                e2b.uploadFile(path, file.getValue());
+                String absPath = resolveAbsolute(path, e2b.getWorkspaceRoot());
+                e2b.uploadFile(absPath, file.getValue());
                 results.add(FileUploadResponse.success(path));
             } catch (Exception e) {
                 log.warn("[e2b-sandbox-fs] upload failed for path: {}", path, e);
@@ -53,6 +54,12 @@ public class E2bSandboxFilesystem extends SandboxBackedFilesystem {
             }
         }
         return results;
+    }
+
+    private static String resolveAbsolute(String path, String workspaceRoot) {
+        if (path == null || path.isEmpty()) return path;
+        if (path.startsWith("/")) return path;
+        return workspaceRoot + (workspaceRoot.endsWith("/") ? "" : "/") + path;
     }
 
     @Override
@@ -65,7 +72,8 @@ public class E2bSandboxFilesystem extends SandboxBackedFilesystem {
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
         for (String path : paths) {
             try {
-                byte[] content = e2b.downloadFile(path);
+                String absPath = resolveAbsolute(path, e2b.getWorkspaceRoot());
+                byte[] content = e2b.downloadFile(absPath);
                 results.add(FileDownloadResponse.success(path, content));
             } catch (Exception e) {
                 log.warn("[e2b-sandbox-fs] download failed for path: {}", path, e);

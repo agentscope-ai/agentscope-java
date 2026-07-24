@@ -140,4 +140,28 @@ class E2bSandboxFilesystemTest {
         assertTrue(results.get(0).isSuccess());
         assertArrayEquals("data".getBytes(), results.get(0).content());
     }
+
+    @Test
+    void uploadFiles_resolvesRelativePath() throws Exception {
+        E2bSandbox sandbox = mock(E2bSandbox.class);
+        when(sandbox.getWorkspaceRoot()).thenReturn("/home/user/workspace");
+        E2bSandboxFilesystem fs = new E2bSandboxFilesystem();
+        fs.setSandbox(sandbox);
+        List<Map.Entry<String, byte[]>> files =
+                List.of(new AbstractMap.SimpleEntry<>("MEMORY.md", "data".getBytes()));
+        fs.uploadFiles(RT, files);
+        verify(sandbox).uploadFile("/home/user/workspace/MEMORY.md", "data".getBytes());
+    }
+
+    @Test
+    void downloadFiles_resolvesRelativePath() throws Exception {
+        E2bSandbox sandbox = mock(E2bSandbox.class);
+        when(sandbox.getWorkspaceRoot()).thenReturn("/home/user/workspace");
+        when(sandbox.downloadFile("/home/user/workspace/MEMORY.md")).thenReturn("data".getBytes());
+        E2bSandboxFilesystem fs = new E2bSandboxFilesystem();
+        fs.setSandbox(sandbox);
+        List<FileDownloadResponse> results = fs.downloadFiles(RT, List.of("MEMORY.md"));
+        verify(sandbox).downloadFile("/home/user/workspace/MEMORY.md");
+        assertArrayEquals("data".getBytes(), results.get(0).content());
+    }
 }
