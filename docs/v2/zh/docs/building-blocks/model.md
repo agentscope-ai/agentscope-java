@@ -73,7 +73,7 @@ ReActAgent agent =
                 .build();
 ```
 
-扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
+扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`MOONSHOT_API_KEY`（`kimi:<model>` id 走 Kimi 的 OpenAI 兼容端点）。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
 ### 显式 Model builder
 

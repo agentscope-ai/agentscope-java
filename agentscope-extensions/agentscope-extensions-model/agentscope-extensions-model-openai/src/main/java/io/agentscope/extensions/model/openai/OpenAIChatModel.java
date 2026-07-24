@@ -63,6 +63,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
  *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
  *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.kimi.KimiFormatter} - Kimi (Moonshot AI) models</li>
  * </ul>
  */
 public class OpenAIChatModel extends ChatModelBase {
