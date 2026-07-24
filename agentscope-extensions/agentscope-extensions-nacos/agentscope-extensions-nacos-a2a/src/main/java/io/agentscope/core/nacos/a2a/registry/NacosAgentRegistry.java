@@ -21,8 +21,6 @@ import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.ai.constant.AiConstants;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.common.utils.StringUtils;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
@@ -33,6 +31,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.Legacy_0_3_AgentInterface;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -196,10 +197,17 @@ public class NacosAgentRegistry implements AgentRegistry {
         String newUrl = generateNewUrl(transportProperties);
         String transport = transportProperties.transport();
         AgentInterface agentInterface = new AgentInterface(transport, newUrl);
-        List<AgentInterface> agentInterfaces = new LinkedList<>(agentCard.additionalInterfaces());
+        List<AgentInterface> agentInterfaces =
+                new LinkedList<>(
+                        null == agentCard.supportedInterfaces()
+                                ? List.of()
+                                : agentCard.supportedInterfaces());
         agentInterfaces.add(agentInterface);
-        AgentCard.Builder builder = new AgentCard.Builder(agentCard);
-        builder.url(newUrl).preferredTransport(transport).additionalInterfaces(agentInterfaces);
+        AgentCard.Builder builder = AgentCard.builder(agentCard);
+        builder.url(newUrl)
+                .preferredTransport(transport)
+                .supportedInterfaces(agentInterfaces)
+                .additionalInterfaces(toLegacyInterfaces(agentInterfaces));
         LoggerUtil.info(
                 log,
                 "Overwrite preferred transport from {} to {} with url from {} to {}",
@@ -208,6 +216,18 @@ public class NacosAgentRegistry implements AgentRegistry {
                 agentCard.url(),
                 newUrl);
         return builder.build();
+    }
+
+    private List<Legacy_0_3_AgentInterface> toLegacyInterfaces(List<AgentInterface> interfaces) {
+        if (interfaces == null) {
+            return null;
+        }
+        return interfaces.stream()
+                .map(
+                        agentInterface ->
+                                new Legacy_0_3_AgentInterface(
+                                        agentInterface.protocolBinding(), agentInterface.url()))
+                .toList();
     }
 
     private String generateNewUrl(NacosA2aRegistryTransportProperties transportProperties) {

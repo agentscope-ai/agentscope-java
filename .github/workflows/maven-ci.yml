@@ -59,6 +59,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure redis-server is available [Linux]
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
@@ -137,4 +142,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
           verbose: true
-

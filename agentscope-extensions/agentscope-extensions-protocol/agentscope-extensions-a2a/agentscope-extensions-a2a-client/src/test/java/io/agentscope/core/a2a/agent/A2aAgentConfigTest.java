@@ -22,12 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.client.transport.spi.ClientTransport;
-import io.a2a.client.transport.spi.ClientTransportConfig;
 import java.util.Map;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.client.transport.spi.ClientTransport;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -60,6 +60,23 @@ class A2aAgentConfigTest {
         assertNotNull(config.clientTransports());
         assertTrue(config.clientTransports().isEmpty());
         assertNull(config.clientConfig());
+        assertTrue(config.defaultHeaders().isEmpty());
+        assertTrue(config.defaultMetadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should retain the two-argument public constructor")
+    void testTwoArgumentConstructorCompatibility() {
+        @SuppressWarnings("rawtypes")
+        Map<Class, ClientTransportConfig> transports = Map.of();
+        ClientConfig clientConfig = mock(ClientConfig.class);
+
+        A2aAgentConfig config = new A2aAgentConfig(transports, clientConfig);
+
+        assertSame(transports, config.clientTransports());
+        assertSame(clientConfig, config.clientConfig());
+        assertTrue(config.defaultHeaders().isEmpty());
+        assertTrue(config.defaultMetadata().isEmpty());
     }
 
     @Test
@@ -93,6 +110,19 @@ class A2aAgentConfigTest {
         assertSame(builder, result); // Check method chaining
         A2aAgentConfig config = builder.build();
         assertEquals(clientConfig, config.clientConfig());
+    }
+
+    @Test
+    @DisplayName("Should set default request headers and metadata")
+    void testDefaultRequestContext() {
+        A2aAgentConfig config =
+                A2aAgentConfig.builder()
+                        .defaultHeaders(Map.of("Authorization", "Bearer token"))
+                        .defaultMetadata(Map.of("tenant", "dev"))
+                        .build();
+
+        assertEquals("Bearer token", config.defaultHeaders().get("Authorization"));
+        assertEquals("dev", config.defaultMetadata().get("tenant"));
     }
 
     @Test

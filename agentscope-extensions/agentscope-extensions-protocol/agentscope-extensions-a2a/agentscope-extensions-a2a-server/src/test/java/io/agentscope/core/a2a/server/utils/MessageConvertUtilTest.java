@@ -24,18 +24,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,11 +81,11 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertTrue(result.getMetadata().isEmpty());
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertTrue(result.metadata().isEmpty());
     }
 
     @Test
@@ -99,11 +103,11 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertEquals(metadata, result.getMetadata().get("msg-id"));
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertEquals(metadata, result.metadata().get("msg-id"));
     }
 
     @Test
@@ -141,35 +145,118 @@ class MessageConvertUtilTest {
         List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(message, true);
 
         assertEquals(1, parts.size());
+        TextPart part = assertInstanceOf(TextPart.class, parts.get(0));
+        assertEquals(Boolean.TRUE, part.metadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
         assertEquals(
-                Boolean.TRUE,
-                parts.get(0).getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+                "message=msg-id;block=0;type=text",
+                part.metadata().get(MessageConstants.BLOCK_ID_METADATA_KEY));
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_TEXT,
+                part.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
     }
 
     @Test
-    @DisplayName("Should compact consecutive streaming chunks")
-    void testCompactStreamingChunks() {
+    @DisplayName("Should give distinct streaming blocks distinct stable identities")
+    void testConvertFromContentBlocksStreamingChunksHaveDistinctBlockIdentities() {
+        Msg message =
+                Msg.builder()
+                        .id("reply-1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("first").build(),
+                                        TextBlock.builder().text("second").build()))
+                        .build();
+
+        List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(message, true);
+
+        TextPart first = assertInstanceOf(TextPart.class, parts.get(0));
+        TextPart second = assertInstanceOf(TextPart.class, parts.get(1));
+        assertEquals(
+                "message=reply-1;block=0;type=text",
+                first.metadata().get(MessageConstants.BLOCK_ID_METADATA_KEY));
+        assertEquals(
+                "message=reply-1;block=1;type=text",
+                second.metadata().get(MessageConstants.BLOCK_ID_METADATA_KEY));
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_TEXT,
+                first.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_TEXT,
+                second.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+
+        Msg converted =
+                io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromArtifact(
+                        Artifact.builder().artifactId("artifact-1").parts(parts).build(), "agent");
+        assertEquals(2, converted.getContent().size());
+    }
+
+    @Test
+    @DisplayName("Should preserve an existing streaming block identity")
+    void testConvertFromContentBlocksStreamingChunksPreserveExistingBlockIdentity() {
+        Msg message =
+                Msg.builder()
+                        .id("reply-1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call-1")
+                                                .name("lookup")
+                                                .input(Map.of())
+                                                .metadata(
+                                                        Map.of(
+                                                                MessageConstants
+                                                                        .BLOCK_ID_METADATA_KEY,
+                                                                "existing-block"))
+                                                .build()))
+                        .build();
+
+        List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(message, true);
+
+        assertEquals(
+                "existing-block",
+                ((org.a2aproject.sdk.spec.DataPart) parts.get(0))
+                        .metadata()
+                        .get(MessageConstants.BLOCK_ID_METADATA_KEY));
+    }
+
+    @Test
+    @DisplayName("Should compact public streaming-helper chunks through the A2A client")
+    void testConvertFromContentBlocksStreamingChunksRoundTripThroughClient() {
         Msg first =
                 Msg.builder()
-                        .id("msg-1")
-                        .name("agent")
+                        .id("reply-1")
                         .role(MsgRole.ASSISTANT)
                         .content(List.of(TextBlock.builder().text("Hel").build()))
                         .build();
         Msg second =
                 Msg.builder()
-                        .id("msg-1")
-                        .name("agent")
+                        .id("reply-1")
                         .role(MsgRole.ASSISTANT)
                         .content(List.of(TextBlock.builder().text("lo").build()))
                         .build();
-        Msg third =
-                Msg.builder()
-                        .id("msg-2")
-                        .name("agent")
-                        .role(MsgRole.ASSISTANT)
-                        .content(List.of(TextBlock.builder().text(" world").build()))
-                        .build();
+        List<Part<?>> parts =
+                new ArrayList<>(MessageConvertUtil.convertFromContentBlocks(first, true));
+        parts.addAll(MessageConvertUtil.convertFromContentBlocks(second, true));
+        Artifact artifact = Artifact.builder().artifactId("artifact-1").parts(parts).build();
+
+        Msg converted =
+                io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromArtifact(
+                        artifact, "agent");
+
+        assertEquals(1, converted.getContent().size());
+        assertEquals(
+                "Hello",
+                assertInstanceOf(TextBlock.class, converted.getContent().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should compact consecutive streaming chunks")
+    void testCompactStreamingChunks() {
+        Msg first = assistantText("msg-1", "Hel");
+        Msg second = assistantText("msg-1", "lo");
+        Msg third = assistantText("msg-2", " world");
 
         List<Msg> result = MessageConvertUtil.compactStreamingChunks(List.of(first, second, third));
 
@@ -184,16 +271,9 @@ class MessageConvertUtilTest {
         assertTrue(MessageConvertUtil.compactStreamingChunks(null).isEmpty());
         assertTrue(MessageConvertUtil.compactStreamingChunks(List.of()).isEmpty());
 
-        Msg message =
-                Msg.builder()
-                        .id("msg-1")
-                        .name("agent")
-                        .role(MsgRole.ASSISTANT)
-                        .content(List.of(TextBlock.builder().text("content").build()))
-                        .build();
         List<Msg> input = new java.util.ArrayList<>();
         input.add(null);
-        input.add(message);
+        input.add(assistantText("msg-1", "content"));
 
         List<Msg> result = MessageConvertUtil.compactStreamingChunks(input);
 
@@ -226,9 +306,9 @@ class MessageConvertUtilTest {
 
         assertEquals(1, result.size());
         assertEquals(2, result.get(0).getContent().size());
-        ThinkingBlock thinkingBlock =
+        ThinkingBlock thinking =
                 assertInstanceOf(ThinkingBlock.class, result.get(0).getContent().get(0));
-        assertEquals("thinking", thinkingBlock.getThinking());
+        assertEquals("thinking", thinking.getThinking());
         assertEquals(" answer", ((TextBlock) result.get(0).getContent().get(1)).getText());
     }
 
@@ -285,8 +365,8 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -328,8 +408,8 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -355,35 +435,40 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should restore Msg role from part metadata")
     void testConvertFromMessageToMsgsWithRoleMetadata() {
-        // Given
-        Message message = mock(Message.class);
-
-        Map<String, Object> partMetadata = new HashMap<>();
-        String msgId = "assistant-msg";
-        partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
-        partMetadata.put(MessageConstants.MSG_ROLE_METADATA_KEY, MsgRole.ASSISTANT.name());
-        partMetadata.put(
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MessageConstants.MSG_ID_METADATA_KEY, "assistant-msg");
+        metadata.put(MessageConstants.MSG_ROLE_METADATA_KEY, MsgRole.ASSISTANT.name());
+        metadata.put(
                 MessageConstants.BLOCK_TYPE_METADATA_KEY,
                 MessageConstants.BlockContent.TYPE_THINKING);
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("thinking content", metadata))
+                        .build();
 
-        TextPart part = new TextPart("thinking content", partMetadata);
-
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getRole()).thenReturn(Message.Role.USER);
-        when(message.getParts()).thenReturn(List.of(part));
-
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
-        assertNotNull(result);
         assertEquals(1, result.size());
-        Msg msg = result.get(0);
-        assertEquals(msgId, msg.getId());
-        assertEquals(MsgRole.ASSISTANT, msg.getRole());
-        assertEquals(1, msg.getContent().size());
-        assertInstanceOf(ThinkingBlock.class, msg.getContent().get(0));
-        assertEquals("thinking content", ((ThinkingBlock) msg.getContent().get(0)).getThinking());
+        assertEquals(MsgRole.ASSISTANT, result.get(0).getRole());
+        ThinkingBlock block =
+                assertInstanceOf(ThinkingBlock.class, result.get(0).getContent().get(0));
+        assertEquals("thinking content", block.getThinking());
+    }
+
+    @Test
+    @DisplayName("Should fall back to the A2A message role when part metadata has no role")
+    void testConvertFromMessageToMsgsFallsBackToMessageRole() {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_AGENT)
+                        .parts(new TextPart("assistant reply"))
+                        .build();
+
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        assertEquals(1, result.size());
+        assertEquals(MsgRole.ASSISTANT, result.get(0).getRole());
     }
 
     @Test
@@ -407,13 +492,49 @@ class MessageConvertUtilTest {
                         List.of(userMsg, assistantMsg), taskId, contextId);
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        assertEquals(Message.Role.USER, message.getRole());
-        assertEquals(2, result.size());
-        assertEquals(MsgRole.USER, result.get(0).getRole());
-        assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
-        assertInstanceOf(ThinkingBlock.class, result.get(1).getContent().get(0));
+        assertEquals(Message.Role.ROLE_USER, message.role());
         assertEquals(
-                "checking diff", ((ThinkingBlock) result.get(1).getContent().get(0)).getThinking());
+                List.of(MsgRole.USER, MsgRole.ASSISTANT),
+                result.stream().map(Msg::getRole).toList());
+        assertInstanceOf(ThinkingBlock.class, result.get(1).getContent().get(0));
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant and tool roles in tool history round trip")
+    void testRoundTripToolHistoryPreservesRoles() {
+        Msg assistant =
+                Msg.builder()
+                        .id("assistant-tool-call")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("lookup")
+                                        .input(Map.of("query", "java"))
+                                        .build())
+                        .build();
+        Msg tool =
+                Msg.builder()
+                        .id("tool-result")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("lookup")
+                                        .output(TextBlock.builder().text("result").build())
+                                        .build())
+                        .build();
+
+        Message message =
+                MessageConvertUtil.convertFromMsgToMessage(
+                        List.of(assistant, tool), taskId, contextId);
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        assertEquals(
+                List.of(MsgRole.ASSISTANT, MsgRole.TOOL),
+                result.stream().map(Msg::getRole).toList());
+        assertInstanceOf(ToolUseBlock.class, result.get(0).getContent().get(0));
+        assertInstanceOf(ToolResultBlock.class, result.get(1).getContent().get(0));
     }
 
     @Test
@@ -429,8 +550,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -454,8 +575,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", null);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -487,8 +608,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null); // No message metadata
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null); // No message metadata
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -526,8 +647,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -560,8 +681,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -597,8 +718,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -623,5 +744,14 @@ class MessageConvertUtilTest {
         return List.of(
                 TextBlock.builder().text("text1").build(),
                 TextBlock.builder().text("text2").build());
+    }
+
+    private Msg assistantText(String id, String text) {
+        return Msg.builder()
+                .id(id)
+                .name("agent")
+                .role(MsgRole.ASSISTANT)
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .build();
     }
 }

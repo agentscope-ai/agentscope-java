@@ -16,10 +16,10 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Parser for {@link TextPart} to {@link TextBlock} or
@@ -30,18 +30,18 @@ public class TextPartParser implements PartParser<TextPart> {
     @Override
     public ContentBlock parse(TextPart part) {
         if (isThinkingBlock(part)) {
-            return ThinkingBlock.builder().thinking(part.getText()).build();
+            return ThinkingBlock.builder().thinking(part.text()).build();
         }
-        return TextBlock.builder().text(part.getText()).build();
+        return TextBlock.builder().text(part.text()).build();
     }
 
     private boolean isThinkingBlock(TextPart part) {
-        if (null == part.getMetadata()
-                || part.getMetadata().isEmpty()
-                || !part.getMetadata().containsKey(MessageConstants.BLOCK_TYPE_METADATA_KEY)) {
+        if (null == part.metadata()
+                || part.metadata().isEmpty()
+                || !part.metadata().containsKey(MessageConstants.BLOCK_TYPE_METADATA_KEY)) {
             return false;
         }
         return MessageConstants.BlockContent.TYPE_THINKING.equals(
-                part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+                part.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
     }
 }

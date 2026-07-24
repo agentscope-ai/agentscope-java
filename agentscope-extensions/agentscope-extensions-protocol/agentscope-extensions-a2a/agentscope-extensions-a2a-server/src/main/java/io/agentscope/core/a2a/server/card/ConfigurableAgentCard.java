@@ -16,12 +16,12 @@
 
 package io.agentscope.core.a2a.server.card;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.SecurityScheme;
 
 /**
  * Configurable attribute for export agent card of this agent.

@@ -27,6 +27,10 @@ EXCLUDED_KEYWORDS=("starter" "quarkus" "micronaut")
 # Test-only modules are part of the reactor but are not published runtime artifacts.
 EXCLUDED_FROM_DISTRIBUTION=("agentscope-extensions-model-e2e-tests")
 
+# Optional runtime providers that are published and managed by the BOM, but must not be
+# shaded into agentscope-all. Their infrastructure dependencies are application-owned.
+EXCLUDED_FROM_ALL=("agentscope-extensions-a2a-hitl-redis")
+
 # Two separate lists
 MODULES_FOR_ALL=()   # Non-framework extensions -> shade into agentscope-all
 MODULES_FOR_BOM=()   # All modules -> version management in BOM
@@ -47,6 +51,11 @@ is_distribution_excluded() {
 # Returns 0 (true) if module contains any of the excluded keywords
 is_excluded() {
     local module=$1
+    for excluded in "${EXCLUDED_FROM_ALL[@]}"; do
+        if [ "$module" = "$excluded" ]; then
+            return 0
+        fi
+    done
     for keyword in "${EXCLUDED_KEYWORDS[@]}"; do
         if [[ "$module" == *"$keyword"* ]]; then
             return 0  # true, is excluded
@@ -137,7 +146,7 @@ for m in "${MODULES_FOR_BOM[@]}"; do
 done
 
 echo ""
-echo "Excluded from agentscope-all or distribution checks (keywords: ${EXCLUDED_KEYWORDS[*]}; explicit: ${EXCLUDED_FROM_DISTRIBUTION[*]}):"
+echo "Excluded from agentscope-all or distribution checks (keywords: ${EXCLUDED_KEYWORDS[*]}; all-only: ${EXCLUDED_FROM_ALL[*]}; distribution: ${EXCLUDED_FROM_DISTRIBUTION[*]}):"
 for m in "${EXCLUDED_MODULES[@]}"; do
     echo "  - $m"
 done
@@ -146,11 +155,19 @@ echo ""
 # Check modules against agentscope-all and agentscope-bom
 MISSING_IN_ALL=()
 MISSING_IN_BOM=()
+FORBIDDEN_IN_ALL=()
 
 # Check agentscope-all
 for module in "${MODULES_FOR_ALL[@]}"; do
     if ! grep -q "<artifactId>${module}</artifactId>" "$ALL_POM"; then
         MISSING_IN_ALL+=("$module")
+    fi
+done
+
+# Explicit optional providers must remain separate even if someone later adds them manually.
+for module in "${EXCLUDED_FROM_ALL[@]}"; do
+    if grep -q "<artifactId>${module}</artifactId>" "$ALL_POM"; then
+        FORBIDDEN_IN_ALL+=("$module")
     fi
 done
 
@@ -183,6 +200,14 @@ if [ ${#MISSING_IN_ALL[@]} -gt 0 ]; then
     EXIT_CODE=1
 fi
 
+if [ ${#FORBIDDEN_IN_ALL[@]} -gt 0 ]; then
+    echo "=========================================="
+    echo "ERROR: Optional providers must not be shaded into $ALL_POM:"
+    echo "=========================================="
+    printf '  - %s\n' "${FORBIDDEN_IN_ALL[@]}"
+    EXIT_CODE=1
+fi
+
 if [ ${#MISSING_IN_BOM[@]} -gt 0 ]; then
     echo "=========================================="
     echo "ERROR: Missing in $BOM_POM:"
@@ -211,4 +236,3 @@ if [ $EXIT_CODE -eq 0 ]; then
 fi
 
 exit $EXIT_CODE
-

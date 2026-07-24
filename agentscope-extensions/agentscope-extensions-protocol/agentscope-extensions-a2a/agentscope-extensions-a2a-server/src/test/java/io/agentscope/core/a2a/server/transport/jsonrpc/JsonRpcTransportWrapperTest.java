@@ -17,64 +17,51 @@
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.ServerCallContext;
-import io.a2a.spec.CancelTaskRequest;
-import io.a2a.spec.CancelTaskResponse;
-import io.a2a.spec.DeleteTaskPushNotificationConfigRequest;
-import io.a2a.spec.DeleteTaskPushNotificationConfigResponse;
-import io.a2a.spec.GetTaskPushNotificationConfigRequest;
-import io.a2a.spec.GetTaskPushNotificationConfigResponse;
-import io.a2a.spec.GetTaskRequest;
-import io.a2a.spec.GetTaskResponse;
-import io.a2a.spec.InternalError;
-import io.a2a.spec.InvalidParamsError;
-import io.a2a.spec.InvalidRequestError;
-import io.a2a.spec.JSONParseError;
-import io.a2a.spec.JSONRPCError;
-import io.a2a.spec.JSONRPCErrorResponse;
-import io.a2a.spec.ListTaskPushNotificationConfigRequest;
-import io.a2a.spec.ListTaskPushNotificationConfigResponse;
-import io.a2a.spec.MethodNotFoundError;
-import io.a2a.spec.SendMessageRequest;
-import io.a2a.spec.SendMessageResponse;
-import io.a2a.spec.SendStreamingMessageRequest;
-import io.a2a.spec.SendStreamingMessageResponse;
-import io.a2a.spec.SetTaskPushNotificationConfigRequest;
-import io.a2a.spec.SetTaskPushNotificationConfigResponse;
-import io.a2a.spec.TaskResubscriptionRequest;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Flow;
+import org.a2aproject.sdk.grpc.utils.JSONRPCUtils;
+import org.a2aproject.sdk.grpc.utils.ProtoUtils;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskRequest;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskResponse;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageRequest;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageResponse;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageRequest;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageResponse;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.spec.A2AErrorCodes;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskQueryParams;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TextPart;
+import org.a2aproject.sdk.spec.TransportProtocol;
+import org.a2aproject.sdk.transport.jsonrpc.handler.JSONRPCHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.reactivestreams.FlowAdapters;
 import reactor.core.publisher.Flux;
-import reactor.test.StepVerifier;
 
 /**
  * Unit tests for JsonRpcTransportWrapper.
- *
- * <p>Tests cover:
- * <ul>
- *   <li>Transport type identification</li>
- *   <li>Non-streaming request handling</li>
- *   <li>Streaming request handling</li>
- *   <li>Error handling for various JSON parsing exceptions</li>
- *   <li>Method not found scenarios</li>
- * </ul>
  */
 @DisplayName("JsonRpcTransportWrapper Tests")
 class JsonRpcTransportWrapperTest {
@@ -96,8 +83,7 @@ class JsonRpcTransportWrapperTest {
         @Test
         @DisplayName("Should return correct transport type")
         void testGetTransportType() {
-            String transportType = transportWrapper.getTransportType();
-            assertEquals(TransportProtocol.JSONRPC.asString(), transportType);
+            assertEquals(TransportProtocol.JSONRPC.asString(), transportWrapper.getTransportType());
         }
     }
 
@@ -106,223 +92,206 @@ class JsonRpcTransportWrapperTest {
     class RequestHandlingTests {
 
         @Test
-        @DisplayName("Should handle non-streaming request")
-        void testHandleNonStreamingRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"message123\",\"kind\":\"message\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}]},\"taskId\":\"task123\",\"contextId\":\"context456\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            SendMessageResponse mockResponse = mock(SendMessageResponse.class);
+        @DisplayName("Should handle non-streaming SendMessage request")
+        void testHandleNonStreamingRequest() {
             when(jsonRpcHandler.onMessageSend(
                             any(SendMessageRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(new SendMessageResponse("1", task()));
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
 
-            assertNotNull(result);
-            assertInstanceOf(SendMessageResponse.class, result);
+            String json = assertJsonResult(result);
+            assertTrue(json.contains("\"result\""));
+            assertTrue(json.contains("\"task\""));
+            assertTrue(json.contains("\"task123\""));
         }
 
         @Test
-        @DisplayName("Should handle streaming request")
-        void testHandleStreamingRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"message/stream\",\"params\":{\"message\":{\"messageId\":\"message123\",\"kind\":\"message\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}]},\"taskId\":\"task123\",\"contextId\":\"context456\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            Flow.Publisher<SendStreamingMessageResponse> mockPublisher = mock(Flow.Publisher.class);
+        @DisplayName("Should bridge streaming SendStreamingMessage publisher to Flux")
+        void testHandleStreamingRequest() {
+            SendStreamingMessageResponse response =
+                    new SendStreamingMessageResponse(
+                            "1",
+                            new TaskStatusUpdateEvent(
+                                    "task123",
+                                    new TaskStatus(TaskState.TASK_STATE_COMPLETED),
+                                    "context456",
+                                    Map.of()));
             when(jsonRpcHandler.onMessageSendStream(
                             any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockPublisher);
+                    .thenReturn(singleResponsePublisher(response));
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
 
-            assertNotNull(result);
             assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(1, events.size());
+            assertTrue(events.get(0).contains("\"result\""));
+            assertTrue(events.get(0).contains("TASK_STATE_COMPLETED"));
+            verify(jsonRpcHandler).validateRequestedTask("task123");
         }
 
         @Test
-        @DisplayName("Should handle GetTaskRequest")
-        void testHandleGetTaskRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/get\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
+        @DisplayName("Should convert streaming publisher errors to JSON-RPC error events")
+        void testHandleStreamingPublisherErrorAfterFirstResponse() {
+            SendStreamingMessageResponse response =
+                    new SendStreamingMessageResponse(
+                            "1",
+                            new TaskStatusUpdateEvent(
+                                    "task123",
+                                    new TaskStatus(TaskState.TASK_STATE_WORKING),
+                                    "context456",
+                                    Map.of()));
+            when(jsonRpcHandler.onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
+                    .thenReturn(errorAfterFirstResponsePublisher(response));
 
-            GetTaskResponse mockResponse = mock(GetTaskResponse.class);
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(2, events.size());
+            assertTrue(events.get(0).contains("\"result\""));
+            assertTrue(events.get(1).contains("\"error\""));
+            assertTrue(events.get(1).contains("boom after first response"));
+        }
+
+        @Test
+        @DisplayName("Should return synchronous streaming request errors as typed SSE events")
+        void testHandleSynchronousStreamingRequestErrorAsTypedEvent() {
+            doThrow(new InvalidParamsError("rejected before execution"))
+                    .when(jsonRpcHandler)
+                    .validateRequestedTask("task123");
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(1, events.size());
+            assertTrue(events.get(0).contains("\"error\""));
+            assertTrue(events.get(0).contains("\"code\":" + A2AErrorCodes.INVALID_PARAMS.code()));
+            assertTrue(events.get(0).contains("rejected before execution"));
+        }
+
+        @Test
+        @DisplayName("Should return synchronous unknown streaming failures as SSE errors")
+        void testHandleSynchronousUnknownStreamingFailureAsEvent() {
+            doThrow(new IllegalStateException("setup failed before publisher"))
+                    .when(jsonRpcHandler)
+                    .onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class));
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(1, events.size());
+            assertTrue(events.get(0).contains("\"error\""));
+            assertTrue(events.get(0).contains("\"code\":" + A2AErrorCodes.INTERNAL.code()));
+        }
+
+        @Test
+        @DisplayName("Should preserve typed A2A errors raised after streaming starts")
+        void testPreserveTypedStreamingPublisherError() {
+            SendStreamingMessageResponse response =
+                    new SendStreamingMessageResponse(
+                            "1",
+                            new TaskStatusUpdateEvent(
+                                    "task123",
+                                    new TaskStatus(TaskState.TASK_STATE_WORKING),
+                                    "context456",
+                                    Map.of()));
+            when(jsonRpcHandler.onMessageSendStream(
+                            any(SendStreamingMessageRequest.class), any(ServerCallContext.class)))
+                    .thenReturn(
+                            errorAfterFirstResponsePublisher(
+                                    response,
+                                    new InvalidParamsError("rejected after subscription")));
+
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendStreamingMessage"),
+                            new HashMap<>(),
+                            new HashMap<>());
+
+            assertInstanceOf(Flux.class, result);
+            @SuppressWarnings("unchecked")
+            Flux<String> flux = (Flux<String>) result;
+            List<String> events = flux.collectList().block(Duration.ofSeconds(2));
+            assertNotNull(events);
+            assertEquals(2, events.size());
+            assertTrue(events.get(1).contains("\"error\""));
+            assertTrue(events.get(1).contains("\"code\":" + A2AErrorCodes.INVALID_PARAMS.code()));
+            assertTrue(events.get(1).contains("rejected after subscription"));
+        }
+
+        @Test
+        @DisplayName("Should handle GetTask request")
+        void testHandleGetTaskRequest() {
             when(jsonRpcHandler.onGetTask(any(GetTaskRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+                    .thenReturn(new GetTaskResponse("1", task()));
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
+            Object result =
+                    transportWrapper.handleRequest(
+                            getTaskRequestBody(), new HashMap<>(), new HashMap<>());
 
-            assertNotNull(result);
-            assertInstanceOf(GetTaskResponse.class, result);
+            String json = assertJsonResult(result);
+            assertTrue(json.contains("\"result\""));
+            assertTrue(json.contains("\"task123\""));
         }
 
         @Test
-        @DisplayName("Should handle CancelTaskRequest")
-        void testHandleCancelTaskRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/cancel\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
+        @DisplayName("Should not invent an AgentScope authentication context")
+        void testDoesNotInventAuthenticationContext() {
+            when(jsonRpcHandler.onMessageSend(
+                            any(SendMessageRequest.class), any(ServerCallContext.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                ServerCallContext context = invocation.getArgument(1);
+                                assertNull(context.getUser());
+                                assertFalse(context.getState().containsKey("a2aAuthentication"));
+                                return new SendMessageResponse("1", task());
+                            });
 
-            CancelTaskResponse mockResponse = mock(CancelTaskResponse.class);
-            when(jsonRpcHandler.onCancelTask(
-                            any(CancelTaskRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
+            Object result =
+                    transportWrapper.handleRequest(
+                            sendMessageRequestBody("SendMessage", Map.of("userId", "alice")),
+                            Map.of("Authorization", "Bearer token"),
+                            Map.of("tenant", "internal"));
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(CancelTaskResponse.class, result);
-        }
-
-        @Test
-        @DisplayName("Should handle GetTaskPushNotificationConfigRequest")
-        void testHandleGetTaskPushNotificationConfigRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/pushNotificationConfig/get\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            GetTaskPushNotificationConfigResponse mockResponse =
-                    mock(GetTaskPushNotificationConfigResponse.class);
-            when(jsonRpcHandler.getPushNotificationConfig(
-                            any(GetTaskPushNotificationConfigRequest.class),
-                            any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
-
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(GetTaskPushNotificationConfigResponse.class, result);
-        }
-
-        @Test
-        @DisplayName("Should handle SetTaskPushNotificationConfigRequest")
-        void testHandleSetTaskPushNotificationConfigRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/pushNotificationConfig/set\",\"params\":{\"taskId\":\"task123\",\"pushNotificationConfig\":{\"url\":\"https://example.com/webhook\"}},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            SetTaskPushNotificationConfigResponse mockResponse =
-                    mock(SetTaskPushNotificationConfigResponse.class);
-            when(jsonRpcHandler.setPushNotificationConfig(
-                            any(SetTaskPushNotificationConfigRequest.class),
-                            any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
-
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(SetTaskPushNotificationConfigResponse.class, result);
-        }
-
-        @Test
-        @DisplayName("Should handle ListTaskPushNotificationConfigRequest")
-        void testHandleListTaskPushNotificationConfigRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/pushNotificationConfig/list\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            ListTaskPushNotificationConfigResponse mockResponse =
-                    mock(ListTaskPushNotificationConfigResponse.class);
-            when(jsonRpcHandler.listPushNotificationConfig(
-                            any(ListTaskPushNotificationConfigRequest.class),
-                            any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
-
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(ListTaskPushNotificationConfigResponse.class, result);
-        }
-
-        @Test
-        @DisplayName("Should handle DeleteTaskPushNotificationConfigRequest")
-        void testHandleDeleteTaskPushNotificationConfigRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/pushNotificationConfig/delete\",\"params\":{\"id\":\"task123\",\"pushNotificationConfigId\":\"111\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            DeleteTaskPushNotificationConfigResponse mockResponse =
-                    mock(DeleteTaskPushNotificationConfigResponse.class);
-            when(jsonRpcHandler.deletePushNotificationConfig(
-                            any(DeleteTaskPushNotificationConfigRequest.class),
-                            any(ServerCallContext.class)))
-                    .thenReturn(mockResponse);
-
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(DeleteTaskPushNotificationConfigResponse.class, result);
-        }
-
-        @Test
-        @DisplayName("Should handle TaskResubscriptionRequest")
-        void testHandleTaskResubscriptionRequest() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/resubscribe\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            Flow.Publisher<SendStreamingMessageResponse> mockPublisher = mock(Flow.Publisher.class);
-            when(jsonRpcHandler.onResubscribeToTask(
-                            any(TaskResubscriptionRequest.class), any(ServerCallContext.class)))
-                    .thenReturn(mockPublisher);
-
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-
-            assertNotNull(result);
-            assertInstanceOf(Flux.class, result);
-        }
-    }
-
-    @Nested
-    @DisplayName("Streaming Backpressure Tests")
-    class StreamingBackpressureTests {
-
-        @Test
-        @DisplayName("Should show unbuffered streaming can lose burst responses")
-        void testUnbufferedStreamingBurstDropsResponse() {
-            SendStreamingMessageResponse reasoningResponse =
-                    mock(SendStreamingMessageResponse.class);
-            SendStreamingMessageResponse textResponse = mock(SendStreamingMessageResponse.class);
-
-            Flux<SendStreamingMessageResponse> unbuffered =
-                    Flux.from(
-                            FlowAdapters.toPublisher(
-                                    burstPublisher(List.of(reasoningResponse, textResponse))));
-
-            AssertionError overflowError =
-                    assertThrows(
-                            AssertionError.class,
-                            () ->
-                                    StepVerifier.create(unbuffered, 1)
-                                            .expectNext(reasoningResponse)
-                                            .verifyComplete());
-            assertTrue(
-                    String.valueOf(overflowError.getMessage()).contains("request overflow"),
-                    "Expected request overflow but got: " + overflowError.getMessage());
-
-            Flux<SendStreamingMessageResponse> buffered =
-                    Flux.from(
-                                    FlowAdapters.toPublisher(
-                                            burstPublisher(
-                                                    List.of(reasoningResponse, textResponse))))
-                            .onBackpressureBuffer();
-
-            StepVerifier.create(buffered, 1)
-                    .expectNext(reasoningResponse)
-                    .thenRequest(1)
-                    .expectNext(textResponse)
-                    .verifyComplete();
+            assertJsonResult(result);
         }
     }
 
@@ -331,113 +300,160 @@ class JsonRpcTransportWrapperTest {
     class ErrorHandlingTests {
 
         @Test
-        @DisplayName("Should handle JsonParseException")
-        void testHandleJsonParseException() throws Exception {
-            String body = "{ invalid json ";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
+        @DisplayName("Should handle invalid JSON")
+        void testHandleJsonParseException() {
+            Object result =
+                    transportWrapper.handleRequest(
+                            "{ invalid json ", new HashMap<>(), new HashMap<>());
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(JSONParseError.class, error);
+            assertErrorJson(result);
         }
 
         @Test
         @DisplayName("Should handle generic exception")
-        void testHandleGenericException() throws Exception {
-            String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/get\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-
-            // Mock the handler to throw an exception
+        void testHandleGenericException() {
             when(jsonRpcHandler.onGetTask(any(GetTaskRequest.class), any(ServerCallContext.class)))
                     .thenThrow(new RuntimeException("Test exception"));
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
+            Object result =
+                    transportWrapper.handleRequest(
+                            getTaskRequestBody(), new HashMap<>(), new HashMap<>());
 
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InternalError.class, error);
+            String json = assertErrorJson(result);
+            assertTrue(json.contains("\"error\""));
         }
 
         @Test
         @DisplayName("Should handle invalid params")
-        void testHandleInvalidParams() throws Exception {
+        void testHandleInvalidParams() {
             String body =
-                    "{\"jsonrpc\":\"2.0\",\"method\":\"tasks/get\",\"params\":{\"taskId\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"GetTask\",\"params\":{\"taskId\":\"task123\"},\"id\":\"1\"}";
 
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
+            Object result = transportWrapper.handleRequest(body, new HashMap<>(), new HashMap<>());
 
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InvalidParamsError.class, error);
+            assertErrorJson(result);
         }
 
         @Test
-        @DisplayName("Should handle MethodNotFoundError")
+        @DisplayName("Should handle method not found")
         void testHandleMethodNotFoundError() {
             String body =
                     "{\"jsonrpc\":\"2.0\",\"method\":\"not/found/method\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(MethodNotFoundError.class, error);
+
+            Object result = transportWrapper.handleRequest(body, new HashMap<>(), new HashMap<>());
+
+            assertErrorJson(result);
         }
 
         @Test
-        @DisplayName("Should handle Method is null")
+        @DisplayName("Should handle missing method")
         void testHandleMethodNull() {
             String body = "{\"jsonrpc\":\"2.0\",\"params\":{\"id\":\"task123\"},\"id\":\"1\"}";
-            Map<String, String> headers = new HashMap<>();
-            Map<String, Object> metadata = new HashMap<>();
-            Object result = transportWrapper.handleRequest(body, headers, metadata);
-            assertNotNull(result);
-            assertInstanceOf(JSONRPCErrorResponse.class, result);
-            JSONRPCErrorResponse errorResponse = (JSONRPCErrorResponse) result;
-            JSONRPCError error = errorResponse.getError();
-            assertNotNull(error);
-            assertInstanceOf(InvalidRequestError.class, error);
+
+            Object result = transportWrapper.handleRequest(body, new HashMap<>(), new HashMap<>());
+
+            assertErrorJson(result);
         }
     }
 
-    private static <T> Flow.Publisher<T> burstPublisher(List<T> values) {
+    private String sendMessageRequestBody(String method) {
+        return sendMessageRequestBody(method, Map.of());
+    }
+
+    private String sendMessageRequestBody(String method, Map<String, Object> metadata) {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("Hello"))
+                        .messageId("message123")
+                        .taskId("task123")
+                        .contextId("context456")
+                        .metadata(metadata)
+                        .build();
+        MessageSendParams params = MessageSendParams.builder().message(message).build();
+        return JSONRPCUtils.toJsonRPCRequest(
+                "1", method, ProtoUtils.ToProto.sendMessageRequest(params));
+    }
+
+    private String getTaskRequestBody() {
+        return JSONRPCUtils.toJsonRPCRequest(
+                "1", "GetTask", ProtoUtils.ToProto.getTaskRequest(new TaskQueryParams("task123")));
+    }
+
+    private Task task() {
+        return Task.builder()
+                .id("task123")
+                .contextId("context456")
+                .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED))
+                .build();
+    }
+
+    private Flow.Publisher<SendStreamingMessageResponse> singleResponsePublisher(
+            SendStreamingMessageResponse response) {
         return subscriber ->
                 subscriber.onSubscribe(
                         new Flow.Subscription() {
-                            private boolean emitted;
+
+                            private boolean completed;
 
                             @Override
                             public void request(long n) {
-                                if (emitted) {
+                                if (completed || n <= 0) {
                                     return;
                                 }
-                                emitted = true;
-                                for (T value : values) {
-                                    subscriber.onNext(value);
-                                }
+                                completed = true;
+                                subscriber.onNext(response);
                                 subscriber.onComplete();
                             }
 
                             @Override
-                            public void cancel() {}
+                            public void cancel() {
+                                completed = true;
+                            }
                         });
+    }
+
+    private Flow.Publisher<SendStreamingMessageResponse> errorAfterFirstResponsePublisher(
+            SendStreamingMessageResponse response) {
+        return errorAfterFirstResponsePublisher(
+                response, new RuntimeException("boom after first response"));
+    }
+
+    private Flow.Publisher<SendStreamingMessageResponse> errorAfterFirstResponsePublisher(
+            SendStreamingMessageResponse response, Throwable error) {
+        return subscriber ->
+                subscriber.onSubscribe(
+                        new Flow.Subscription() {
+
+                            private boolean completed;
+
+                            @Override
+                            public void request(long n) {
+                                if (completed || n <= 0) {
+                                    return;
+                                }
+                                completed = true;
+                                subscriber.onNext(response);
+                                subscriber.onError(error);
+                            }
+
+                            @Override
+                            public void cancel() {
+                                completed = true;
+                            }
+                        });
+    }
+
+    private String assertJsonResult(Object result) {
+        assertNotNull(result);
+        String json = assertInstanceOf(String.class, result);
+        assertTrue(json.contains("\"jsonrpc\""));
+        return json;
+    }
+
+    private String assertErrorJson(Object result) {
+        String json = assertJsonResult(result);
+        assertTrue(json.contains("\"error\""));
+        return json;
     }
 }

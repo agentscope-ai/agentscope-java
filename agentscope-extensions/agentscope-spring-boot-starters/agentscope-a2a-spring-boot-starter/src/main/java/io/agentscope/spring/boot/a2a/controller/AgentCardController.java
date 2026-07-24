@@ -16,8 +16,8 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
