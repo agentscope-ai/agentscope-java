@@ -72,6 +72,7 @@ import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
 import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.SuggestionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
@@ -1072,6 +1073,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         AbstractFilesystem abstractFilesystem;
         boolean leafSubagent = false;
         boolean agentTracingLogEnabled = true;
+        boolean suggestionsEnabled = false;
+        int suggestionMaxItems = 4;
         CompactionConfig compactionConfig = CompactionConfig.builder().build();
         MemoryConfig memoryConfig = MemoryConfig.defaults();
         ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
@@ -1771,6 +1774,30 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Enables the post-conversation {@link SuggestionMiddleware}, which emits a single
+         * {@link io.agentscope.core.event.SuggestionResultEvent} between
+         * {@link io.agentscope.core.event.AgentResultEvent} and
+         * {@link io.agentscope.core.event.AgentEndEvent} so that front-ends can render follow-up
+         * suggestions after each assistant reply. Default is {@code false}.
+         *
+         * <p>The middleware reuses the primary agent {@link Model} configured via
+         * {@link #model(Model)} together with the built-in default prompt template.
+         */
+        public Builder enableSuggestions(boolean enabled) {
+            this.suggestionsEnabled = enabled;
+            return this;
+        }
+
+        /**
+         * Caps the number of suggestions emitted per turn. Values {@code <= 0} restore the
+         * middleware's built-in default.
+         */
+        public Builder suggestionMaxItems(int max) {
+            this.suggestionMaxItems = max;
+            return this;
+        }
+
         /** Skips registration of {@link FilesystemTool}. */
         public Builder disableFilesystemTools() {
             this.disableFilesystemTools = true;
@@ -2223,6 +2250,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
                     inner.middleware(compactionHook);
                 }
+            }
+            if (suggestionsEnabled && model != null) {
+                inner.middleware(new SuggestionMiddleware(model, suggestionMaxItems));
             }
             if (!disableToolResultEviction && toolResultEvictionConfig != null) {
                 inner.middleware(
