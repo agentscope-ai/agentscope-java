@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -121,6 +122,24 @@ class HarnessAgentTest {
 
         assertTrue(
                 agent.getWorkspaceManager().readAgentsMd(RuntimeContext.empty()).contains(marker));
+    }
+
+    @Test
+    void close_withMemoryHooksDisabled_doesNotThrow() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
+                        .build();
+
+        // No MemoryMaintenanceMiddleware is installed when memory hooks are disabled, so
+        // close() must tolerate a null reference instead of NPEing.
+        assertDoesNotThrow(agent::close);
     }
 
     @Test
