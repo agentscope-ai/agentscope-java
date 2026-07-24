@@ -37,7 +37,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
-For compatible endpoints, set `baseUrl(...)` and the model name expected by that service.
+For generic compatible endpoints, set `baseUrl(...)` and the model name expected by that service. For DeepSeek, prefer the dedicated `deepseek:<model>` registry id so AgentScope applies the DeepSeek base URL, `DEEPSEEK_API_KEY`, and DeepSeek formatter defaults. See [DeepSeek](deepseek.md).
 
 ## Spring Boot
 

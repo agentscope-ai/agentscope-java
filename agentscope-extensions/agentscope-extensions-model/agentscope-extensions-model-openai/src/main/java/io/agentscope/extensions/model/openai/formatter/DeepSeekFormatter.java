@@ -41,8 +41,10 @@ import java.util.List;
  *     .build();
  * }</pre>
  *
+ * @deprecated use {@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter}.
  * @see <a href="https://api-docs.deepseek.com/guides/thinking_mode#tool-calls">DeepSeek Thinking Mode</a>
  */
+@Deprecated
 public class DeepSeekFormatter extends OpenAIChatFormatter {
 
     private final boolean appendEmptyUserIfEndsWithAssistant;

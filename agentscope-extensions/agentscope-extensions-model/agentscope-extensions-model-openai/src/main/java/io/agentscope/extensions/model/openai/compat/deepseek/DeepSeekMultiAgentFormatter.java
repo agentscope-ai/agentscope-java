@@ -13,19 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.model.openai.formatter;
+package io.agentscope.extensions.model.openai.compat.deepseek;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
+import io.agentscope.extensions.model.openai.formatter.OpenAIMultiAgentFormatter;
 import java.util.List;
 
 /**
- * Multi-agent formatter for DeepSeek Chat models.
+ * Multi-agent formatter for DeepSeek Chat models (deepseek-v4-flash, deepseek-v4-pro).
  *
  * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with DeepSeek-specific handling:
  * <ul>
- *   <li>No name field in messages (returns HTTP 400 if present)</li>
- *   <li>Does NOT support strict parameter in tool definitions</li>
+ *   <li>System/user/assistant {@code name} fields are allowed</li>
+ *   <li>System messages are allowed</li>
+ *   <li>Omits strict parameter in tool definitions</li>
  *   <li>reasoning_content handling for thinking mode</li>
  * </ul>
  *
@@ -33,15 +37,12 @@ import java.util.List;
  * <pre>{@code
  * OpenAIChatModel.builder()
  *     .formatter(new DeepSeekMultiAgentFormatter())
- *     .modelName("deepseek-chat")
- *     .baseUrl("https://api.deepseek.com/v1")
+ *     .modelName("deepseek-v4-pro")
+ *     .baseUrl("https://api.deepseek.com")
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
- *
- * @deprecated use {@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekMultiAgentFormatter}.
  */
-@Deprecated
 public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     private final boolean appendEmptyUserIfEndsWithAssistant;
@@ -92,7 +93,25 @@ public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     }
 
     @Override
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        if (msg.getRole() == MsgRole.SYSTEM && !msg.hasContentBlocks(ToolResultBlock.class)) {
+            return convertSystemMessage(msg);
+        }
+        return super.convertMessage(msg, hasMedia);
+    }
+
+    @Override
     protected boolean supportsStrict() {
         return false;
+    }
+
+    private OpenAIMessage convertSystemMessage(Msg msg) {
+        String content = extractTextContent(msg);
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role("system").content(content != null ? content : "");
+        if (msg.getName() != null) {
+            builder.name(msg.getName());
+        }
+        return builder.build();
     }
 }
