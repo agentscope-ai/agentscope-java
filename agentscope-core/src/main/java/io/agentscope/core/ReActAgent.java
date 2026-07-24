@@ -1960,8 +1960,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     options);
                                 }
                                 List<Msg> modelInput =
-                                        prependSystemMsg(
-                                                event.getInputMessages(), event.getSystemMessage());
+                                        MessageUtils.normalizeToolCallResults(
+                                                prependSystemMsg(
+                                                        event.getInputMessages(),
+                                                        event.getSystemMessage()));
                                 List<ToolSchema> tools =
                                         toolkit.getToolSchemas(
                                                 state.getToolContext().getActivatedGroups());
@@ -3084,9 +3086,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             preSummaryEvent -> {
                                 List<Msg> effectiveMessages =
-                                        prependSystemMsg(
-                                                preSummaryEvent.getInputMessages(),
-                                                preSummaryEvent.getSystemMessage());
+                                        MessageUtils.normalizeToolCallResults(
+                                                prependSystemMsg(
+                                                        preSummaryEvent.getInputMessages(),
+                                                        preSummaryEvent.getSystemMessage()));
                                 GenerateOptions effectiveOptions =
                                         preSummaryEvent.getEffectiveGenerateOptions();
 
