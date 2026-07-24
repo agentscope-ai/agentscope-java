@@ -545,7 +545,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             } else {
                 Files.delete(resolved);
             }
-            return WriteResult.ok(path);
+            return WriteResult.ok(absoluteResultPath(resolved));
         } catch (IOException e) {
             return WriteResult.fail("Error deleting '" + path + "': " + e.getMessage());
         }
