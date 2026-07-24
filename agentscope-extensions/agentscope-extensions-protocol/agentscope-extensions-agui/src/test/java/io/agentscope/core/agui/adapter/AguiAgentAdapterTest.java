@@ -701,6 +701,48 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testToolResultMetadataPropagatesToToolCallResult() {
+        Msg toolResultMsg =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(TextBlock.builder().text("4").build())
+                                        .metadata(Map.of("source", "meta_tool", "cost", 1))
+                                        .build())
+                        .build();
+
+        Event toolResultEvent = new Event(EventType.TOOL_RESULT, toolResultMsg, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolResultEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Calculate")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        AguiEvent.ToolCallResult toolResult =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallResult)
+                        .map(e -> (AguiEvent.ToolCallResult) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResult, "Should have ToolCallResult");
+        assertEquals("tc-1", toolResult.toolCallId());
+        Map<String, Object> expected = Map.of("source", "meta_tool", "cost", 1);
+        assertEquals(expected, toolResult.metadata());
+    }
+
+    @Test
     void testRunWithAgentError() {
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.error(new RuntimeException("Agent error")));

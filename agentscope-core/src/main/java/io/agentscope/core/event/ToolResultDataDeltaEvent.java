@@ -18,6 +18,7 @@ package io.agentscope.core.event;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.message.ContentBlock;
+import java.util.Map;
 
 public class ToolResultDataDeltaEvent extends AgentEvent {
 
@@ -33,12 +34,27 @@ public class ToolResultDataDeltaEvent extends AgentEvent {
             @JsonProperty("replyId") String replyId,
             @JsonProperty("toolCallId") String toolCallId,
             @JsonProperty("toolCallName") String toolCallName,
-            @JsonProperty("data") ContentBlock data) {
+            @JsonProperty("data") ContentBlock data,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
         this.data = data;
+        this.withMetadata(metadata);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not provide metadata.
+     */
+    public ToolResultDataDeltaEvent(
+            String id,
+            String createdAt,
+            String replyId,
+            String toolCallId,
+            String toolCallName,
+            ContentBlock data) {
+        this(id, createdAt, replyId, toolCallId, toolCallName, data, null);
     }
 
     public ToolResultDataDeltaEvent(
