@@ -22,13 +22,20 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +53,25 @@ import org.slf4j.LoggerFactory;
 public class LocalFilesystemWithShell extends LocalFilesystem implements AbstractSandboxFilesystem {
 
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystemWithShell.class);
+
+    private static final int STREAM_DRAIN_TIMEOUT_SECONDS = 5;
+    private static final int TIMEOUT_STREAM_DRAIN_SECONDS = 1;
+    private static final AtomicInteger STREAM_READER_THREAD_ID = new AtomicInteger();
+
+    /**
+     * Shared cached pool for asynchronous stream reading, matching {@code ShellCommandTool}.
+     */
+    private static final ExecutorService STREAM_READER_POOL =
+            Executors.newCachedThreadPool(
+                    runnable -> {
+                        Thread thread =
+                                new Thread(
+                                        runnable,
+                                        "local-filesystem-shell-stream-reader-"
+                                                + STREAM_READER_THREAD_ID.incrementAndGet());
+                        thread.setDaemon(true);
+                        return thread;
+                    });
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
@@ -250,7 +276,6 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         if (timeout <= 0) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
         }
-
         this.defaultTimeout = timeout;
         this.maxOutputBytes = maxOutputBytes;
         this.sandboxId = "local-" + UUID.randomUUID().toString().substring(0, 8);
@@ -316,6 +341,10 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             throw new IllegalArgumentException("timeout must be positive, got " + effectiveTimeout);
         }
 
+        Process proc = null;
+        Future<String> stdoutFuture = null;
+        Future<String> stderrFuture = null;
+
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             String osName = System.getProperty("os.name").toLowerCase();
@@ -331,17 +360,21 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 pb.environment().putAll(env);
             }
 
-            Process proc = pb.start();
+            proc = pb.start();
+            Process startedProc = proc;
+            stdoutFuture =
+                    STREAM_READER_POOL.submit(() -> readStream(startedProc.getInputStream()));
+            stderrFuture =
+                    STREAM_READER_POOL.submit(() -> readStream(startedProc.getErrorStream()));
 
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
 
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
             if (!finished) {
                 proc.destroyForcibly();
+                // Allow readers to observe EOF before cleanup, while preserving the existing
+                // timeout response format.
+                getOutputWithTimeout(stdoutFuture, TIMEOUT_STREAM_DRAIN_SECONDS, TimeUnit.SECONDS);
+                getOutputWithTimeout(stderrFuture, TIMEOUT_STREAM_DRAIN_SECONDS, TimeUnit.SECONDS);
                 String msg;
                 if (timeoutSeconds != null) {
                     msg =
@@ -358,6 +391,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 }
                 return new ExecuteResponse(msg, 124, false);
             }
+
+            String stdout =
+                    getOutputWithTimeout(
+                            stdoutFuture, STREAM_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            String stderr =
+                    getOutputWithTimeout(
+                            stderrFuture, STREAM_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             StringBuilder output = new StringBuilder();
             if (stdout != null && !stdout.isEmpty()) {
@@ -404,6 +444,43 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                             + e.getMessage(),
                     1,
                     false);
+        } finally {
+            if (proc != null && proc.isAlive()) {
+                proc.destroyForcibly();
+            }
+            cancelStreamReader(stdoutFuture);
+            cancelStreamReader(stderrFuture);
+        }
+    }
+
+    private static String getOutputWithTimeout(
+            Future<String> future, long timeout, TimeUnit timeUnit) {
+        try {
+            return future.get(timeout, timeUnit);
+        } catch (TimeoutException e) {
+            log.warn("Timeout waiting for process stream reader to complete");
+            cancelStreamReader(future);
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for process stream reader");
+            cancelStreamReader(future);
+            return "";
+        } catch (ExecutionException e) {
+            log.warn("Failed to read process output", e.getCause());
+            return "";
+        }
+    }
+
+    private static String readStream(InputStream stream) throws IOException {
+        try (InputStream input = stream) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void cancelStreamReader(Future<String> future) {
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
         }
     }
 
