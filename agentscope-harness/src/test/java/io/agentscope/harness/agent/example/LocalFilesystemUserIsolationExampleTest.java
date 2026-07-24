@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -65,6 +66,16 @@ import reactor.core.publisher.Flux;
 class LocalFilesystemUserIsolationExampleTest {
 
     @TempDir Path workspace;
+
+    /**
+     * Allow child processes (LocalFilesystemWithShell) to fully terminate and release
+     * file locks on the temp workspace before JUnit attempts cleanup.
+     */
+    @AfterEach
+    void tearDown() throws InterruptedException {
+        // Wait for background shell processes to release file handles
+        Thread.sleep(100);
+    }
 
     /**
      * Writes MEMORY.md as alice, verifies it lands under {@code workspace/alice/MEMORY.md},

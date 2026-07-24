@@ -70,10 +70,13 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws InterruptedException {
         try {
             if (parent != null) {
                 parent.close();
+                // Allow child processes/threads spawned by agent_spawn tool calls
+                // to fully terminate and release file locks on @TempDir directories.
+                Thread.sleep(100);
             }
         } finally {
             if (previousStateHome != null) {

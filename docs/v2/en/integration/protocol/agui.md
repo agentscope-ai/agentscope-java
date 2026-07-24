@@ -1,6 +1,6 @@
 # AG-UI
 
-`agentscope-extensions-agui` converts AgentScope event streams into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs (Vercel AG-UI, custom chat UIs) can render the Agent's runtime — text, tool calls, and reasoning (ThinkingBlock).
+`agentscope-extensions-agui` consumes the 2.0 fine-grained event stream exposed by `ReActAgent.streamEvents(...)` and converts it into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs (Vercel AG-UI, custom chat UIs) can render the Agent's runtime — text, tool calls, and reasoning (ThinkingBlock).
 
 ## When to use
 
@@ -31,22 +31,22 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
+AguiAgentAdapter adapter = new AguiAgentAdapter(reactAgent, config);
 
 // Events you'd ship to the front end via SSE
 Flux<AguiEvent> events = adapter.run(runAgentInput);
 ```
 
-The front end provides `runAgentInput` (containing `threadId`, `runId`, `messages`, etc.). The adapter converts messages, calls the Agent's streaming API, and maps the events to AG-UI.
+`reactAgent` must be a `ReActAgent` — the adapter consumes its 2.0 fine-grained event stream via `ReActAgent.streamEvents(...)`. The front end provides `runAgentInput` (containing `threadId`, `runId`, `messages`, etc.). The adapter converts messages, invokes `streamEvents`, and maps the resulting `AgentEvent`s to AG-UI.
 
 ## Event mapping
 
-| AgentScope event / block | AG-UI event |
+| AgentScope `AgentEvent` | AG-UI event |
 | --- | --- |
-| `EventType.REASONING / SUMMARY` with `TextBlock` | `TEXT_MESSAGE_*` |
-| `EventType.REASONING / SUMMARY` with `ThinkingBlock` | `REASONING_*` (when `enableReasoning=true`) |
-| `ToolUseBlock` | `TOOL_CALL_START` |
-| `EventType.TOOL_RESULT` | `TOOL_CALL_END` |
+| `TextBlockStartEvent` / `TextBlockDeltaEvent` / `TextBlockEndEvent` | `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` |
+| `ThinkingBlockStartEvent` / `ThinkingBlockDeltaEvent` / `ThinkingBlockEndEvent` | `REASONING_MESSAGE_START` / `REASONING_MESSAGE_CONTENT` / `REASONING_MESSAGE_END` (when `enableReasoning=true`) |
+| `ToolCallStartEvent` / `ToolCallDeltaEvent` / `ToolCallEndEvent` | `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` |
+| `ToolResultStartEvent` / `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` / `ToolResultEndEvent` | `TOOL_CALL_RESULT` (buffered; with a defensive `TOOL_CALL_START` / `TOOL_CALL_END` backfill when the tool call was not opened explicitly) |
 
 ## Spring Boot integration
 
