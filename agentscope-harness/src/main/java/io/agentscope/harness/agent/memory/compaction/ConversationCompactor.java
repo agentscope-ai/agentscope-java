@@ -115,9 +115,11 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
-        // Filter previous summary messages from the prefix before offloading to avoid
-        // re-storing already-archived summaries.
-        List<Msg> prefix = filterSummaryMessages(new ArrayList<>(messages.subList(0, cutoff)));
+        // 摘要输入必须保留上轮摘要（链式摘要的意图链不能断，#2359）；
+        // 过滤版仅用于 flush/offload 去重（filterSummaryMessages 的 javadoc 原意），
+        // 此前过滤版同时喂了摘要输入 → 连续压缩丢原始意图。
+        List<Msg> prefix = new ArrayList<>(messages.subList(0, cutoff));
+        List<Msg> prefixForFlush = filterSummaryMessages(prefix);
         List<Msg> tail = new ArrayList<>(messages.subList(cutoff, messages.size()));
 
         log.info(
@@ -131,7 +133,7 @@ public class ConversationCompactor {
         Mono<Void> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
-                                .flushMemories(rc, prefix)
+                                .flushMemories(rc, prefixForFlush)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
