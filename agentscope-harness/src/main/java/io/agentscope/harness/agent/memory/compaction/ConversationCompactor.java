@@ -26,12 +26,14 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -436,8 +438,8 @@ public class ConversationCompactor {
      * conversation history was offloaded.
      * When null, falls back to the simple "summary to date" format.
      *
-     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify and
-     * skip summary messages during future flush/offload cycles.
+     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
+     * summaries, and the stable content-based ID keeps repeated session offloads idempotent.
      */
     private static Msg buildSummaryMessage(String summary, String filePath) {
         String content;
@@ -455,10 +457,16 @@ public class ConversationCompactor {
             content = "Here is a summary of the conversation to date:\n\n" + summary;
         }
         return Msg.builder()
+                .id(buildSummaryMessageId(content))
                 .role(MsgRole.USER)
                 .name(SUMMARY_MSG_NAME)
                 .content(TextBlock.builder().text(content).build())
                 .build();
+    }
+
+    private static String buildSummaryMessageId(String content) {
+        UUID stableId = UUID.nameUUIDFromBytes(content.getBytes(StandardCharsets.UTF_8));
+        return SUMMARY_MSG_NAME + ":" + stableId;
     }
 
     // -------------------------------------------------------------------------

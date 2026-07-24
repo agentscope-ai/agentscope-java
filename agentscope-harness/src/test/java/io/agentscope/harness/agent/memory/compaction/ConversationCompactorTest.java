@@ -59,6 +59,7 @@ class ConversationCompactorTest {
         assertTrue(fixture.model.prompt(0).contains("M2"));
         assertEquals(List.of("M2"), texts(fixture.flushInputs.get(0)));
         assertEquals(3, compacted.size());
+        assertTrue(compacted.get(0).getId().startsWith(ConversationCompactor.SUMMARY_MSG_NAME));
         assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
         assertEquals(List.of("TAIL_1", "TAIL_2"), texts(compacted.subList(1, compacted.size())));
     }
