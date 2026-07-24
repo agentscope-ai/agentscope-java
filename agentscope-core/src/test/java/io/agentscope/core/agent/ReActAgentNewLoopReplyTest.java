@@ -34,6 +34,9 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -86,6 +89,10 @@ class ReActAgentNewLoopReplyTest {
                 return Flux.just(textResponse(""));
             }
             return scripts.get(i).get();
+        }
+
+        int calls() {
+            return idx.get();
         }
     }
 
@@ -185,6 +192,92 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(
                 agent.getAgentState().getContext().size() >= 2,
                 "user + assistant expected in state");
+    }
+
+    @Test
+    void emptyModelStreamContinuesToNextIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("answer"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(2, model.calls());
+    }
+
+    @Test
+    void emptyModelStreamDoesNotRepeatPostReasoningForRecoveredResponse() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("answer"))));
+        AtomicInteger postReasoningCalls = new AtomicInteger();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent) {
+                            postReasoningCalls.incrementAndGet();
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .hook(hook)
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(1, postReasoningCalls.get());
+    }
+
+    @Test
+    void emptyTextResponseContinuesToNextIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(textResponse("")),
+                                () -> Flux.just(textResponse("answer"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals("answer", result.getContentBlocks(TextBlock.class).get(0).getText());
+        assertEquals(2, model.calls());
+    }
+
+    @Test
+    void emptyResponsesReachMaxIterationsAndSummarize() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.empty(),
+                                () -> Flux.empty(),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .maxIters(2)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertTrue(indexOf(events, ExceedMaxItersEvent.class) >= 0);
+        assertEquals(3, model.calls());
     }
 
     @Test
