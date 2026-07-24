@@ -188,6 +188,35 @@ class SkillBoxTest {
         }
 
         @Test
+        @DisplayName("Should bind ALL agent tools when multiple are registered on one skill")
+        void testMultipleAgentToolsAllBoundToSkillGroup() {
+            AgentTool first = createTestTool("multi_tool_first");
+            AgentTool second = createTestTool("multi_tool_second");
+            AgentSkill skill =
+                    new AgentSkill(
+                            "Multi Tool Skill", "Skill with two agent tools", "# Multi", null);
+
+            // 连续两次 agentTool()：此前第二次会覆盖第一次，导致只有 second 被绑进门控组
+            skillBox.registration().skill(skill).agentTool(first).agentTool(second).apply();
+
+            String groupName = skill.getSkillId() + "_skill_tools";
+            assertNotNull(toolkit.getToolGroup(groupName), "skill tool group should exist");
+            assertTrue(
+                    toolkit.getToolGroup(groupName).getTools().contains("multi_tool_first"),
+                    "first tool must also be bound into the skill group (regression: was"
+                            + " overwritten)");
+            assertTrue(
+                    toolkit.getToolGroup(groupName).getTools().contains("multi_tool_second"),
+                    "second tool must be bound into the skill group");
+            assertFalse(
+                    toolkit.getToolGroup(groupName).isActive(),
+                    "skill tool group must start inactive (gated until skill is loaded)");
+
+            assertNotNull(toolkit.getTool("multi_tool_first"));
+            assertNotNull(toolkit.getTool("multi_tool_second"));
+        }
+
+        @Test
         @DisplayName("Should successfully register when only mcp client is provided")
         void testSuccessfullyRegisterWhenOnlyMcpClientProvided() {
             McpClientWrapper mcpClient = mock(McpClientWrapper.class);
