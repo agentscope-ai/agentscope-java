@@ -140,13 +140,13 @@ class HarnessAgentIntegrationExampleTest {
         String combined =
                 captor.getAllValues().stream()
                         .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                        .filter(s -> s.contains("## AgentStateStore Context"))
+                        .filter(s -> s.contains("## Session Context"))
                         .findFirst()
                         .orElse("");
 
         assertTrue(
-                combined.contains("## AgentStateStore Context"),
-                "AgentStateStore context should be injected; model saw: "
+                combined.contains("## Session Context"),
+                "Session context should be injected; model saw: "
                         + captor.getAllValues().stream()
                                 .map(HarnessAgentIntegrationExampleTest::joinAllText)
                                 .toList());

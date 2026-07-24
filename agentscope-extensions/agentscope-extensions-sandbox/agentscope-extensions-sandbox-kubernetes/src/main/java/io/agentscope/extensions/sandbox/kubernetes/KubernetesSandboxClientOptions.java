@@ -29,7 +29,6 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     // agent-sandbox core
     private String namespace = "default";
     private String warmPoolName;
-    private String workspaceRoot = "/workspace";
 
     /**
      * Base directory of the runtime file API ({@code /upload} / {@code /download}), as
@@ -94,14 +93,6 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setWarmPoolName(String warmPoolName) {
         this.warmPoolName = warmPoolName;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot != null ? workspaceRoot : "/workspace";
     }
 
     public String getFileApiBaseDir() {

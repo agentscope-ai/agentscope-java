@@ -51,6 +51,12 @@ class BaseSandboxFilesystemTest {
     class CannedResponseTests {
 
         @Test
+        void getWorkspaceRoot_defaultsToWorkspace() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+            assertEquals("/workspace", filesystem.getWorkspaceRoot());
+        }
+
+        @Test
         void glob_recursivePattern_stripsDoubleStarPrefixBeforeFindName() {
             FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
 

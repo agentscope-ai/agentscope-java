@@ -96,7 +96,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
             }
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
-        String root = e2bState.getWorkspaceRoot();
+        String root = e2bState.getWorkspaceSpec().getRoot();
         StringBuilder script = new StringBuilder("tar ");
         for (String ex :
                 WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
@@ -116,7 +116,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
             restoreSandboxFromSnapshotTemplate(nativeId);
             return;
         }
-        String root = e2bState.getWorkspaceRoot();
+        String root = e2bState.getWorkspaceSpec().getRoot();
         String b64 = Base64.getEncoder().encodeToString(all);
         envd().runShell(e2bState, root, "rm -f /tmp/agentscope-ws.b64", 30);
         ObjectMapper om = new ObjectMapper();
@@ -145,8 +145,8 @@ public class E2bSandbox extends AbstractBaseSandbox {
     protected void doSetupWorkspace() throws Exception {
         envd().runShell(
                         e2bState,
-                        getWorkspaceRoot(),
-                        "mkdir -p " + shellSingleQuote(e2bState.getWorkspaceRoot()),
+                        "/",
+                        "mkdir -p " + shellSingleQuote(e2bState.getWorkspaceSpec().getRoot()),
                         30);
     }
 
@@ -156,7 +156,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
             envd().runShell(
                             e2bState,
                             getWorkspaceRoot(),
-                            "rm -rf " + shellSingleQuote(e2bState.getWorkspaceRoot()),
+                            "rm -rf " + shellSingleQuote(e2bState.getWorkspaceSpec().getRoot()),
                             30);
         } catch (Exception e) {
             log.debug("[sandbox-e2b] destroy workspace best-effort: {}", e.getMessage());
@@ -164,8 +164,8 @@ public class E2bSandbox extends AbstractBaseSandbox {
     }
 
     @Override
-    protected String getWorkspaceRoot() {
-        return e2bState.getWorkspaceRoot();
+    public String getWorkspaceRoot() {
+        return e2bState.getWorkspaceSpec().getRoot();
     }
 
     private void ensureSandbox() throws Exception {

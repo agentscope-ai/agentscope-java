@@ -87,7 +87,8 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
-        String wrapped = "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (" + command + ")";
+        String wrapped =
+                "cd " + shellQuote(k8sState.getWorkspaceSpec().getRoot()) + " && (" + command + ")";
         ExecutionResult result =
                 sdkSandbox.commands().run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
 
@@ -104,7 +105,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
-        String root = k8sState.getWorkspaceRoot();
+        String root = k8sState.getWorkspaceSpec().getRoot();
         StringBuilder tarArgs = new StringBuilder();
         // The temp archive may live inside the workspace when the file API is rooted there;
         // never let the archive include itself.
@@ -162,7 +163,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
-        String root = k8sState.getWorkspaceRoot();
+        String root = k8sState.getWorkspaceSpec().getRoot();
         sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
 
         byte[] tarBytes = archive.readAllBytes();
@@ -225,24 +226,26 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(k8sState.getWorkspaceRoot()));
+        sdkSandbox.commands().run("mkdir -p " + shellQuote(k8sState.getWorkspaceSpec().getRoot()));
     }
 
     @Override
     protected void doDestroyWorkspace() throws Exception {
         try {
-            sdkSandbox.commands().run("rm -rf " + shellQuote(k8sState.getWorkspaceRoot()));
+            sdkSandbox
+                    .commands()
+                    .run("rm -rf " + shellQuote(k8sState.getWorkspaceSpec().getRoot()));
         } catch (Exception e) {
             log.warn(
                     "[sandbox-k8s] rm -rf {} failed: {}",
-                    k8sState.getWorkspaceRoot(),
+                    k8sState.getWorkspaceSpec().getRoot(),
                     e.getMessage());
         }
     }
 
     @Override
-    protected String getWorkspaceRoot() {
-        return k8sState.getWorkspaceRoot();
+    public String getWorkspaceRoot() {
+        return k8sState.getWorkspaceSpec().getRoot();
     }
 
     /**

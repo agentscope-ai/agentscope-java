@@ -40,7 +40,6 @@ class KubernetesSandboxStateSerdeTest {
         state.setWarmPoolName("pool-1");
         state.setPodName("pod-1");
         state.setPodIP("10.0.0.1");
-        state.setWorkspaceRoot("/workspace");
         state.setFileApiBaseDir("/workspace");
         state.setClaimOwned(true);
         WorkspaceSpec ws = new WorkspaceSpec();
@@ -57,7 +56,7 @@ class KubernetesSandboxStateSerdeTest {
         Assertions.assertEquals("pool-1", k.getWarmPoolName());
         Assertions.assertEquals("pod-1", k.getPodName());
         Assertions.assertEquals("10.0.0.1", k.getPodIP());
-        Assertions.assertEquals("/workspace", k.getWorkspaceRoot());
+        Assertions.assertEquals("/tmp/host", k.getWorkspaceSpec().getRoot());
         Assertions.assertEquals("/workspace", k.getFileApiBaseDir());
         Assertions.assertTrue(k.isClaimOwned());
     }
