@@ -167,9 +167,7 @@ class H2DemoSeedTest {
         @Bean
         @Primary
         AgentStateStore testStateStore() {
-            return Mockito.mock(
-                    AgentStateStore.class,
-                    org.mockito.AdditionalAnswers.delegatesTo(new InMemoryAgentStateStore()));
+            return new InMemoryAgentStateStore();
         }
     }
 }
