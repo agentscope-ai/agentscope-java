@@ -354,6 +354,61 @@ class FileSystemSkillRepositoryTest {
         assertTrue(source.startsWith("filesystem-"));
     }
 
+    // ==================== Root-Level Skill Tests ====================
+
+    @Test
+    @DisplayName("Should return root skill when baseDir itself has SKILL.md")
+    void testGetAllSkills_RootLevelSkill() throws IOException {
+        Path rootDir = tempDir.resolve("root-repo");
+        Files.createDirectories(rootDir);
+        Files.writeString(
+                rootDir.resolve("SKILL.md"),
+                "---\nname: my-root-skill\ndescription: Root Skill\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(rootDir);
+        List<AgentSkill> skills = repo.getAllSkills();
+
+        assertEquals(1, skills.size());
+        assertEquals("my-root-skill", skills.get(0).getName());
+    }
+
+    @Test
+    @DisplayName("Should load root skill by name via getSkill")
+    void testGetSkill_RootLevelSkill() throws IOException {
+        Path rootDir = tempDir.resolve("root-repo2");
+        Files.createDirectories(rootDir);
+        Files.writeString(
+                rootDir.resolve("SKILL.md"),
+                "---\nname: my-root-skill\ndescription: Root Skill\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(rootDir);
+        AgentSkill skill = repo.getSkill("my-root-skill");
+
+        assertNotNull(skill);
+        assertEquals("my-root-skill", skill.getName());
+    }
+
+    @Test
+    @DisplayName("Should find root skill via skillExists and getAllSkillNames")
+    void testSkillExistsAndGetNames_RootLevelSkill() throws IOException {
+        Path rootDir = tempDir.resolve("root-repo3");
+        Files.createDirectories(rootDir);
+        Files.writeString(
+                rootDir.resolve("SKILL.md"),
+                "---\nname: my-root-skill\ndescription: Root Skill\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(rootDir);
+
+        assertTrue(repo.skillExists("my-root-skill"));
+        assertFalse(repo.skillExists("nonexistent"));
+        assertEquals(List.of("my-root-skill"), repo.getAllSkillNames());
+    }
+
+    // ==================== Helper Methods ====================
+
     private void createSampleSkill(String name, String description, String content)
             throws IOException {
         Path skillDir = skillsBaseDir.resolve(name);
