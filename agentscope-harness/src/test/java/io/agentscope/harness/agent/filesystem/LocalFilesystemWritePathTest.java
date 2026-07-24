@@ -92,4 +92,20 @@ class LocalFilesystemWritePathTest {
         assertEquals(expected.toString(), result.path());
         assertTrue(Files.exists(expected));
     }
+
+    @Test
+    void delete_returnsAbsolutePathIncludingNamespace(@TempDir Path workspace) throws Exception {
+        Path nsFile = workspace.resolve("web-user").resolve("gone.txt");
+        Files.createDirectories(nsFile.getParent());
+        Files.writeString(nsFile, "x");
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("web-user").build();
+
+        WriteResult result = fs.delete(rc, "gone.txt");
+        assertTrue(result.isSuccess(), () -> "delete failed: " + result.error());
+        assertEquals(nsFile.toAbsolutePath().normalize().toString(), result.path());
+        assertTrue(Files.notExists(nsFile));
+    }
 }
