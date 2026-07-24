@@ -34,13 +34,23 @@ import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -98,7 +108,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             List<Msg> inputMessages =
                     MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
-            Flux<Event> resultFlux = agentRunner.stream(inputMessages, requestOptions);
+            Flux<AgentEvent> resultFlux = agentRunner.streamEvents(inputMessages, requestOptions);
 
             Task task = context.getTask();
             if (task == null) {
@@ -175,7 +185,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
+            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
                 new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
@@ -189,7 +199,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
+            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
             eventQueue.enqueueEvent(task);
@@ -215,7 +225,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<Event> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
+            Flux<AgentEvent> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
         StreamingFluxEventHandler eventHandler =
                 new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
         resultFlux
@@ -249,9 +259,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         protected final AgentExecuteProperties executeProperties;
 
-        private final Set<EventType> requiredEventTypes;
-
-        private String lastEventMsgId;
+        private final Set<AgentEventType> requiredEventTypes;
 
         private BaseFluxEventHandler(
                 RequestContext context, AgentExecuteProperties executeProperties) {
@@ -261,16 +269,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
         }
 
-        private Set<EventType> generateRequiredEventTypes(
+        private Set<AgentEventType> generateRequiredEventTypes(
                 AgentExecuteProperties executeProperties) {
             if (executeProperties.isRequireInnerMessage()) {
                 return Set.of(
-                        EventType.REASONING,
-                        EventType.TOOL_RESULT,
-                        EventType.HINT,
-                        EventType.SUMMARY);
+                        AgentEventType.TEXT_BLOCK_DELTA,
+                        AgentEventType.THINKING_BLOCK_DELTA,
+                        AgentEventType.TOOL_RESULT_TEXT_DELTA,
+                        AgentEventType.TOOL_RESULT_DATA_DELTA,
+                        AgentEventType.HINT_BLOCK);
             }
-            return Set.of(EventType.REASONING, EventType.SUMMARY);
+            return Set.of(AgentEventType.TEXT_BLOCK_DELTA, AgentEventType.THINKING_BLOCK_DELTA);
         }
 
         /**
@@ -278,12 +287,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          *
          * @param output output event from agent stream execute.
          */
-        void doOnNext(Event output) {
-            LoggerUtil.debug(log, "[{}] Handle Agent execute outputs: ", context.getTaskId());
-            LoggerUtil.logAgentEventDetail(log, output);
-            appendToAccumulatedOutput(output);
-            handleEvent(output);
-            lastEventMsgId = output.getMessageId();
+        void doOnNext(AgentEvent output) {
+            LoggerUtil.debug(
+                    log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
+            Msg responseMessage = convertToResponseMessage(output);
+            if (responseMessage != null) {
+                accumulatedOutput.add(responseMessage);
+            }
+            handleEvent(output, responseMessage);
         }
 
         /**
@@ -304,45 +315,70 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             errorMessage, context.getContextId(), context.getTaskId()));
         }
 
-        private void appendToAccumulatedOutput(Event output) {
-            if (isNoResponseEvent(output)) {
-                return;
-            }
-            accumulatedOutput.add(output.getMessage());
-        }
-
         /**
          * Determines whether the given event should not be sent as a response to the A2A client,
-         * for example, tool-call-related events or duplicate result messages.
-         *
-         * <p>These events will be ignored and no response will be sent to the A2A client when this
-         * method returns {@code true}:
-         *
-         * <ul>
-         *     <li>The event type is not in the required event set that is generated from properties.</li>
-         *     <li>The event is the last event ({@link Event#isLast()} is {@code true}) and the
-         *         {@code messageId} of the event is the same as the previous last event.</li>
-         * </ul>
+         * for example, lifecycle events or inner events disabled by configuration.
          *
          * @param output agent output event
          * @return {@code true} if the event should not be responded to, otherwise {@code false}.
          */
-        protected boolean isNoResponseEvent(Event output) {
-            if (!requiredEventTypes.contains(output.getType())) {
-                return true;
+        protected boolean isNoResponseEvent(AgentEvent output) {
+            return !requiredEventTypes.contains(output.getType());
+        }
+
+        private Msg convertToResponseMessage(AgentEvent output) {
+            if (isNoResponseEvent(output)) {
+                return null;
             }
-            if (!output.isLast()) {
-                return false;
+            if (output instanceof TextBlockDeltaEvent event) {
+                return assistantMessage(
+                        event.getReplyId(), TextBlock.builder().text(event.getDelta()).build());
             }
-            return Objects.equals(lastEventMsgId, output.getMessageId());
+            if (output instanceof ThinkingBlockDeltaEvent event) {
+                return assistantMessage(
+                        event.getReplyId(),
+                        ThinkingBlock.builder().thinking(event.getDelta()).build());
+            }
+            if (output instanceof ToolResultTextDeltaEvent event) {
+                return toolResultMessage(
+                        event.getReplyId(),
+                        new ToolResultBlock(
+                                event.getToolCallId(),
+                                event.getToolCallName(),
+                                TextBlock.builder().text(event.getDelta()).build()));
+            }
+            if (output instanceof ToolResultDataDeltaEvent event) {
+                ContentBlock data = event.getData();
+                if (data == null) {
+                    return null;
+                }
+                return toolResultMessage(
+                        event.getReplyId(),
+                        new ToolResultBlock(event.getToolCallId(), event.getToolCallName(), data));
+            }
+            if (output instanceof HintBlockEvent event) {
+                return assistantMessage(
+                        event.getReplyId(), TextBlock.builder().text(event.getHint()).build());
+            }
+            return null;
+        }
+
+        private Msg assistantMessage(String replyId, ContentBlock contentBlock) {
+            return Msg.builder().id(replyId).role(MsgRole.ASSISTANT).content(contentBlock).build();
+        }
+
+        private Msg toolResultMessage(String replyId, ToolResultBlock toolResultBlock) {
+            return Msg.builder().id(replyId).role(MsgRole.TOOL).content(toolResultBlock).build();
         }
 
         /**
          * Handle the event.
          *
          * @param output output event from agent stream execute.
+         * @param responseMessage converted response message, or {@code null} if the event should
+         *     not be sent to the A2A client.
          */
-        protected abstract void handleEvent(Event output);
+        protected abstract void handleEvent(AgentEvent output, Msg responseMessage);
 
         /**
          * Send error message to A2A Client.
@@ -383,13 +419,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(Event output) {
-            if (!EventType.AGENT_RESULT.equals(output.getType())) {
+        protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (!(output instanceof AgentResultEvent resultEvent)) {
                 // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
                 // according to properties.
                 return;
             }
-            Msg outputMessage = output.getMessage();
+            Msg outputMessage = resultEvent.getResult();
             Message message =
                     MessageConvertUtil.convertFromMsgToMessage(
                             outputMessage, context.getTaskId(), context.getContextId());
@@ -436,18 +472,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(Event output) {
-            if (isNoResponseEvent(output)) {
+        protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (responseMessage == null) {
                 return;
             }
-            Msg outputMessage = output.getMessage();
             List<Part<?>> responseParts =
-                    MessageConvertUtil.convertFromContentBlocks(outputMessage, !output.isLast());
+                    MessageConvertUtil.convertFromContentBlocks(responseMessage, true);
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,
                     "agent-response",
-                    outputMessage.getMetadata(),
+                    responseMessage.getMetadata(),
                     !isFirstArtifact.getAndSet(false),
                     false);
         }
