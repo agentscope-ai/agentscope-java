@@ -49,7 +49,7 @@ public class ResponsesInputConverter {
      *
      * <p>Responses input can be a string, a single item, or an array of items. This method normalizes
      * those shapes into AgentScope messages while preserving instruction-like content for the
-     * request hook.
+     * request middleware.
      *
      * @param request Original Responses request
      * @return Converted messages plus request-scoped metadata
@@ -63,7 +63,7 @@ public class ResponsesInputConverter {
             systemFragments.add(request.getInstructions());
         }
 
-        // Keep instructions/system/developer content out of the chat message list so the hook can
+        // Keep instructions/system/developer content out of the chat message list so middleware can
         // append it through AgentScope's system prompt mechanism.
         convertInput(jsonNode(request.getInput()), messages, systemFragments);
         if (messages.isEmpty()) {

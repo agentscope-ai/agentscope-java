@@ -19,14 +19,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.responses.builder.ResponsesResponseBuilder;
 import io.agentscope.core.responses.model.ResponsesContentPart;
@@ -36,6 +36,7 @@ import io.agentscope.core.responses.model.ResponsesRequest;
 import io.agentscope.core.responses.model.ResponsesResponse;
 import io.agentscope.core.responses.model.ResponsesStreamEvent;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -148,11 +149,6 @@ public class ResponsesStreamingAdapter {
             String responseId,
             RuntimeContext runtimeContext) {
         boolean structuredStream = structuredOutputSchema != null;
-        StreamOptions options =
-                StreamOptions.builder()
-                        .eventTypes(streamEventTypes(structuredStream))
-                        .incremental(true)
-                        .build();
 
         ResponsesResponse created = responseBuilder.baseResponse(request, responseId, "created");
         ResponsesResponse inProgress =
@@ -160,19 +156,8 @@ public class ResponsesStreamingAdapter {
 
         StreamingState state = new StreamingState(messageId(responseId));
 
-        // AgentScope incremental streams often include a final accumulated REASONING event. Track
-        // whether we saw true deltas so the final accumulated text is not duplicated.
         Flux<ResponsesStreamEvent> body =
-                agentStream(agent, messages, options, structuredOutputSchema, runtimeContext)
-                        .filter(event -> event.getMessage() != null)
-                        .doOnNext(
-                                event -> {
-                                    if (event.getType() == EventType.REASONING
-                                            && !event.isLast()
-                                            && !text(event.getMessage()).isEmpty()) {
-                                        state.hasSeenIncrementalReasoning = true;
-                                    }
-                                })
+                agentStream(agent, messages, structuredOutputSchema, runtimeContext)
                         .concatMap(event -> convertEvent(event, state, structuredStream));
 
         Flux<ResponsesStreamEvent> completion =
@@ -214,37 +199,46 @@ public class ResponsesStreamingAdapter {
     }
 
     private Flux<ResponsesStreamEvent> convertEvent(
-            Event event, StreamingState state, boolean structuredStream) {
-        Msg msg = event.getMessage();
-        if (msg == null) {
-            return Flux.empty();
+            AgentEvent event, StreamingState state, boolean structuredStream) {
+        if (event instanceof AgentResultEvent resultEvent) {
+            state.terminalMessage = resultEvent.getResult();
+            if (structuredStream) {
+                return Flux.fromIterable(structuredOutputEvents(resultEvent.getResult(), state));
+            }
+            List<ResponsesStreamEvent> events = new ArrayList<>();
+            reconcileToolCalls(resultEvent.getResult(), state, events);
+            for (StreamingToolCall toolCall : state.toolCalls.values()) {
+                completeToolCall(toolCall, state, events);
+            }
+            return Flux.fromIterable(events);
         }
-        if (event.isLast()) {
-            state.terminalMessage = msg;
-        }
-
-        if (structuredStream && event.getType() == EventType.AGENT_RESULT) {
-            // Structured output streaming does not expose partial schema objects from AgentScope;
-            // emit the final structured payload as a single output_text delta.
-            return Flux.fromIterable(structuredOutputEvents(msg, state));
-        }
-
-        if (msg.getContent() == null) {
+        if (structuredStream) {
             return Flux.empty();
         }
 
         List<ResponsesStreamEvent> events = new ArrayList<>();
-        appendTextEvents(event, msg, state, events);
-        appendToolUseEvents(event, msg, state, events);
-        appendTextCompletionEvents(event, msg, state, events);
+        if (event instanceof TextBlockDeltaEvent textDeltaEvent) {
+            appendTextDelta(textDeltaEvent.getDelta(), state, events);
+        } else if (event instanceof ToolCallStartEvent toolCallStartEvent) {
+            ensureToolCall(
+                    toolCallStartEvent.getToolCallId(),
+                    toolCallStartEvent.getToolCallName(),
+                    state,
+                    events);
+        } else if (event instanceof ToolCallDeltaEvent toolCallDeltaEvent) {
+            appendToolCallDelta(toolCallDeltaEvent, state, events);
+        } else if (event instanceof ToolCallEndEvent toolCallEndEvent) {
+            appendToolCallEnd(toolCallEndEvent, state, events);
+        }
         return Flux.fromIterable(events);
     }
 
     private List<ResponsesStreamEvent> completionEvents(
             ResponsesRequest request, String responseId, StreamingState state) {
         List<ResponsesStreamEvent> events = new ArrayList<>();
-        // If the model ended without an explicit terminal text event, close the open content part
-        // before sending response.completed.
+        for (StreamingToolCall toolCall : state.toolCalls.values()) {
+            completeToolCall(toolCall, state, events);
+        }
         if (state.hasTextItem && !state.hasTextDone) {
             events.addAll(completeTextEvents(state));
         }
@@ -259,121 +253,139 @@ public class ResponsesStreamingAdapter {
         return events;
     }
 
-    private void appendTextEvents(
-            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
-        boolean includeText =
-                !(event.getType() == EventType.REASONING
-                        && event.isLast()
-                        && state.hasSeenIncrementalReasoning);
-        if (includeText) {
-            appendTextDelta(text(msg), state, events);
+    private void ensureTextItem(StreamingState state, List<ResponsesStreamEvent> events) {
+        if (state.hasTextItem) {
+            return;
         }
+        state.hasTextItem = true;
+        int index = state.nextOutputIndex++;
+        state.textOutputIndex = index;
+        ResponsesOutputItem item = ResponsesOutputItem.message(state.messageId, "", "in_progress");
+        events.add(ResponsesStreamEvent.outputItemEvent("response.output_item.added", index, item));
+        events.add(
+                ResponsesStreamEvent.contentPartEvent(
+                        "response.content_part.added",
+                        index,
+                        0,
+                        state.messageId,
+                        ResponsesContentPart.outputText("")));
     }
 
     private void appendTextDelta(
             String text, StreamingState state, List<ResponsesStreamEvent> events) {
-        if (!text.isEmpty()) {
-            if (!state.hasTextItem) {
-                state.hasTextItem = true;
-                // Responses streams must announce output item and content part creation before
-                // emitting text deltas for that item.
-                int index = state.nextOutputIndex++;
-                state.textOutputIndex = index;
-                ResponsesOutputItem item =
-                        ResponsesOutputItem.message(state.messageId, "", "in_progress");
-                events.add(
-                        ResponsesStreamEvent.outputItemEvent(
-                                "response.output_item.added", index, item));
-                events.add(
-                        ResponsesStreamEvent.contentPartEvent(
-                                "response.content_part.added",
-                                index,
-                                0,
-                                state.messageId,
-                                ResponsesContentPart.outputText("")));
-            }
-            state.accumulatedText.append(text);
-            events.add(
-                    ResponsesStreamEvent.textDelta(
-                            "response.output_text.delta",
-                            state.textOutputIndex,
-                            0,
-                            state.messageId,
-                            text));
-        }
-    }
-
-    private void appendToolUseEvents(
-            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
-        if (event.getType() != EventType.REASONING) {
+        if (text == null || text.isEmpty()) {
             return;
         }
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ToolUseBlock toolUseBlock) {
-                // Tool-use blocks become Responses function_call output items. The actual Java tool
-                // execution is performed by the client or by AgentScope toolkit code.
-                int index = state.nextOutputIndex++;
-                String itemId = functionCallId(toolUseBlock.getId());
-                String arguments = argumentsJson(toolUseBlock);
-                ResponsesOutputItem addedItem =
-                        ResponsesOutputItem.functionCall(
-                                itemId,
-                                toolUseBlock.getId(),
-                                toolUseBlock.getName(),
-                                "",
-                                "in_progress");
-                ResponsesOutputItem completedItem =
-                        ResponsesOutputItem.functionCall(
-                                itemId, toolUseBlock.getId(), toolUseBlock.getName(), arguments);
-                events.add(
-                        ResponsesStreamEvent.outputItemEvent(
-                                "response.output_item.added", index, addedItem));
-                if (!arguments.isEmpty()) {
-                    events.add(ResponsesStreamEvent.argumentsDelta(index, itemId, arguments));
-                }
-                ResponsesStreamEvent argumentsDone =
-                        ResponsesStreamEvent.argumentsDone(index, itemId, arguments);
-                argumentsDone.setCallId(toolUseBlock.getId());
-                argumentsDone.setName(toolUseBlock.getName());
-                events.add(argumentsDone);
-                events.add(
-                        ResponsesStreamEvent.outputItemEvent(
-                                "response.output_item.done", index, completedItem));
-                state.completedOutput.put(index, completedItem);
+        ensureTextItem(state, events);
+        state.accumulatedText.append(text);
+        events.add(
+                ResponsesStreamEvent.textDelta(
+                        "response.output_text.delta",
+                        state.textOutputIndex,
+                        0,
+                        state.messageId,
+                        text));
+    }
+
+    private void appendToolCallDelta(
+            ToolCallDeltaEvent event, StreamingState state, List<ResponsesStreamEvent> events) {
+        StreamingToolCall toolCall =
+                ensureToolCall(event.getToolCallId(), event.getToolCallName(), state, events);
+        String delta = event.getDelta();
+        if (toolCall.done || delta == null || delta.isEmpty()) {
+            return;
+        }
+        toolCall.arguments.append(delta);
+        events.add(
+                ResponsesStreamEvent.argumentsDelta(toolCall.outputIndex, toolCall.itemId, delta));
+    }
+
+    private void appendToolCallEnd(
+            ToolCallEndEvent event, StreamingState state, List<ResponsesStreamEvent> events) {
+        StreamingToolCall toolCall =
+                ensureToolCall(event.getToolCallId(), event.getToolCallName(), state, events);
+        if (!toolCall.arguments.isEmpty()) {
+            completeToolCall(toolCall, state, events);
+        }
+    }
+
+    private void reconcileToolCalls(
+            Msg terminalMessage, StreamingState state, List<ResponsesStreamEvent> events) {
+        if (terminalMessage == null) {
+            return;
+        }
+        for (ToolUseBlock block : terminalMessage.getContentBlocks(ToolUseBlock.class)) {
+            StreamingToolCall toolCall =
+                    ensureToolCall(block.getId(), block.getName(), state, events);
+            if (toolCall.done || !toolCall.arguments.isEmpty()) {
+                continue;
             }
+            String arguments = argumentsJson(block);
+            toolCall.arguments.append(arguments);
+            events.add(
+                    ResponsesStreamEvent.argumentsDelta(
+                            toolCall.outputIndex, toolCall.itemId, arguments));
         }
     }
 
-    private void appendTextCompletionEvents(
-            Event event, Msg msg, StreamingState state, List<ResponsesStreamEvent> events) {
-        if (event.isLast()
-                && state.hasTextItem
-                && !state.hasTextDone
-                && msg.getGenerateReason() != GenerateReason.TOOL_SUSPENDED) {
-            events.addAll(completeTextEvents(state));
+    private StreamingToolCall ensureToolCall(
+            String callId, String name, StreamingState state, List<ResponsesStreamEvent> events) {
+        String key = callId != null ? callId : "";
+        StreamingToolCall existing = state.toolCalls.get(key);
+        if (existing != null) {
+            return existing;
         }
+
+        String resolvedCallId =
+                callId == null || callId.isBlank() ? "call_" + UUID.randomUUID() : callId;
+        String resolvedName = name != null ? name : "";
+        int index = state.nextOutputIndex++;
+        String itemId = functionCallId(resolvedCallId);
+        StreamingToolCall toolCall =
+                new StreamingToolCall(index, itemId, resolvedCallId, resolvedName);
+        state.toolCalls.put(key, toolCall);
+        ResponsesOutputItem addedItem =
+                ResponsesOutputItem.functionCall(
+                        itemId, resolvedCallId, resolvedName, "", "in_progress");
+        events.add(
+                ResponsesStreamEvent.outputItemEvent(
+                        "response.output_item.added", index, addedItem));
+        return toolCall;
     }
 
-    private EventType[] streamEventTypes(boolean structuredStream) {
-        return structuredStream
-                ? new EventType[] {EventType.AGENT_RESULT}
-                : new EventType[] {EventType.REASONING, EventType.TOOL_RESULT};
+    private void completeToolCall(
+            StreamingToolCall toolCall, StreamingState state, List<ResponsesStreamEvent> events) {
+        if (toolCall.done) {
+            return;
+        }
+        toolCall.done = true;
+        String arguments = toolCall.arguments.isEmpty() ? "{}" : toolCall.arguments.toString();
+        ResponsesOutputItem completedItem =
+                ResponsesOutputItem.functionCall(
+                        toolCall.itemId, toolCall.callId, toolCall.name, arguments);
+        ResponsesStreamEvent argumentsDone =
+                ResponsesStreamEvent.argumentsDone(
+                        toolCall.outputIndex, toolCall.itemId, arguments);
+        argumentsDone.setCallId(toolCall.callId);
+        argumentsDone.setName(toolCall.name);
+        events.add(argumentsDone);
+        events.add(
+                ResponsesStreamEvent.outputItemEvent(
+                        "response.output_item.done", toolCall.outputIndex, completedItem));
+        state.completedOutput.put(toolCall.outputIndex, completedItem);
     }
 
-    private Flux<Event> agentStream(
+    private Flux<AgentEvent> agentStream(
             ReActAgent agent,
             List<Msg> messages,
-            StreamOptions options,
             JsonNode structuredOutputSchema,
             RuntimeContext runtimeContext) {
-        if (runtimeContext != null) {
-            return structuredOutputSchema != null
-                    ? agent.stream(messages, options, structuredOutputSchema, runtimeContext)
-                    : agent.stream(messages, options, runtimeContext);
+        if (structuredOutputSchema != null) {
+            return agent.streamEvents(messages, structuredOutputSchema, runtimeContext);
         }
-        return structuredOutputSchema != null
-                ? agent.stream(messages, options, structuredOutputSchema)
-                : agent.stream(messages, options);
+        return runtimeContext != null
+                ? agent.streamEvents(messages, runtimeContext)
+                : agent.streamEvents(messages);
     }
 
     private List<ResponsesStreamEvent> structuredOutputEvents(Msg msg, StreamingState state) {
@@ -438,13 +450,30 @@ public class ResponsesStreamingAdapter {
         private int textOutputIndex = -1;
         private boolean hasTextItem;
         private boolean hasTextDone;
-        private boolean hasSeenIncrementalReasoning;
         private final StringBuilder accumulatedText = new StringBuilder();
         private final Map<Integer, ResponsesOutputItem> completedOutput = new TreeMap<>();
+        private final Map<String, StreamingToolCall> toolCalls = new LinkedHashMap<>();
         private Msg terminalMessage;
 
         private StreamingState(String messageId) {
             this.messageId = messageId;
+        }
+    }
+
+    private static final class StreamingToolCall {
+
+        private final int outputIndex;
+        private final String itemId;
+        private final String callId;
+        private final String name;
+        private final StringBuilder arguments = new StringBuilder();
+        private boolean done;
+
+        private StreamingToolCall(int outputIndex, String itemId, String callId, String name) {
+            this.outputIndex = outputIndex;
+            this.itemId = itemId;
+            this.callId = callId;
+            this.name = name;
         }
     }
 
@@ -462,17 +491,8 @@ public class ResponsesStreamingAdapter {
                         });
     }
 
-    private String text(Msg msg) {
-        if (msg == null || msg.getContent() == null) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock textBlock && textBlock.getText() != null) {
-                builder.append(textBlock.getText());
-            }
-        }
-        return builder.toString();
+    private String functionCallId(String seed) {
+        return seed != null && seed.startsWith("fc_") ? seed : "fc_" + normalize(seed);
     }
 
     private String argumentsJson(ToolUseBlock block) {
@@ -493,13 +513,9 @@ public class ResponsesStreamingAdapter {
     private String compactJson(String json) {
         try {
             return OBJECT_MAPPER.writeValueAsString(OBJECT_MAPPER.readTree(json));
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             return json;
         }
-    }
-
-    private String functionCallId(String seed) {
-        return seed != null && seed.startsWith("fc_") ? seed : "fc_" + normalize(seed);
     }
 
     private String messageId(String seed) {

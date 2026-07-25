@@ -17,7 +17,6 @@ package io.agentscope.core.hook;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -66,8 +65,6 @@ public final class LegacyHookDispatcher {
     }
 
     private List<Hook> hooks(ContextView contextView) {
-        Object value = contextView.getOrDefault(AgentBase.RUNTIME_CONTEXT_KEY, null);
-        RuntimeContext runtimeContext = value instanceof RuntimeContext rc ? rc : null;
         Object callHookValue = contextView.getOrDefault(AgentBase.CALL_HOOKS_KEY, List.of());
         List<Hook> callHooks =
                 callHookValue instanceof List<?> values
@@ -76,7 +73,7 @@ public final class LegacyHookDispatcher {
                                 .map(Hook.class::cast)
                                 .toList()
                         : List.of();
-        return agent.getSortedHooks(runtimeContext, callHooks);
+        return agent.getSortedHooks(callHooks);
     }
 
     private Flux<Hook> hooks() {

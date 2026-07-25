@@ -290,7 +290,7 @@ public abstract class AgentBase implements Agent {
                                             callGate == null
                                                     ? lifecycle
                                                     : serializeOnKey(callGate, lifecycle);
-                                    if (hasRuntimeContextAwareHooks(rc)) {
+                                    if (hasRuntimeContextAwareHooks()) {
                                         gated =
                                                 serializeOnKey(
                                                         RUNTIME_CONTEXT_AWARE_CALL_GATE, gated);
@@ -328,19 +328,17 @@ public abstract class AgentBase implements Agent {
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(msgs, scope, rc, callHooks)
+                                        notifyPreCall(msgs, scope, callHooks)
                                                 .flatMap(
                                                         callMsgs ->
                                                                 invokeCallImplementation(
-                                                                        callMsgs, rc, callHooks,
+                                                                        callMsgs, callHooks,
                                                                         doCallFn))
                                                 .flatMap(
                                                         finalMsg ->
-                                                                notifyPostCall(
-                                                                        finalMsg, rc, callHooks))
+                                                                notifyPostCall(finalMsg, callHooks))
                                                 .onErrorResume(
                                                         createErrorHandler(
-                                                                rc,
                                                                 callHooks,
                                                                 msgs.toArray(new Msg[0]))));
         Mono<Msg> scoped =
@@ -351,12 +349,9 @@ public abstract class AgentBase implements Agent {
     }
 
     private Mono<Msg> invokeCallImplementation(
-            List<Msg> msgs,
-            RuntimeContext runtimeContext,
-            List<Hook> callHooks,
-            Function<List<Msg>, Mono<Msg>> doCallFn) {
+            List<Msg> msgs, List<Hook> callHooks, Function<List<Msg>, Mono<Msg>> doCallFn) {
         List<Hook> previous = invocationHookSnapshot.get();
-        invocationHookSnapshot.set(getSortedHooks(runtimeContext, callHooks));
+        invocationHookSnapshot.set(getSortedHooks(callHooks));
         try {
             return doCallFn.apply(msgs);
         } finally {
@@ -546,13 +541,13 @@ public abstract class AgentBase implements Agent {
      * @return Function that handles errors appropriately
      */
     private Function<Throwable, Mono<Msg>> createErrorHandler(
-            RuntimeContext runtimeContext, List<Hook> callHooks, Msg... originalArgs) {
+            List<Hook> callHooks, Msg... originalArgs) {
         return error -> {
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
                 return handleInterrupt(createInterruptContext(), originalArgs);
             }
-            return notifyError(error, runtimeContext, callHooks).then(Mono.error(error));
+            return notifyError(error, callHooks).then(Mono.error(error));
         };
     }
 
@@ -667,7 +662,7 @@ public abstract class AgentBase implements Agent {
      * lives on the agent's per-call scope (see {@link #getRuntimeContext()}).
      */
     protected void bindRuntimeContextToHooks(RuntimeContext ctx) {
-        for (RuntimeContextAware h : runtimeContextAwareHooks(ctx)) {
+        for (RuntimeContextAware h : runtimeContextAwareHooks) {
             h.setRuntimeContext(ctx);
         }
     }
@@ -675,41 +670,14 @@ public abstract class AgentBase implements Agent {
     /**
      * Clears the {@link RuntimeContext} previously pushed to all {@link RuntimeContextAware} hooks.
      */
-    protected void unbindRuntimeContextFromHooks(RuntimeContext ctx) {
-        for (RuntimeContextAware h : runtimeContextAwareHooks(ctx)) {
+    protected void unbindRuntimeContextFromHooks() {
+        for (RuntimeContextAware h : runtimeContextAwareHooks) {
             h.setRuntimeContext(null);
         }
     }
 
-    /**
-     * @deprecated Use {@link #unbindRuntimeContextFromHooks(RuntimeContext)} so invocation-local
-     *     hooks are also cleared.
-     */
-    @Deprecated
-    protected void unbindRuntimeContextFromHooks() {
-        unbindRuntimeContextFromHooks(null);
-    }
-
-    private boolean hasRuntimeContextAwareHooks(RuntimeContext runtimeContext) {
-        if (runtimeContext == null || runtimeContext.get(AgentCallOptions.class) == null) {
-            return false;
-        }
-        return !runtimeContextAwareHooks(runtimeContext).isEmpty();
-    }
-
-    private List<RuntimeContextAware> runtimeContextAwareHooks(RuntimeContext runtimeContext) {
-        List<RuntimeContextAware> result = new ArrayList<>(runtimeContextAwareHooks);
-        AgentCallOptions callOptions =
-                runtimeContext != null ? runtimeContext.get(AgentCallOptions.class) : null;
-        if (callOptions == null) {
-            return result;
-        }
-        for (Hook hook : callOptions.getHooks()) {
-            if (hook instanceof RuntimeContextAware aware && !result.contains(aware)) {
-                result.add(aware);
-            }
-        }
-        return result;
+    private boolean hasRuntimeContextAwareHooks() {
+        return !runtimeContextAwareHooks.isEmpty();
     }
 
     private void registerRuntimeContextHookIfNeeded(Hook hook) {
@@ -782,41 +750,21 @@ public abstract class AgentBase implements Agent {
         return snapshot != null ? snapshot : hooks;
     }
 
-    /**
-     * Returns the configured hooks merged with hooks supplied for one invocation.
-     *
-     * @param runtimeContext caller-supplied per-call context, or {@code null}
-     * @return sorted hook snapshot for this invocation
-     */
-    public List<Hook> getSortedHooks(RuntimeContext runtimeContext) {
-        return getSortedHooks(runtimeContext, List.of());
-    }
-
-    /** Returns configured, runtime-context, and subscription-local hooks in priority order. */
-    public List<Hook> getSortedHooks(
-            RuntimeContext runtimeContext, List<? extends Hook> callHooks) {
-        AgentCallOptions callOptions =
-                runtimeContext != null ? runtimeContext.get(AgentCallOptions.class) : null;
-        List<Hook> contextHooks = callOptions != null ? callOptions.getHooks() : List.of();
-        if (contextHooks.isEmpty() && (callHooks == null || callHooks.isEmpty())) {
+    /** Returns configured and subscription-local hooks in priority order. */
+    public List<Hook> getSortedHooks(List<? extends Hook> callHooks) {
+        if (callHooks == null || callHooks.isEmpty()) {
             return hooks;
         }
-        int callHookCount = callHooks != null ? callHooks.size() : 0;
-        List<Hook> merged = new ArrayList<>(hooks.size() + contextHooks.size() + callHookCount);
+        List<Hook> merged = new ArrayList<>(hooks.size() + callHooks.size());
         merged.addAll(hooks);
-        merged.addAll(contextHooks);
-        if (callHooks != null) {
-            merged.addAll(callHooks);
-        }
+        merged.addAll(callHooks);
         merged.sort(HOOK_COMPARATOR);
         return List.copyOf(merged);
     }
 
     /** Returns the configured and invocation-local hooks visible to the current subscription. */
     protected final List<Hook> getSortedHooksFromContext(ContextView contextView) {
-        Object value = contextView.getOrDefault(RUNTIME_CONTEXT_KEY, null);
-        RuntimeContext runtimeContext = value instanceof RuntimeContext rc ? rc : null;
-        return getSortedHooks(runtimeContext, callHooks(contextView));
+        return getSortedHooks(callHooks(contextView));
     }
 
     /**
@@ -878,10 +826,7 @@ public abstract class AgentBase implements Agent {
      * @return Mono containing the new tail messages that {@code doCall} should add to memory
      */
     private Mono<List<Msg>> notifyPreCall(
-            List<Msg> callArgs,
-            Object callScope,
-            RuntimeContext runtimeContext,
-            List<Hook> callHooks) {
+            List<Msg> callArgs, Object callScope, List<Hook> callHooks) {
         // Take a state snapshot before hooks run (pre-hook view), from this call's scope state.
         List<Msg> snapshot = List.of();
         AgentState agentState = stateForCall(callScope);
@@ -900,7 +845,7 @@ public abstract class AgentBase implements Agent {
 
         Mono<PreCallEvent> result =
                 seedSystemMsg(callScope).doOnNext(event::setSystemMessage).thenReturn(event);
-        for (Hook hook : getSortedHooks(runtimeContext, callHooks)) {
+        for (Hook hook : getSortedHooks(callHooks)) {
             result = result.flatMap(hook::onEvent);
         }
 
@@ -947,14 +892,13 @@ public abstract class AgentBase implements Agent {
      * @param finalMsg Final message
      * @return Mono containing potentially modified final message
      */
-    private Mono<Msg> notifyPostCall(
-            Msg finalMsg, RuntimeContext runtimeContext, List<Hook> callHooks) {
+    private Mono<Msg> notifyPostCall(Msg finalMsg, List<Hook> callHooks) {
         if (finalMsg == null) {
             return Mono.error(new IllegalStateException("Agent returned null message"));
         }
         PostCallEvent event = new PostCallEvent(this, finalMsg);
         Mono<PostCallEvent> result = Mono.just(event);
-        for (Hook hook : getSortedHooks(runtimeContext, callHooks)) {
+        for (Hook hook : getSortedHooks(callHooks)) {
             result = result.flatMap(hook::onEvent);
         }
         // After hooks, broadcast to subscribers
@@ -968,10 +912,9 @@ public abstract class AgentBase implements Agent {
      * @param error The error
      * @return Mono that completes when all hooks are notified
      */
-    private Mono<Void> notifyError(
-            Throwable error, RuntimeContext runtimeContext, List<Hook> callHooks) {
+    private Mono<Void> notifyError(Throwable error, List<Hook> callHooks) {
         ErrorEvent event = new ErrorEvent(this, error);
-        return Flux.fromIterable(getSortedHooks(runtimeContext, callHooks))
+        return Flux.fromIterable(getSortedHooks(callHooks))
                 .flatMap(hook -> hook.onEvent(event))
                 .then();
     }

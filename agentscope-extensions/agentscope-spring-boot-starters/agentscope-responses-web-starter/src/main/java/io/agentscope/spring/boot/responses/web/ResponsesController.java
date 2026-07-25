@@ -26,7 +26,7 @@ import io.agentscope.core.responses.converter.ResponsesGenerationOptionsConverte
 import io.agentscope.core.responses.converter.ResponsesInputConverter;
 import io.agentscope.core.responses.converter.ResponsesToolConverter;
 import io.agentscope.core.responses.converter.ResponsesValidationException;
-import io.agentscope.core.responses.hook.ResponsesRequestHook;
+import io.agentscope.core.responses.middleware.ResponsesRequestMiddleware;
 import io.agentscope.core.responses.model.ResponsesDeletionStatus;
 import io.agentscope.core.responses.model.ResponsesList;
 import io.agentscope.core.responses.model.ResponsesRequest;
@@ -71,7 +71,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Client sends {@code input}, optional {@code instructions}, optional tools, and optional
  *       output formatting
  *   <li>Controller converts the HTTP DTO into AgentScope messages and request-scoped options
- *   <li>Server obtains a {@link ReActAgent} and supplies hooks, tools, and state through an
+ *   <li>Server obtains a {@link ReActAgent} and supplies middleware, tools, and state through an
  *       invocation-local context
  *   <li>Agent runs in normal, structured-output, or streaming mode
  *   <li>Response builder returns a Responses-shaped JSON object or Responses-style SSE events
@@ -530,9 +530,9 @@ public class ResponsesController {
             options.externalToolSchemas(toolConverter.convertToToolSchemas(request.getTools()));
         }
         GenerateOptions requestOptions = generationOptionsConverter.convert(request);
-        ResponsesRequestHook hook =
-                new ResponsesRequestHook(conversion.systemFragments(), requestOptions);
-        options.hook(hook);
+        ResponsesRequestMiddleware middleware =
+                new ResponsesRequestMiddleware(conversion.systemFragments(), requestOptions);
+        options.middleware(middleware);
         return RuntimeContext.builder()
                 .sessionId(responseId)
                 .put(AgentCallOptions.class, options.build())

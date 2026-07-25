@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.hook.Hook;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,21 +23,20 @@ import java.util.List;
 /**
  * Immutable configuration applied to one agent invocation through {@link RuntimeContext}.
  *
- * <p>Call-scoped hooks and external tool schemas are merged with the agent's configured hooks and
- * toolkit without modifying either shared collection. This allows a singleton agent to serve
- * requests with different instructions and tool declarations safely. Calls whose {@link
+ * <p>Call-scoped middleware and external tool schemas are merged with the agent's configured
+ * middleware and toolkit without modifying their shared collections. This allows a singleton agent
+ * to serve requests with different instructions and tool declarations safely. Calls whose {@link
  * RuntimeContext} does not contain this type retain the agent's existing execution behavior.
  */
-@SuppressWarnings("deprecation")
 public final class AgentCallOptions {
 
-    private final List<Hook> hooks;
+    private final List<MiddlewareBase> middlewares;
     private final List<ToolSchema> externalToolSchemas;
     private final boolean includeConfiguredTools;
     private final boolean stateless;
 
     private AgentCallOptions(Builder builder) {
-        this.hooks = List.copyOf(builder.hooks);
+        this.middlewares = List.copyOf(builder.middlewares);
         this.externalToolSchemas = List.copyOf(builder.externalToolSchemas);
         this.includeConfiguredTools = builder.includeConfiguredTools;
         this.stateless = builder.stateless;
@@ -47,8 +46,8 @@ public final class AgentCallOptions {
         return new Builder();
     }
 
-    public List<Hook> getHooks() {
-        return hooks;
+    public List<MiddlewareBase> getMiddlewares() {
+        return middlewares;
     }
 
     public List<ToolSchema> getExternalToolSchemas() {
@@ -68,21 +67,21 @@ public final class AgentCallOptions {
     /** Builder for {@link AgentCallOptions}. */
     public static final class Builder {
 
-        private final List<Hook> hooks = new ArrayList<>();
+        private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private final List<ToolSchema> externalToolSchemas = new ArrayList<>();
         private boolean includeConfiguredTools = true;
         private boolean stateless;
 
-        public Builder hook(Hook hook) {
-            if (hook != null) {
-                hooks.add(hook);
+        public Builder middleware(MiddlewareBase middleware) {
+            if (middleware != null) {
+                middlewares.add(middleware);
             }
             return this;
         }
 
-        public Builder hooks(List<? extends Hook> hooks) {
-            if (hooks != null) {
-                hooks.forEach(this::hook);
+        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
+            if (middlewares != null) {
+                middlewares.forEach(this::middleware);
             }
             return this;
         }

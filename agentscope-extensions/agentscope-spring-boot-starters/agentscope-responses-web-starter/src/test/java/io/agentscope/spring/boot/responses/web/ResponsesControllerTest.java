@@ -33,10 +33,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentCallOptions;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -124,11 +122,7 @@ class ResponsesControllerTest {
         assertThat(events)
                 .extracting(ServerSentEvent::event)
                 .contains("response.output_text.delta");
-        verify(agent).stream(
-                anyList(),
-                any(StreamOptions.class),
-                any(JsonNode.class),
-                any(RuntimeContext.class));
+        verify(agent).streamEvents(anyList(), any(JsonNode.class), any(RuntimeContext.class));
     }
 
     @Test
@@ -388,7 +382,7 @@ class ResponsesControllerTest {
     }
 
     @Test
-    void shouldKeepRequestHooksAndToolsInPerCallContext() throws Exception {
+    void shouldKeepRequestMiddlewareAndToolsInPerCallContext() throws Exception {
         ReActAgent agent = mock(ReActAgent.class);
         when(agentProvider.getObject()).thenReturn(agent);
         when(agent.call(anyList(), any(RuntimeContext.class)))
@@ -664,23 +658,14 @@ class ResponsesControllerTest {
         assertThat(events)
                 .extracting(ServerSentEvent::event)
                 .contains("response.output_text.delta");
-        verify(agent).stream(
-                anyList(),
-                any(StreamOptions.class),
-                any(JsonNode.class),
-                any(RuntimeContext.class));
+        verify(agent).streamEvents(anyList(), any(JsonNode.class), any(RuntimeContext.class));
     }
 
     private ReActAgent prepareStructuredStreamingAgent() {
         ReActAgent agent = mock(ReActAgent.class);
         when(agentProvider.getObject()).thenReturn(agent);
-        when(agent.stream(
-                        anyList(),
-                        any(StreamOptions.class),
-                        any(JsonNode.class),
-                        any(RuntimeContext.class)))
-                .thenReturn(
-                        Flux.just(new Event(EventType.AGENT_RESULT, structuredAssistant(), true)));
+        when(agent.streamEvents(anyList(), any(JsonNode.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentResultEvent(structuredAssistant())));
         return agent;
     }
 
@@ -711,7 +696,7 @@ class ResponsesControllerTest {
         AgentCallOptions options = context.get(AgentCallOptions.class);
         assertThat(options).isNotNull();
         assertThat(options.isStateless()).isTrue();
-        assertThat(options.getHooks()).hasSize(1);
+        assertThat(options.getMiddlewares()).hasSize(1);
         assertThat(options.getExternalToolSchemas())
                 .extracting(schema -> schema.getName())
                 .contains(expectedTool)

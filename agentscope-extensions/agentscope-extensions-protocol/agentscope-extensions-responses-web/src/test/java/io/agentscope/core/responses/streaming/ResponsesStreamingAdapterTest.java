@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
@@ -29,10 +30,14 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -61,12 +66,14 @@ class ResponsesStreamingAdapterTest {
     @Test
     void shouldConvertIncrementalTextEventsToResponsesStreamEvents() {
         ReActAgent agent = mock(ReActAgent.class);
-        when(agent.stream(anyList(), any(StreamOptions.class)))
+        when(agent.streamEvents(anyList()))
                 .thenReturn(
                         Flux.just(
-                                new Event(EventType.REASONING, assistantText("Hel"), false),
-                                new Event(EventType.REASONING, assistantText("lo"), false),
-                                new Event(EventType.REASONING, assistantText("Hello"), true)));
+                                new TextBlockStartEvent("reply_1", "text"),
+                                new TextBlockDeltaEvent("reply_1", "text", "Hel"),
+                                new TextBlockDeltaEvent("reply_1", "text", "lo"),
+                                new TextBlockEndEvent("reply_1", "text"),
+                                new AgentResultEvent(assistantText("Hello"))));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(agent, List.of(userText("Hello")), request(), "resp_123")
@@ -105,13 +112,14 @@ class ResponsesStreamingAdapterTest {
     void shouldPassRuntimeContextToAgentStream() {
         ReActAgent agent = mock(ReActAgent.class);
         RuntimeContext context = RuntimeContext.builder().sessionId("resp_context").build();
-        when(agent.stream(anyList(), any(StreamOptions.class), same(context)))
+        when(agent.streamEvents(anyList(), same(context)))
                 .thenReturn(
                         Flux.just(
-                                new Event(
-                                        EventType.REASONING,
-                                        assistantText("context response"),
-                                        true)));
+                                new TextBlockStartEvent("reply_context", "text"),
+                                new TextBlockDeltaEvent(
+                                        "reply_context", "text", "context response"),
+                                new TextBlockEndEvent("reply_context", "text"),
+                                new AgentResultEvent(assistantText("context response"))));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(
@@ -125,18 +133,20 @@ class ResponsesStreamingAdapterTest {
 
         assertNotNull(events);
         assertEquals("response.completed", events.get(events.size() - 1).getType());
-        verify(agent).stream(anyList(), any(StreamOptions.class), same(context));
+        verify(agent).streamEvents(anyList(), same(context));
     }
 
     @Test
     void shouldKeepStreamingStateIndependentForEachSubscription() {
         ReActAgent agent = mock(ReActAgent.class);
-        when(agent.stream(anyList(), any(StreamOptions.class)))
+        when(agent.streamEvents(anyList()))
                 .thenReturn(
                         Flux.just(
-                                new Event(EventType.REASONING, assistantText("Hel"), false),
-                                new Event(EventType.REASONING, assistantText("lo"), false),
-                                new Event(EventType.REASONING, assistantText("Hello"), true)));
+                                new TextBlockStartEvent("reply_repeat", "text"),
+                                new TextBlockDeltaEvent("reply_repeat", "text", "Hel"),
+                                new TextBlockDeltaEvent("reply_repeat", "text", "lo"),
+                                new TextBlockEndEvent("reply_repeat", "text"),
+                                new AgentResultEvent(assistantText("Hello"))));
 
         Flux<ResponsesStreamEvent> stream =
                 adapter.stream(agent, List.of(userText("Hello")), request(), "resp_repeat");
@@ -154,6 +164,28 @@ class ResponsesStreamingAdapterTest {
     }
 
     @Test
+    void shouldIgnoreTextBlockLifecycleWithoutContent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.streamEvents(anyList()))
+                .thenReturn(
+                        Flux.just(
+                                new TextBlockStartEvent("reply_empty", "text"),
+                                new TextBlockEndEvent("reply_empty", "text"),
+                                new AgentResultEvent(assistantText(""))));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(agent, List.of(userText("Hello")), request(), "resp_empty")
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertFalse(
+                events.stream()
+                        .anyMatch(event -> "response.output_item.added".equals(event.getType())));
+        assertTrue(events.get(events.size() - 1).getResponse().getOutput().isEmpty());
+    }
+
+    @Test
     void shouldConvertToolUseEventsToFunctionCallOutputItems() {
         ReActAgent agent = mock(ReActAgent.class);
         Msg toolCall =
@@ -166,8 +198,16 @@ class ResponsesStreamingAdapterTest {
                                         .input(Map.of("city", "Hangzhou"))
                                         .build())
                         .build();
-        when(agent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(new Event(EventType.REASONING, toolCall, true)));
+        when(agent.streamEvents(anyList()))
+                .thenReturn(
+                        Flux.just(
+                                new ToolCallStartEvent("reply_tool", "call_123", "get_weather"),
+                                new ToolCallDeltaEvent(
+                                        "reply_tool", "call_123", "get_weather", "{\"city\":"),
+                                new ToolCallDeltaEvent(
+                                        "reply_tool", "call_123", "get_weather", "\"Hangzhou\"}"),
+                                new ToolCallEndEvent("reply_tool", "call_123", "get_weather"),
+                                new AgentResultEvent(toolCall)));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(agent, List.of(userText("Weather?")), request(), "resp_456")
@@ -204,8 +244,110 @@ class ResponsesStreamingAdapterTest {
                                                 .equals(event.getType()))
                         .findFirst()
                         .orElseThrow();
-        assertEquals("{\"city\":\"Hangzhou\"}", argumentsDelta.getDelta());
+        assertEquals("{\"city\":", argumentsDelta.getDelta());
         assertEquals("resp_456", argumentsDelta.getResponseId());
+        assertEquals(
+                "{\"city\":\"Hangzhou\"}",
+                events.stream()
+                        .filter(
+                                event ->
+                                        "response.function_call_arguments.delta"
+                                                .equals(event.getType()))
+                        .map(ResponsesStreamEvent::getDelta)
+                        .reduce("", String::concat));
+    }
+
+    @Test
+    void shouldUseTerminalToolInputWhenArgumentDeltasAreMissing() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg toolCall =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call_terminal")
+                                        .name("get_weather")
+                                        .input(Map.of("city", "Hangzhou"))
+                                        .build())
+                        .build();
+        when(agent.streamEvents(anyList()))
+                .thenReturn(
+                        Flux.just(
+                                new ToolCallStartEvent(
+                                        "reply_terminal", "call_terminal", "get_weather"),
+                                new ToolCallEndEvent(
+                                        "reply_terminal", "call_terminal", "get_weather"),
+                                new AgentResultEvent(toolCall)));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(agent, List.of(userText("Weather?")), request(), "resp_terminal")
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(
+                "{\"city\":\"Hangzhou\"}",
+                events.stream()
+                        .filter(
+                                event ->
+                                        "response.function_call_arguments.delta"
+                                                .equals(event.getType()))
+                        .map(ResponsesStreamEvent::getDelta)
+                        .reduce("", String::concat));
+        ResponsesStreamEvent argumentsDone =
+                events.stream()
+                        .filter(
+                                event ->
+                                        "response.function_call_arguments.done"
+                                                .equals(event.getType()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("{\"city\":\"Hangzhou\"}", argumentsDone.getArguments());
+    }
+
+    @Test
+    void shouldRecoverToolCallFromTerminalResultWhenLifecycleEventsAreMissing() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg toolCall =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call_result")
+                                        .name("get_weather")
+                                        .input(Map.of("city", "Hangzhou"))
+                                        .build())
+                        .build();
+        when(agent.streamEvents(anyList())).thenReturn(Flux.just(new AgentResultEvent(toolCall)));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(agent, List.of(userText("Weather?")), request(), "resp_result")
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        ResponsesStreamEvent added =
+                events.stream()
+                        .filter(event -> "response.output_item.added".equals(event.getType()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("function_call", added.getItem().getType());
+        assertEquals("call_result", added.getItem().getCallId());
+        assertEquals(
+                "{\"city\":\"Hangzhou\"}",
+                events.stream()
+                        .filter(
+                                event ->
+                                        "response.function_call_arguments.delta"
+                                                .equals(event.getType()))
+                        .map(ResponsesStreamEvent::getDelta)
+                        .reduce("", String::concat));
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                event ->
+                                        "response.function_call_arguments.done"
+                                                .equals(event.getType())));
     }
 
     @Test
@@ -222,8 +364,20 @@ class ResponsesStreamingAdapterTest {
                                         .input(Map.of("query", "AgentScope"))
                                         .build())
                         .build();
-        when(agent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(new Event(EventType.REASONING, reply, true)));
+        when(agent.streamEvents(anyList()))
+                .thenReturn(
+                        Flux.just(
+                                new TextBlockStartEvent("reply_mixed", "text"),
+                                new TextBlockDeltaEvent("reply_mixed", "text", "Checking"),
+                                new TextBlockEndEvent("reply_mixed", "text"),
+                                new ToolCallStartEvent("reply_mixed", "call_mixed", "lookup"),
+                                new ToolCallDeltaEvent(
+                                        "reply_mixed",
+                                        "call_mixed",
+                                        "lookup",
+                                        "{\"query\":\"AgentScope\"}"),
+                                new ToolCallEndEvent("reply_mixed", "call_mixed", "lookup"),
+                                new AgentResultEvent(reply)));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(agent, List.of(userText("Lookup")), request(), "resp_mixed")
@@ -251,11 +405,20 @@ class ResponsesStreamingAdapterTest {
                                         .input(Map.of("query", "AgentScope"))
                                         .build())
                         .build();
-        when(agent.stream(anyList(), any(StreamOptions.class)))
+        when(agent.streamEvents(anyList()))
                 .thenReturn(
                         Flux.just(
-                                new Event(EventType.REASONING, toolCall, false),
-                                new Event(EventType.REASONING, assistantText("Done"), true)));
+                                new ToolCallStartEvent("reply_order", "call_first", "lookup"),
+                                new ToolCallDeltaEvent(
+                                        "reply_order",
+                                        "call_first",
+                                        "lookup",
+                                        "{\"query\":\"AgentScope\"}"),
+                                new ToolCallEndEvent("reply_order", "call_first", "lookup"),
+                                new TextBlockStartEvent("reply_order", "text"),
+                                new TextBlockDeltaEvent("reply_order", "text", "Done"),
+                                new TextBlockEndEvent("reply_order", "text"),
+                                new AgentResultEvent(assistantText("Done"))));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(agent, List.of(userText("Lookup")), request(), "resp_order")
@@ -321,8 +484,8 @@ class ResponsesStreamingAdapterTest {
                           "required": ["answer", "ok"]
                         }
                         """);
-        when(agent.stream(anyList(), any(StreamOptions.class), any(JsonNode.class)))
-                .thenReturn(Flux.just(new Event(EventType.AGENT_RESULT, reply, true)));
+        when(agent.streamEvents(anyList(), any(JsonNode.class), isNull(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentResultEvent(reply)));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(
@@ -351,19 +514,14 @@ class ResponsesStreamingAdapterTest {
         assertEquals("response.completed", completed.getType());
         assertEquals("{\"answer\":\"42\",\"ok\":true}", completed.getResponse().getOutputText());
         assertEquals(1, completed.getResponse().getOutput().size());
-        verify(agent).stream(anyList(), any(StreamOptions.class), any(JsonNode.class));
+        verify(agent).streamEvents(anyList(), any(JsonNode.class), isNull(RuntimeContext.class));
     }
 
     @Test
     void shouldFailStructuredStreamWhenAgentReturnsNoStructuredData() throws Exception {
         ReActAgent agent = mock(ReActAgent.class);
-        when(agent.stream(anyList(), any(StreamOptions.class), any(JsonNode.class)))
-                .thenReturn(
-                        Flux.just(
-                                new Event(
-                                        EventType.AGENT_RESULT,
-                                        assistantText("plain text"),
-                                        true)));
+        when(agent.streamEvents(anyList(), any(JsonNode.class), isNull(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentResultEvent(assistantText("plain text"))));
 
         List<ResponsesStreamEvent> events =
                 adapter.stream(
@@ -380,6 +538,31 @@ class ResponsesStreamingAdapterTest {
         assertEquals("response.failed", failed.getType());
         assertEquals("failed", failed.getResponse().getStatus());
         assertEquals("runtime_error", failed.getResponse().getError().getCode());
+    }
+
+    @Test
+    void shouldPassRuntimeContextToStructuredAgentEventStream() throws Exception {
+        ReActAgent agent = mock(ReActAgent.class);
+        JsonNode schema = OBJECT_MAPPER.readTree("{\"type\":\"object\"}");
+        RuntimeContext context = RuntimeContext.builder().sessionId("structured-context").build();
+        Msg reply = structuredAssistant(Map.of("answer", "ok"));
+        when(agent.streamEvents(anyList(), same(schema), same(context)))
+                .thenReturn(Flux.just(new AgentResultEvent(reply)));
+
+        List<ResponsesStreamEvent> events =
+                adapter.stream(
+                                agent,
+                                List.of(userText("Return JSON")),
+                                schema,
+                                request(),
+                                "resp_structured_context",
+                                context)
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals("response.completed", events.get(events.size() - 1).getType());
+        verify(agent).streamEvents(anyList(), same(schema), same(context));
     }
 
     @Test

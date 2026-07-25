@@ -26,12 +26,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreActingEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -39,6 +38,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -59,6 +61,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -127,8 +130,10 @@ class ReActAgentPerCallOptionsTest {
     }
 
     @Test
-    void shouldIsolatePerCallHooksAndExternalToolSchemas() {
-        List<ModelCall> modelCalls = new ArrayList<>();
+    void shouldIsolateConcurrentPerCallMiddlewaresAndExternalToolSchemas() throws Exception {
+        List<ModelCall> modelCalls = new CopyOnWriteArrayList<>();
+        CountDownLatch callsStarted = new CountDownLatch(2);
+        CompletableFuture<Void> releaseCalls = new CompletableFuture<>();
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
         when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
@@ -139,14 +144,17 @@ class ReActAgentPerCallOptionsTest {
                                             List.copyOf(invocation.getArgument(0)),
                                             List.copyOf(invocation.getArgument(1)),
                                             invocation.getArgument(2)));
-                            return Flux.just(
-                                    ChatResponse.builder()
-                                            .content(
-                                                    List.of(
-                                                            TextBlock.builder()
-                                                                    .text("done")
-                                                                    .build()))
-                                            .build());
+                            callsStarted.countDown();
+                            return Mono.fromFuture(releaseCalls)
+                                    .thenMany(
+                                            Flux.just(
+                                                    ChatResponse.builder()
+                                                            .content(
+                                                                    List.of(
+                                                                            TextBlock.builder()
+                                                                                    .text("done")
+                                                                                    .build()))
+                                                            .build()));
                         });
 
         ReActAgent agent =
@@ -157,19 +165,44 @@ class ReActAgentPerCallOptionsTest {
                         .maxIters(1)
                         .build();
 
-        agent.call(
-                        List.of(userMessage("first")),
-                        callContext("session-a", "instruction-a", 0.1, "tool_a"))
-                .block(TIMEOUT);
-        agent.call(
-                        List.of(userMessage("second")),
-                        callContext("session-b", "instruction-b", 0.9, "tool_b"))
-                .block(TIMEOUT);
+        CompletableFuture<Msg> first =
+                agent.call(
+                                List.of(userMessage("first")),
+                                callContext("session-a", "instruction-a", 0.1, "tool_a"))
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        CompletableFuture<Msg> second =
+                agent.call(
+                                List.of(userMessage("second")),
+                                callContext("session-b", "instruction-b", 0.9, "tool_b"))
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+
+        try {
+            assertTrue(callsStarted.await(2, TimeUnit.SECONDS));
+        } finally {
+            releaseCalls.complete(null);
+        }
+        first.get(2, TimeUnit.SECONDS);
+        second.get(2, TimeUnit.SECONDS);
 
         assertEquals(2, modelCalls.size());
-        assertCall(modelCalls.get(0), "instruction-a", "instruction-b", 0.1, "tool_a", "tool_b");
-        assertCall(modelCalls.get(1), "instruction-b", "instruction-a", 0.9, "tool_b", "tool_a");
+        assertCall(
+                callWithInstruction(modelCalls, "instruction-a"),
+                "instruction-a",
+                "instruction-b",
+                0.1,
+                "tool_a",
+                "tool_b");
+        assertCall(
+                callWithInstruction(modelCalls, "instruction-b"),
+                "instruction-b",
+                "instruction-a",
+                0.9,
+                "tool_b",
+                "tool_a");
         assertTrue(agent.getHooks().isEmpty());
+        assertEquals(1, agent.getMiddlewares().size());
         assertTrue(agent.getToolkit().getToolNames().isEmpty());
     }
 
@@ -337,6 +370,49 @@ class ReActAgentPerCallOptionsTest {
         assertCall(firstCall, "instruction-a", "instruction-b", 0.1, "tool_a", "tool_b");
         assertCall(secondCall, "instruction-b", "instruction-a", 0.9, "tool_b", "tool_a");
         assertTrue(agent.getHooks().isEmpty());
+    }
+
+    @Test
+    void shouldApplyCallScopedOnAgentMiddlewareToLegacyStream() {
+        AtomicReference<RuntimeContext> observedContext = new AtomicReference<>();
+        MiddlewareBase middleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentInput input,
+                            Function<AgentInput, Flux<AgentEvent>> next) {
+                        observedContext.set(ctx);
+                        return next.apply(input);
+                    }
+                };
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
+                .thenReturn(
+                        Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build()));
+        ReActAgent agent =
+                ReActAgent.builder().name("legacy-middleware-agent").model(model).build();
+        RuntimeContext context =
+                RuntimeContext.builder()
+                        .sessionId("legacy-middleware-session")
+                        .put(
+                                AgentCallOptions.class,
+                                AgentCallOptions.builder().middleware(middleware).build())
+                        .build();
+
+        agent.stream(
+                        List.of(userMessage("hello")),
+                        StreamOptions.builder().eventTypes(EventType.AGENT_RESULT).build(),
+                        context)
+                .collectList()
+                .block(TIMEOUT);
+
+        assertSame(context, observedContext.get());
     }
 
     @Test
@@ -559,7 +635,8 @@ class ReActAgentPerCallOptionsTest {
     }
 
     @Test
-    void shouldNotSerializePlainCallsBecauseOfConfiguredRuntimeContextAwareHook() throws Exception {
+    void shouldSerializePlainAndResponsesCallsWithConfiguredRuntimeContextAwareHook()
+            throws Exception {
         CountDownLatch firstStarted = new CountDownLatch(1);
         CountDownLatch secondStarted = new CountDownLatch(1);
         CompletableFuture<Void> releaseFirst = new CompletableFuture<>();
@@ -595,16 +672,14 @@ class ReActAgentPerCallOptionsTest {
                         .build();
 
         CompletableFuture<Msg> first =
-                agent.call(
-                                List.of(userMessage("first")),
-                                RuntimeContext.builder().sessionId("plain-session-a").build())
+                agent.call(List.of(userMessage("first")), responsesContext("responses-session"))
                         .subscribeOn(Schedulers.parallel())
                         .toFuture();
         assertTrue(firstStarted.await(2, TimeUnit.SECONDS));
         CompletableFuture<Msg> second =
                 agent.call(
                                 List.of(userMessage("second")),
-                                RuntimeContext.builder().sessionId("plain-session-b").build())
+                                RuntimeContext.builder().sessionId("plain-session").build())
                         .subscribeOn(Schedulers.parallel())
                         .toFuture();
 
@@ -615,104 +690,9 @@ class ReActAgentPerCallOptionsTest {
             releaseFirst.complete(null);
         }
 
-        assertTrue(secondStartedBeforeRelease);
+        assertFalse(secondStartedBeforeRelease);
         assertEquals("reply-first", first.get(2, TimeUnit.SECONDS).getTextContent());
         assertEquals("reply-second", second.get(2, TimeUnit.SECONDS).getTextContent());
-    }
-
-    @Test
-    void shouldBindRuntimeContextToInvocationLocalContextAwareHook() {
-        Map<String, String> observedSessions = new ConcurrentHashMap<>();
-        RecordingContextHook hook = new RecordingContextHook(observedSessions);
-        Model model = mock(Model.class);
-        when(model.getModelName()).thenReturn("stub");
-        when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
-                .thenReturn(
-                        Flux.just(
-                                ChatResponse.builder()
-                                        .content(
-                                                List.of(
-                                                        TextBlock.builder()
-                                                                .text("reply-local")
-                                                                .build()))
-                                        .build()));
-        ReActAgent agent =
-                ReActAgent.builder().name("local-context-hook-agent").model(model).build();
-        RuntimeContext context =
-                RuntimeContext.builder()
-                        .sessionId("local-session")
-                        .put(AgentCallOptions.class, AgentCallOptions.builder().hook(hook).build())
-                        .build();
-
-        Msg response = agent.call(List.of(userMessage("local")), context).block(TIMEOUT);
-
-        assertEquals("reply-local", response.getTextContent());
-        assertEquals("local-session", observedSessions.get("reply-local"));
-        assertNull(hook.runtimeContext);
-    }
-
-    @Test
-    void shouldSerializeInvocationLocalContextHookWithPlainSameSessionCall() throws Exception {
-        CountDownLatch localStarted = new CountDownLatch(1);
-        CountDownLatch plainStarted = new CountDownLatch(1);
-        CompletableFuture<Void> releaseLocal = new CompletableFuture<>();
-        RecordingContextHook hook = new RecordingContextHook(new ConcurrentHashMap<>());
-        Model model = mock(Model.class);
-        when(model.getModelName()).thenReturn("stub");
-        when(model.stream(anyList(), anyList(), any(GenerateOptions.class)))
-                .thenAnswer(
-                        invocation -> {
-                            List<Msg> messages = invocation.getArgument(0);
-                            String input = messages.get(messages.size() - 1).getTextContent();
-                            ChatResponse response =
-                                    ChatResponse.builder()
-                                            .content(
-                                                    List.of(
-                                                            TextBlock.builder()
-                                                                    .text("reply-" + input)
-                                                                    .build()))
-                                            .build();
-                            if ("local".equals(input)) {
-                                localStarted.countDown();
-                                return Mono.fromFuture(releaseLocal).thenMany(Flux.just(response));
-                            }
-                            plainStarted.countDown();
-                            return Flux.just(response);
-                        });
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("mixed-context-hook-agent")
-                        .model(model)
-                        .maxIters(1)
-                        .build();
-        RuntimeContext localContext =
-                RuntimeContext.builder()
-                        .sessionId("shared-session")
-                        .put(AgentCallOptions.class, AgentCallOptions.builder().hook(hook).build())
-                        .build();
-        RuntimeContext plainContext = RuntimeContext.builder().sessionId("shared-session").build();
-
-        CompletableFuture<Msg> local =
-                agent.call(List.of(userMessage("local")), localContext)
-                        .subscribeOn(Schedulers.parallel())
-                        .toFuture();
-        assertTrue(localStarted.await(2, TimeUnit.SECONDS));
-        CompletableFuture<Msg> plain =
-                agent.call(List.of(userMessage("plain")), plainContext)
-                        .subscribeOn(Schedulers.parallel())
-                        .toFuture();
-
-        boolean plainStartedBeforeRelease;
-        try {
-            plainStartedBeforeRelease = plainStarted.await(200, TimeUnit.MILLISECONDS);
-        } finally {
-            releaseLocal.complete(null);
-        }
-
-        assertFalse(plainStartedBeforeRelease);
-        assertEquals("reply-local", local.get(2, TimeUnit.SECONDS).getTextContent());
-        assertEquals("reply-plain", plain.get(2, TimeUnit.SECONDS).getTextContent());
-        assertNull(hook.runtimeContext);
     }
 
     @Test
@@ -797,18 +777,29 @@ class ReActAgentPerCallOptionsTest {
 
     private RuntimeContext callContext(
             String sessionId, String instruction, double temperature, String toolName) {
-        Hook hook =
-                new Hook() {
+        MiddlewareBase middleware =
+                new MiddlewareBase() {
                     @Override
-                    public <T extends HookEvent> Mono<T> onEvent(T event) {
-                        if (event instanceof PreCallEvent preCall) {
-                            preCall.appendSystemContent(instruction);
-                        }
-                        if (event instanceof PreReasoningEvent preReasoning) {
-                            preReasoning.setGenerateOptions(
-                                    GenerateOptions.builder().temperature(temperature).build());
-                        }
-                        return Mono.just(event);
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                        return Mono.just(currentPrompt + "\n\n" + instruction);
+                    }
+
+                    @Override
+                    public Flux<io.agentscope.core.event.AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            java.util.function.Function<
+                                            ReasoningInput,
+                                            Flux<io.agentscope.core.event.AgentEvent>>
+                                    next) {
+                        GenerateOptions options =
+                                GenerateOptions.mergeOptions(
+                                        GenerateOptions.builder().temperature(temperature).build(),
+                                        input.options());
+                        return next.apply(
+                                new ReasoningInput(input.messages(), input.tools(), options));
                     }
                 };
         ToolSchema schema =
@@ -818,7 +809,10 @@ class ReActAgentPerCallOptionsTest {
                         .parameters(Map.of("type", "object"))
                         .build();
         AgentCallOptions options =
-                AgentCallOptions.builder().hook(hook).externalToolSchema(schema).build();
+                AgentCallOptions.builder()
+                        .middleware(middleware)
+                        .externalToolSchema(schema)
+                        .build();
         return RuntimeContext.builder()
                 .sessionId(sessionId)
                 .put(AgentCallOptions.class, options)
