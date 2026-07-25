@@ -97,6 +97,7 @@ Plug Agents into your enterprise infrastructure.
 Runtime, language, debugging, and training extensions.
 
 - [Chat Completions Web](ecosystem/chat-completions-web.md)
+- [Responses Web](ecosystem/responses-web.md)
 - [AgentScope Studio](ecosystem/studio.md)
 - [Online Training](ecosystem/training.md)
 
