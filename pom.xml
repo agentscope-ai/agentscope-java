@@ -38,7 +38,7 @@
         <jacoco.version>0.8.14</jacoco.version>
         <google-java-format.version>1.28.0</google-java-format.version>
 
-        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
+        <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
