@@ -623,6 +623,7 @@ class HarnessAgentTest {
                         .name("source")
                         .model(stubModel("done"))
                         .toolkit(new Toolkit())
+                        .maxPersistedContextMessages(7)
                         .middlewares(List.of(userMiddleware, new AgentTraceMiddleware()))
                         .build();
 
@@ -633,6 +634,8 @@ class HarnessAgentTest {
 
         List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
         HarnessAgent child = builder.build();
+
+        assertEquals(7, child.getDelegate().getMaxPersistedContextMessages());
 
         long copiedUserMiddlewareCount =
                 child.getDelegate().getMiddlewares().stream()

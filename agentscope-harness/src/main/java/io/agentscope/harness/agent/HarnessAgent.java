@@ -422,6 +422,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getStateStore();
     }
 
+    /** Deletes persisted and locally cached state for the session identified by {@code ctx}. */
+    public void deleteSessionState(RuntimeContext ctx) {
+        delegate.deleteSessionState(ctx);
+    }
+
+    /** Deletes persisted and locally cached state for a {@code (userId, sessionId)} session. */
+    public void deleteSessionState(String userId, String sessionId) {
+        delegate.deleteSessionState(userId, sessionId);
+    }
+
     /**
      * The distributed store configured on this agent, or {@code null} for local
      * deployments. Exposed so {@link io.agentscope.harness.agent.gateway.GatewayBootstrap} can build
@@ -1155,9 +1165,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
-         *   <tr><td rowspan="2">Persistence</td>
+         *   <tr><td rowspan="3">Persistence</td>
          *       <td>{@code session}</td><td>{@code agent.getStateStore()} if non-null</td></tr>
          *   <tr><td>{@code defaultSessionId}</td><td>{@code agent.getDefaultSessionId()} if non-null</td></tr>
+         *   <tr><td>{@code maxPersistedContextMessages}</td>
+         *       <td>{@code agent.getMaxPersistedContextMessages()}</td></tr>
          *   <tr><td rowspan="2">Model resilience (from {@code agent.getModelConfig()})</td>
          *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
          *   <tr><td>{@code fallbackModel}</td><td>{@link ModelConfig#fallbackModel()} if non-null</td></tr>
@@ -1248,6 +1260,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (srcDefaultSessionId != null) {
                 b.defaultSessionId(srcDefaultSessionId);
             }
+            b.maxPersistedContextMessages(agent.getMaxPersistedContextMessages());
 
             // Model resilience.
             ModelConfig mc = agent.getModelConfig();
@@ -1422,6 +1435,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStoreOverride = stateStore;
             inner.stateStore(stateStore);
+            return this;
+        }
+
+        /**
+         * Limits the number of recent conversation messages stored in persisted agent state.
+         *
+         * @param maxMessages maximum number of recent context messages to persist
+         * @return this builder
+         */
+        public Builder maxPersistedContextMessages(int maxMessages) {
+            inner.maxPersistedContextMessages(maxMessages);
             return this;
         }
 

@@ -31,6 +31,36 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
+## Limit Persisted Conversation History
+
+By default, the complete conversation context is included in every persisted `agent_state`
+snapshot. For long-running sessions, set a maximum number of recent messages to keep the stored
+record bounded. This works with both a standalone `AgentStateStore` and a `DistributedStore`:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("assistant")
+    .model(model)
+    .distributedStore(distributedStore)
+    .maxPersistedContextMessages(200)
+    .build();
+```
+
+The default is unlimited for backward compatibility. A value of `0` persists the rest of the agent
+state without conversation messages. Trimming creates a persistence snapshot and does not mutate
+the live state of the current call.
+
+Applications can also choose when to remove an entire session:
+
+```java
+agent.deleteSessionState(userId, sessionId);
+// or: agent.deleteSessionState(runtimeContext);
+```
+
+This removes the session from the configured store and evicts its local state caches. Call it only
+after active work for that session has stopped; an in-flight call can persist the session again when
+it completes.
+
 For detailed usage and code examples, see each store's documentation:
 
 - [Redis](../distributed/redis.md#1-redisagentstatestore)

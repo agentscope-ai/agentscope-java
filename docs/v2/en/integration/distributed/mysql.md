@@ -24,10 +24,15 @@ DistributedStore store = MysqlDistributedStore.create(dataSource);
 
 HarnessAgent agent = HarnessAgent.builder()
     .distributedStore(store)
+    .maxPersistedContextMessages(200)  // optional: bound session state growth
     .filesystem(new RemoteFilesystemSpec()
             .isolationScope(IsolationScope.USER))
     .build();
 ```
+
+`agent_state` contains the serialized conversation context, so long-running sessions grow unless a
+retention limit is configured. See [Agent State Store](../session/overview.md) for persisted context
+limits and application-controlled session deletion.
 
 ## Components Provided
 
