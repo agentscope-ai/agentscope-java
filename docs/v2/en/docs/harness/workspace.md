@@ -108,12 +108,41 @@ A single `HarnessAgent` instance can serve thousands of concurrent users with ze
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
-    .workspace(Paths.get(".agentscope/workspace"))   // omit → ${user.dir}/.agentscope/workspace
+    .workspace(Paths.get(".agentscope/workspace"))   // omit → see resolution order below
     .additionalContextFile("SOUL.md")                // any workspace-relative path, inlined in full
     .additionalContextFile("PREFERENCES.md")
     .maxContextTokens(8000)                          // MEMORY injection budget
     .build();
 ```
+
+### Workspace resolution order
+
+When `workspace(...)` is not called explicitly, `build()` resolves the workspace directory with
+the following priority (highest first):
+
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `workspace(Path)` / `workspace(String)` | Explicit builder value, overrides everything |
+| 2 | `agentscope.workspace` system property | `-Dagentscope.workspace=/data/workspace` |
+| 3 | `AGENTSCOPE_WORKSPACE` environment variable | `export AGENTSCOPE_WORKSPACE=/data/workspace` |
+| 4 | Default | `${user.dir}/.agentscope/workspace` |
+
+The system property and environment variable exist mainly for **image packaging / container
+deployment**: keep the path out of application code and inject it at image-build or container-start
+time. For example:
+
+```dockerfile
+ENV AGENTSCOPE_WORKSPACE=/data/agent-workspace
+```
+
+```yaml
+# k8s / docker-compose
+env:
+  - name: AGENTSCOPE_WORKSPACE
+    value: /data/agent-workspace
+```
+
+> A blank value (e.g. `"   "`) is treated as unset and falls through to the next level.
 
 Minimum `AGENTS.md` skeleton:
 

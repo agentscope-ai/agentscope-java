@@ -52,23 +52,46 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </div>
 </div>
 
-<!-- Stats strip -->
-<div class="hs-stats">
-  <div class="hs-stat">
-    <span class="hs-stat__val">Agentic</span>
-    <span class="hs-stat__label">智能体优先的执行模型</span>
+<!-- Stats strip: 典型用户案例 -->
+<div class="hs-adoption">
+  <div class="hs-adoption__eyebrow">
+    <span class="hs-adoption__eyebrow-dot"></span>生产环境验证 · Battle-tested in Production
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Harness</span>
-    <span class="hs-stat__label">长期稳定运行的工程底座</span>
+  <div class="hs-adoption__stats">
+    <div class="hs-stat">
+      <span class="hs-stat__val">阿里巴巴集团</span>
+      <span class="hs-stat__label">集团内使用最广泛的智能体框架（Java &amp; Python），十余条核心业务线生产环境深度使用</span>
+    </div>
+    <div class="hs-stat">
+      <span class="hs-stat__val">开源社区</span>
+      <span class="hs-stat__label">开源与阿里云公有云用户覆盖 10+ 行业的头部企业</span>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Sandbox</span>
-    <span class="hs-stat__label">隔离执行 + 快照恢复</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">阿里巴巴集团</span>
+    <div class="hs-marquee">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">飞猪</span><span class="hs-tag">淘宝闪购</span><span class="hs-tag">虎鲸文娱</span><span class="hs-tag">AIDC</span><span class="hs-tag">阿里控股</span><span class="hs-tag">淘天交易</span><span class="hs-tag">淘天手淘</span><span class="hs-tag">1688</span><span class="hs-tag">千问 APP</span><span class="hs-tag">高德</span><span class="hs-tag">阿里云</span><span class="hs-tag">蚂蚁国际</span><span class="hs-tag">蚂蚁全球支付</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">飞猪</span><span class="hs-tag">淘宝闪购</span><span class="hs-tag">虎鲸文娱</span><span class="hs-tag">AIDC</span><span class="hs-tag">阿里控股</span><span class="hs-tag">淘天交易</span><span class="hs-tag">淘天手淘</span><span class="hs-tag">1688</span><span class="hs-tag">千问 APP</span><span class="hs-tag">高德</span><span class="hs-tag">阿里云</span><span class="hs-tag">蚂蚁国际</span><span class="hs-tag">蚂蚁全球支付</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+      </div>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Distributed</span>
-    <span class="hs-stat__label">A2A / MCP / 跨进程编排</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">开源 · 公有云</span>
+    <div class="hs-marquee hs-marquee--reverse">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">金融</span><span class="hs-tag">交通物流</span><span class="hs-tag">消费零售</span><span class="hs-tag">制造</span><span class="hs-tag">能源</span><span class="hs-tag">医疗</span><span class="hs-tag">教育政媒</span><span class="hs-tag">互联网</span><span class="hs-tag">SaaS</span><span class="hs-tag">咨询</span><span class="hs-tag hs-tag--more">等行业头部企业</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">金融</span><span class="hs-tag">交通物流</span><span class="hs-tag">消费零售</span><span class="hs-tag">制造</span><span class="hs-tag">能源</span><span class="hs-tag">医疗</span><span class="hs-tag">教育政媒</span><span class="hs-tag">互联网</span><span class="hs-tag">SaaS</span><span class="hs-tag">咨询</span><span class="hs-tag hs-tag--more">等行业头部企业</span>
+        </span>
+      </div>
+    </div>
   </div>
 </div>
 
