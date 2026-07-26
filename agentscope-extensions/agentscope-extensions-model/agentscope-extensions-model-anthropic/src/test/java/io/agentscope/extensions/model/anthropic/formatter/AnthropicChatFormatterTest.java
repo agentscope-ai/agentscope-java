@@ -361,6 +361,46 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testApplyToolsUsesDefaultToolChoiceNone() {
+        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
+
+        ToolSchema searchTool =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search the web")
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder().toolChoice(new ToolChoice.None()).build();
+
+        formatter.applyOptions(paramsBuilder, null, defaultOptions);
+        formatter.applyTools(paramsBuilder, List.of(searchTool));
+
+        MessageCreateParams params =
+                paramsBuilder
+                        .model("claude-3-5-sonnet-20241022")
+                        .maxTokens(1024)
+                        .addMessage(
+                                MessageParam.builder()
+                                        .role(MessageParam.Role.USER)
+                                        .content(
+                                                MessageParam.Content.ofBlockParams(
+                                                        List.of(
+                                                                ContentBlockParam.ofText(
+                                                                        TextBlockParam.builder()
+                                                                                .text("test")
+                                                                                .build()))))
+                                        .build())
+                        .build();
+
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isNone());
+        assertTrue(params.tools().isPresent());
+        assertEquals(1, params.tools().get().size());
+    }
+
+    @Test
     void testApplyToolsWithEmptyList() {
         MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
 

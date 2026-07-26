@@ -75,8 +75,7 @@ Spring Boot applications should use the provider-specific starters instead of re
 | DashScope | `agentscope-dashscope-spring-boot-starter` |
 | Gemini | `agentscope-gemini-spring-boot-starter` |
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |
-
-Ollama currently has no dedicated Spring Boot starter; use `agentscope-extensions-model-ollama` with `ModelRegistry` or an explicit `OllamaChatModel.builder()`.
+| Ollama | `agentscope-ollama-spring-boot-starter` |
 
 Detail → [Model](building-blocks/model.md), [Model Providers](../integration/overview.md)
 

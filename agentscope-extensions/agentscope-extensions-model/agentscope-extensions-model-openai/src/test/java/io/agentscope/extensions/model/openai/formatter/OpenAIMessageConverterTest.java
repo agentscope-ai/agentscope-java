@@ -43,6 +43,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Unit tests for OpenAIMessageConverter.
@@ -704,7 +706,7 @@ class OpenAIMessageConverterTest {
     class NameFieldTests {
 
         @Test
-        @DisplayName("Should set name field for user message")
+        @DisplayName("Should set name field for user message when already valid")
         void testUserMessageWithName() {
             Msg msg =
                     Msg.builder()
@@ -720,7 +722,7 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
-        @DisplayName("Should set name field for assistant message")
+        @DisplayName("Should set name field for assistant message when already valid")
         void testAssistantMessageWithName() {
             Msg msg =
                     Msg.builder()
@@ -749,6 +751,53 @@ class OpenAIMessageConverterTest {
 
             assertNotNull(result);
             assertNull(result.getName());
+        }
+
+        @ParameterizedTest
+        @CsvSource(
+                value = {
+                    "My_Agent|My_Agent",
+                    "agent-1|agent-1",
+                    "My Agent|My_Agent",
+                    "hello/world|hello_world",
+                    "!!!|___",
+                    "''|agent"
+                },
+                delimiter = '|')
+        @DisplayName("sanitizeName should replace illegal characters and preserve valid names")
+        void testSanitizeName(String rawName, String expectedName) {
+            assertEquals(expectedName, OpenAIMessageConverter.sanitizeName(rawName));
+        }
+
+        @Test
+        @DisplayName("sanitizeName should replace non-ASCII characters")
+        void testSanitizeNameNonAscii() {
+            assertEquals("____", OpenAIMessageConverter.sanitizeName("\u667a\u80fd\u52a9\u624b"));
+        }
+
+        @Test
+        @DisplayName("sanitizeName should truncate names exceeding 64 characters")
+        void testSanitizeNameTooLong() {
+            assertEquals("a".repeat(64), OpenAIMessageConverter.sanitizeName("a".repeat(80)));
+        }
+
+        @ParameterizedTest
+        @CsvSource(
+                value = {"USER|Hello World|Hello_World", "ASSISTANT|My Agent|My_Agent"},
+                delimiter = '|')
+        @DisplayName("Should sanitize name before converting user and assistant messages")
+        void testMessageNameIsSanitized(MsgRole role, String rawName, String expectedName) {
+            Msg msg =
+                    Msg.builder()
+                            .role(role)
+                            .name(rawName)
+                            .content(List.of(TextBlock.builder().text("Hi").build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals(expectedName, result.getName());
         }
     }
 

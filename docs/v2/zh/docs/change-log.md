@@ -75,8 +75,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 | DashScope | `agentscope-dashscope-spring-boot-starter` |
 | Gemini | `agentscope-gemini-spring-boot-starter` |
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |
-
-Ollama 目前没有专属 Spring Boot starter；请通过 `agentscope-extensions-model-ollama` 配合 `ModelRegistry` 或显式 `OllamaChatModel.builder()` 使用。
+| Ollama | `agentscope-ollama-spring-boot-starter` |
 
 详见 → [模型](building-blocks/model.md)、[模型提供商](../integration/overview.md)
 

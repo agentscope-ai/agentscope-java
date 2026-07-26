@@ -25,7 +25,6 @@ import java.util.List;
  * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with DeepSeek-specific handling:
  * <ul>
  *   <li>No name field in messages (returns HTTP 400 if present)</li>
- *   <li>System messages converted to user messages</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>reasoning_content handling for thinking mode</li>
  * </ul>

@@ -42,6 +42,7 @@
         <module>agentscope-dashscope-spring-boot-starter</module>
         <module>agentscope-gemini-spring-boot-starter</module>
         <module>agentscope-anthropic-spring-boot-starter</module>
+        <module>agentscope-ollama-spring-boot-starter</module>
         <module>agentscope-a2a-spring-boot-starter</module>
         <module>agentscope-agui-spring-boot-starter</module>
         <module>agentscope-chat-completions-web-starter</module>

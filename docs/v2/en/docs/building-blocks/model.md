@@ -100,7 +100,7 @@ ReActAgent agent =
 
 ### Spring Boot applications
 
-For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, and `agentscope-anthropic-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
+For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
 
 OpenAI example:
 
@@ -127,6 +127,7 @@ default generation options, proxy/client settings, or provider-specific flags.
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+| `agentscope-ollama-spring-boot-starter` | `OllamaChatModelBuilderCustomizer` |
 
 Customizer beans are applied after starter properties are bound and before
 `builder.build()` is called. Multiple customizers are supported and follow Spring's

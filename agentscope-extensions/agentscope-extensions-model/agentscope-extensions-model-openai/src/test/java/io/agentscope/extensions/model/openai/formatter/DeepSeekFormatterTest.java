@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test;
  * <p>Tests verify DeepSeek-specific requirements:
  * <ul>
  *   <li>No name field in messages</li>
- *   <li>System messages converted to user</li>
+ *   <li>System message roles are preserved</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>reasoning_content handling for current vs previous turns</li>
  *   <li>Optional empty user message appending</li>
@@ -187,8 +187,8 @@ class DeepSeekFormatterTest {
         }
 
         @Test
-        @DisplayName("Should convert system message to user message")
-        void testConvertSystemToUser() {
+        @DisplayName("Should preserve system message role")
+        void testPreserveSystemRole() {
             List<OpenAIMessage> messages =
                     List.of(
                             OpenAIMessage.builder()
@@ -199,7 +199,7 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
 
             assertEquals(1, result.size());
-            assertEquals("user", result.get(0).getRole());
+            assertEquals("system", result.get(0).getRole());
             assertEquals("You are helpful", result.get(0).getContentAsString());
         }
 
@@ -294,7 +294,7 @@ class DeepSeekFormatterTest {
         }
 
         @Test
-        @DisplayName("Should handle content as list")
+        @DisplayName("Should preserve system role and list content when removing name")
         void testHandleContentAsList() {
             List<OpenAIContentPart> contentParts =
                     List.of(OpenAIContentPart.text("Hello"), OpenAIContentPart.text("World"));
@@ -310,7 +310,7 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
 
             assertEquals(1, result.size());
-            assertEquals("user", result.get(0).getRole());
+            assertEquals("system", result.get(0).getRole());
             assertNull(result.get(0).getName());
             assertTrue(result.get(0).getContent() instanceof List);
         }
@@ -701,8 +701,8 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = formatter.format(messages);
 
             assertEquals(2, result.size());
-            // System converted to user
-            assertEquals("user", result.get(0).getRole());
+            // System role preserved
+            assertEquals("system", result.get(0).getRole());
             // Name removed
             assertNull(result.get(1).getName());
         }
@@ -731,9 +731,9 @@ class DeepSeekFormatterTest {
             List<OpenAIMessage> result = formatter.format(messages);
 
             assertEquals(2, result.size());
-            // Both should be converted to user
-            assertEquals("user", result.get(0).getRole());
-            assertEquals("user", result.get(1).getRole());
+            // Both system roles should be preserved
+            assertEquals("system", result.get(0).getRole());
+            assertEquals("system", result.get(1).getRole());
         }
     }
 }

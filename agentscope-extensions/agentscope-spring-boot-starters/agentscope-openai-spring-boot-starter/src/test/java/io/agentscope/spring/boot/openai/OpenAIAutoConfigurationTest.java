@@ -100,15 +100,30 @@ class OpenAIAutoConfigurationTest {
     }
 
     @Test
-    void shouldFailClearlyWhenApiKeyMissing() {
+    void shouldCreateOpenAIModelWhenApiKeyMissing() {
         contextRunner
-                .withPropertyValues("agentscope.model.provider=openai")
+                .withPropertyValues(
+                        "agentscope.model.provider=openai",
+                        "agentscope.openai.model-name=gpt-4.1-mini")
                 .run(
-                        context ->
-                                assertThat(context.getStartupFailure())
-                                        .isNotNull()
-                                        .hasMessageContaining(
-                                                "agentscope.openai.api-key must be configured"));
+                        context -> {
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context).hasSingleBean(OpenAIChatModel.class);
+                        });
+    }
+
+    @Test
+    void shouldCreateOpenAIModelForApiKeyFreeProvider() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.model.provider=openai",
+                        "agentscope.openai.model-name=opencode-free-model",
+                        "agentscope.openai.base-url=https://api.opencode.example.com/v1")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context).hasSingleBean(OpenAIChatModel.class);
+                        });
     }
 
     @Test
