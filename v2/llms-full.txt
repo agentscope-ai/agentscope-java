@@ -371,7 +371,7 @@ ReActAgent agent =
                 .sysPrompt("You are a helpful assistant.")
                 // Resolved by ModelRegistry; reads DASHSCOPE_API_KEY automatically.
                 // Switch providers by using "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
-                // / "gemini:gemini-2.0-flash" / "ollama:llama3".
+                // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3".
                 .model("dashscope:qwen-plus")
                 .toolkit(new Toolkit())
                 .build();
@@ -429,7 +429,7 @@ ReActAgent agent =
 ::::
 
 :::{tip}
-The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
+The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
 :::
 
 ### Builder fields
@@ -1827,7 +1827,7 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 
 ### String model id
 
-For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus` or `openai:gpt-4.1-mini`. Add the matching model extension module, set the provider's standard environment variable such as `DASHSCOPE_API_KEY` or `OPENAI_API_KEY`, and pass the id directly to the agent:
+For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus`, `openai:gpt-4.1-mini`, or `deepseek:deepseek-v4-flash`. Add the matching model extension module, set the provider's standard environment variable such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`, and pass the id directly to the agent:
 
 ```java
 ReActAgent agent =
@@ -1837,7 +1837,7 @@ ReActAgent agent =
                 .build();
 ```
 
-The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
+The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
 
 ### Explicit model builder
 
@@ -8022,6 +8022,7 @@ All model providers have moved to independent model extension modules, while `ag
 | Provider | Maven artifact | `ModelRegistry` id | Standard environment variable | Docs |
 |----------|----------------|--------------------|-------------------------------|------|
 | OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="model/openai.html">OpenAI</a> |
+| DeepSeek | `agentscope-extensions-model-openai` | `deepseek:<model>` | `DEEPSEEK_API_KEY` | <a class="reference internal" href="model/deepseek.html">DeepSeek</a> |
 | DashScope | `agentscope-extensions-model-dashscope` | `dashscope:<model>` / `qwen*` | `DASHSCOPE_API_KEY` | <a class="reference internal" href="model/dashscope.html">DashScope</a> |
 | Gemini | `agentscope-extensions-model-gemini` | `gemini:<model>` | `GEMINI_API_KEY` | <a class="reference internal" href="model/gemini.html">Gemini</a> |
 | Anthropic | `agentscope-extensions-model-anthropic` | `anthropic:<model>` | `ANTHROPIC_API_KEY` | <a class="reference internal" href="model/anthropic.html">Anthropic</a> |
@@ -8114,6 +8115,383 @@ Runtime, language, debugging, and training extensions.
 ```{note}
 For Spring Boot users, most of the above extensions ship a matching `agentscope-spring-boot-starter-*` for one-line integration that removes the manual wiring.
 ```
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/index.md
+
+# Model Providers
+
+Model provider extensions connect AgentScope Java to hosted or local chat model APIs. Each provider can be selected through a `ModelRegistry` id when its extension module is on the classpath.
+
+- [OpenAI](openai.md)
+- [DeepSeek](deepseek.md)
+- [DashScope](dashscope.md)
+- [Gemini](gemini.md)
+- [Anthropic](anthropic.md)
+- [Ollama](ollama.md)
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/openai.md
+
+# OpenAI Model
+
+`agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, and similar services when their wire format follows the OpenAI API.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-openai</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Set `OPENAI_API_KEY`, then use the `openai:<model>` id:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("openai:gpt-4.1-mini") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+## Explicit builder
+
+Use the builder when you need a custom endpoint, formatter, transport, or generation options:
+
+```java
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
+
+OpenAIChatModel model = OpenAIChatModel.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .modelName("gpt-4.1-mini")
+    .stream(true)
+    .build();
+```
+
+For generic compatible endpoints, set `baseUrl(...)` and the model name expected by that service. For DeepSeek, prefer the dedicated `deepseek:<model>` registry id so AgentScope applies the DeepSeek base URL, `DEEPSEEK_API_KEY`, and DeepSeek formatter defaults. See [DeepSeek](deepseek.md).
+
+## Spring Boot
+
+Spring Boot applications can use the OpenAI starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-openai-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/deepseek.md
+
+# DeepSeek Model
+
+`agentscope-extensions-model-openai` provides first-class DeepSeek support through the OpenAI-compatible model stack. Add the OpenAI model extension module, then use `deepseek:<model>` with `ModelRegistry`.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-openai</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Set `DEEPSEEK_API_KEY`, then use the `deepseek:<model>` id:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("deepseek:deepseek-v4-flash") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+The provider defaults to `https://api.deepseek.com`, strips the `deepseek:` prefix before sending the model name, and uses the DeepSeek formatter from `io.agentscope.extensions.model.openai.compat.deepseek`.
+
+## Thinking mode
+
+Enable DeepSeek thinking mode through `ModelCreationContext` when resolving the model:
+
+```java
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
+import io.agentscope.core.model.ModelRegistry;
+
+Model model = ModelRegistry.resolve(
+    "deepseek:deepseek-v4-flash",
+    ModelCreationContext.builder()
+        .enableThinking(true)
+        .build());
+```
+
+Streaming callers can render `ThinkingBlockDeltaEvent` separately from `TextBlockDeltaEvent`.
+
+## Compatibility notes
+
+The DeepSeek formatter preserves DeepSeek-compatible message fields, including `system` roles and supported `name` fields. It also removes stale reasoning content from previous turns while preserving reasoning content needed by current tool-call context.
+
+DeepSeek's stable endpoint does not use the tool schema `strict` field by default, so the default formatter omits `strict` even when a tool is registered with strict schema validation. Structured output uses the normal AgentScope fallback behavior unless you explicitly configure native structured output for a compatible endpoint.
+
+For beta or compatible endpoints, pass `baseUrl`, `endpointPath`, generation options, or formatter overrides through `ModelCreationContext`.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/dashscope.md
+
+# DashScope Model
+
+`agentscope-extensions-model-dashscope` integrates Alibaba Cloud DashScope Qwen models, including multimodal and reasoning-capable Qwen models.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Set `DASHSCOPE_API_KEY`, then use either `dashscope:<model>` or the Qwen short form:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("dashscope:qwen-plus") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("qwen-plus") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+## Explicit builder
+
+Use the builder when you need DashScope-specific options such as endpoint type, thinking, search, encryption:
+
+```java
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+
+DashScopeChatModel model = DashScopeChatModel.builder()
+    .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+    .modelName("qwen-plus")
+    .stream(true)
+    .build();
+```
+
+## Spring Boot
+
+Spring Boot applications can use the DashScope starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/gemini.md
+
+# Gemini Model
+
+`agentscope-extensions-model-gemini` integrates Google Gemini models through the Gemini API and supports the Vertex AI path through explicit configuration.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-gemini</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Set `GEMINI_API_KEY`, then use the `gemini:<model>` id:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("gemini:gemini-2.0-flash") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+## Explicit builder
+
+Use the builder when you need custom API settings, Vertex AI credentials, formatter, transport, or generation options:
+
+```java
+import io.agentscope.extensions.model.gemini.GeminiChatModel;
+
+GeminiChatModel model = GeminiChatModel.builder()
+    .apiKey(System.getenv("GEMINI_API_KEY"))
+    .modelName("gemini-2.0-flash")
+    .streamEnabled(true)
+    .build();
+```
+
+## Spring Boot
+
+Spring Boot applications can use the Gemini starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-gemini-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/anthropic.md
+
+# Anthropic Model
+
+`agentscope-extensions-model-anthropic` integrates Anthropic Claude models, including Anthropic-specific formatter and request DTO support.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-anthropic</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Set `ANTHROPIC_API_KEY`, then use the `anthropic:<model>` id:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("anthropic:claude-sonnet-4.5") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+## Explicit builder
+
+Use the builder when you need a custom endpoint, formatter, transport, prompt caching, thinking, or generation options:
+
+```java
+import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .modelName("claude-sonnet-4.5")
+    .stream(true)
+    .build();
+```
+
+## Spring Boot
+
+Spring Boot applications can use the Anthropic starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-anthropic-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/integration/model/ollama.md
+
+# Ollama Model
+
+`agentscope-extensions-model-ollama` integrates locally hosted Ollama models. It is useful for local development, private deployments, and offline model serving.
+
+## Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-ollama</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+## ModelRegistry
+
+Use the `ollama:<model>` id. `OLLAMA_BASE_URL` is optional and defaults to the local Ollama endpoint when omitted.
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("ollama:llama3") // Resolved internally by ModelRegistry.resolve(modelId)
+    .build();
+```
+
+## Explicit builder
+
+Use the builder when you need a non-default Ollama endpoint, formatter, transport, proxy, or Ollama options:
+
+```java
+import io.agentscope.extensions.model.ollama.OllamaChatModel;
+
+OllamaChatModel model = OllamaChatModel.builder()
+    .modelName("llama3")
+    .baseUrl("http://localhost:11434")
+    .build();
+```
+
+## Spring Boot
+
+Spring Boot applications can use the Ollama starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Configure the local Ollama model with `agentscope.model.provider=ollama`. The base URL
+is optional and defaults to `http://localhost:11434`:
+
+```yaml
+agentscope:
+  model:
+    provider: ollama
+  ollama:
+    model-name: llama3
+    # base-url: http://localhost:11434
+```
+
+Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
 
 ---
 

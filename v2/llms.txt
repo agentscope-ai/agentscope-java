@@ -28,6 +28,13 @@
 - [Going to Production](https://java.agentscope.io/_sources/v2/en/docs/others/going-to-production.md): From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability
 - [FAQ](https://java.agentscope.io/_sources/v2/en/docs/others/faq.md): Frequently asked questions about AgentScope Java 2.0
 - [Integration Overview](https://java.agentscope.io/_sources/v2/en/integration/overview.md)
+- [Model Providers](https://java.agentscope.io/_sources/v2/en/integration/model/index.md)
+- [OpenAI Model](https://java.agentscope.io/_sources/v2/en/integration/model/openai.md)
+- [DeepSeek Model](https://java.agentscope.io/_sources/v2/en/integration/model/deepseek.md)
+- [DashScope Model](https://java.agentscope.io/_sources/v2/en/integration/model/dashscope.md)
+- [Gemini Model](https://java.agentscope.io/_sources/v2/en/integration/model/gemini.md)
+- [Anthropic Model](https://java.agentscope.io/_sources/v2/en/integration/model/anthropic.md)
+- [Ollama Model](https://java.agentscope.io/_sources/v2/en/integration/model/ollama.md)
 - [Memory](https://java.agentscope.io/_sources/v2/en/integration/memory/overview.md)
 - [Mem0](https://java.agentscope.io/_sources/v2/en/integration/memory/mem0.md)
 - [Bailian Memory](https://java.agentscope.io/_sources/v2/en/integration/memory/bailian.md)
