@@ -480,6 +480,53 @@ class HarnessAgentTest {
     }
 
     @Test
+    void disableGeneralPurposeSubagent_keepsDeclaredSubagentsAvailable() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("specialist.md"),
+                """
+                ---
+                description: A custom specialist subagent
+                ---
+                You only reply OK.
+                """);
+
+        Model model = stubModel("done");
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableGeneralPurposeSubagent();
+
+        List<String> entryNames =
+                builder.buildSubagentEntries(workspace).stream()
+                        .map(SubagentEntry::name)
+                        .collect(Collectors.toList());
+        assertFalse(entryNames.contains("general-purpose"));
+        assertTrue(entryNames.contains("specialist"));
+
+        HarnessAgent agent = builder.build();
+        agent.call(userText("go"), RuntimeContext.builder().sessionId("s2").build()).block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        String combined =
+                captor.getAllValues().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(s -> s.contains("## Subagents"))
+                        .findFirst()
+                        .orElse("");
+        assertTrue(combined.contains("`specialist`"));
+        assertFalse(combined.contains("general-purpose"));
+    }
+
+    @Test
     void subagentsDir_loadsMarkdownDeclarations() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# w\n");

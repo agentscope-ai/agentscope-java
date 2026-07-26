@@ -1096,6 +1096,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableWorkspaceContext = false;
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
+        boolean disableGeneralPurposeSubagent = false;
         boolean disableDynamicSkills = false;
         boolean disableDefaultWorkspaceSkills = false;
         boolean disableDynamicSubagents = false;
@@ -1934,6 +1935,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         public Builder disableSubagents() {
             this.disableSubagents = true;
+            return this;
+        }
+
+        /**
+         * Disables the built-in {@code general-purpose} subagent while keeping declared and custom
+         * subagents available.
+         *
+         * @return this builder
+         */
+        public Builder disableGeneralPurposeSubagent() {
+            this.disableGeneralPurposeSubagent = true;
             return this;
         }
 

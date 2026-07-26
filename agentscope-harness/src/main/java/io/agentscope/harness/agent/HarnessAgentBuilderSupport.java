@@ -194,13 +194,15 @@ final class HarnessAgentBuilderSupport {
 
         List<SubagentEntry> entries = new ArrayList<>();
 
-        entries.add(
-                new SubagentEntry(
-                        "general-purpose",
-                        "General-purpose subagent with same capabilities as the main agent."
-                                + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
-                        null));
+        if (!b.disableGeneralPurposeSubagent) {
+            entries.add(
+                    new SubagentEntry(
+                            "general-purpose",
+                            "General-purpose subagent with same capabilities as the main agent."
+                                    + " Use for any isolated task that can be fully delegated.",
+                            buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                            null));
+        }
 
         for (SubagentDeclaration decl : allDeclarations) {
             entries.add(
@@ -237,13 +239,15 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
         List<SubagentEntry> entries = new ArrayList<>();
 
-        entries.add(
-                new SubagentEntry(
-                        "general-purpose",
-                        "General-purpose subagent with same capabilities as the main agent."
-                                + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
-                        null));
+        if (!b.disableGeneralPurposeSubagent) {
+            entries.add(
+                    new SubagentEntry(
+                            "general-purpose",
+                            "General-purpose subagent with same capabilities as the main agent."
+                                    + " Use for any isolated task that can be fully delegated.",
+                            buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                            null));
+        }
 
         for (SubagentDeclaration decl : b.subagentDeclarations) {
             entries.add(
