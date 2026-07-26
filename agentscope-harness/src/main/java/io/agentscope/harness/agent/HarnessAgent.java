@@ -2194,7 +2194,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (memoryModel != null && !disableMemoryHooks) {
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
                 if (memoryConfig.executionMode() == MemoryConfig.ExecutionMode.ASYNC) {
-                    memoryOperationScheduler = new MemoryOperationScheduler();
+                    memoryOperationScheduler =
+                            new MemoryOperationScheduler(memoryConfig.maxPendingMemoryOperations());
                 }
 
                 String effectiveFlushPrompt =

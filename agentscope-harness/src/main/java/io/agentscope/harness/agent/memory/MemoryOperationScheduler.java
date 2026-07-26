@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -31,6 +32,10 @@ import reactor.core.scheduler.Schedulers;
  * Runs post-call memory operations in the background while preserving submission order within
  * each memory isolation key. Different users or sessions can progress concurrently.
  *
+ * <p>The total number of running and queued operations is bounded. When the limit is reached,
+ * submitters wait for capacity, propagating backpressure to agent calls instead of retaining an
+ * unbounded chain of tasks while a memory LLM is slow.
+ *
  * <p>{@link #close()} stops accepting new work and waits for all accepted operations. This keeps
  * asynchronous memory writes durable when their owning {@code HarnessAgent} is closed.
  */
@@ -40,11 +45,25 @@ public final class MemoryOperationScheduler implements AutoCloseable {
 
     private final ConcurrentHashMap<String, CompletableFuture<Void>> tails =
             new ConcurrentHashMap<>();
+    private final Semaphore capacity;
     private final Object lifecycleLock = new Object();
     private boolean accepting = true;
 
+    public MemoryOperationScheduler() {
+        this(MemoryConfig.DEFAULT_MAX_PENDING_MEMORY_OPERATIONS);
+    }
+
+    public MemoryOperationScheduler(int maxPendingOperations) {
+        if (maxPendingOperations <= 0) {
+            throw new IllegalArgumentException(
+                    "maxPendingOperations must be positive, got " + maxPendingOperations);
+        }
+        this.capacity = new Semaphore(maxPendingOperations, true);
+    }
+
     /**
      * Queues an operation after all previously submitted work for {@code isolationKey}.
+     * Submission waits when the configured operation limit is already in use.
      *
      * @return {@code true} when accepted, or {@code false} after this scheduler has closed
      */
@@ -54,30 +73,39 @@ public final class MemoryOperationScheduler implements AutoCloseable {
         }
         String key = isolationKey != null ? isolationKey : "";
         AtomicReference<CompletableFuture<Void>> submitted = new AtomicReference<>();
+        capacity.acquireUninterruptibly();
         synchronized (lifecycleLock) {
             if (!accepting) {
+                capacity.release();
                 return false;
             }
-            tails.compute(
-                    key,
-                    (ignored, previous) -> {
-                        CompletableFuture<Void> predecessor =
-                                previous == null
-                                        ? CompletableFuture.completedFuture(null)
-                                        : previous.handle((result, error) -> null);
-                        CompletableFuture<Void> next =
-                                predecessor.thenComposeAsync(
-                                        unused -> invoke(operation),
-                                        command -> Schedulers.boundedElastic().schedule(command));
-                        submitted.set(next);
-                        return next;
-                    });
+            try {
+                tails.compute(
+                        key,
+                        (ignored, previous) -> {
+                            CompletableFuture<Void> predecessor =
+                                    previous == null
+                                            ? CompletableFuture.completedFuture(null)
+                                            : previous.handle((result, error) -> null);
+                            CompletableFuture<Void> next =
+                                    predecessor.thenComposeAsync(
+                                            unused -> invoke(operation),
+                                            command ->
+                                                    Schedulers.boundedElastic().schedule(command));
+                            submitted.set(next);
+                            return next;
+                        });
+            } catch (RuntimeException | Error error) {
+                capacity.release();
+                throw error;
+            }
         }
 
         CompletableFuture<Void> future = submitted.get();
         future.whenComplete(
                 (unused, error) -> {
                     tails.remove(key, future);
+                    capacity.release();
                     if (error != null) {
                         log.warn(
                                 "Asynchronous memory operation failed for key {}: {}",

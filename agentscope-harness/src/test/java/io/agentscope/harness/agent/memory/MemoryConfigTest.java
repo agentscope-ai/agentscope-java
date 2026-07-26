@@ -40,6 +40,9 @@ class MemoryConfigTest {
         assertEquals(MemoryConfig.DEFAULT_SESSION_RETENTION_DAYS, cfg.sessionRetentionDays());
         assertEquals(MemoryConfig.FlushMode.ALWAYS, cfg.flushTrigger().mode());
         assertEquals(MemoryConfig.ExecutionMode.BLOCKING, cfg.executionMode());
+        assertEquals(
+                MemoryConfig.DEFAULT_MAX_PENDING_MEMORY_OPERATIONS,
+                cfg.maxPendingMemoryOperations());
     }
 
     @Test
@@ -83,6 +86,7 @@ class MemoryConfigTest {
                         .sessionRetentionDays(60)
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(Duration.ofMinutes(10)))
                         .executionMode(MemoryConfig.ExecutionMode.ASYNC)
+                        .maxPendingMemoryOperations(32)
                         .build();
 
         assertEquals("custom flush", cfg.flushPrompt());
@@ -93,6 +97,7 @@ class MemoryConfigTest {
         assertEquals(MemoryConfig.FlushMode.THROTTLED, cfg.flushTrigger().mode());
         assertEquals(Duration.ofMinutes(10), cfg.flushTrigger().minGap());
         assertEquals(MemoryConfig.ExecutionMode.ASYNC, cfg.executionMode());
+        assertEquals(32, cfg.maxPendingMemoryOperations());
     }
 
     @Test
@@ -145,6 +150,9 @@ class MemoryConfigTest {
                 IllegalArgumentException.class, () -> MemoryConfig.builder().flushTrigger(null));
         assertThrows(
                 IllegalArgumentException.class, () -> MemoryConfig.builder().executionMode(null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MemoryConfig.builder().maxPendingMemoryOperations(0));
     }
 
     @Test

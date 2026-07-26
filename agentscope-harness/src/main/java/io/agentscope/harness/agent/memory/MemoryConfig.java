@@ -68,6 +68,9 @@ public final class MemoryConfig {
     /** Default retention before a session JSONL log is pruned. */
     public static final int DEFAULT_SESSION_RETENTION_DAYS = 180;
 
+    /** Default upper bound for running and queued asynchronous memory operations. */
+    public static final int DEFAULT_MAX_PENDING_MEMORY_OPERATIONS = 256;
+
     /** Strategy for the per-call flush hook. See {@link FlushTrigger}. */
     public enum FlushMode {
         /** Flush after every agent call. */
@@ -157,6 +160,7 @@ public final class MemoryConfig {
     private final int sessionRetentionDays;
     private final FlushTrigger flushTrigger;
     private final ExecutionMode executionMode;
+    private final int maxPendingMemoryOperations;
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
@@ -168,6 +172,7 @@ public final class MemoryConfig {
         this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
         this.executionMode = b.executionMode;
+        this.maxPendingMemoryOperations = b.maxPendingMemoryOperations;
     }
 
     /**
@@ -221,6 +226,10 @@ public final class MemoryConfig {
         return executionMode;
     }
 
+    public int maxPendingMemoryOperations() {
+        return maxPendingMemoryOperations;
+    }
+
     /** Returns the default memory configuration. */
     public static MemoryConfig defaults() {
         return new Builder().build();
@@ -241,6 +250,7 @@ public final class MemoryConfig {
         private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
         private ExecutionMode executionMode = ExecutionMode.BLOCKING;
+        private int maxPendingMemoryOperations = DEFAULT_MAX_PENDING_MEMORY_OPERATIONS;
 
         /**
          * Sets a dedicated model for memory operations (flush + consolidation),
@@ -356,6 +366,21 @@ public final class MemoryConfig {
                 throw new IllegalArgumentException("executionMode must not be null");
             }
             this.executionMode = executionMode;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of running and queued asynchronous memory operations. Once the
+         * limit is reached, new submissions apply backpressure until capacity becomes available.
+         * Must be positive.
+         */
+        public Builder maxPendingMemoryOperations(int maxPendingMemoryOperations) {
+            if (maxPendingMemoryOperations <= 0) {
+                throw new IllegalArgumentException(
+                        "maxPendingMemoryOperations must be positive, got "
+                                + maxPendingMemoryOperations);
+            }
+            this.maxPendingMemoryOperations = maxPendingMemoryOperations;
             return this;
         }
 

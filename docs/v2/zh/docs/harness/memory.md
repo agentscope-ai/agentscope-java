@@ -206,7 +206,9 @@ HarnessAgent.builder()
 
 异步操作会按配置的隔离键串行执行，因此同一 user/session 的写入顺序与调用顺序一致，
 不同隔离键仍可并发。原始 session JSONL 会先于 LLM 提炼写入；`HarnessAgent.close()`
-会等待已经接收的记忆任务完成。使用该模式的应用应在停机时关闭 agent。
+会等待已经接收的记忆任务完成。使用该模式的应用应在停机时关闭 agent。运行中和排队中的
+任务总数受 `maxPendingMemoryOperations` 限制；达到上限时，新提交会等待容量释放，避免
+memory LLM 变慢时形成无界积压。
 
 ### `MemoryConfig` 字段速查
 
@@ -221,6 +223,7 @@ HarnessAgent.builder()
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
 | `executionMode` | `BLOCKING` | `BLOCKING` 保留历史完成语义；`ASYNC` 把有序的记忆任务放到调用完成后执行 |
+| `maxPendingMemoryOperations` | `256` | `ASYNC` 模式下运行中和排队中的任务上限；饱和时对新提交施加背压 |
 
 ## 大工具结果卸载
 

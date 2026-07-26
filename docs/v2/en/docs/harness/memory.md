@@ -207,7 +207,9 @@ streaming or orchestration, queue them after the call completes:
 Asynchronous operations are serialized per configured isolation key, so writes for one user or
 session keep their call order while independent keys can run concurrently. The raw session JSONL
 is offloaded before LLM extraction, and `HarnessAgent.close()` waits for accepted memory work.
-Applications using this mode should close the agent during shutdown.
+Applications using this mode should close the agent during shutdown. Running and queued memory
+operations are bounded by `maxPendingMemoryOperations`; when the limit is reached, new submissions
+wait for capacity so a slow memory LLM cannot create an unbounded backlog.
 
 ### `MemoryConfig` field reference
 
@@ -222,6 +224,7 @@ Applications using this mode should close the agent during shutdown.
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
 | `executionMode` | `BLOCKING` | `BLOCKING` keeps historical completion semantics; `ASYNC` queues ordered post-call memory work |
+| `maxPendingMemoryOperations` | `256` | Maximum running and queued `ASYNC` operations; saturated submissions apply backpressure |
 
 ## Large tool-result offloading
 

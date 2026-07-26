@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
@@ -24,10 +25,16 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 class MemoryOperationSchedulerTest {
+
+    @Test
+    void rejectsNonPositiveCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> new MemoryOperationScheduler(0));
+    }
 
     @Test
     void operationsWithSameIsolationKeyRunInSubmissionOrder() throws Exception {
@@ -71,6 +78,65 @@ class MemoryOperationSchedulerTest {
                 "independent isolation keys should not block each other");
         release.countDown();
         scheduler.close();
+    }
+
+    @Test
+    void appliesBackpressureWhenCapacityIsExhausted() throws Exception {
+        MemoryOperationScheduler scheduler = new MemoryOperationScheduler(1);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondReturned = new CountDownLatch(1);
+        AtomicBoolean secondAccepted = new AtomicBoolean();
+
+        assertTrue(scheduler.submit("USER:a", () -> blockingTask(firstStarted, releaseFirst)));
+        assertTrue(firstStarted.await(1, TimeUnit.SECONDS));
+
+        Thread submitter =
+                new Thread(
+                        () -> {
+                            secondAccepted.set(
+                                    scheduler.submit("USER:b", () -> Mono.fromRunnable(() -> {})));
+                            secondReturned.countDown();
+                        });
+        submitter.start();
+
+        assertFalse(
+                secondReturned.await(200, TimeUnit.MILLISECONDS),
+                "submission should wait while the pending-operation limit is full");
+        releaseFirst.countDown();
+        assertTrue(secondReturned.await(1, TimeUnit.SECONDS));
+        assertTrue(secondAccepted.get());
+        submitter.join();
+        scheduler.close();
+    }
+
+    @Test
+    void closeRejectsSubmitterWaitingForCapacity() throws Exception {
+        MemoryOperationScheduler scheduler = new MemoryOperationScheduler(1);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondReturned = new CountDownLatch(1);
+        AtomicBoolean secondAccepted = new AtomicBoolean(true);
+
+        assertTrue(scheduler.submit("USER:a", () -> blockingTask(firstStarted, releaseFirst)));
+        assertTrue(firstStarted.await(1, TimeUnit.SECONDS));
+
+        Thread submitter =
+                new Thread(
+                        () -> {
+                            secondAccepted.set(scheduler.submit("USER:b", Mono::empty));
+                            secondReturned.countDown();
+                        });
+        submitter.start();
+        Thread closer = new Thread(scheduler::close);
+        closer.start();
+
+        assertFalse(secondReturned.await(200, TimeUnit.MILLISECONDS));
+        releaseFirst.countDown();
+        assertTrue(secondReturned.await(1, TimeUnit.SECONDS));
+        assertFalse(secondAccepted.get());
+        submitter.join();
+        closer.join();
     }
 
     private static Mono<Void> blockingTask(CountDownLatch started, CountDownLatch release) {
