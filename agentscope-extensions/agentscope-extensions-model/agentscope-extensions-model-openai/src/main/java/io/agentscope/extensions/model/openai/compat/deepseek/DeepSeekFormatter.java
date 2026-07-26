@@ -16,8 +16,6 @@
 package io.agentscope.extensions.model.openai.compat.deepseek;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.util.ArrayList;
@@ -29,7 +27,6 @@ import java.util.List;
  * <p>DeepSeek API has the following specific requirements:
  * <ul>
  *   <li>System/user/assistant {@code name} fields are allowed</li>
- *   <li>System messages are allowed</li>
  *   <li>Omits strict parameter in tool definitions</li>
  *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
  * </ul>
@@ -76,26 +73,8 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
     }
 
     @Override
-    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
-        if (msg.getRole() == MsgRole.SYSTEM && !msg.hasContentBlocks(ToolResultBlock.class)) {
-            return convertSystemMessage(msg);
-        }
-        return super.convertMessage(msg, hasMedia);
-    }
-
-    @Override
     protected boolean supportsStrict() {
         return false;
-    }
-
-    private OpenAIMessage convertSystemMessage(Msg msg) {
-        String content = extractTextContent(msg);
-        OpenAIMessage.Builder builder =
-                OpenAIMessage.builder().role("system").content(content != null ? content : "");
-        if (msg.getName() != null) {
-            builder.name(msg.getName());
-        }
-        return builder.build();
     }
 
     /**
@@ -103,7 +82,7 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      *
      * <p>DeepSeek API requires:
      * <ul>
-     *   <li>System and name fields preserved</li>
+     *   <li>Name fields preserved</li>
      *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
      *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
      * </ul>
@@ -197,8 +176,13 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
         }
         OpenAIMessage result = new OpenAIMessage();
         result.setRole(msg.getRole());
-        result.setContent(msg.getContent());
-        result.setName(msg.getName());
+        Object content = msg.getContent();
+        if (content instanceof String || content instanceof List) {
+            result.setContent(content);
+        }
+        if (msg.getName() != null && !"tool".equals(msg.getRole())) {
+            result.setName(msg.getName());
+        }
         result.setToolCalls(msg.getToolCalls());
         result.setToolCallId(msg.getToolCallId());
         return result;

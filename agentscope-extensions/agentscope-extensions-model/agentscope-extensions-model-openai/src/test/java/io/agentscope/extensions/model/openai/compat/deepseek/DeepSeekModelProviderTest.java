@@ -101,6 +101,19 @@ class DeepSeekModelProviderTest {
     }
 
     @Test
+    @DisplayName("Uses DeepSeek defaults for context window and structured output")
+    void createUsesDeepSeekContextWindowAndStructuredOutputDefaults() {
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-deepseek-key").build();
+
+        Model model = new DeepSeekModelProvider().create("deepseek:deepseek-v4-pro", context);
+
+        assertEquals(1_000_000, model.getContextWindowSize());
+        assertFalse(model.supportsNativeStructuredOutput());
+        assertFalse(model.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
     @DisplayName("Creates model from context and applies default request settings")
     void createUsesModelCreationContextAndDefaultDeepSeekRequestSettings() throws Exception {
         CapturingTransport transport = new CapturingTransport();
@@ -148,6 +161,7 @@ class DeepSeekModelProviderTest {
                         .stream(false)
                         .enableThinking(false)
                         .component(HttpTransport.class, transport)
+                        .option("nativeStructuredOutput", true)
                         .option("nativeStructuredOutputWithTools", true)
                         .build();
 
@@ -155,6 +169,7 @@ class DeepSeekModelProviderTest {
                 (OpenAIChatModel)
                         new DeepSeekModelProvider().create("deepseek:deepseek-v4-flash", context);
 
+        assertTrue(model.supportsNativeStructuredOutput());
         assertTrue(model.supportsNativeStructuredOutputWithTools());
 
         model.stream(userMessages(), null, null).blockLast();

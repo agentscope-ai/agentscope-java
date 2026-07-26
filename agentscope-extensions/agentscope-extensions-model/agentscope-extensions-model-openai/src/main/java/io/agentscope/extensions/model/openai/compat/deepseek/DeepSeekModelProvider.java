@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openai.compat.deepseek;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -75,6 +76,10 @@ public final class DeepSeekModelProvider implements ModelProvider {
                         .modelName(modelName)
                         .baseUrl(DEFAULT_BASE_URL)
                         .formatter(new DeepSeekFormatter())
+                        .contextWindowSize(
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.DEEPSEEK))
+                        .nativeStructuredOutput(false)
+                        .nativeStructuredOutputWithTools(false)
                         .stream(context.getStream() != null ? context.getStream() : true);
 
         String baseUrl = trimToNull(context.getBaseUrl());
