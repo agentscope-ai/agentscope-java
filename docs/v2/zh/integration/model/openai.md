@@ -37,7 +37,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
-接入兼容端点时，设置 `baseUrl(...)` 和该服务期望的模型名。
+接入通用兼容端点时，设置 `baseUrl(...)` 和该服务期望的模型名。DeepSeek 推荐使用专门的 `deepseek:<model>` registry id，这样 AgentScope 会自动应用 DeepSeek base URL、`DEEPSEEK_API_KEY` 和 DeepSeek formatter 默认值。详见 [DeepSeek](deepseek.md)。
 
 ## Spring Boot
 

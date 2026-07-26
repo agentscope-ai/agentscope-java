@@ -61,7 +61,7 @@ import reactor.core.scheduler.Schedulers;
  * for your provider:
  * <ul>
  *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
- *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
+ *   <li>{@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter} - DeepSeek Chat models</li>
  *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
  * </ul>
  */
@@ -303,7 +303,7 @@ public class OpenAIChatModel extends ChatModelBase {
          * <p>Use provider-specific formatters for different providers:
          * <ul>
          *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
-         *   <li>{@link io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter} - DeepSeek Chat models</li>
+         *   <li>{@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter} - DeepSeek Chat models</li>
          *   <li>{@link io.agentscope.extensions.model.openai.formatter.GLMFormatter} - Zhipu GLM models</li>
          * </ul>
          *
