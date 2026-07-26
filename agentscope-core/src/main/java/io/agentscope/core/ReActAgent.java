@@ -1380,9 +1380,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
             metadata.remove("response");
             return Msg.builderForRole(responseMsg.getRole())
+                    .id(responseMsg.getId())
                     .name(responseMsg.getName())
                     .content(responseMsg.getContent())
                     .metadata(metadata)
+                    .timestamp(responseMsg.getTimestamp())
+                    .usage(responseMsg.getUsage())
                     .build();
         }
         return responseMsg;
