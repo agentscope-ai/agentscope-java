@@ -24,8 +24,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
@@ -51,7 +49,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -388,6 +385,12 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final GenerateOptions capturedGenOpts = b.generateOptions;
+        // See buildGeneralPurposeFactory: propagate the parent's model/tool execution configs so
+        // declared subagents honor the parent's timeouts. Without this they fall back to
+        // ExecutionConfig defaults (e.g. the 5-minute tool timeout), ignoring a longer timeout
+        // configured on the main agent.
+        final ExecutionConfig capturedModelExec = b.modelExecutionConfig;
+        final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         // Snapshot of main agent's Local filesystem configuration. ISOLATED subagents get a
         // fresh spec carrying the same project / additionalRoots / mode so PathPolicy stays in
         // sync; without this, every isolated subagent would default to project=${user.dir} and
@@ -463,6 +466,9 @@ final class HarnessAgentBuilderSupport {
             if (capturedStateStore != null) {
                 sub.stateStore(capturedStateStore);
             }
+
+            if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
+            if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
@@ -761,42 +767,5 @@ final class HarnessAgentBuilderSupport {
         }
 
         return ordered;
-    }
-
-    /**
-     * Eagerly assembles a static {@link SkillBox} from {@code repos} (low-to-high priority) so
-     * callers using {@code disableDynamicSkills()} keep the legacy {@code SkillHook} path while
-     * still benefiting from the additive composition.
-     */
-    static SkillBox staticSkillBoxFromRepos(
-            List<AgentSkillRepository> repos, Toolkit agentToolkit) {
-        LinkedHashMap<String, AgentSkill> merged = new LinkedHashMap<>();
-        for (AgentSkillRepository repo : repos) {
-            try {
-                List<AgentSkill> skills = repo.getAllSkills();
-                if (skills == null) {
-                    continue;
-                }
-                for (AgentSkill skill : skills) {
-                    if (skill != null && skill.getName() != null) {
-                        merged.put(skill.getName(), skill);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn(
-                        "Failed to load skills from {}: {}",
-                        repo.getClass().getSimpleName(),
-                        e.getMessage());
-            }
-        }
-        if (merged.isEmpty()) {
-            return null;
-        }
-        SkillBox box = new SkillBox(agentToolkit);
-        for (AgentSkill skill : merged.values()) {
-            box.registerSkill(skill);
-        }
-        log.info("Loaded {} skills from {} repositories (static)", merged.size(), repos.size());
-        return box;
     }
 }

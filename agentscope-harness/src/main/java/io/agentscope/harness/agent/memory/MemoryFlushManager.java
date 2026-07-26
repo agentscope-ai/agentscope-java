@@ -24,6 +24,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
 import io.agentscope.harness.agent.memory.session.SessionTree;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -346,16 +347,24 @@ public class MemoryFlushManager {
      * Serializes all messages into a textual representation for the memory extraction model.
      * Includes USER, ASSISTANT, and TOOL messages. Assistant tool-call blocks and tool-result
      * blocks are rendered as concise text so the model can extract memories from tool interactions.
-     * The injected {@code <session_context>} user message is skipped as it contains only
-     * environment metadata, not real conversation content.
+     * Internal context messages are skipped because they are generated from existing context,
+     * not new user/assistant/tool facts.
      */
     private String serializeMessages(List<Msg> messages) {
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
-                .filter(m -> !isSessionContextMessage(m))
+                .filter(m -> !isInternalContextMessage(m))
                 .map(this::renderMessage)
                 .filter(s -> s != null && !s.isBlank())
                 .collect(Collectors.joining("\n"));
+    }
+
+    private static boolean isInternalContextMessage(Msg msg) {
+        return isSessionContextMessage(msg) || isCompactionSummaryMessage(msg);
+    }
+
+    private static boolean isCompactionSummaryMessage(Msg msg) {
+        return msg != null && ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName());
     }
 
     private static boolean isSessionContextMessage(Msg msg) {
