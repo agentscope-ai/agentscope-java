@@ -41,6 +41,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -123,7 +124,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -350,7 +351,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         // Handle tool calls
@@ -513,6 +514,17 @@ public class OpenAIMessageConverter {
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }
+
+    /** Sanitizes a message name to satisfy OpenAI's {@code ^[a-zA-Z0-9_-]{1,64}$} constraint. */
+    static String sanitizeName(String name) {
+        String sanitized = OPENAI_NAME_ILLEGAL_CHARS.matcher(name).replaceAll("_");
+        if (sanitized.length() > 64) {
+            sanitized = sanitized.substring(0, 64);
+        }
+        return sanitized.isEmpty() ? "agent" : sanitized;
+    }
+
+    private static final Pattern OPENAI_NAME_ILLEGAL_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
 
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.
