@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -101,6 +102,47 @@ class HarnessAgentTest {
             } catch (IOException ignored) {
             }
         }
+    }
+
+    @Test
+    void resolvesAgentIdAndIdIndependently() {
+        Model model = stubModel("ok");
+        HarnessAgent explicit =
+                HarnessAgent.builder()
+                        .agentId("support-agent-001")
+                        .name("Support")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        HarnessAgent nameFallback =
+                HarnessAgent.builder()
+                        .name("name-agent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        HarnessAgent fixedFallback =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals("support-agent-001", explicit.getAgentId());
+        assertEquals(explicit.getAgentId(), explicit.getDelegate().getAgentId());
+        assertEquals("name-agent", nameFallback.getAgentId());
+        assertEquals("ReActAgent", fixedFallback.getAgentId());
+        UUID.fromString(explicit.getId());
+        UUID.fromString(nameFallback.getId());
+        UUID.fromString(fixedFallback.getId());
+        assertNotEquals(explicit.getAgentId(), explicit.getId());
+        assertEquals(
+                HarnessAgent.defaultStateDir("support-agent-001"),
+                HarnessAgent.defaultStateDir(explicit.getAgentId()));
+        assertNotEquals(
+                HarnessAgent.defaultStateDir(explicit.getAgentId()),
+                HarnessAgent.defaultStateDir(nameFallback.getAgentId()));
     }
 
     @Test

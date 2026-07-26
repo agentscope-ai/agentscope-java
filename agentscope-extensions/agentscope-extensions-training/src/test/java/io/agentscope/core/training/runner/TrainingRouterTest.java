@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -88,6 +90,7 @@ class TrainingRouterTest {
     @DisplayName("Should handle PreCallEvent and save input messages")
     void shouldHandlePreCallEventAndSaveInputMessages() {
         when(mockAgent.getAgentId()).thenReturn("agent-123");
+        when(mockAgent.getId()).thenReturn("id-123");
 
         List<Msg> inputMessages =
                 Collections.singletonList(
@@ -102,6 +105,7 @@ class TrainingRouterTest {
     @DisplayName("Should skip training for shadow agent")
     void shouldSkipTrainingForShadowAgent() {
         when(mockAgent.getAgentId()).thenReturn("agent-shadow-123");
+        when(mockAgent.getId()).thenReturn("id-shadow-123");
         when(mockAgent.getName()).thenReturn("TestAgent-shadow");
 
         Msg outputMsg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Response").build();
@@ -116,6 +120,7 @@ class TrainingRouterTest {
     @DisplayName("Should skip training when selection decision is false")
     void shouldSkipTrainingWhenSelectionDecisionIsFalse() {
         when(mockAgent.getAgentId()).thenReturn("agent-123");
+        when(mockAgent.getId()).thenReturn("id-123");
         when(mockAgent.getName()).thenReturn("TestAgent");
 
         List<Msg> inputMessages =
@@ -140,9 +145,38 @@ class TrainingRouterTest {
     }
 
     @Test
+    @DisplayName("Should isolate inputs for instances with the same logical agent ID")
+    void shouldIsolateInputsById() {
+        Agent first = mock(Agent.class);
+        Agent second = mock(Agent.class);
+        when(first.getAgentId()).thenReturn("shared-agent");
+        when(second.getAgentId()).thenReturn("shared-agent");
+        when(first.getId()).thenReturn("id-1");
+        when(second.getId()).thenReturn("id-2");
+        when(first.getName()).thenReturn("First");
+        when(second.getName()).thenReturn("Second");
+        Msg firstInput = Msg.builder().role(MsgRole.USER).textContent("first").build();
+        Msg secondInput = Msg.builder().role(MsgRole.USER).textContent("second").build();
+        Msg output = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
+        when(selectionStrategy.shouldSelect(any(), anyList(), any(), any()))
+                .thenReturn(SelectionDecision.reject("test"));
+
+        router.onEvent(new PreCallEvent(first, List.of(firstInput))).block();
+        router.onEvent(new PreCallEvent(second, List.of(secondInput))).block();
+        router.onEvent(new PostCallEvent(first, output)).contextWrite(Context.empty()).block();
+        router.onEvent(new PostCallEvent(second, output)).contextWrite(Context.empty()).block();
+
+        verify(selectionStrategy)
+                .shouldSelect(eq(first), eq(List.of(firstInput)), eq(output), any());
+        verify(selectionStrategy)
+                .shouldSelect(eq(second), eq(List.of(secondInput)), eq(output), any());
+    }
+
+    @Test
     @DisplayName("Should return empty when no input messages found")
     void shouldReturnEmptyWhenNoInputMessagesFound() {
         when(mockAgent.getAgentId()).thenReturn("agent-no-input");
+        when(mockAgent.getId()).thenReturn("id-no-input");
         when(mockAgent.getName()).thenReturn("TestAgent");
 
         Msg outputMsg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Response").build();

@@ -121,8 +121,9 @@ public class TrainingRouter implements Hook {
         return Mono.fromRunnable(
                 () -> {
                     String agentId = event.getAgent().getAgentId();
-                    callInputs.put(agentId, event.getInputMessages());
-                    logger.debug("Saved input messages for agent: {}", agentId);
+                    String id = event.getAgent().getId();
+                    callInputs.put(id, event.getInputMessages());
+                    logger.debug("Saved input messages for agent: agentId={}, id={}", agentId, id);
                 });
     }
 
@@ -134,6 +135,7 @@ public class TrainingRouter implements Hook {
         return Mono.deferContextual(
                 ctx -> {
                     String agentId = event.getAgent().getAgentId();
+                    String id = event.getAgent().getId();
                     String agentName = event.getAgent().getName();
 
                     // ✅ Prevent shadow agent from triggering training (avoid recursive loop)
@@ -142,12 +144,12 @@ public class TrainingRouter implements Hook {
                                 "Skipping training for shadow agent: {} (prevents recursive"
                                         + " training)",
                                 agentName);
-                        callInputs.remove(agentId); // Clean up input
+                        callInputs.remove(id); // Clean up input
                         return Mono.empty();
                     }
 
                     // Get input messages
-                    List<Msg> inputs = callInputs.remove(agentId);
+                    List<Msg> inputs = callInputs.remove(id);
                     if (inputs == null) {
                         logger.warn("No input messages found for agent: {}", agentId);
                         return Mono.empty();

@@ -112,7 +112,7 @@ public final class GracefulShutdownManager {
         if (agent == null || saver == null) {
             return;
         }
-        stateSavers.put(agent.getAgentId(), saver);
+        stateSavers.put(agent.getId(), saver);
     }
 
     /**
@@ -154,7 +154,7 @@ public final class GracefulShutdownManager {
         if (!(agent instanceof AgentBase agentBase)) {
             return "";
         }
-        ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
+        ShutdownStateSaver saver = stateSavers.get(agent.getId());
         String requestId = UUID.randomUUID().toString();
         ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
         activeRequestsById.put(requestId, ctx);

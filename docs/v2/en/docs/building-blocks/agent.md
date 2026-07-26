@@ -134,11 +134,31 @@ ReActAgent agent =
 The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
 :::
 
+### Agent identity
+
+Use `.agentId(...)` to map an agent to a stable platform, catalog, or configuration ID. `getAgentId()` returns this logical identity, while `getId()` returns an immutable random UUID for the current Java object. Multiple live instances may share one logical `agentId`; their `id` values remain different.
+
+`name` is a human-readable display name used in messages and logs. It does not need to be unique and may change for presentation purposes. `agentId` is the stable machine-facing identity used for registration, routing, and telemetry; applications should not derive it from `name` when stable identity matters.
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .agentId("support-agent-001")
+                .name("Support")
+                .model("dashscope:qwen-plus")
+                .build();
+
+String agentId = agent.getAgentId(); // support-agent-001
+```
+
+If `agentId` is omitted, null, or blank, it falls back to `id`, preserving the previous generated-UUID behavior. Logical IDs are used in telemetry, so applications should keep them stable, non-secret, and unique wherever registries require uniqueness. Existing Harness resource-path selection remains unchanged. Internal lifecycle caches use `id` to prevent two live instances with the same logical ID from sharing state accidentally.
+
 ### Builder fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | `String` | required | Agent identifier, used for messages and logs |
+| `name` | `String` | required | Human-readable display name used in messages and logs |
+| `agentId` | `String` | random `id` | Stable logical Agent identity |
 | `sysPrompt` | `String` | required | The base system prompt |
 | `model` | `Model` | required | The LLM driving reasoning (extends `ChatModelBase`) |
 | `toolkit` | `Toolkit` | `new Toolkit()` | Manages tools, MCP clients, skills, and tool groups |
