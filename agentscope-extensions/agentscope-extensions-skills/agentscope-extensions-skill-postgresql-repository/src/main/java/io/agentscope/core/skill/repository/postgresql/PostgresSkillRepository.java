@@ -161,6 +161,20 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     private final boolean metadataJsonColumnSupported;
     private volatile boolean writeable;
 
+    /**
+     * In-memory version counter that tracks the last known modification time of the skills table.
+     * Incremented on every successful {@link #save(List, boolean)} and {@link #delete(String)}.
+     * Used by {@link #getAllSkills()} to short-circuit the full DB query when no write has
+     * occurred since the last read.
+     *
+     * <p>This mirrors the mtime-based cache in {@link
+     * io.agentscope.core.skill.repository.FileSystemSkillRepository} so that the
+     * {@link io.agentscope.core.skill.DynamicSkillMiddleware DynamicSkillMiddleware}'s
+     * content-keyed short-circuit can detect skill changes without blocking the rebuild.
+     */
+    private volatile List<AgentSkill> cachedSkills;
+    private volatile long cacheVersion;
+
     @FunctionalInterface
     private interface SqlOperation {
         void execute() throws SQLException;
@@ -578,6 +592,16 @@ public class PostgresSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<AgentSkill> getAllSkills() {
+        // Fast path: if cache version matches, return cached list
+        long currentVersion = cacheVersion;
+        List<AgentSkill> cached = cachedSkills;
+        if (cached != null && currentVersion == cacheVersion) {
+            // Double-check: if the version is still the same AND we have a cached list, return it
+            if (cachedSkills != null) {
+                return cachedSkills;
+            }
+        }
+
         String selectAllSkillsSql =
                 "SELECT id, name, description, skill_content, source"
                         + (metadataJsonColumnSupported ? ", metadata_json" : "")
@@ -645,6 +669,9 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                 }
             }
 
+            // Update cache
+            cachedSkills = skills;
+            cacheVersion = currentVersion;
             return skills;
 
         } catch (SQLException e) {
@@ -720,6 +747,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                             logger.info("Successfully saved skill: {} (id={})", skillName, skillId);
                         }
                     });
+            cachedSkills = null;
+            cacheVersion++;
             return true;
 
         } catch (SQLException e) {
@@ -897,6 +926,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
 
                 executeInWriteTransaction(conn, () -> deleteSkillInternal(conn, skillName));
                 logger.info("Successfully deleted skill: {}", skillName);
+                cachedSkills = null;
+                cacheVersion++;
                 return true;
             } finally {
                 conn.close();

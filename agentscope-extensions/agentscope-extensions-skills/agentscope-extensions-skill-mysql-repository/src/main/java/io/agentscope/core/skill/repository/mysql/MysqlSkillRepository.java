@@ -156,6 +156,20 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     private boolean writeable;
 
     /**
+     * Cached snapshot of the last known skills list, keyed by the latest {@code MAX(updated_at)}
+     * from the DB. When {@code getAllSkills()} is called and the latest updated_at matches the
+     * cached value, the cached list is returned without a full DB query. The cache is cleared
+     * by {@link #save(List, boolean)} and {@link #delete(String)}.
+     *
+     * <p>This mirrors the mtime-based cache in {@link
+     * io.agentscope.core.skill.repository.FileSystemSkillRepository} so that the
+     * {@link io.agentscope.core.skill.DynamicSkillMiddleware DynamicSkillMiddleware}'s
+     * content-keyed short-circuit can detect skill changes without blocking the rebuild.
+     */
+    private volatile List<AgentSkill> cachedSkills;
+    private volatile long cachedMaxUpdatedAt;
+
+    /**
      * Create a MysqlSkillRepository with default database and table names.
      *
      * <p>
@@ -522,6 +536,15 @@ public class MysqlSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<AgentSkill> getAllSkills() {
+        // Fast path: query only the latest updated_at; if unchanged, return cached list
+        long latest = queryMaxUpdatedAt();
+        if (latest > 0 && latest == cachedMaxUpdatedAt) {
+            List<AgentSkill> cached = cachedSkills;
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         String selectAllSkillsSql =
                 "SELECT id, name, description, skill_content, source"
                         + (metadataJsonColumnSupported ? ", metadata_json" : "")
@@ -589,11 +612,36 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 }
             }
 
+            // Update cache
+            cachedMaxUpdatedAt = latest;
+            cachedSkills = skills;
             return skills;
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load all skills", e);
         }
+    }
+
+    /**
+     * Queries the latest {@code MAX(updated_at)} from the skills table, converted to epoch
+     * millis. Returns 0 when the table is empty or an error occurs (the caller treats 0 as
+     * "cache miss").
+     */
+    private long queryMaxUpdatedAt() {
+        String sql = "SELECT MAX(updated_at) FROM " + getFullTableName(skillsTableName);
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql);
+                ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                java.sql.Timestamp ts = rs.getTimestamp(1);
+                if (ts != null) {
+                    return ts.getTime();
+                }
+            }
+        } catch (SQLException e) {
+            logger.debug("Failed to query MAX(updated_at): {}", e.getMessage());
+        }
+        return 0L;
     }
 
     @Override
@@ -666,6 +714,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 }
 
                 conn.commit();
+                cachedSkills = null;
+                cachedMaxUpdatedAt = 0L;
                 return true;
 
             } catch (Exception e) {
@@ -819,6 +869,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 deleteSkillInternal(conn, skillName);
                 conn.commit();
                 logger.info("Successfully deleted skill: {}", skillName);
+                cachedSkills = null;
+                cachedMaxUpdatedAt = 0L;
                 return true;
             } catch (Exception e) {
                 conn.rollback();
