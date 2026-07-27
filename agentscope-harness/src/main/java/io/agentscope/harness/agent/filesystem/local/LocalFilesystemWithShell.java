@@ -409,18 +409,17 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
-        if (shellCwd != null) {
-            return shellCwd;
-        }
+        Path base = shellCwd != null ? shellCwd : getCwd();
+
         NamespaceFactory nsf = getNamespaceFactory();
         if (nsf == null) {
-            return getCwd();
+            return base;
         }
         List<String> ns = nsf.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
-            return getCwd();
+            return base;
         }
-        Path namespaced = getCwd();
+        Path namespaced = base;
         for (String segment : ns) {
             namespaced = namespaced.resolve(segment);
         }
