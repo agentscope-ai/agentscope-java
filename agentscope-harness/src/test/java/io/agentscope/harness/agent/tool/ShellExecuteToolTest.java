@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -65,12 +66,28 @@ class ShellExecuteToolTest {
 
     @Test
     void execute_withWorkingDirectory_prefixesCd() {
-        when(sandbox.execute(eq(RT), eq("cd 'sub' && ls"), eq(30)))
+        String expectedCommand =
+                ShellExecuteTool.prefixWorkingDirectory("ls", "sub", System.getProperty("os.name"));
+        when(sandbox.execute(eq(RT), eq(expectedCommand), eq(30)))
                 .thenReturn(new ExecuteResponse("out", 0, false));
 
         String result = tool.execute(RT, "ls", "sub", null);
 
         assertTrue(result.contains("Exit code: 0"));
-        verify(sandbox).execute(RT, "cd 'sub' && ls", 30);
+        verify(sandbox).execute(RT, expectedCommand, 30);
+    }
+
+    @Test
+    void prefixWorkingDirectory_onWindows_usesCmdCompatibleCd() {
+        assertEquals(
+                "cd /d \"sub dir\" && dir",
+                ShellExecuteTool.prefixWorkingDirectory("dir", "sub dir", "Windows 11"));
+    }
+
+    @Test
+    void prefixWorkingDirectory_onUnix_keepsSingleQuotedCd() {
+        assertEquals(
+                "cd 'it'\\''s' && ls",
+                ShellExecuteTool.prefixWorkingDirectory("ls", "it's", "Linux"));
     }
 }

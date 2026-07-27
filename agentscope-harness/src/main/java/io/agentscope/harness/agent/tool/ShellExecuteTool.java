@@ -20,6 +20,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.util.Locale;
 
 /**
  * Shell execution tool backed by a {@link AbstractSandboxFilesystem}.
@@ -68,7 +69,7 @@ public class ShellExecuteTool {
                 return "Error: working_directory must be a relative path within the workspace"
                         + " (absolute paths, '~', and '..' are not allowed).";
             }
-            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            effectiveCommand = prefixWorkingDirectory(command, wd, System.getProperty("os.name"));
         }
 
         int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
@@ -83,5 +84,16 @@ public class ShellExecuteTool {
             sb.append("\n(output was truncated)");
         }
         return sb.toString();
+    }
+
+    static String prefixWorkingDirectory(String command, String workingDirectory, String osName) {
+        if (isWindows(osName)) {
+            return "cd /d \"" + workingDirectory.replace("\"", "\\\"") + "\" && " + command;
+        }
+        return "cd '" + workingDirectory.replace("'", "'\\''") + "' && " + command;
+    }
+
+    private static boolean isWindows(String osName) {
+        return osName != null && osName.toLowerCase(Locale.ROOT).contains("win");
     }
 }
