@@ -1,2 +1,3 @@
 io.agentscope.extensions.model.openai.OpenAIModelProvider
 io.agentscope.extensions.model.openai.compat.minimax.MiniMaxModelProvider
+io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekModelProvider
