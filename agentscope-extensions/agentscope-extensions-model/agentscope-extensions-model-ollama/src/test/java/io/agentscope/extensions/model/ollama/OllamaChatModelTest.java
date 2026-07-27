@@ -1206,4 +1206,102 @@ class OllamaChatModelTest {
 
         assertNotNull(model);
     }
+
+    // ========== stream flag routing (fix: doStream used to hardcode streaming) ==========
+
+    /**
+     * Regression test for the bug where {@code doStream} ignored the stream flag and always used
+     * Ollama's streaming API. With streaming, {@code model.stream(...).blockLast()} returns only
+     * the last chunk (an empty {@code done:true} marker), so single-turn callers got an empty
+     * reply. With {@code stream(false)}, {@code blockLast()} must return the full reply via the
+     * non-streaming {@code transport.execute()} path.
+     */
+    @Test
+    @DisplayName(
+            "stream(false) should use non-streaming transport and return full reply on blockLast")
+    void testStreamFalseRoutesToNonStreamingAndReturnsFullReply() throws Exception {
+        // Non-streaming response: a single complete JSON with content "Hello World"
+        String nonStreamingJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello World\"},"
+                        + "\"done\":true,\"eval_count\":2}";
+
+        HttpResponse mockResponse =
+                HttpResponse.builder().statusCode(200).body(nonStreamingJson).build();
+        when(httpTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+        OllamaChatModel nonStreamingModel =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .stream(false)
+                        .build();
+
+        GenerateOptions genOptions = OllamaOptions.builder().build().toGenerateOptions();
+        ChatResponse resp =
+                nonStreamingModel.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                genOptions)
+                        .blockLast();
+
+        // Must have gone through the non-streaming execute() path
+        verify(httpTransport).execute(any(HttpRequest.class));
+        // And blockLast() must carry the full reply content (not an empty trailing chunk)
+        assertNotNull(resp);
+        assertNotNull(resp.getContent());
+        assertFalse(resp.getContent().isEmpty(), "blockLast() content must not be empty");
+        ContentBlock block = resp.getContent().get(0);
+        assertTrue(block instanceof TextBlock);
+        assertEquals("Hello World", ((TextBlock) block).getText());
+    }
+
+    /**
+     * Confirms the default (stream=true) still routes through the streaming path, preserving
+     * backward compatibility for callers that consume the full Flux.
+     */
+    @Test
+    @DisplayName("default (stream=true) should still use streaming transport")
+    void testDefaultStreamTrueStillUsesStreamingTransport() {
+        // Streaming responses: two content chunks + an empty done marker
+        String chunk1 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},"
+                        + "\"done\":false}";
+        String chunk2 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\" World\"},"
+                        + "\"done\":false}";
+        String doneMarker =
+                "{\"model\":\"" + TEST_MODEL_NAME + "\",\"done\":true,\"eval_count\":2}";
+
+        when(httpTransport.stream(any(HttpRequest.class)))
+                .thenReturn(Flux.just(chunk1, chunk2, doneMarker));
+
+        // Default builder — no stream() call — must remain streaming
+        OllamaChatModel streamingModel =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .build();
+
+        GenerateOptions genOptions = OllamaOptions.builder().build().toGenerateOptions();
+        List<ChatResponse> responses =
+                streamingModel.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                genOptions)
+                        .collectList()
+                        .block();
+
+        // Streaming path must be used
+        verify(httpTransport).stream(any(HttpRequest.class));
+        assertNotNull(responses);
+        assertEquals(3, responses.size(), "streaming should emit one response per chunk");
+    }
 }

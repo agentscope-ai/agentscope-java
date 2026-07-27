@@ -69,10 +69,22 @@ public class OllamaChatModel extends ChatModelBase {
     private final Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
 
     /**
+     * Whether {@link #doStream} should use Ollama's streaming API (chunked) or the non-streaming
+     * API (single complete response). Defaults to {@code true} to preserve historical behavior.
+     *
+     * <p>The {@code Model.stream} entry point is final and always dispatches to {@code doStream};
+     * this flag therefore controls whether callers that do {@code model.stream(...).blockLast()}
+     * (e.g. single-turn bots, ReActAgent reasoning) receive one aggregated response or only the
+     * last (often empty) streaming chunk. Setting it to {@code false} makes {@code blockLast()}
+     * return the full reply.
+     */
+    private final boolean stream;
+
+    /**
      * Creates a new OllamaChatModel.
      *
      * @param modelName The name of the model to use (e.g., "llama2", "mistral").
-     * @param baseUrl The base URL of the Ollama server (e.g., "http://localhost:11434").
+     * @param baseUrl The base URL of the Ollama server (e.g. "http://localhost:11434").
      * @param defaultOptions Default configuration options.
      * @param formatter The message formatter to use.
      * @param httpTransport The HTTP transport to use.
@@ -83,10 +95,28 @@ public class OllamaChatModel extends ChatModelBase {
             OllamaOptions defaultOptions,
             Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter,
             HttpTransport httpTransport) {
+        this(modelName, baseUrl, defaultOptions, formatter, httpTransport, true);
+    }
+
+    /**
+     * Creates a new OllamaChatModel with an explicit streaming mode.
+     *
+     * @param stream {@code true} to use Ollama's streaming API in {@link #doStream}; {@code false}
+     *     to use the non-streaming API (single complete response), so that {@code
+     *     model.stream(...).blockLast()} returns the full reply instead of the last chunk.
+     */
+    public OllamaChatModel(
+            String modelName,
+            String baseUrl,
+            OllamaOptions defaultOptions,
+            Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter,
+            HttpTransport httpTransport,
+            boolean stream) {
         this.modelName = modelName;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : OllamaOptions.builder().build();
         this.formatter = formatter != null ? formatter : new OllamaChatFormatter();
+        this.stream = stream;
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
@@ -116,6 +146,17 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     public String getModelName() {
         return this.modelName;
+    }
+
+    /**
+     * Whether {@link #doStream} uses Ollama's streaming API (chunked). When {@code false}, the
+     * non-streaming API is used so that {@code model.stream(...).blockLast()} returns the full
+     * reply. Exposed for configuration/diagnostic introspection.
+     *
+     * @return {@code true} if streaming, {@code false} if non-streaming
+     */
+    public boolean isStreaming() {
+        return this.stream;
     }
 
     /**
@@ -150,7 +191,7 @@ public class OllamaChatModel extends ChatModelBase {
                 tools,
                 options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
-                true);
+                this.stream);
     }
 
     /**
@@ -250,6 +291,7 @@ public class OllamaChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private boolean stream = true;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -333,6 +375,23 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets whether {@link OllamaChatModel#doStream} should use Ollama's streaming API (chunked)
+         * or the non-streaming API (single complete response).
+         *
+         * <p>Default is {@code true} (streaming) for backward compatibility. Set to {@code false}
+         * when callers consume the model via {@code model.stream(...).blockLast()} and expect the
+         * full reply — with streaming, {@code blockLast()} returns only the last (often empty)
+         * chunk; with non-streaming, it returns the single aggregated response.
+         *
+         * @param stream {@code true} for streaming, {@code false} for non-streaming
+         * @return this builder instance
+         */
+        public Builder stream(boolean stream) {
+            this.stream = stream;
+            return this;
+        }
+
         public OllamaChatModel build() {
             OllamaOptions finalOptions =
                     defaultOptions != null
@@ -348,7 +407,8 @@ public class OllamaChatModel extends ChatModelBase {
             HttpTransport transport = resolveTransport();
 
             OllamaChatModel model =
-                    new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, transport);
+                    new OllamaChatModel(
+                            modelName, baseUrl, finalOptions, formatter, transport, stream);
             if (contextWindowSize >= 0) {
                 model.setContextWindowSize(contextWindowSize);
             }

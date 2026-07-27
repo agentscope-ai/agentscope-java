@@ -61,6 +61,13 @@ public final class OllamaModelProvider implements ModelProvider {
         }
         OllamaChatModel.Builder builder =
                 OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl);
+        // Honor ModelCreationContext.stream: when a caller sets stream=false (e.g. a single-turn
+        // bot that does model.stream(...).blockLast()), route doStream to Ollama's non-streaming
+        // API so blockLast() returns the full reply instead of the last (empty) chunk. Default
+        // remains streaming when the flag is null.
+        if (context.getStream() != null) {
+            builder.stream(context.getStream());
+        }
         applyAdvancedOptions(builder, context);
         return builder.build();
     }
