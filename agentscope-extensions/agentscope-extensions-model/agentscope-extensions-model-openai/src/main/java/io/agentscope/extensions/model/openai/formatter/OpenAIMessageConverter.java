@@ -107,10 +107,12 @@ public class OpenAIMessageConverter {
      */
     private OpenAIMessage convertSystemMessage(Msg msg) {
         String content = textExtractor.apply(msg);
-        return OpenAIMessage.builder()
-                .role("system")
-                .content(content != null ? content : "")
-                .build();
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role("system").content(content != null ? content : "");
+        if (msg.getName() != null) {
+            builder.name(sanitizeName(msg.getName()));
+        }
+        return builder.build();
     }
 
     /**
