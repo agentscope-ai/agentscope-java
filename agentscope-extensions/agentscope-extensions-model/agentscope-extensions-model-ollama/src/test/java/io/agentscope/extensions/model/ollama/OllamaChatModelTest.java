@@ -1304,4 +1304,49 @@ class OllamaChatModelTest {
         assertNotNull(responses);
         assertEquals(3, responses.size(), "streaming should emit one response per chunk");
     }
+
+    /**
+     * The legacy 5-arg constructor (kept for backward compatibility) must delegate to the 6-arg one
+     * with {@code stream=true}. Without this test, the delegation line is uncovered.
+     */
+    @Test
+    @DisplayName("5-arg constructor defaults to streaming (backward compatible delegation)")
+    void testLegacyConstructorDefaultsToStreaming() {
+        OllamaChatModel model =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null);
+        assertTrue(model.isStreaming(), "5-arg constructor must default to streaming");
+    }
+
+    /**
+     * The 6-arg constructor with {@code stream=false} must expose non-streaming mode via {@link
+     * OllamaChatModel#isStreaming()}. Covers the explicit-stream-flag constructor overload.
+     */
+    @Test
+    @DisplayName("6-arg constructor with stream=false exposes non-streaming mode")
+    void testExplicitConstructorHonorsStreamFlag() {
+        OllamaChatModel streaming =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null,
+                        true);
+        assertTrue(streaming.isStreaming());
+
+        OllamaChatModel nonStreaming =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null,
+                        false);
+        assertFalse(nonStreaming.isStreaming());
+    }
 }
