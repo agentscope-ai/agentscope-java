@@ -220,6 +220,14 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                         ThinkingBlock.builder()
                                                 .thinking("Unsigned thinking")
                                                 .build(),
+                                        ThinkingBlock.builder()
+                                                .thinking("Blank signature thinking")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "   "))
+                                                .build(),
                                         TextBlock.builder().text("Visible answer").build()))
                         .build();
 
