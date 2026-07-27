@@ -31,6 +31,7 @@
 - [Model Providers](https://java.agentscope.io/_sources/v2/en/integration/model/index.md)
 - [OpenAI Model](https://java.agentscope.io/_sources/v2/en/integration/model/openai.md)
 - [DeepSeek Model](https://java.agentscope.io/_sources/v2/en/integration/model/deepseek.md)
+- [GLM Model](https://java.agentscope.io/_sources/v2/en/integration/model/glm.md)
 - [DashScope Model](https://java.agentscope.io/_sources/v2/en/integration/model/dashscope.md)
 - [Gemini Model](https://java.agentscope.io/_sources/v2/en/integration/model/gemini.md)
 - [Anthropic Model](https://java.agentscope.io/_sources/v2/en/integration/model/anthropic.md)

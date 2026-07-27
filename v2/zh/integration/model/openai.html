@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-26T14:40:09+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="DeepSeek 模型" href="deepseek.html"><link rel="prev" title="模型提供商" href="index.html">
+    <meta property="article:modified_time" content="2026-07-27T09:42:39+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="DeepSeek 模型" href="deepseek.html"><link rel="prev" title="模型提供商" href="index.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/model/openai.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -710,6 +710,7 @@
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/model/index.html">Model Providers</a><input aria-label="Toggle navigation of Model Providers" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/openai.html">OpenAI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/deepseek.html">DeepSeek</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/glm.html">GLM</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/dashscope.html">DashScope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/gemini.html">Gemini</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/anthropic.html">Anthropic</a></li>
@@ -818,6 +819,7 @@
 <li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">模型提供商</a><input aria-label="Toggle navigation of 模型提供商" checked="" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">OpenAI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="deepseek.html">DeepSeek</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm.html">GLM</a></li>
 <li class="toctree-l2"><a class="reference internal" href="dashscope.html">DashScope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="gemini.html">Gemini</a></li>
 <li class="toctree-l2"><a class="reference internal" href="anthropic.html">Anthropic</a></li>
@@ -958,6 +960,49 @@
 </div>
 <p>接入通用兼容端点时，设置 <code class="docutils literal notranslate"><span class="pre">baseUrl(...)</span></code> 和该服务期望的模型名。DeepSeek 推荐使用专门的 <code class="docutils literal notranslate"><span class="pre">deepseek:&lt;model&gt;</span></code> registry id，这样 AgentScope 会自动应用 DeepSeek base URL、<code class="docutils literal notranslate"><span class="pre">DEEPSEEK_API_KEY</span></code> 和 DeepSeek formatter 默认值。详见 <a class="reference internal" href="deepseek.html"><span class="std std-doc">DeepSeek</span></a>。</p>
 </section>
+<section id="glm-ai">
+<h2>GLM（智谱 AI）<a class="headerlink" href="#glm-ai" title="Link to this heading">¶</a></h2>
+<p>GLM 在 <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai.compat.glm</span></code> 包中提供了专用适配。它底层复用 <code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code>，但默认配置为智谱开放平台端点（<code class="docutils literal notranslate"><span class="pre">https://open.bigmodel.cn/api/paas/v4</span></code>）。</p>
+<p>设置 <code class="docutils literal notranslate"><span class="pre">GLM_API_KEY</span></code>（或 <code class="docutils literal notranslate"><span class="pre">ZHIPUAI_API_KEY</span></code>）后，使用 <code class="docutils literal notranslate"><span class="pre">glm:&lt;model&gt;</span></code> 字符串 id：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;glm:glm-5.2&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 底层由 GLMModelProvider 通过 ModelRegistry 解析</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>也可以显式构建并指定 GLM formatter：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.openai.OpenAIChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.openai.compat.glm.GLMFormatter</span><span class="p">;</span>
+
+<span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GLM_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://open.bigmodel.cn/api/paas/v4&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;glm-5.2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GLMFormatter</span><span class="p">())</span><span class="w"> </span><span class="c1">// 多智能体提示词场景使用 GLMMultiAgentFormatter</span>
+<span class="w">    </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>GLM formatter 按最新智谱 API 对请求做了以下适配：</p>
+<ul class="simple">
+<li><p>保证至少存在一条 user 消息（否则 API 返回错误码 1214）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tool_choice</span></code> 仅支持 <code class="docutils literal notranslate"><span class="pre">auto</span></code>，其他取值会降级为 <code class="docutils literal notranslate"><span class="pre">auto</span></code>。</p></li>
+<li><p>工具定义中不发送 <code class="docutils literal notranslate"><span class="pre">strict</span></code> 参数。</p></li>
+<li><p>请求中会移除 <code class="docutils literal notranslate"><span class="pre">frequency_penalty</span></code> / <code class="docutils literal notranslate"><span class="pre">presence_penalty</span></code> / <code class="docutils literal notranslate"><span class="pre">thinking_budget</span></code>（GLM 不支持这些参数）。</p></li>
+<li><p>GLM 仅支持 <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code>：如果只设置了 <code class="docutils literal notranslate"><span class="pre">max_completion_tokens</span></code>（OpenAI 新风格），会自动映射为 <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code> 会钳制到 GLM 的取值范围 [0.0, 1.0]（OpenAI 允许到 2.0），<code class="docutils literal notranslate"><span class="pre">top_p</span></code> 钳制到 [0.01, 1.0]；按官方 OpenAI 兼容文档，<code class="docutils literal notranslate"><span class="pre">temperature</span> <span class="pre">=</span> <span class="pre">0</span></code> 在 GLM 端点不适用，会自动转换为 <code class="docutils literal notranslate"><span class="pre">do_sample</span> <span class="pre">=</span> <span class="pre">false</span></code>（确定性输出）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GLMModelProvider</span></code> 默认关闭原生结构化输出，因为 GLM 的 <code class="docutils literal notranslate"><span class="pre">response_format</span></code> 仅支持 <code class="docutils literal notranslate"><span class="pre">json_object</span></code>，agent 会自动改走 <code class="docutils literal notranslate"><span class="pre">generate_response</span></code> 工具；如需开启，可在 <code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> 中设置 <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code> 选项。</p></li>
+</ul>
+<p>思考相关参数：</p>
+<ul class="simple">
+<li><p>思考模式（GLM-4.5 及之后的模型）通过额外请求体参数控制，例如 <code class="docutils literal notranslate"><span class="pre">GenerateOptions.additionalBodyParam(&quot;thinking&quot;,</span> <span class="pre">Map.of(&quot;type&quot;,</span> <span class="pre">&quot;disabled&quot;))</span></code>；GLM-4.7 / GLM-5 系列默认开启思考。</p></li>
+<li><p>GLM-5.2 支持 <code class="docutils literal notranslate"><span class="pre">reasoning_effort</span></code>（默认 <code class="docutils literal notranslate"><span class="pre">max</span></code>），直接使用 <code class="docutils literal notranslate"><span class="pre">GenerateOptions.reasoningEffort(&quot;max&quot;)</span></code> 即可透传。</p></li>
+<li><p>GLM-5.2 的工具调用流式输出（<code class="docutils literal notranslate"><span class="pre">tool_stream</span></code>）可通过 <code class="docutils literal notranslate"><span class="pre">GenerateOptions.additionalBodyParam(&quot;tool_stream&quot;,</span> <span class="pre">true)</span></code> 开启。</p></li>
+</ul>
+<blockquote>
+<div><p>旧的 <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai.formatter.GLMFormatter</span></code> 与 <code class="docutils literal notranslate"><span class="pre">GLMMultiAgentFormatter</span></code> 已标记为过时（deprecated），它们现在继承自 <code class="docutils literal notranslate"><span class="pre">compat.glm</span></code> 下的新实现，将在后续版本移除。</p>
+</div></blockquote>
+</section>
 <section id="spring-boot">
 <h2>Spring Boot<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h2>
 <p>Spring Boot 应用可以使用 OpenAI starter：</p>
@@ -1025,7 +1070,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-26</div>
+              Last updated on 2026-07-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1064,6 +1109,7 @@
 <li><a class="reference internal" href="#id1">添加依赖</a></li>
 <li><a class="reference internal" href="#modelregistry">ModelRegistry</a></li>
 <li><a class="reference internal" href="#builder">显式 builder</a></li>
+<li><a class="reference internal" href="#glm-ai">GLM（智谱 AI）</a></li>
 <li><a class="reference internal" href="#spring-boot">Spring Boot</a></li>
 </ul>
 </li>
