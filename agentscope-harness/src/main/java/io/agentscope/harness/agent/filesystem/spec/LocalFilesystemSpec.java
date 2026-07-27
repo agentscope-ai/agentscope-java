@@ -285,11 +285,28 @@ public class LocalFilesystemSpec {
         return List.copyOf(additionalRoots);
     }
 
+    /**
+     * Checks whether {@code sub} is a subdirectory of {@code parent} (including same path).
+     * Both paths are normalized before comparison.
+     */
+    private static boolean isSubdirectoryOf(Path sub, Path parent) {
+        Path normalizedSub = sub.toAbsolutePath().normalize();
+        Path normalizedParent = parent.toAbsolutePath().normalize();
+        return normalizedSub.equals(normalizedParent) || normalizedSub.startsWith(normalizedParent);
+    }
+
     public AbstractFilesystem toFilesystem(Path workspace, NamespaceFactory localNamespaceFactory) {
         Path effectiveProject =
                 project != null ? project : Paths.get(System.getProperty("user.dir"));
         List<Path> policyRoots = new ArrayList<>();
-        policyRoots.add(effectiveProject);
+        // Avoid adding the project as a separate policy root when it is a subdirectory of
+        // the workspace — the workspace root already covers it. Without this guard, the
+        // overlay's lower layer (project) being inside the upper layer (workspace) creates
+        // a circular dependency that manifests as a nested working directory in SANDBOXED
+        // mode (see #2312).
+        if (!isSubdirectoryOf(effectiveProject, workspace)) {
+            policyRoots.add(effectiveProject);
+        }
         policyRoots.add(workspace);
         policyRoots.addAll(additionalRoots);
         PathPolicy pathPolicy = PathPolicy.of(policyRoots);
@@ -304,6 +321,14 @@ public class LocalFilesystemSpec {
                         inheritEnv,
                         localNamespaceFactory,
                         effectiveProject);
+        // When the project is a subdirectory of the workspace, the overlay would create a
+        // circular dependency: the lower layer (project) is inside the upper layer (workspace).
+        // In this case, skip the overlay and use the workspace directly. The project directory
+        // will be created as a regular subdirectory of the workspace when the agent first
+        // accesses it. See #2312.
+        if (isSubdirectoryOf(effectiveProject, workspace)) {
+            return upper;
+        }
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
         if (projectWritable) {
             LocalFilesystem projectFs =
