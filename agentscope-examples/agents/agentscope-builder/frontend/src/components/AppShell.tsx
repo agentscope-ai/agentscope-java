@@ -173,6 +173,7 @@ export default function AppShell() {
               AgentScope Builder
             </span>
             <NavLink to="/marketplaces" label="My Marketplaces" />
+            <NavLink to="/deployments" label="Deployments" />
             <NavLink to="/environments" label="Environments" />
             <NavLink to="/memory-stores" label="Memory" />
             <NavLink to="/vaults" label="Vaults" />

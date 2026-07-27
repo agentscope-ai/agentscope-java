@@ -1,0 +1,308 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: managed-agents-builder
+nodes_managed: true
+exported_at: "2026-07-21T03:36:30Z"
+modules:
+    "":
+        dir_name: AgentScope Java 多模块聚合仓库
+        title: AgentScope Java 多模块聚合仓库
+        scope: []
+        source_files: []
+        children:
+            - 0ba18167-8922-47ad-b2a1-763652787e98
+            - 0d920187-7299-448b-b82b-f64870c7e9cc
+            - 1c805f3b-0743-4460-9e34-c592f6c5c14a
+            - ac8bea04-ac6b-46a4-ba34-9ab629d54392
+            - b4d2001d-97c9-44f5-9542-31cb1cb4bf94
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1
+            - cd5d548a-d858-4e19-89e2-c2d02728e1df
+            - d52b92a7-de9b-4c66-9980-8abf729176a6
+            - d5b7e3bf-4f63-4416-96b5-5714b23ede93
+        depends_on: []
+        related_to: []
+    0ba18167-8922-47ad-b2a1-763652787e98:
+        dir_name: AgentScope Java 多模块聚合工程_2
+        title: AgentScope Java 多模块聚合工程
+        scope: []
+        source_files: []
+        children:
+            - 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+            - 0ba18167-8922-47ad-b2a1-763652787e98/8793b16f-c87a-4233-bf64-55c3442f79b8
+        depends_on: []
+        related_to:
+            - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1
+    0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d:
+        dir_name: AgentScope Harness 运行时编排层
+        title: AgentScope Harness 运行时编排层
+        scope:
+            - agentscope-harness/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+            - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+            - path: cd5d548a-d858-4e19-89e2-c2d02728e1df
+    0ba18167-8922-47ad-b2a1-763652787e98/8793b16f-c87a-4233-bf64-55c3442f79b8:
+        dir_name: AgentScope Java 多版本文档站点（Jupyter Book + Furo）
+        title: AgentScope Java 多版本文档站点（Jupyter Book + Furo）
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    0d920187-7299-448b-b82b-f64870c7e9cc:
+        dir_name: AgentScope 多模型扩展聚合模块
+        title: AgentScope 多模型扩展聚合模块
+        scope:
+            - agentscope-extensions/agentscope-extensions-model/
+        source_files: []
+        children:
+            - 0d920187-7299-448b-b82b-f64870c7e9cc/11fb7845-3062-4b64-8d76-3a9dcdf72f83
+            - 0d920187-7299-448b-b82b-f64870c7e9cc/5da0bc10-32e9-4ce1-889d-d1bb073b9e77
+        depends_on: []
+        related_to: []
+    0d920187-7299-448b-b82b-f64870c7e9cc/5da0bc10-32e9-4ce1-889d-d1bb073b9e77:
+        dir_name: OpenAI Chat Completions HTTP 扩展模型
+        title: OpenAI Chat Completions HTTP 扩展模型
+        scope:
+            - agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-openai/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+    0d920187-7299-448b-b82b-f64870c7e9cc/11fb7845-3062-4b64-8d76-3a9dcdf72f83:
+        dir_name: AgentScope Java 多模块聚合仓库
+        title: AgentScope Java 多模块聚合仓库
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    1c805f3b-0743-4460-9e34-c592f6c5c14a:
+        dir_name: Agent 工具框架与内置工具集
+        title: Agent 工具框架与内置工具集
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/tool/
+            - agentscope-core/src/main/java/io/agentscope/core/tool/builtin/
+            - agentscope-core/src/main/java/io/agentscope/core/tool/coding/
+            - agentscope-core/src/main/java/io/agentscope/core/tool/file/
+            - agentscope-core/src/main/java/io/agentscope/core/tool/mcp/
+            - agentscope-core/src/main/java/io/agentscope/core/tool/subagent/
+        source_files: []
+        children:
+            - 1c805f3b-0743-4460-9e34-c592f6c5c14a/5a002740-1572-483e-8656-818b8ed69986
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+            - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+    1c805f3b-0743-4460-9e34-c592f6c5c14a/5a002740-1572-483e-8656-818b8ed69986:
+        dir_name: Agent 工具框架核心
+        title: Agent 工具框架核心
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/tool/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    ac8bea04-ac6b-46a4-ba34-9ab629d54392:
+        dir_name: AgentScope Java 核心运行时
+        title: AgentScope Java 核心运行时
+        scope:
+            - agentscope-core/
+        source_files: []
+        children:
+            - ac8bea04-ac6b-46a4-ba34-9ab629d54392/2e67253e-de3c-4662-b958-3e671b2e7afa
+            - ac8bea04-ac6b-46a4-ba34-9ab629d54392/89dbe0b6-6ef2-4de0-9695-7a57d461f7ec
+        depends_on: []
+        related_to:
+            - path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+            - path: 0d920187-7299-448b-b82b-f64870c7e9cc/5da0bc10-32e9-4ce1-889d-d1bb073b9e77
+            - path: 1c805f3b-0743-4460-9e34-c592f6c5c14a
+            - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/3ea597a7-c256-4704-9f3e-62f6cbd104eb
+            - path: d5b7e3bf-4f63-4416-96b5-5714b23ede93/2cec2f34-4d58-474e-9f6c-f8b1e7ca3930
+    ac8bea04-ac6b-46a4-ba34-9ab629d54392/2e67253e-de3c-4662-b958-3e671b2e7afa:
+        dir_name: 统一消息模型与 Provider 适配格式化层
+        title: 统一消息模型与 Provider 适配格式化层
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/message/
+            - agentscope-core/src/main/java/io/agentscope/core/formatter/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: b4d2001d-97c9-44f5-9542-31cb1cb4bf94
+            - path: b4d2001d-97c9-44f5-9542-31cb1cb4bf94/b2826e92-3bb6-4474-93e0-6cced72384af
+    ac8bea04-ac6b-46a4-ba34-9ab629d54392/89dbe0b6-6ef2-4de0-9695-7a57d461f7ec:
+        dir_name: Agent 运行时核心：抽象、事件流、Hook 与中断控制
+        title: Agent 运行时核心：抽象、事件流、Hook 与中断控制
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/agent/
+            - agentscope-core/src/main/java/io/agentscope/core/event/
+            - agentscope-core/src/main/java/io/agentscope/core/hook/
+            - agentscope-core/src/main/java/io/agentscope/core/interruption/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    b4d2001d-97c9-44f5-9542-31cb1cb4bf94:
+        dir_name: 模型抽象与注册中心
+        title: 模型抽象与注册中心
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/model/Model.java
+            - agentscope-core/src/main/java/io/agentscope/core/model/ChatModelBase.java
+            - agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java
+        source_files: []
+        children:
+            - b4d2001d-97c9-44f5-9542-31cb1cb4bf94/b2826e92-3bb6-4474-93e0-6cced72384af
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392/2e67253e-de3c-4662-b958-3e671b2e7afa
+    b4d2001d-97c9-44f5-9542-31cb1cb4bf94/b2826e92-3bb6-4474-93e0-6cced72384af:
+        dir_name: 模型抽象与传输层核心
+        title: 模型抽象与传输层核心
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/model/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392/2e67253e-de3c-4662-b958-3e671b2e7afa
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1:
+        dir_name: AgentScope Java 多模块聚合工程
+        title: AgentScope Java 多模块聚合工程
+        scope: []
+        source_files: []
+        children:
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/a55547ef-863d-499a-8270-9c950dc7c6c2
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3
+        depends_on: []
+        related_to:
+            - path: 0ba18167-8922-47ad-b2a1-763652787e98
+            - path: d52b92a7-de9b-4c66-9980-8abf729176a6
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/a55547ef-863d-499a-8270-9c950dc7c6c2:
+        dir_name: AgentScope Maven 分发与依赖 BOM
+        title: AgentScope Maven 分发与依赖 BOM
+        scope:
+            - agentscope-distribution/
+            - agentscope-dependencies-bom/
+        source_files: []
+        children:
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/a55547ef-863d-499a-8270-9c950dc7c6c2/b4fd87ed-ba7c-4a12-9500-5460173d9164
+        depends_on: []
+        related_to: []
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/a55547ef-863d-499a-8270-9c950dc7c6c2/b4fd87ed-ba7c-4a12-9500-5460173d9164:
+        dir_name: AgentScope Java 多模块聚合仓库
+        title: AgentScope Java 多模块聚合仓库
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3:
+        dir_name: AgentScope Java 多模块聚合工程
+        title: AgentScope Java 多模块聚合工程
+        scope: []
+        source_files: []
+        children:
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/3ea597a7-c256-4704-9f3e-62f6cbd104eb
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400
+        depends_on: []
+        related_to: []
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/3ea597a7-c256-4704-9f3e-62f6cbd104eb:
+        dir_name: AgentScope 协议扩展聚合层
+        title: AgentScope 协议扩展聚合层
+        scope:
+            - agentscope-extensions/agentscope-extensions-protocol/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+    b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400:
+        dir_name: 工具与技能统一装配层（Tool & Skill Orchestration）
+        title: 工具与技能统一装配层（Tool & Skill Orchestration）
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/tool/
+            - agentscope-core/src/main/java/io/agentscope/core/skill/
+        source_files: []
+        children:
+            - b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+        depends_on: []
+        related_to: []
+    ? b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+    :   dir_name: Agent 技能系统（Skill System）
+        title: Agent 技能系统（Skill System）
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/skill/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+            - path: 1c805f3b-0743-4460-9e34-c592f6c5c14a
+    cd5d548a-d858-4e19-89e2-c2d02728e1df:
+        dir_name: PostgreSQL 分布式后端扩展
+        title: PostgreSQL 分布式后端扩展
+        scope:
+            - agentscope-extensions/agentscope-extensions-postgresql/
+        source_files: []
+        children:
+            - cd5d548a-d858-4e19-89e2-c2d02728e1df/bf0cd121-cc74-4c50-a348-a2f395ab4c8f
+        depends_on: []
+        related_to:
+            - path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+    cd5d548a-d858-4e19-89e2-c2d02728e1df/bf0cd121-cc74-4c50-a348-a2f395ab4c8f:
+        dir_name: AgentScope 扩展聚合仓库
+        title: AgentScope 扩展聚合仓库
+        scope:
+            - agentscope-extensions/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    d5b7e3bf-4f63-4416-96b5-5714b23ede93:
+        dir_name: AgentScope Spring Boot Starter 聚合模块
+        title: AgentScope Spring Boot Starter 聚合模块
+        scope:
+            - agentscope-extensions/agentscope-spring-boot-starters/
+        source_files: []
+        children:
+            - d5b7e3bf-4f63-4416-96b5-5714b23ede93/2cec2f34-4d58-474e-9f6c-f8b1e7ca3930
+        depends_on: []
+        related_to: []
+    d5b7e3bf-4f63-4416-96b5-5714b23ede93/2cec2f34-4d58-474e-9f6c-f8b1e7ca3930:
+        dir_name: AgentScope AG-UI Spring Boot Starter
+        title: AgentScope AG-UI Spring Boot Starter
+        scope:
+            - agentscope-extensions/agentscope-spring-boot-starters/agentscope-agui-spring-boot-starter/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+    d52b92a7-de9b-4c66-9980-8abf729176a6:
+        dir_name: AgentScope Java 多模块聚合仓库
+        title: AgentScope Java 多模块聚合仓库
+        scope: []
+        source_files: []
+        children:
+            - d52b92a7-de9b-4c66-9980-8abf729176a6/a3265441-a354-4e94-ab31-62f647a605c3
+        depends_on: []
+        related_to:
+            - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1
+    d52b92a7-de9b-4c66-9980-8abf729176a6/a3265441-a354-4e94-ab31-62f647a605c3:
+        dir_name: AgentScope Core 模型抽象层
+        title: AgentScope Core 模型抽象层
+        scope:
+            - agentscope-core/src/main/java/io/agentscope/core/model/
+            - agentscope-core/src/main/java/io/agentscope/core/credential/
+            - agentscope-core/src/main/java/io/agentscope/core/formatter/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: 0ba18167-8922-47ad-b2a1-763652787e98/8793b16f-c87a-4233-bf64-55c3442f79b8
+title: AgentScope Java 多版本文档站点（Jupyter Book + Furo）
+scope:
+    - docs/
+source_files: []
+depends_on: []
+related_to: []

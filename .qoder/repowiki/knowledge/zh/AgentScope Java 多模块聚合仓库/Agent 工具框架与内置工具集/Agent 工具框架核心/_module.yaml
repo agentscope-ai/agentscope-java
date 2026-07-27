@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: 1c805f3b-0743-4460-9e34-c592f6c5c14a/5a002740-1572-483e-8656-818b8ed69986
+title: Agent 工具框架核心
+scope:
+    - agentscope-core/src/main/java/io/agentscope/core/tool/
+source_files: []
+depends_on: []
+related_to: []

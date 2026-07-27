@@ -64,8 +64,8 @@ import java.util.Map;
  * @param sandboxScope optional sharing scope when {@code sandboxMode == "sandbox"} ({@code
  *     "SESSION"} / {@code "USER"} / {@code "AGENT"} / {@code "GLOBAL"}). Maps to {@link
  *     io.agentscope.harness.agent.IsolationScope}.
- * @param version head version number for user-custom agents; {@code null} for globals without
- *     version history
+ * @param version head version number; for globals this is the materialized snapshot version
+ *     (owner {@code "__global__"}, currently always {@code 1})
  * @param archivedAt when non-null the agent is archived (read-only; no new sessions)
  * @param permissionPolicies per-tool permission policies ({@code always_allow} / {@code
  *     always_ask}); {@code null} uses platform defaults

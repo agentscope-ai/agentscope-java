@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400
+title: 工具与技能统一装配层（Tool & Skill Orchestration）
+scope:
+    - agentscope-core/src/main/java/io/agentscope/core/tool/
+    - agentscope-core/src/main/java/io/agentscope/core/skill/
+source_files: []
+depends_on: []
+related_to: []

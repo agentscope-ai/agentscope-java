@@ -21,6 +21,8 @@ import io.agentscope.builder.web.persistence.jpa.MemoryStoreEntity;
 import io.agentscope.builder.web.persistence.jpa.MemoryStoreEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.MemoryVersionEntity;
 import io.agentscope.builder.web.persistence.jpa.MemoryVersionEntityRepository;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
+import io.agentscope.builder.web.share.ResourceAccessService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 public class MemoryStoreService {
 
+    /** Resource-type key used for {@link ResourceAccessService} share grants. */
+    public static final String RESOURCE_TYPE = "memory_store";
+
     /** Request body for creating a memory store. */
     public record CreateMemoryStoreRequest(String name, String description) {}
 
@@ -41,14 +46,17 @@ public class MemoryStoreService {
     private final MemoryStoreEntityRepository storeRepository;
     private final MemoryEntityRepository memoryRepository;
     private final MemoryVersionEntityRepository versionRepository;
+    private final ResourceAccessService resourceAccessService;
 
     public MemoryStoreService(
             MemoryStoreEntityRepository storeRepository,
             MemoryEntityRepository memoryRepository,
-            MemoryVersionEntityRepository versionRepository) {
+            MemoryVersionEntityRepository versionRepository,
+            ResourceAccessService resourceAccessService) {
         this.storeRepository = storeRepository;
         this.memoryRepository = memoryRepository;
         this.versionRepository = versionRepository;
+        this.resourceAccessService = resourceAccessService;
     }
 
     /** Lists memory stores owned by the user. */
@@ -59,10 +67,10 @@ public class MemoryStoreService {
                 .toList();
     }
 
-    /** Returns a single memory store. */
+    /** Returns a single memory store when owned by, or shared (at least RUN) with, the caller. */
     @Transactional(readOnly = true)
     public MemoryStoreDto getStore(String ownerId, String storeId) {
-        return toStoreDto(requireStore(ownerId, storeId));
+        return toStoreDto(requireAccess(ownerId, storeId, Tier.RUN));
     }
 
     /** Creates a memory store. */
@@ -87,7 +95,7 @@ public class MemoryStoreService {
 
     /** Deletes a memory store and all contained memories. */
     public void deleteStore(String ownerId, String storeId) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.EDIT);
         for (MemoryEntity memory : memoryRepository.findByStoreIdOrderByPathAsc(storeId)) {
             versionRepository.deleteByMemoryId(memory.getMemoryId());
         }
@@ -98,7 +106,7 @@ public class MemoryStoreService {
     /** Lists all memories in a store. */
     @Transactional(readOnly = true)
     public List<MemoryDto> listMemories(String ownerId, String storeId) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.RUN);
         return memoryRepository.findByStoreIdOrderByPathAsc(storeId).stream()
                 .map(this::toMemoryDto)
                 .toList();
@@ -107,7 +115,7 @@ public class MemoryStoreService {
     /** Returns a memory document by path. */
     @Transactional(readOnly = true)
     public MemoryDto getMemory(String ownerId, String storeId, String path) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.RUN);
         return memoryRepository
                 .findByStoreIdAndPath(storeId, path)
                 .map(this::toMemoryDto)
@@ -120,7 +128,7 @@ public class MemoryStoreService {
     /** Creates or updates a memory document, bumping the head version. */
     public MemoryDto putMemory(
             String ownerId, String storeId, String path, PutMemoryRequest request) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.EDIT);
         if (path == null || path.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "path is required");
         }
@@ -159,7 +167,7 @@ public class MemoryStoreService {
 
     /** Deletes a memory document and its version history. */
     public void deleteMemory(String ownerId, String storeId, String path) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.EDIT);
         MemoryEntity memory =
                 memoryRepository
                         .findByStoreIdAndPath(storeId, path)
@@ -180,7 +188,29 @@ public class MemoryStoreService {
                 .toList();
     }
 
-    private MemoryStoreEntity requireStore(String ownerId, String storeId) {
+    /** Lists share grants on a memory store. Owner/EDIT-tier only. */
+    @Transactional(readOnly = true)
+    public List<ResourceShareDto> listShares(String ownerId, String storeId) {
+        requireAccess(ownerId, storeId, Tier.EDIT);
+        return resourceAccessService.listShares(RESOURCE_TYPE, storeId);
+    }
+
+    /** Shares a memory store with a user or the whole workspace. Owner/EDIT-tier only. */
+    public ResourceShareDto share(
+            String ownerId, String storeId, String granteeType, String granteeId, Tier tier) {
+        MemoryStoreEntity store = requireAccess(ownerId, storeId, Tier.EDIT);
+        return resourceAccessService.share(
+                RESOURCE_TYPE, storeId, store.getOwnerId(), granteeType, granteeId, tier, ownerId);
+    }
+
+    /** Revokes a share grant on a memory store. Owner/EDIT-tier only. */
+    public void unshare(String ownerId, String storeId, String shareId) {
+        requireAccess(ownerId, storeId, Tier.EDIT);
+        resourceAccessService.unshare(RESOURCE_TYPE, storeId, shareId);
+    }
+
+    /** Resolves the store and verifies {@code callerId} holds at least {@code required}. */
+    private MemoryStoreEntity requireAccess(String callerId, String storeId, Tier required) {
         MemoryStoreEntity store =
                 storeRepository
                         .findByStoreId(storeId)
@@ -189,14 +219,13 @@ public class MemoryStoreService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Memory store not found: " + storeId));
-        if (!ownerId.equals(store.getOwnerId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Memory store access denied");
-        }
+        resourceAccessService.require(
+                callerId, store.getOwnerId(), RESOURCE_TYPE, storeId, required);
         return store;
     }
 
     private MemoryEntity requireMemory(String ownerId, String storeId, String path) {
-        requireStore(ownerId, storeId);
+        requireAccess(ownerId, storeId, Tier.RUN);
         return memoryRepository
                 .findByStoreIdAndPath(storeId, path)
                 .orElseThrow(

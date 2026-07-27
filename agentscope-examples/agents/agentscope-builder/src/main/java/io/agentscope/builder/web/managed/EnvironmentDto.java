@@ -18,7 +18,14 @@ package io.agentscope.builder.web.managed;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Map;
 
-/** API representation of an execution environment template. */
+/**
+ * API representation of an execution environment template.
+ *
+ * <p>{@code type} is one of {@link EnvironmentService#TYPE_LOCAL}, {@link
+ * EnvironmentService#TYPE_SANDBOX}, {@link EnvironmentService#TYPE_REMOTE}, or {@link
+ * EnvironmentService#TYPE_SELF_HOSTED} — see {@link EnvironmentSpecFactory#applyEnvironment} for
+ * how each type is mapped onto a harness filesystem spec.
+ */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record EnvironmentDto(
         String id,

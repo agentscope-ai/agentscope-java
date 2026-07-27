@@ -30,4 +30,13 @@ public interface ManagedSessionEntityRepository extends JpaRepository<ManagedSes
             String ownerId, String agentId);
 
     long countByEnvironmentIdAndArchivedAtIsNull(String environmentId);
+
+    /**
+     * Finds the most recent non-archived session for a given owner/agent/external-key triple.
+     * Used by {@code ManagedSessionChannelBridge} to reuse an existing managed session for a
+     * given IM channel conversation instead of creating a new one per inbound message.
+     */
+    Optional<ManagedSessionEntity>
+            findFirstByOwnerIdAndAgentIdAndExternalKeyAndArchivedAtIsNullOrderByCreatedAtDesc(
+                    String ownerId, String agentId, String externalKey);
 }

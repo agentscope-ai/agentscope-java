@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: cd5d548a-d858-4e19-89e2-c2d02728e1df/bf0cd121-cc74-4c50-a348-a2f395ab4c8f
+title: AgentScope 扩展聚合仓库
+scope:
+    - agentscope-extensions/
+source_files: []
+depends_on: []
+related_to: []

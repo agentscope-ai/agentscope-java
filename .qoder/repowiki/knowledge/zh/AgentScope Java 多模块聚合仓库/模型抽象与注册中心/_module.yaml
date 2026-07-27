@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: b4d2001d-97c9-44f5-9542-31cb1cb4bf94
+title: 模型抽象与注册中心
+scope:
+    - agentscope-core/src/main/java/io/agentscope/core/model/Model.java
+    - agentscope-core/src/main/java/io/agentscope/core/model/ChatModelBase.java
+    - agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java
+source_files: []
+depends_on: []
+related_to:
+    - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392/2e67253e-de3c-4662-b958-3e671b2e7afa

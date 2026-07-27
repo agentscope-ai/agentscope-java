@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/a55547ef-863d-499a-8270-9c950dc7c6c2
+title: AgentScope Maven 分发与依赖 BOM
+scope:
+    - agentscope-distribution/
+    - agentscope-dependencies-bom/
+source_files: []
+depends_on: []
+related_to: []

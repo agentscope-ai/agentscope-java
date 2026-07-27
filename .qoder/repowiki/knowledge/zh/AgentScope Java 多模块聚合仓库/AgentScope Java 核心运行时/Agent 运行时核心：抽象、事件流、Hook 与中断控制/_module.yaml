@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: ac8bea04-ac6b-46a4-ba34-9ab629d54392/89dbe0b6-6ef2-4de0-9695-7a57d461f7ec
+title: Agent 运行时核心：抽象、事件流、Hook 与中断控制
+scope:
+    - agentscope-core/src/main/java/io/agentscope/core/agent/
+    - agentscope-core/src/main/java/io/agentscope/core/event/
+    - agentscope-core/src/main/java/io/agentscope/core/hook/
+    - agentscope-core/src/main/java/io/agentscope/core/interruption/
+source_files: []
+depends_on: []
+related_to: []

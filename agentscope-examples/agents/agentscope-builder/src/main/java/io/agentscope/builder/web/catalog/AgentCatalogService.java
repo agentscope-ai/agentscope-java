@@ -22,6 +22,10 @@ import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.auth.UserStore.UserRecord;
 import io.agentscope.builder.web.managed.AgentVersionService;
 import io.agentscope.builder.web.managed.AgentVersionSnapshot;
+import io.agentscope.builder.web.managed.EnvironmentDto;
+import io.agentscope.builder.web.managed.MemoryMountService;
+import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
+import io.agentscope.builder.web.managed.VaultCredentialResolver;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntity;
 import io.agentscope.builder.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.builder.web.share.AgentAclService;
@@ -29,6 +33,7 @@ import io.agentscope.builder.web.template.TemplateRegistry;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -86,10 +91,13 @@ public class AgentCatalogService {
     private final io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware
             toolConfirmationMiddleware;
     private final AgentVersionService versionService;
+    private final MemoryMountService memoryMountService;
+    private final VaultCredentialResolver vaultCredentialResolver;
 
     /**
-     * In-flight cache of dynamically-registered gateway agent IDs. Key: {@code {userId}/{agentId}},
-     * Value: the gateway agent ID (e.g. {@code uca-{userId}-{agentId}}).
+     * In-flight cache of dynamically-registered gateway agent IDs. Key: {@code {userId}/{agentId}}
+     * for legacy head builds, or {@code {userId}/{agentId}/{cacheSuffix}} for managed-session
+     * builds. Value: the gateway agent ID.
      */
     private final ConcurrentHashMap<String, String> registeredUcaIds = new ConcurrentHashMap<>();
 
@@ -113,8 +121,9 @@ public class AgentCatalogService {
             AgentAclService aclService,
             AgentVersionService versionService,
             io.agentscope.builder.web.managed.EnvironmentSpecFactory environmentSpecFactory,
-            io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware
-                    toolConfirmationMiddleware) {
+            io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware toolConfirmationMiddleware,
+            MemoryMountService memoryMountService,
+            VaultCredentialResolver vaultCredentialResolver) {
         this.builderBootstrap = builderBootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
@@ -126,6 +135,8 @@ public class AgentCatalogService {
         this.versionService = versionService;
         this.environmentSpecFactory = environmentSpecFactory;
         this.toolConfirmationMiddleware = toolConfirmationMiddleware;
+        this.memoryMountService = memoryMountService;
+        this.vaultCredentialResolver = vaultCredentialResolver;
         // Install the owner-pinned filesystem user-id resolver on the gateway so chat-time reads
         // for shared (SCOPE_USER) agents land in the same namespace the controller writes to.
         // See {@link #resolveFilesystemUserId} for the resolution rules.
@@ -236,6 +247,16 @@ public class AgentCatalogService {
     /** Returns {@code true} if the agent id refers to a global (project-level) agent. */
     public boolean isGlobal(String agentId) {
         return builderBootstrap.agents().containsKey(agentId);
+    }
+
+    /**
+     * Ensures every global agent has a materialized version-1 snapshot (owner {@link
+     * AgentVersionService#GLOBAL_OWNER}). Idempotent — safe to call repeatedly, including once
+     * per {@link #globalDefinitions()} call and once at startup from {@link
+     * io.agentscope.builder.web.managed.ManagedAgentsMigrationRunner}.
+     */
+    public void ensureGlobalVersions() {
+        globalDefinitions();
     }
 
     // -----------------------------------------------------------------
@@ -561,7 +582,7 @@ public class AgentCatalogService {
                         saved.permissionPolicies());
 
         // Evict cached gateway registration so the next conversation picks up the new definition.
-        registeredUcaIds.remove(ucaCacheKey(userId, agentId));
+        evictUcaCache(userId, agentId);
 
         log.info("User '{}' updated custom agent '{}'", userId, agentId);
         return saved.toDefinition(userId);
@@ -609,7 +630,7 @@ public class AgentCatalogService {
                         now,
                         existing.permissionPolicies());
         UserAgentDefinitionStore.StoredEntry saved = store.save(userId, archived);
-        registeredUcaIds.remove(ucaCacheKey(userId, agentId));
+        evictUcaCache(userId, agentId);
         log.info("User '{}' archived custom agent '{}'", userId, agentId);
         return saved.toDefinition(userId);
     }
@@ -750,7 +771,7 @@ public class AgentCatalogService {
         if (!store.delete(userId, agentId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found: " + agentId);
         }
-        registeredUcaIds.remove(ucaCacheKey(userId, agentId));
+        evictUcaCache(userId, agentId);
         log.info("User '{}' deleted custom agent '{}'", userId, agentId);
     }
 
@@ -765,7 +786,7 @@ public class AgentCatalogService {
         if (isGlobal(agentId)) return;
         String ownerId = findOwnerOf(agentId).orElse(userId);
         if (ownerId == null) return;
-        registeredUcaIds.remove(ucaCacheKey(ownerId, agentId));
+        evictUcaCache(ownerId, agentId);
     }
 
     /**
@@ -800,15 +821,68 @@ public class AgentCatalogService {
      * with the agent's runtime state.
      */
     public HarnessAgent getOrInstantiateRunningAgent(String userId, String agentId) {
-        if (agentId == null) return null;
-        if (isGlobal(agentId)) {
-            return builderBootstrap.agents().get(agentId);
-        }
-        if (findVisible(userId, agentId).isEmpty()) {
+        return getOrInstantiateRunningAgent(userId, agentId, null);
+    }
+
+    /**
+     * Resolves (and caches) a {@link HarnessAgent} for a managed session, keyed by {@code (owner,
+     * agent, version, environment, mounts)}. When {@code spec} is {@code null}, falls back to the
+     * legacy head-build path.
+     */
+    public HarnessAgent getOrInstantiateRunningAgent(
+            String userId, String agentId, SessionAgentBuildSpec spec) {
+        if (agentId == null) {
             return null;
         }
-        String ownerId = findOwnerOf(agentId).orElse(null);
-        if (ownerId == null) return null;
+        if (spec == null) {
+            if (isGlobal(agentId)) {
+                return builderBootstrap.agents().get(agentId);
+            }
+            if (findVisible(userId, agentId).isEmpty()) {
+                return null;
+            }
+            String ownerId = findOwnerOf(agentId).orElse(null);
+            if (ownerId == null) {
+                return null;
+            }
+            UserAgentDefinitionStore.StoredEntry entry =
+                    store.findById(ownerId, agentId)
+                            .orElseThrow(
+                                    () ->
+                                            new ResponseStatusException(
+                                                    HttpStatus.NOT_FOUND,
+                                                    "Agent not found: " + agentId));
+            String gatewayId =
+                    registeredUcaIds.computeIfAbsent(
+                            ucaCacheKey(ownerId, agentId),
+                            k -> buildAndRegisterUca(ownerId, entry, null));
+            return builderBootstrap.gateway().findAgent(gatewayId);
+        }
+
+        if (findVisible(userId, agentId).isEmpty() && !isGlobal(agentId)) {
+            return null;
+        }
+        String ownerId = isGlobal(agentId) ? userId : findOwnerOf(agentId).orElse(userId);
+        String cacheKey = ucaCacheKey(ownerId, agentId) + "/" + spec.cacheSuffix();
+        String gatewayId =
+                registeredUcaIds.computeIfAbsent(
+                        cacheKey, k -> buildManagedSessionAgent(ownerId, agentId, spec));
+        return builderBootstrap.gateway().findAgent(gatewayId);
+    }
+
+    /** Returns the workspace path used for a user-custom (or global-managed) agent. */
+    public Path resolveAgentWorkspace(String ownerId, String agentId) {
+        if (isGlobal(agentId)) {
+            AgentConfigEntry cfg =
+                    builderBootstrap.loadedConfig().getAgents() != null
+                            ? builderBootstrap.loadedConfig().getAgents().get(agentId)
+                            : null;
+            String ws = cfg != null ? cfg.getWorkspace() : null;
+            if (ws != null && !ws.isBlank()) {
+                return Paths.get(ws).toAbsolutePath().normalize();
+            }
+            return sharedWorkspacePaths.resolveAgentDataPath(null, agentId);
+        }
         UserAgentDefinitionStore.StoredEntry entry =
                 store.findById(ownerId, agentId)
                         .orElseThrow(
@@ -816,10 +890,7 @@ public class AgentCatalogService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found: " + agentId));
-        String gatewayId =
-                registeredUcaIds.computeIfAbsent(
-                        ucaCacheKey(ownerId, agentId), k -> buildAndRegisterUca(ownerId, entry));
-        return builderBootstrap.gateway().findAgent(gatewayId);
+        return userWorkspacePath(ownerId, entry);
     }
 
     // -----------------------------------------------------------------
@@ -861,7 +932,7 @@ public class AgentCatalogService {
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found: " + agentId));
         return registeredUcaIds.computeIfAbsent(
-                ucaCacheKey(ownerId, agentId), k -> buildAndRegisterUca(ownerId, entry));
+                ucaCacheKey(ownerId, agentId), k -> buildAndRegisterUca(ownerId, entry, null));
     }
 
     /**
@@ -910,6 +981,27 @@ public class AgentCatalogService {
             AgentConfigEntry.GroupChatConfig gc = cfg != null ? cfg.getGroupChat() : null;
             AgentConfigEntry.SkillsConfig sk = cfg != null ? cfg.getSkills() : null;
 
+            AgentVersionSnapshot snapshot =
+                    new AgentVersionSnapshot(
+                            name,
+                            desc,
+                            cfg != null ? cfg.getSysPrompt() : null,
+                            cfg != null ? cfg.getModel() : null,
+                            cfg != null ? cfg.getMaxIters() : null,
+                            tc != null ? tc.getAllow() : null,
+                            tc != null ? tc.getDeny() : null,
+                            ic != null ? ic.getName() : null,
+                            ic != null ? ic.getEmoji() : null,
+                            gc != null ? gc.getMentionPatterns() : null,
+                            gc != null ? gc.getRequireMention() : null,
+                            sk != null ? sk.getAllow() : null,
+                            sk != null ? sk.getDeny() : null,
+                            cfg != null ? cfg.effectiveSkillRepositories() : null,
+                            null, // sandboxMode — globals follow the platform default
+                            null, // sandboxScope
+                            null); // permissionPolicies
+            Integer headVersion = versionService.ensureGlobalVersion(id, snapshot);
+
             result.add(
                     new AgentDefinition(
                             id,
@@ -937,7 +1029,7 @@ public class AgentCatalogService {
                             cfg != null ? cfg.getWorkspace() : null, // mirror runtime workspace
                             null, // sandboxMode — globals follow the platform default
                             null, // sandboxScope
-                            null, // version — globals have no version history
+                            headVersion, // version — head of the materialized global snapshot
                             null, // archivedAt
                             null, // permissionPolicies
                             null)); // tierForCurrentUser — populated by the controller
@@ -949,10 +1041,133 @@ public class AgentCatalogService {
         return store.list(userId).stream().map(e -> e.toDefinition(userId)).toList();
     }
 
-    private String buildAndRegisterUca(String userId, UserAgentDefinitionStore.StoredEntry entry) {
-        String gatewayAgentId = UCA_PREFIX + userId + "-" + entry.id();
+    private String buildManagedSessionAgent(
+            String ownerId, String agentId, SessionAgentBuildSpec spec) {
+        if (isGlobal(agentId)) {
+            return buildAndRegisterManagedGlobal(ownerId, agentId, spec);
+        }
+        UserAgentDefinitionStore.StoredEntry entry =
+                store.findById(ownerId, agentId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Agent not found: " + agentId));
+        return buildAndRegisterUca(ownerId, entry, spec);
+    }
+
+    private String buildAndRegisterManagedGlobal(
+            String sessionOwnerId, String agentId, SessionAgentBuildSpec spec) {
+        String gatewayAgentId =
+                UCA_PREFIX
+                        + "mgr-"
+                        + sessionOwnerId
+                        + "-"
+                        + agentId
+                        + "-"
+                        + Integer.toHexString(spec.cacheSuffix().hashCode());
+        Path workspace = resolveAgentWorkspace(sessionOwnerId, agentId);
+
+        AgentConfigEntry cfg =
+                builderBootstrap.loadedConfig().getAgents() != null
+                        ? builderBootstrap.loadedConfig().getAgents().get(agentId)
+                        : null;
+
+        HarnessAgent.Builder b = HarnessAgent.builder();
+        b.agentId(gatewayAgentId);
+        b.name(cfg != null && cfg.getName() != null ? cfg.getName() : agentId);
+        if (cfg != null && cfg.getDescription() != null) {
+            b.description(cfg.getDescription());
+        }
+        if (cfg != null && cfg.getSysPrompt() != null) {
+            b.sysPrompt(cfg.getSysPrompt());
+        }
+        if (cfg != null && cfg.getMaxIters() != null) {
+            b.maxIters(cfg.getMaxIters());
+        }
+        if (cfg != null && cfg.getModel() != null && !cfg.getModel().isBlank()) {
+            b.model(cfg.getModel());
+        } else if (model != null) {
+            b.model(model);
+        }
+        b.workspace(workspace);
+        b.externalSubagentTool(builderBootstrap.sessionsTool());
+        applyManagedSessionBuildOptions(
+                b, sessionOwnerId, workspace, spec, cfg != null ? cfg.getSysPrompt() : null);
+
+        HarnessAgent agent = b.build();
+        builderBootstrap.gateway().registerAgent(gatewayAgentId, agent);
+        gatewayIdToOwner.put(gatewayAgentId, sessionOwnerId);
+        log.info(
+                "Registered managed global agent clone: sessionOwner={}, agentId={}, gatewayId={}",
+                sessionOwnerId,
+                agentId,
+                gatewayAgentId);
+        return gatewayAgentId;
+    }
+
+    private String buildAndRegisterUca(
+            String userId, UserAgentDefinitionStore.StoredEntry entry, SessionAgentBuildSpec spec) {
+        boolean managed = spec != null;
+        String gatewayAgentId =
+                managed
+                        ? UCA_PREFIX
+                                + userId
+                                + "-"
+                                + entry.id()
+                                + "-"
+                                + Integer.toHexString(spec.cacheSuffix().hashCode())
+                        : UCA_PREFIX + userId + "-" + entry.id();
 
         Path workspace = userWorkspacePath(userId, entry);
+
+        AgentVersionSnapshot snapshot = null;
+        if (managed && spec.version() != null) {
+            try {
+                AgentVersionEntity versionEntity =
+                        versionService.getVersion(userId, entry.id(), spec.version());
+                snapshot = versionService.fromJson(versionEntity.getSnapshotJson());
+            } catch (Exception ex) {
+                log.warn(
+                        "Failed to load agent version {}/{}@{}: {}",
+                        userId,
+                        entry.id(),
+                        spec.version(),
+                        ex.getMessage());
+            }
+        }
+
+        String name =
+                snapshot != null && snapshot.name() != null
+                        ? snapshot.name()
+                        : (entry.name() != null ? entry.name() : entry.id());
+        String description = snapshot != null ? snapshot.description() : entry.description();
+        String sysPrompt = snapshot != null ? snapshot.sysPrompt() : entry.sysPrompt();
+        String modelName = snapshot != null ? snapshot.model() : entry.model();
+        Integer maxIters = snapshot != null ? snapshot.maxIters() : entry.maxIters();
+        var skillRepos =
+                snapshot != null ? snapshot.skillRepositories() : entry.skillRepositories();
+        String sandboxMode = snapshot != null ? snapshot.sandboxMode() : entry.sandboxMode();
+        String sandboxScope = snapshot != null ? snapshot.sandboxScope() : entry.sandboxScope();
+
+        if (managed && spec.overridesJson() != null && !spec.overridesJson().isBlank()) {
+            Map<String, Object> overrides = parseOverrides(spec.overridesJson());
+            if (overrides.get("name") instanceof String s) {
+                name = s;
+            }
+            if (overrides.get("description") instanceof String s) {
+                description = s;
+            }
+            if (overrides.get("sysPrompt") instanceof String s) {
+                sysPrompt = s;
+            }
+            if (overrides.get("model") instanceof String s) {
+                modelName = s;
+            }
+            if (overrides.get("maxIters") instanceof Number n) {
+                maxIters = n.intValue();
+            }
+        }
 
         HarnessAgent.Builder b = HarnessAgent.builder();
 
@@ -960,22 +1175,20 @@ public class AgentCatalogService {
         // name (b.name) is human-facing and may change without rewriting any composite-filesystem
         // keys under [agents, <gatewayAgentId>, ...].
         b.agentId(gatewayAgentId);
-
-        String name = entry.name() != null ? entry.name() : entry.id();
         b.name(name);
 
-        if (entry.description() != null) {
-            b.description(entry.description());
+        if (description != null) {
+            b.description(description);
         }
-        if (entry.sysPrompt() != null) {
-            b.sysPrompt(entry.sysPrompt());
+        if (sysPrompt != null) {
+            b.sysPrompt(sysPrompt);
         }
-        if (entry.maxIters() != null) {
-            b.maxIters(entry.maxIters());
+        if (maxIters != null) {
+            b.maxIters(maxIters);
         }
         // Model: prefer per-agent override, fall back to bootstrap-level model.
-        if (entry.model() != null && !entry.model().isBlank()) {
-            b.model(entry.model());
+        if (modelName != null && !modelName.isBlank()) {
+            b.model(modelName);
         } else if (model != null) {
             b.model(model);
         }
@@ -983,10 +1196,10 @@ public class AgentCatalogService {
 
         // Layered skill repositories: workspace overlay is implicit; explicit entries from the
         // user's saved definition are appended in order so earlier entries win on name clashes.
-        if (entry.skillRepositories() != null && !entry.skillRepositories().isEmpty()) {
+        if (skillRepos != null && !skillRepos.isEmpty()) {
             var repos =
                     io.agentscope.builder.runtime.config.SkillRepositorySupport.createAll(
-                            workspace, entry.skillRepositories());
+                            workspace, skillRepos);
             if (!repos.isEmpty()) {
                 b.skillRepositories(repos);
             }
@@ -1001,15 +1214,20 @@ public class AgentCatalogService {
                         builderBootstrap.channelManager()));
         b.toolkit(ucaToolkit);
 
+        // Inject the shared SessionsTool so user-custom agents can spawn SUBAGENT sessions
+        // through the same SessionAgentManager as global (agentscope.json) agents.
+        b.externalSubagentTool(builderBootstrap.sessionsTool());
+
         // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
         b.middleware(
                 new io.agentscope.builder.web.toolbus.ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
 
-        // Apply filesystem topology from agent sandbox fields (session environments can refine
-        // this further at turn time via IsolationScope on RuntimeContext / rebuild).
-        environmentSpecFactory.applyAgentSandboxFields(
-                b, entry.sandboxMode(), entry.sandboxScope());
+        if (managed) {
+            applyManagedSessionBuildOptions(b, userId, workspace, spec, sysPrompt);
+        } else {
+            environmentSpecFactory.applyAgentSandboxFields(b, sandboxMode, sandboxScope);
+        }
 
         HarnessAgent agent = b.build();
 
@@ -1021,16 +1239,63 @@ public class AgentCatalogService {
         gatewayIdToOwner.put(gatewayAgentId, userId);
 
         log.info(
-                "Registered user-custom agent in gateway: userId={}, agentId={}, gatewayId={}",
+                "Registered user-custom agent in gateway: userId={}, agentId={}, gatewayId={},"
+                        + " managed={}",
                 userId,
                 entry.id(),
-                gatewayAgentId);
+                gatewayAgentId,
+                managed);
 
         return gatewayAgentId;
     }
 
+    private void applyManagedSessionBuildOptions(
+            HarnessAgent.Builder b,
+            String ownerId,
+            Path workspace,
+            SessionAgentBuildSpec spec,
+            String baseSysPrompt) {
+        EnvironmentDto environment = spec.environment();
+        if (environment != null) {
+            environmentSpecFactory.applyEnvironment(b, environment);
+        } else {
+            environmentSpecFactory.applyAgentSandboxFields(b, null, null);
+        }
+
+        var mounts = memoryMountService.materialize(ownerId, workspace, spec.memoryStoreIds());
+        String appendix = memoryMountService.promptAppendix(mounts);
+        if (appendix != null) {
+            String combined = (baseSysPrompt == null ? "" : baseSysPrompt) + appendix;
+            b.sysPrompt(combined);
+        }
+
+        ToolsConfig patched =
+                vaultCredentialResolver.resolveToolsConfig(ownerId, workspace, spec.vaultIds());
+        if (patched != null) {
+            b.toolsConfig(patched);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseOverrides(String overridesJson) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(overridesJson, Map.class);
+        } catch (Exception ex) {
+            return Map.of();
+        }
+    }
+
     private static String ucaCacheKey(String userId, String agentId) {
         return userId + "/" + agentId;
+    }
+
+    /** Evicts all cached UCA variants for an owner/agent pair (legacy head + managed). */
+    void evictUcaCache(String ownerId, String agentId) {
+        String prefix = ucaCacheKey(ownerId, agentId);
+        registeredUcaIds
+                .entrySet()
+                .removeIf(e -> e.getKey().equals(prefix) || e.getKey().startsWith(prefix + "/"));
     }
 
     private static void validateRequest(AgentCreateRequest req) {

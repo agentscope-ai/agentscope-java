@@ -85,15 +85,17 @@ the existing HarnessAgent runtime:
 
 | Resource | API | Role |
 |---|---|---|
-| **Agent** (versioned) | `/api/agents`, `/api/agents/{id}/versions` | Optimistic-lock updates (`version` required); archive; immutable config snapshots |
-| **Environment** | `/api/environments` | Execution template: `local` / `sandbox` / `remote` + `isolationScope` |
-| **Session** | `/api/sessions` | Agent × Environment run; append-only `{domain}.{action}` event log; SSE stream |
-| **Memory store** | `/api/memory-stores` | Cross-session mounted memories with versioned documents |
-| **Vault** | `/api/vaults` | Per-user encrypted credentials (AES-GCM); referenced by session `vaultIds` |
+| **Agent** (versioned) | `/api/agents`, `/api/agents/{id}/versions` | Optimistic-lock updates (`version` required); archive; immutable config snapshots (globals materialize under owner `__global__`) |
+| **Environment** | `/api/environments` | Execution template: `local` / `sandbox` / `remote` / `self_hosted` + `isolationScope`; shareable via `/shares` |
+| **Session** | `/api/sessions` | Agent × Environment run; append-only `{domain}.{action}` event log; SSE stream; IM channels also bridge here |
+| **Memory store** | `/api/memory-stores` | Cross-session memories mounted at `workspace/memory/{name}/` with versioned writeback |
+| **Vault** | `/api/vaults` | Per-user encrypted credentials (AES-GCM); injected into MCP `tools.json` `${ENV}` / server env at session build |
+| **Deployment** | `/api/deployments` | Cron / webhook / manual triggers that create a managed session and run a turn |
+| **Multiagent** | `/api/multiagent/run` | Sequential fan-out across agents (subagents also via SessionsTool on UCAs) |
 
-Chat UI defaults to **managed session** mode (create session → post `user.message` → stream events). Legacy `/api/agents/{id}/chat/stream` remains available as a fallback toggle.
+Chat UI defaults to **managed session** mode (create session → post `user.message` → stream events). Legacy `/api/agents/{id}/chat/*` is **deprecated** and kept as a fallback toggle for one release cycle.
 
-Tool calls with `permissionPolicies` of `always_ask` pause the session (`requires_action`) until the UI posts `user.tool_confirmation`.
+Session turns resolve a HarnessAgent keyed by `(owner, agent, version, environment, mounts)` so pinned versions and environments actually affect runtime filesystem topology and prompts. Tool calls with `permissionPolicies` of `always_ask` pause the session (`requires_action`) until the UI posts `user.tool_confirmation`. `user.interrupt` cancels the Reactor subscription and calls `HarnessAgent.interrupt()`.
 
 Set `BUILDER_VAULT_MASTER_KEY` in production for vault encryption.
 

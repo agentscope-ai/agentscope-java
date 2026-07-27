@@ -25,6 +25,8 @@ import io.agentscope.builder.web.catalog.AgentCatalogService;
 import io.agentscope.builder.web.catalog.AgentDefinition;
 import io.agentscope.builder.web.session.SessionReadStateStore;
 import io.agentscope.builder.web.session.SessionTurnParser;
+import io.agentscope.builder.web.share.AgentAccessGuard;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.MsgContext;
@@ -63,7 +65,15 @@ import reactor.core.publisher.Mono;
  *
  * <p>All endpoints require the session to belong to both the authenticated user <em>and</em> the
  * agent in the URL path; mismatches return 403.
+ *
+ * @deprecated Legacy bare-gateway-session inbox/transcript API. New integrations should use
+ *     {@link ManagedSessionApiController} ({@code /api/sessions/*}), which is backed by {@code
+ *     ManagedSessionEntity} and supports environments, memory/vault mounts, and a durable event
+ *     log. This controller is kept for backward compatibility with clients (and the legacy
+ *     frontend {@code SessionInboxList} / {@code SessionTranscript} fallback path) that have not
+ *     yet migrated.
  */
+@Deprecated
 @RestController
 @RequestMapping("/api/agents/{agentId}/sessions")
 public class SessionController {
@@ -71,14 +81,17 @@ public class SessionController {
     private final SessionAgentManager sessionAgentManager;
     private final SessionReadStateStore readStateStore;
     private final AgentCatalogService catalogService;
+    private final AgentAccessGuard guard;
 
     public SessionController(
             BuilderBootstrap builderBootstrap,
             SessionReadStateStore readStateStore,
-            AgentCatalogService catalogService) {
+            AgentCatalogService catalogService,
+            AgentAccessGuard guard) {
         this.sessionAgentManager = builderBootstrap.gateway().sessionAgentManager();
         this.readStateStore = readStateStore;
         this.catalogService = catalogService;
+        this.guard = guard;
     }
 
     @GetMapping("/inbox")
@@ -90,6 +103,7 @@ public class SessionController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
+                    guard.require(userId, agentId, Tier.RUN);
                     String expectedGateKey = expectedChatGateKey(userId, agentId);
                     List<SessionEntry> matched =
                             sessionAgentManager.allSessions().stream()
@@ -174,6 +188,7 @@ public class SessionController {
     // -----------------------------------------------------------------
 
     private SessionEntry requireOwnedSession(String agentId, String key, String userId) {
+        guard.require(userId, agentId, Tier.RUN);
         SessionEntry entry =
                 sessionAgentManager
                         .getSession(key)

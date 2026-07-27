@@ -21,6 +21,9 @@ import io.agentscope.builder.web.managed.MemoryStoreService;
 import io.agentscope.builder.web.managed.MemoryStoreService.CreateMemoryStoreRequest;
 import io.agentscope.builder.web.managed.MemoryStoreService.PutMemoryRequest;
 import io.agentscope.builder.web.managed.MemoryVersionDto;
+import io.agentscope.builder.web.managed.ResourceShareDto;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
+import io.agentscope.builder.web.share.ShareRequest;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -122,6 +125,41 @@ public class MemoryStoreController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> memoryStoreService.listVersions(userId, id, stripVersionsSuffix(path)));
+    }
+
+    /** Lists share grants on a memory store. Owner-only. */
+    @GetMapping("/{id}/shares")
+    public Mono<List<ResourceShareDto>> listShares(
+            @PathVariable("id") String id, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(() -> memoryStoreService.listShares(userId, id));
+    }
+
+    /** Shares a memory store with a user or the whole workspace. Owner-only. */
+    @PostMapping("/{id}/shares")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<ResourceShareDto> share(
+            @PathVariable("id") String id, @RequestBody ShareRequest req, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(
+                () ->
+                        memoryStoreService.share(
+                                userId,
+                                id,
+                                req.granteeType(),
+                                req.granteeId(),
+                                Tier.valueOf(req.tier())));
+    }
+
+    /** Revokes a share grant on a memory store. Owner-only. */
+    @DeleteMapping("/{id}/shares/{shareId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> unshare(
+            @PathVariable("id") String id,
+            @PathVariable("shareId") String shareId,
+            Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromRunnable(() -> memoryStoreService.unshare(userId, id, shareId));
     }
 
     private static String normalizePath(String path) {

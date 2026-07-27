@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+title: Agent 技能系统（Skill System）
+scope:
+    - agentscope-core/src/main/java/io/agentscope/core/skill/
+source_files: []
+depends_on: []
+related_to:
+    - path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+    - path: 1c805f3b-0743-4460-9e34-c592f6c5c14a

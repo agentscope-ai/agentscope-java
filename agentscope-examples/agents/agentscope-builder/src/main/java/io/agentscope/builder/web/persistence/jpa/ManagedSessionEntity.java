@@ -34,7 +34,8 @@ import jakarta.persistence.Table;
         indexes = {
             @Index(name = "ix_builder_session_owner", columnList = "owner_id"),
             @Index(name = "ix_builder_session_agent", columnList = "agent_id"),
-            @Index(name = "ix_builder_session_env", columnList = "environment_id")
+            @Index(name = "ix_builder_session_env", columnList = "environment_id"),
+            @Index(name = "ix_builder_session_external_key", columnList = "external_key")
         })
 public class ManagedSessionEntity {
 
@@ -75,6 +76,16 @@ public class ManagedSessionEntity {
 
     @Column(name = "environment_id", length = 64, nullable = false)
     private String environmentId;
+
+    /**
+     * Stable identity of the external channel conversation this session was created for (e.g. a
+     * {@code MsgContext#canonicalKey()} such as {@code feishu|r:ou_abc123}). Null for sessions
+     * created directly through {@code /api/sessions} (chat UI / API callers). Used by {@code
+     * ManagedSessionChannelBridge} to find-or-create the managed session for a given IM channel
+     * peer instead of always creating a new one per inbound message.
+     */
+    @Column(name = "external_key", length = 256)
+    private String externalKey;
 
     @Lob
     @Column(name = "memory_store_ids_json")
@@ -176,6 +187,14 @@ public class ManagedSessionEntity {
 
     public void setEnvironmentId(String environmentId) {
         this.environmentId = environmentId;
+    }
+
+    public String getExternalKey() {
+        return externalKey;
+    }
+
+    public void setExternalKey(String externalKey) {
+        this.externalKey = externalKey;
     }
 
     public String getMemoryStoreIdsJson() {

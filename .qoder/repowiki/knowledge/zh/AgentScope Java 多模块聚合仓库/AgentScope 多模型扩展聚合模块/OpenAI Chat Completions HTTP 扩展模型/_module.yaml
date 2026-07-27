@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: 0d920187-7299-448b-b82b-f64870c7e9cc/5da0bc10-32e9-4ce1-889d-d1bb073b9e77
+title: OpenAI Chat Completions HTTP 扩展模型
+scope:
+    - agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-openai/
+source_files: []
+depends_on: []
+related_to:
+    - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392

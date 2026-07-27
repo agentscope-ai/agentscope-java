@@ -69,7 +69,15 @@ import reactor.core.publisher.Sinks;
  * <p>Each user gets an isolated session per {@code (userId, agentId)} pair (the agent id is part of
  * the {@link MsgContext#canonicalKey()}). Slash commands {@code /new}, {@code /reset},
  * {@code /identity}, and {@code /dock_<channel> <id>} are intercepted before the agent is invoked.
+ *
+ * @deprecated Legacy bare-gateway-session chat API. New integrations should use {@link
+ *     ManagedSessionApiController} ({@code /api/sessions/*}), which runs turns through {@code
+ *     ManagedSessionEntity} with environment/memory/vault mounts and a durable, resumable event
+ *     log instead of an in-memory gateway session. This controller is kept for backward
+ *     compatibility with clients (and the legacy frontend {@code ChatPanel} fallback path) that
+ *     have not yet migrated.
  */
+@Deprecated
 @RestController
 @RequestMapping("/api/agents/{agentId}/chat")
 public class ChatController {

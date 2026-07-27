@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d
+title: AgentScope Harness 运行时编排层
+scope:
+    - agentscope-harness/
+source_files: []
+depends_on: []
+related_to:
+    - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392
+    - path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/7bd56d23-83b1-429d-9f2c-646fb3aef400/c779c42a-a16a-4ff3-8b9e-3593a8697efb
+    - path: cd5d548a-d858-4e19-89e2-c2d02728e1df

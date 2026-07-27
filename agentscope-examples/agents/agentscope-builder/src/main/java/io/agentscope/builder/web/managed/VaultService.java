@@ -19,6 +19,8 @@ import io.agentscope.builder.web.persistence.jpa.VaultCredentialEntity;
 import io.agentscope.builder.web.persistence.jpa.VaultCredentialEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.VaultEntity;
 import io.agentscope.builder.web.persistence.jpa.VaultEntityRepository;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
+import io.agentscope.builder.web.share.ResourceAccessService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 public class VaultService {
 
+    /** Resource-type key used for {@link ResourceAccessService} share grants. */
+    public static final String RESOURCE_TYPE = "vault";
+
     /** Request body for creating a vault. */
     public record CreateVaultRequest(String displayName, Map<String, Object> metadata) {}
 
@@ -41,16 +46,19 @@ public class VaultService {
     private final VaultCredentialEntityRepository credentialRepository;
     private final VaultCrypto vaultCrypto;
     private final ManagedJsonHelper jsonHelper;
+    private final ResourceAccessService resourceAccessService;
 
     public VaultService(
             VaultEntityRepository vaultRepository,
             VaultCredentialEntityRepository credentialRepository,
             VaultCrypto vaultCrypto,
-            ManagedJsonHelper jsonHelper) {
+            ManagedJsonHelper jsonHelper,
+            ResourceAccessService resourceAccessService) {
         this.vaultRepository = vaultRepository;
         this.credentialRepository = credentialRepository;
         this.vaultCrypto = vaultCrypto;
         this.jsonHelper = jsonHelper;
+        this.resourceAccessService = resourceAccessService;
     }
 
     /** Lists vaults owned by the user. */
@@ -61,10 +69,10 @@ public class VaultService {
                 .toList();
     }
 
-    /** Returns a single vault. */
+    /** Returns a single vault when owned by, or shared (at least RUN) with, the caller. */
     @Transactional(readOnly = true)
     public VaultDto get(String ownerId, String vaultId) {
-        return toVaultDto(requireVault(ownerId, vaultId));
+        return toVaultDto(requireAccess(ownerId, vaultId, Tier.RUN));
     }
 
     /** Creates a vault. */
@@ -85,7 +93,7 @@ public class VaultService {
 
     /** Deletes a vault and all credentials. */
     public void delete(String ownerId, String vaultId) {
-        requireVault(ownerId, vaultId);
+        requireAccess(ownerId, vaultId, Tier.EDIT);
         credentialRepository.deleteByVaultId(vaultId);
         vaultRepository.findByVaultId(vaultId).ifPresent(vaultRepository::delete);
     }
@@ -93,7 +101,7 @@ public class VaultService {
     /** Lists credential metadata for a vault (no plaintext). */
     @Transactional(readOnly = true)
     public List<VaultCredentialDto> listCredentials(String ownerId, String vaultId) {
-        requireVault(ownerId, vaultId);
+        requireAccess(ownerId, vaultId, Tier.RUN);
         return credentialRepository.findByVaultIdOrderByCreatedAtAsc(vaultId).stream()
                 .map(this::toCredentialDto)
                 .toList();
@@ -102,7 +110,7 @@ public class VaultService {
     /** Adds an encrypted credential to a vault. */
     public VaultCredentialDto addCredential(
             String ownerId, String vaultId, AddCredentialRequest request) {
-        requireVault(ownerId, vaultId);
+        requireAccess(ownerId, vaultId, Tier.EDIT);
         if (request.type() == null || request.type().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
         }
@@ -126,7 +134,7 @@ public class VaultService {
 
     /** Deletes a credential from a vault. */
     public void deleteCredential(String ownerId, String vaultId, String credentialId) {
-        requireVault(ownerId, vaultId);
+        requireAccess(ownerId, vaultId, Tier.EDIT);
         VaultCredentialEntity credential =
                 credentialRepository
                         .findByCredentialId(credentialId)
@@ -154,11 +162,33 @@ public class VaultService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Credential not found: " + credentialId));
-        requireVault(ownerId, credential.getVaultId());
+        requireAccess(ownerId, credential.getVaultId(), Tier.RUN);
         return vaultCrypto.decrypt(credential.getCiphertext());
     }
 
-    private VaultEntity requireVault(String ownerId, String vaultId) {
+    /** Lists share grants on a vault. Owner/EDIT-tier only. */
+    @Transactional(readOnly = true)
+    public List<ResourceShareDto> listShares(String ownerId, String vaultId) {
+        requireAccess(ownerId, vaultId, Tier.EDIT);
+        return resourceAccessService.listShares(RESOURCE_TYPE, vaultId);
+    }
+
+    /** Shares a vault with a user or the whole workspace. Owner/EDIT-tier only. */
+    public ResourceShareDto share(
+            String ownerId, String vaultId, String granteeType, String granteeId, Tier tier) {
+        VaultEntity vault = requireAccess(ownerId, vaultId, Tier.EDIT);
+        return resourceAccessService.share(
+                RESOURCE_TYPE, vaultId, vault.getOwnerId(), granteeType, granteeId, tier, ownerId);
+    }
+
+    /** Revokes a share grant on a vault. Owner/EDIT-tier only. */
+    public void unshare(String ownerId, String vaultId, String shareId) {
+        requireAccess(ownerId, vaultId, Tier.EDIT);
+        resourceAccessService.unshare(RESOURCE_TYPE, vaultId, shareId);
+    }
+
+    /** Resolves the vault and verifies {@code callerId} holds at least {@code required}. */
+    private VaultEntity requireAccess(String callerId, String vaultId, Tier required) {
         VaultEntity vault =
                 vaultRepository
                         .findByVaultId(vaultId)
@@ -167,9 +197,8 @@ public class VaultService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Vault not found: " + vaultId));
-        if (!ownerId.equals(vault.getOwnerId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Vault access denied");
-        }
+        resourceAccessService.require(
+                callerId, vault.getOwnerId(), RESOURCE_TYPE, vaultId, required);
         return vault;
     }
 

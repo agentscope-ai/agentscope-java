@@ -5,6 +5,7 @@ import { ensureDefaultEnvironment, listEnvironments } from '../api/environments'
 import {
   createManagedSession,
   EventStreamHandle,
+  getManagedSession,
   listEvents,
   postToolConfirmation,
   postUserMessage,
@@ -374,15 +375,19 @@ export default function ChatPanel({
     streamHandleRef.current = null;
 
     async function run() {
+      const urlManagedId = searchParams.get('managed');
       const stored = (() => { try { return localStorage.getItem(managedStorageKey(agentId)); } catch { return null; } })();
-      let sessionId = stored;
+      let sessionId = urlManagedId || stored;
       try {
         if (!sessionId) {
           const env = await ensureDefaultEnvironment();
           const session = await createManagedSession({ agent: agentId, environmentId: env.id });
           sessionId = session.id;
-          persistManagedSession(sessionId);
+        } else if (urlManagedId) {
+          // Deep-linked from the inbox — verify it still exists before adopting it.
+          await getManagedSession(sessionId);
         }
+        persistManagedSession(sessionId);
         if (cancelled) return;
         setManagedSessionId(sessionId);
         try {

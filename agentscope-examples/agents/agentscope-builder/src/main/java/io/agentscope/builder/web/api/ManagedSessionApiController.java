@@ -127,7 +127,8 @@ public class ManagedSessionApiController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
-                    sessionService.get(userId, id);
+                    ManagedSessionDto session = sessionService.get(userId, id);
+                    guard.require(userId, session.agentId(), Tier.RUN);
                     if (body.events() == null || body.events().isEmpty()) {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_REQUEST, "events is required");
@@ -149,7 +150,8 @@ public class ManagedSessionApiController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
-                    sessionService.get(userId, id);
+                    ManagedSessionDto session = sessionService.get(userId, id);
+                    guard.require(userId, session.agentId(), Tier.RUN);
                     if (after == null) {
                         return eventLog.list(id);
                     }
@@ -162,7 +164,8 @@ public class ManagedSessionApiController {
     public Flux<ServerSentEvent<String>> streamEvents(
             @PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
-        sessionService.get(userId, id);
+        ManagedSessionDto session = sessionService.get(userId, id);
+        guard.require(userId, session.agentId(), Tier.RUN);
         return eventLog.subscribe(id).map(this::toSse);
     }
 

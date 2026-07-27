@@ -80,11 +80,15 @@ Builder 在现有 HarnessAgent 之上对齐了 Claude Managed Agents 的资源�
 
 | 资源 | API | 说明 |
 |---|---|---|
-| **Agent**（版本化） | `/api/agents`、`/versions` | 乐观锁更新；archive；配置快照 |
-| **Environment** | `/api/environments` | `local` / `sandbox` / `remote` 执行模板 |
-| **Session** | `/api/sessions` | Agent×Environment 运行实例 + 事件日志/SSE |
-| **Memory store** | `/api/memory-stores` | 跨 session 可挂载记忆（带版本） |
-| **Vault** | `/api/vaults` | AES-GCM 加密凭据；session 级引用 |
+| **Agent**（版本化） | `/api/agents`、`/versions` | 乐观锁更新；archive；配置快照（全局 agent 物化到 `__global__`） |
+| **Environment** | `/api/environments` | `local` / `sandbox` / `remote` / `self_hosted`；支持 `/shares` |
+| **Session** | `/api/sessions` | Agent×Environment 运行实例 + 事件日志/SSE；IM 渠道也会桥接 |
+| **Memory store** | `/api/memory-stores` | 挂载到 `workspace/memory/{name}/`，turn 结束版本化回写 |
+| **Vault** | `/api/vaults` | AES-GCM 加密凭据；构建 session agent 时注入 MCP `${ENV}` |
+| **Deployment** | `/api/deployments` | cron / webhook / 手动触发，创建 managed session 并跑一轮 |
+| **Multiagent** | `/api/multiagent/run` | 顺序 fan-out；UCA 也可通过 SessionsTool 拉起子代理 |
+
+Chat UI 默认走 managed session。遗留 `/api/agents/{id}/chat/*` 已标记 deprecated。Session turn 按 `(owner, agent, version, environment, mounts)` 构建/缓存 HarnessAgent，使版本与 Environment 真正影响运行时。`user.interrupt` 会调用 `HarnessAgent.interrupt()`。
 
 生产环境请设置 `BUILDER_VAULT_MASTER_KEY`。
 

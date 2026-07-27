@@ -18,6 +18,8 @@ package io.agentscope.builder.web.managed;
 import io.agentscope.builder.web.persistence.jpa.EnvironmentEntity;
 import io.agentscope.builder.web.persistence.jpa.EnvironmentEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.ManagedSessionEntityRepository;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
+import io.agentscope.builder.web.share.ResourceAccessService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,21 +38,37 @@ public class EnvironmentService {
     public static final String TYPE_SANDBOX = "sandbox";
     public static final String TYPE_REMOTE = "remote";
 
-    private static final Set<String> ALLOWED_TYPES = Set.of(TYPE_LOCAL, TYPE_SANDBOX, TYPE_REMOTE);
+    /**
+     * Remote-worker variant: the agent's filesystem/state still run against the shared remote
+     * {@link io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec} store (same wiring
+     * as {@link #TYPE_REMOTE}), but the config is marked {@code selfHosted=true} so operators can
+     * distinguish "runs on our own remote worker fleet" environments from the platform-managed
+     * remote default when listing/filtering environments.
+     */
+    public static final String TYPE_SELF_HOSTED = "self_hosted";
+
+    /** Resource-type key used for {@link ResourceAccessService} share grants. */
+    public static final String RESOURCE_TYPE = "environment";
+
+    private static final Set<String> ALLOWED_TYPES =
+            Set.of(TYPE_LOCAL, TYPE_SANDBOX, TYPE_REMOTE, TYPE_SELF_HOSTED);
     private static final Set<String> ALLOWED_ISOLATION_SCOPES =
             Set.of("SESSION", "USER", "AGENT", "GLOBAL");
 
     private final EnvironmentEntityRepository repository;
     private final ManagedSessionEntityRepository sessionRepository;
     private final ManagedJsonHelper jsonHelper;
+    private final ResourceAccessService resourceAccessService;
 
     public EnvironmentService(
             EnvironmentEntityRepository repository,
             ManagedSessionEntityRepository sessionRepository,
-            ManagedJsonHelper jsonHelper) {
+            ManagedJsonHelper jsonHelper,
+            ResourceAccessService resourceAccessService) {
         this.repository = repository;
         this.sessionRepository = sessionRepository;
         this.jsonHelper = jsonHelper;
+        this.resourceAccessService = resourceAccessService;
     }
 
     /** Request body for creating an environment. */
@@ -64,10 +82,10 @@ public class EnvironmentService {
                 .toList();
     }
 
-    /** Returns a single environment when owned by the caller. */
+    /** Returns a single environment when owned by, or shared (at least RUN) with, the caller. */
     @Transactional(readOnly = true)
     public EnvironmentDto get(String ownerId, String environmentId) {
-        return toDto(requireOwned(ownerId, environmentId));
+        return toDto(requireAccess(ownerId, environmentId, Tier.RUN));
     }
 
     /** Creates a new environment template. */
@@ -92,7 +110,7 @@ public class EnvironmentService {
 
     /** Archives an environment (soft delete). */
     public EnvironmentDto archive(String ownerId, String environmentId) {
-        EnvironmentEntity entity = requireOwned(ownerId, environmentId);
+        EnvironmentEntity entity = requireAccess(ownerId, environmentId, Tier.EDIT);
         if (entity.getArchivedAt() != null) {
             return toDto(entity);
         }
@@ -104,7 +122,7 @@ public class EnvironmentService {
 
     /** Hard-deletes an environment when no active sessions reference it. */
     public void delete(String ownerId, String environmentId) {
-        requireOwned(ownerId, environmentId);
+        requireAccess(ownerId, environmentId, Tier.EDIT);
         long active = sessionRepository.countByEnvironmentIdAndArchivedAtIsNull(environmentId);
         if (active > 0) {
             throw new ResponseStatusException(
@@ -114,6 +132,33 @@ public class EnvironmentService {
                             + " active session(s); archive sessions first");
         }
         repository.findByEnvironmentId(environmentId).ifPresent(repository::delete);
+    }
+
+    /** Lists share grants on an environment. Owner/EDIT-tier only. */
+    @Transactional(readOnly = true)
+    public List<ResourceShareDto> listShares(String ownerId, String environmentId) {
+        requireAccess(ownerId, environmentId, Tier.EDIT);
+        return resourceAccessService.listShares(RESOURCE_TYPE, environmentId);
+    }
+
+    /** Shares an environment with a user or the whole workspace. Owner/EDIT-tier only. */
+    public ResourceShareDto share(
+            String ownerId, String environmentId, String granteeType, String granteeId, Tier tier) {
+        EnvironmentEntity entity = requireAccess(ownerId, environmentId, Tier.EDIT);
+        return resourceAccessService.share(
+                RESOURCE_TYPE,
+                environmentId,
+                entity.getOwnerId(),
+                granteeType,
+                granteeId,
+                tier,
+                ownerId);
+    }
+
+    /** Revokes a share grant on an environment. Owner/EDIT-tier only. */
+    public void unshare(String ownerId, String environmentId, String shareId) {
+        requireAccess(ownerId, environmentId, Tier.EDIT);
+        resourceAccessService.unshare(RESOURCE_TYPE, environmentId, shareId);
     }
 
     /**
@@ -134,7 +179,8 @@ public class EnvironmentService {
                                         new CreateEnvironmentRequest(defaultName, type, Map.of())));
     }
 
-    private EnvironmentEntity requireOwned(String ownerId, String environmentId) {
+    /** Resolves the environment and verifies {@code callerId} holds at least {@code required}. */
+    private EnvironmentEntity requireAccess(String callerId, String environmentId, Tier required) {
         EnvironmentEntity entity =
                 repository
                         .findByEnvironmentId(environmentId)
@@ -143,9 +189,8 @@ public class EnvironmentService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Environment not found: " + environmentId));
-        if (!ownerId.equals(entity.getOwnerId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Environment access denied");
-        }
+        resourceAccessService.require(
+                callerId, entity.getOwnerId(), RESOURCE_TYPE, environmentId, required);
         return entity;
     }
 
@@ -155,12 +200,19 @@ public class EnvironmentService {
         }
         if (request.type() == null || !ALLOWED_TYPES.contains(request.type())) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "type must be one of: local, sandbox, remote");
+                    HttpStatus.BAD_REQUEST,
+                    "type must be one of: local, sandbox, remote, self_hosted");
         }
         normalizeConfig(request.type(), request.config());
     }
 
     private Map<String, Object> normalizeConfig(String type, Map<String, Object> config) {
+        if (TYPE_SELF_HOSTED.equals(type)) {
+            Map<String, Object> normalized =
+                    config != null ? new HashMap<>(config) : new HashMap<>();
+            normalized.putIfAbsent("selfHosted", Boolean.TRUE);
+            return normalized;
+        }
         if (config == null || config.isEmpty()) {
             return config;
         }

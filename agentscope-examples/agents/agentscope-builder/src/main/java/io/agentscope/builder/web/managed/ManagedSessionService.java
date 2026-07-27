@@ -25,6 +25,8 @@ import io.agentscope.builder.web.persistence.jpa.ManagedSessionEntity;
 import io.agentscope.builder.web.persistence.jpa.ManagedSessionEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.MemoryStoreEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.VaultEntityRepository;
+import io.agentscope.builder.web.share.AgentAclService.Tier;
+import io.agentscope.builder.web.share.ResourceAccessService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +68,7 @@ public class ManagedSessionService {
     private final SessionEventLog eventLog;
     private final ManagedJsonHelper jsonHelper;
     private final SessionTurnRunner turnRunner;
+    private final ResourceAccessService resourceAccessService;
 
     public ManagedSessionService(
             ManagedSessionEntityRepository repository,
@@ -77,7 +80,8 @@ public class ManagedSessionService {
             AgentVersionService versionService,
             SessionEventLog eventLog,
             ManagedJsonHelper jsonHelper,
-            SessionTurnRunner turnRunner) {
+            SessionTurnRunner turnRunner,
+            ResourceAccessService resourceAccessService) {
         this.repository = repository;
         this.environmentRepository = environmentRepository;
         this.agentRepository = agentRepository;
@@ -88,6 +92,7 @@ public class ManagedSessionService {
         this.eventLog = eventLog;
         this.jsonHelper = jsonHelper;
         this.turnRunner = turnRunner;
+        this.resourceAccessService = resourceAccessService;
     }
 
     /** Creates a session after validating agent, environment, and mount references. */
@@ -232,9 +237,12 @@ public class ManagedSessionService {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Environment not found: " + environmentId));
-        if (!ownerId.equals(environment.getOwnerId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Environment access denied");
-        }
+        resourceAccessService.require(
+                ownerId,
+                environment.getOwnerId(),
+                EnvironmentService.RESOURCE_TYPE,
+                environmentId,
+                Tier.RUN);
         if (environment.getArchivedAt() != null) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "Environment is archived: " + environmentId);
@@ -269,10 +277,12 @@ public class ManagedSessionService {
                                                 new ResponseStatusException(
                                                         HttpStatus.NOT_FOUND,
                                                         "Memory store not found: " + storeId));
-                if (!ownerId.equals(store.getOwnerId())) {
-                    throw new ResponseStatusException(
-                            HttpStatus.FORBIDDEN, "Memory store access denied: " + storeId);
-                }
+                resourceAccessService.require(
+                        ownerId,
+                        store.getOwnerId(),
+                        MemoryStoreService.RESOURCE_TYPE,
+                        storeId,
+                        Tier.RUN);
             }
         }
         if (vaultIds != null) {
@@ -285,10 +295,8 @@ public class ManagedSessionService {
                                                 new ResponseStatusException(
                                                         HttpStatus.NOT_FOUND,
                                                         "Vault not found: " + vaultId));
-                if (!ownerId.equals(vault.getOwnerId())) {
-                    throw new ResponseStatusException(
-                            HttpStatus.FORBIDDEN, "Vault access denied: " + vaultId);
-                }
+                resourceAccessService.require(
+                        ownerId, vault.getOwnerId(), VaultService.RESOURCE_TYPE, vaultId, Tier.RUN);
             }
         }
     }
@@ -300,13 +308,17 @@ public class ManagedSessionService {
                         HttpStatus.BAD_REQUEST,
                         "Pinned/overrides agent reference requires version");
             }
-            if (agentDef.ownerId() != null) {
-                versionService.getVersion(agentDef.ownerId(), agentDef.id(), agentRef.version());
-            }
+            String versionOwner =
+                    agentDef.ownerId() != null
+                            ? agentDef.ownerId()
+                            : AgentVersionService.GLOBAL_OWNER;
+            versionService.getVersion(versionOwner, agentDef.id(), agentRef.version());
             return agentRef.version();
         }
         if (agentDef.ownerId() == null) {
-            return null;
+            // Global agent, unpinned reference: head is materialized (and kept fresh) by
+            // AgentCatalogService#globalDefinitions via AgentVersionService#ensureGlobalVersion.
+            return agentDef.version();
         }
         return agentRepository
                 .findByOwnerIdAndAgentId(agentDef.ownerId(), agentDef.id())
@@ -373,6 +385,7 @@ public class ManagedSessionService {
                 entity.getAgentOwnerId(),
                 entity.getAgentVersion(),
                 entity.getAgentRefType(),
+                entity.getAgentOverridesJson(),
                 entity.getEnvironmentId(),
                 jsonHelper.readStringList(entity.getMemoryStoreIdsJson()),
                 jsonHelper.readStringList(entity.getVaultIdsJson()),

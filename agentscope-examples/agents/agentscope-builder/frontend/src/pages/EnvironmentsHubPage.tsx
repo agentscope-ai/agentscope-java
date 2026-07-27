@@ -167,7 +167,12 @@ export default function EnvironmentsHubPage() {
               <label style={S.formField}>Name</label>
               <input style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
               <label style={S.formField}>Type</label>
-              <input style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)} placeholder="local" />
+              <select style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
+                <option value="local">local</option>
+                <option value="sandbox">sandbox</option>
+                <option value="remote">remote</option>
+                <option value="self_hosted">self_hosted</option>
+              </select>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>

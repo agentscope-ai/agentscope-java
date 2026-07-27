@@ -116,7 +116,9 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 mock(AgentAclService.class),
                 mock(AgentVersionService.class),
                 mock(io.agentscope.builder.web.managed.EnvironmentSpecFactory.class),
-                mock(ToolConfirmationMiddleware.class));
+                mock(ToolConfirmationMiddleware.class),
+                mock(io.agentscope.builder.web.managed.MemoryMountService.class),
+                mock(io.agentscope.builder.web.managed.VaultCredentialResolver.class));
 
         // Verifies the wiring done in the constructor — chat-time RC.userId override is only
         // active when the gateway has a resolver, so failing this verification would silently
@@ -154,6 +156,8 @@ class AgentCatalogServiceFilesystemUserIdTest {
                 mock(AgentAclService.class),
                 mock(AgentVersionService.class),
                 mock(io.agentscope.builder.web.managed.EnvironmentSpecFactory.class),
-                mock(ToolConfirmationMiddleware.class));
+                mock(ToolConfirmationMiddleware.class),
+                mock(io.agentscope.builder.web.managed.MemoryMountService.class),
+                mock(io.agentscope.builder.web.managed.VaultCredentialResolver.class));
     }
 }

@@ -46,6 +46,7 @@ import reactor.core.publisher.Mono;
  *
  * <ul>
  *   <li>{@code POST /api/auth/login} — public (no token required)
+ *   <li>{@code POST /api/deployments/webhook/**} — public; gated by the webhook token itself
  *   <li>{@code /api/**} — requires authenticated user
  *   <li>{@code /**} — public (serves React SPA static files)
  * </ul>
@@ -68,6 +69,9 @@ public class SecurityConfig {
                                 auth.pathMatchers(HttpMethod.POST, "/api/auth/login")
                                         .permitAll()
                                         .pathMatchers("/actuator/health", "/actuator/info")
+                                        .permitAll()
+                                        .pathMatchers(
+                                                HttpMethod.POST, "/api/deployments/webhook/**")
                                         .permitAll()
                                         .pathMatchers("/api/**")
                                         .authenticated()

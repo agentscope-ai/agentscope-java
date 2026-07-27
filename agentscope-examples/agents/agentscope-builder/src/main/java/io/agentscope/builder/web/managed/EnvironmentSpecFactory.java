@@ -54,7 +54,7 @@ public class EnvironmentSpecFactory {
         String type = environment.type() == null ? "local" : environment.type().toLowerCase();
         switch (type) {
             case "sandbox" -> applySandbox(builder, scope, environment.config());
-            case "remote" -> applyRemote(builder, scope);
+            case "remote", "self_hosted" -> applyRemote(builder, scope);
             default -> applyLocal(builder, scope);
         }
     }
@@ -69,7 +69,7 @@ public class EnvironmentSpecFactory {
         String mode = sandboxMode == null ? "local" : sandboxMode.toLowerCase();
         switch (mode) {
             case "sandbox" -> applySandbox(builder, scope, Map.of());
-            case "remote" -> applyRemote(builder, scope);
+            case "remote", "self_hosted" -> applyRemote(builder, scope);
             default -> applyLocal(builder, scope);
         }
     }

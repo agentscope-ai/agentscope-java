@@ -7,6 +7,7 @@ export interface ManagedSession {
   agentOwnerId?: string;
   agentVersion?: number | null;
   agentRefType?: string;
+  agentOverridesJson?: string | null;
   environmentId: string;
   memoryStoreIds?: string[];
   vaultIds?: string[];
@@ -15,6 +16,7 @@ export interface ManagedSession {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number | null;
+  externalKey?: string | null;
 }
 
 export interface SessionEvent {

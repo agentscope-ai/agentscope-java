@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder.web.managed;
 
+import io.agentscope.builder.web.catalog.AgentCatalogService;
 import io.agentscope.builder.web.persistence.jpa.AgentEntity;
 import io.agentscope.builder.web.persistence.jpa.AgentEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntityRepository;
@@ -40,21 +41,25 @@ public class ManagedAgentsMigrationRunner implements ApplicationRunner {
     private final AgentVersionEntityRepository versionRepository;
     private final AgentVersionService versionService;
     private final EnvironmentService environmentService;
+    private final AgentCatalogService catalogService;
 
     public ManagedAgentsMigrationRunner(
             AgentEntityRepository agentRepository,
             AgentVersionEntityRepository versionRepository,
             AgentVersionService versionService,
-            EnvironmentService environmentService) {
+            EnvironmentService environmentService,
+            AgentCatalogService catalogService) {
         this.agentRepository = agentRepository;
         this.versionRepository = versionRepository;
         this.versionService = versionService;
         this.environmentService = environmentService;
+        this.catalogService = catalogService;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        catalogService.ensureGlobalVersions();
         int agentsMigrated = 0;
         for (AgentEntity agent : agentRepository.findAll()) {
             if (agent.getHeadVersion() <= 0) {

@@ -28,6 +28,7 @@ public record ManagedSessionDto(
         String agentOwnerId,
         Integer agentVersion,
         String agentRefType,
+        String agentOverridesJson,
         String environmentId,
         List<String> memoryStoreIds,
         List<String> vaultIds,

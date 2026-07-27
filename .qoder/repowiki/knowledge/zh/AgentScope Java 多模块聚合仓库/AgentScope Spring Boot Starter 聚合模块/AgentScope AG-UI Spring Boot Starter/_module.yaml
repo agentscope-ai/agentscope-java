@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: d5b7e3bf-4f63-4416-96b5-5714b23ede93/2cec2f34-4d58-474e-9f6c-f8b1e7ca3930
+title: AgentScope AG-UI Spring Boot Starter
+scope:
+    - agentscope-extensions/agentscope-spring-boot-starters/agentscope-agui-spring-boot-starter/
+source_files: []
+depends_on: []
+related_to:
+    - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392

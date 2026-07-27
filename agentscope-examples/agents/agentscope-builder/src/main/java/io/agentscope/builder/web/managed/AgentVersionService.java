@@ -37,6 +37,13 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 public class AgentVersionService {
 
+    /**
+     * Synthetic owner id used to key version rows for global (project-level) agents, which have
+     * no {@code ownerId} of their own. Global agents share a single version-1 snapshot across all
+     * users; see {@link #ensureGlobalVersion}.
+     */
+    public static final String GLOBAL_OWNER = "__global__";
+
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final TypeReference<List<SkillRepositoryConfigEntry>> SKILL_REPO_LIST =
             new TypeReference<>() {};
@@ -174,6 +181,29 @@ public class AgentVersionService {
         agent.setUpdatedAt(now);
         agentRepository.save(agent);
         return next;
+    }
+
+    /**
+     * Materializes version 1 for a global agent (owner {@link #GLOBAL_OWNER}) if it does not
+     * already exist, and returns the current head version. Global agents have no {@link
+     * io.agentscope.builder.web.persistence.jpa.AgentEntity} row, so unlike {@link
+     * #createInitialVersion} this does not touch a head-version pointer on that entity — the
+     * version-1 row itself is the head until global version history is supported.
+     */
+    public int ensureGlobalVersion(String agentId, AgentVersionSnapshot snapshot) {
+        if (versionRepository
+                .findByOwnerIdAndAgentIdAndVersion(GLOBAL_OWNER, agentId, 1)
+                .isPresent()) {
+            return 1;
+        }
+        AgentVersionEntity version = new AgentVersionEntity();
+        version.setOwnerId(GLOBAL_OWNER);
+        version.setAgentId(agentId);
+        version.setVersion(1);
+        version.setSnapshotJson(toJson(snapshot));
+        version.setCreatedAt(System.currentTimeMillis());
+        versionRepository.save(version);
+        return 1;
     }
 
     /** Lists all versions for an agent in ascending order. */

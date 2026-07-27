@@ -22,6 +22,7 @@ import MarketplacesPage from './pages/MarketplacesPage';
 import EnvironmentsHubPage from './pages/EnvironmentsHubPage';
 import MemoryStoresPage from './pages/MemoryStoresPage';
 import VaultsPage from './pages/VaultsPage';
+import DeploymentsPage from './components/DeploymentsPage';
 import AppShell from './components/AppShell';
 import AgentLayout from './components/AgentLayout';
 import { clearToken, getToken, me } from './api/auth';
@@ -77,6 +78,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/environments" element={<EnvironmentsHubPage />} />
           <Route path="/memory-stores" element={<MemoryStoresPage />} />
           <Route path="/vaults" element={<VaultsPage />} />
+          <Route path="/deployments" element={<DeploymentsPage />} />
           <Route path="/channels" element={<ChannelsHubPage />} />
           <Route path="/channels/:channelId" element={<ChannelDetailPage />} />
 

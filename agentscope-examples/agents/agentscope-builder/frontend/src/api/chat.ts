@@ -1,5 +1,13 @@
 import { getToken } from './auth';
 
+/**
+ * @deprecated The `/api/agents/{id}/chat/*` endpoints below are the legacy bare-gateway-session
+ * chat path. Prefer the managed session API (`../api/managedSessions.ts`, backed by
+ * `/api/sessions/*`) for new integrations — it supports environments, memory/vault mounts, and
+ * a durable event log. This module is kept as a fallback for callers not yet migrated (see
+ * `ChatPanel.tsx`, which defaults to managed mode and only falls back to this module when the
+ * managed API is unavailable).
+ */
 export interface ChatRequest {
   message: string;
   sessionKey?: string;

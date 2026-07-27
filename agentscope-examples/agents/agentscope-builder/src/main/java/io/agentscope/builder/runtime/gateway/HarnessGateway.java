@@ -34,6 +34,7 @@ import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.SessionTurnGate;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -125,6 +126,16 @@ public final class HarnessGateway implements Gateway {
      */
     private volatile BiFunction<String, String, String> fsUserIdResolver =
             (callerUserId, agentId) -> callerUserId;
+
+    /**
+     * Optional hook fired for every inbound turn that did <em>not</em> arrive through the {@link
+     * ChatUiChannel} (i.e. IM/webhook channels such as Feishu, DingTalk, WeCom, GitHub, GitLab).
+     * Installed by {@code ManagedSessionChannelBridge} so bound IM channels also create/reuse a
+     * managed session (with its own environment/memory/vault mounts) alongside the classic
+     * bare-gateway session this class always maintains for routing and transcript compatibility.
+     * No-op by default. See {@link #setManagedSessionHook}.
+     */
+    private volatile ManagedSessionHook managedSessionHook = ManagedSessionHook.noop();
 
     private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
 
@@ -249,6 +260,36 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
+     * Installs the hook invoked on every non-{@link ChatUiChannel} inbound turn (see {@link
+     * #managedSessionHook}). Passing {@code null} restores the no-op default.
+     */
+    public void setManagedSessionHook(ManagedSessionHook hook) {
+        this.managedSessionHook = hook != null ? hook : ManagedSessionHook.noop();
+    }
+
+    /**
+     * Callback for routing an inbound IM-channel turn into a managed session, in addition to
+     * this gateway's own bare-session routing.
+     */
+    public interface ManagedSessionHook {
+
+        /**
+         * @param ownerId the resolved session owner (namespace-pinned user id for shared agents,
+         *     otherwise the caller/sender id)
+         * @param agentId the catalog agent id the turn was routed to
+         * @param externalKey stable identity of the channel conversation ({@link
+         *     MsgContext#canonicalKey()}), used to find-or-create the managed session
+         * @param text the inbound user message text
+         */
+        void onInboundTurn(String ownerId, String agentId, String externalKey, String text);
+
+        /** A hook that does nothing; the gateway's default when none is installed. */
+        static ManagedSessionHook noop() {
+            return (ownerId, agentId, externalKey, text) -> {};
+        }
+    }
+
+    /**
      * Applies {@link #fsUserIdResolver} defensively: any null/blank/exception return falls back
      * to {@code callerUserId} so a misbehaving resolver cannot break the chat path.
      */
@@ -325,7 +366,59 @@ public final class HarnessGateway implements Gateway {
             rtcBuilder.userId(fsUserId);
         }
         RuntimeContext runtimeContext = rtcBuilder.build();
+        notifyManagedSessionHook(ctx, gateKey, routedAgentId, fsUserId, messages);
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
+    }
+
+    /**
+     * Fires {@link #managedSessionHook} for inbound turns arriving on IM/webhook channels
+     * (anything other than {@link ChatUiChannel#CHANNEL_ID}) so a managed session gets
+     * created/reused for that channel conversation. The chat-ui channel is excluded because it
+     * already has a first-class managed-session path via {@code ManagedSessionApiController}.
+     *
+     * <p>Best-effort: any failure (including a synchronous exception from a misbehaving hook) is
+     * logged and swallowed so it can never affect the bare-gateway reply this method's caller is
+     * about to produce.
+     */
+    private void notifyManagedSessionHook(
+            MsgContext ctx,
+            String gateKey,
+            String routedAgentId,
+            String fsUserId,
+            List<Msg> messages) {
+        if (ChatUiChannel.CHANNEL_ID.equals(ctx.channel())) {
+            return;
+        }
+        String ownerId = (fsUserId != null && !fsUserId.isBlank()) ? fsUserId : ctx.userId();
+        if (ownerId == null || ownerId.isBlank()) {
+            return;
+        }
+        String text = extractUserText(messages);
+        if (text == null) {
+            return;
+        }
+        try {
+            managedSessionHook.onInboundTurn(ownerId, routedAgentId, gateKey, text);
+        } catch (Exception e) {
+            log.warn("managedSessionHook failed for gateKey={}: {}", gateKey, e.getMessage());
+        }
+    }
+
+    /** Returns the text of the last {@code USER}-role message, or {@code null} if none. */
+    private static String extractUserText(List<Msg> messages) {
+        if (messages == null) {
+            return null;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg m = messages.get(i);
+            if (m != null && m.getRole() == MsgRole.USER) {
+                String text = m.getTextContent();
+                if (text != null && !text.isBlank()) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
 
     /**

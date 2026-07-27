@@ -1,5 +1,11 @@
 import { getToken } from './auth';
 
+/**
+ * @deprecated These `/api/agents/{id}/sessions/*` endpoints back the legacy bare-gateway-session
+ * inbox and transcript views. Prefer `../api/managedSessions.ts` (`/api/sessions/*`) for new
+ * integrations. Kept as a fallback for `SessionInboxList` / `SessionTranscript` when the managed
+ * session API is unavailable.
+ */
 export interface InboxEntry {
   sessionKey: string;
   sessionId: string;

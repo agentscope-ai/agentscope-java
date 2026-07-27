@@ -111,6 +111,7 @@ public final class BuilderBootstrap {
     private final List<Channel> registeredChannels;
     private final HarnessGateway gateway;
     private final ChannelManager channelManager;
+    private final SessionsTool sessionsTool;
 
     private BuilderBootstrap(
             Path cwd,
@@ -120,7 +121,8 @@ public final class BuilderBootstrap {
             AgentscopeConfig loadedConfig,
             List<Channel> registeredChannels,
             HarnessGateway gateway,
-            ChannelManager channelManager) {
+            ChannelManager channelManager,
+            SessionsTool sessionsTool) {
         this.cwd = Objects.requireNonNull(cwd, "cwd");
         this.configPath = Objects.requireNonNull(configPath, "configPath");
         this.mainAgentId = Objects.requireNonNull(mainAgentId, "mainAgentId");
@@ -130,6 +132,7 @@ public final class BuilderBootstrap {
                 registeredChannels != null ? List.copyOf(registeredChannels) : List.of();
         this.gateway = gateway;
         this.channelManager = channelManager;
+        this.sessionsTool = sessionsTool;
     }
 
     // -----------------------------------------------------------------
@@ -245,6 +248,17 @@ public final class BuilderBootstrap {
     /** The channel manager for channel lifecycle and outbound delivery. */
     public ChannelManager channelManager() {
         return channelManager;
+    }
+
+    /**
+     * The shared {@link SessionsTool} wired to this bootstrap's {@link SessionAgentManager}.
+     * Every file-config agent gets this injected as its {@code externalSubagentTool} during
+     * {@link Builder#build()}; callers that dynamically build additional agent instances at
+     * runtime (e.g. user-custom agents, managed-session clones) should inject the same instance
+     * so those agents can spawn {@code SUBAGENT} sessions through the same manager.
+     */
+    public SessionsTool sessionsTool() {
+        return sessionsTool;
     }
 
     /**
@@ -647,7 +661,8 @@ public final class BuilderBootstrap {
                     fileConfig,
                     resolvedChannels,
                     gateway,
-                    channelMgr);
+                    channelMgr,
+                    sessionsTool);
         }
 
         private static Path resolveAgentWorkspace(Path cwd, AgentConfigEntry entry) {
