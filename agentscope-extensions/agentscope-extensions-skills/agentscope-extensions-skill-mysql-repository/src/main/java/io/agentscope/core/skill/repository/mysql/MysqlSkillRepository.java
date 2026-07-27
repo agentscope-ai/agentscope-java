@@ -193,8 +193,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * auto-migrated to add {@code metadata_json}.
      *
      * <p>
-     * This constructor is private. Use {@link #builder(DataSource)} to create instances
-     * with custom configuration.
+     * Users may call this constructor directly to pass custom database and table names without
+     * using the builder, or continue to use {@link #builder(DataSource)} for a fluent API.
      *
      * @param dataSource         DataSource for database connections
      * @param databaseName       Custom database name (uses default if null or
@@ -212,7 +212,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * @throws IllegalStateException    if createIfNotExist is false and
      *                                  database/tables do not exist
      */
-    private MysqlSkillRepository(
+    public MysqlSkillRepository(
             DataSource dataSource,
             String databaseName,
             String skillsTableName,
