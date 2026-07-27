@@ -21,9 +21,8 @@ import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import java.util.Map;
 
-/** {@link SandboxFilesystemSpec} for the Kubernetes Pod sandbox store. */
+/** {@link SandboxFilesystemSpec} for the agent-sandbox backed Kubernetes sandbox store. */
 public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
 
     private SandboxClient<?> client;
@@ -47,8 +46,8 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
-    public KubernetesFilesystemSpec image(String image) {
-        options.setImage(image);
+    public KubernetesFilesystemSpec warmPoolName(String warmPoolName) {
+        options.setWarmPoolName(warmPoolName);
         return this;
     }
 
@@ -57,33 +56,33 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
-    public KubernetesFilesystemSpec containerName(String containerName) {
-        options.setContainerName(containerName);
+    public KubernetesFilesystemSpec fileApiBaseDir(String fileApiBaseDir) {
+        options.setFileApiBaseDir(fileApiBaseDir);
         return this;
     }
 
-    public KubernetesFilesystemSpec serviceAccount(String serviceAccount) {
-        options.setServiceAccount(serviceAccount);
+    public KubernetesFilesystemSpec apiUrl(String apiUrl) {
+        options.setApiUrl(apiUrl);
         return this;
     }
 
-    public KubernetesFilesystemSpec nodeSelector(Map<String, String> nodeSelector) {
-        options.setNodeSelector(nodeSelector);
+    public KubernetesFilesystemSpec gatewayName(String gatewayName) {
+        options.setGatewayName(gatewayName);
         return this;
     }
 
-    public KubernetesFilesystemSpec podLabels(Map<String, String> podLabels) {
-        options.setPodLabels(podLabels);
+    public KubernetesFilesystemSpec gatewayNamespace(String gatewayNamespace) {
+        options.setGatewayNamespace(gatewayNamespace);
         return this;
     }
 
-    public KubernetesFilesystemSpec cpuRequest(String cpuRequest) {
-        options.setCpuRequest(cpuRequest);
+    public KubernetesFilesystemSpec gatewayScheme(String gatewayScheme) {
+        options.setGatewayScheme(gatewayScheme);
         return this;
     }
 
-    public KubernetesFilesystemSpec memoryRequest(String memoryRequest) {
-        options.setMemoryRequest(memoryRequest);
+    public KubernetesFilesystemSpec serverPort(int serverPort) {
+        options.setServerPort(serverPort);
         return this;
     }
 
