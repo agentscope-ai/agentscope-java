@@ -1208,14 +1208,6 @@ class OllamaChatModelTest {
     }
 
     // ========== stream flag routing (fix: doStream used to hardcode streaming) ==========
-
-    /**
-     * Regression test for the bug where {@code doStream} ignored the stream flag and always used
-     * Ollama's streaming API. With streaming, {@code model.stream(...).blockLast()} returns only
-     * the last chunk (an empty {@code done:true} marker), so single-turn callers got an empty
-     * reply. With {@code stream(false)}, {@code blockLast()} must return the full reply via the
-     * non-streaming {@code transport.execute()} path.
-     */
     @Test
     @DisplayName(
             "stream(false) should use non-streaming transport and return full reply on blockLast")
@@ -1303,6 +1295,41 @@ class OllamaChatModelTest {
         verify(httpTransport).stream(any(HttpRequest.class));
         assertNotNull(responses);
         assertEquals(3, responses.size(), "streaming should emit one response per chunk");
+    }
+
+    @Test
+    @DisplayName("GenerateOptions.stream(false) should override the model's streaming default")
+    void testGenerateOptionsStreamFalseOverridesDefaultStreaming() throws Exception {
+        String nonStreamingJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello World\"},"
+                        + "\"done\":true,\"eval_count\":2}";
+
+        HttpResponse mockResponse =
+                HttpResponse.builder().statusCode(200).body(nonStreamingJson).build();
+        when(httpTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+        OllamaChatModel streamingByDefault =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .build();
+
+        GenerateOptions requestOptions = GenerateOptions.builder().stream(false).build();
+        ChatResponse resp =
+                streamingByDefault.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                requestOptions)
+                        .blockLast();
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpTransport).execute(requestCaptor.capture());
+        assertTrue(requestCaptor.getValue().getBody().contains("\"stream\":false"));
+        assertNotNull(resp);
+        assertEquals("Hello World", ((TextBlock) resp.getContent().get(0)).getText());
     }
 
     /**

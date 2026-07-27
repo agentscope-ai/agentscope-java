@@ -64,21 +64,10 @@ public class OllamaChatModel extends ChatModelBase {
     private static final Logger log = LoggerFactory.getLogger(OllamaChatModel.class);
 
     private final String modelName;
+    private final boolean stream;
     private final OllamaHttpClient httpClient;
     private final OllamaOptions defaultOptions;
     private final Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
-
-    /**
-     * Whether {@link #doStream} should use Ollama's streaming API (chunked) or the non-streaming
-     * API (single complete response). Defaults to {@code true} to preserve historical behavior.
-     *
-     * <p>The {@code Model.stream} entry point is final and always dispatches to {@code doStream};
-     * this flag therefore controls whether callers that do {@code model.stream(...).blockLast()}
-     * (e.g. single-turn bots, ReActAgent reasoning) receive one aggregated response or only the
-     * last (often empty) streaming chunk. Setting it to {@code false} makes {@code blockLast()}
-     * return the full reply.
-     */
-    private final boolean stream;
 
     /**
      * Creates a new OllamaChatModel.
@@ -100,10 +89,6 @@ public class OllamaChatModel extends ChatModelBase {
 
     /**
      * Creates a new OllamaChatModel with an explicit streaming mode.
-     *
-     * @param stream {@code true} to use Ollama's streaming API in {@link #doStream}; {@code false}
-     *     to use the non-streaming API (single complete response), so that {@code
-     *     model.stream(...).blockLast()} returns the full reply instead of the last chunk.
      */
     public OllamaChatModel(
             String modelName,
@@ -148,13 +133,6 @@ public class OllamaChatModel extends ChatModelBase {
         return this.modelName;
     }
 
-    /**
-     * Whether {@link #doStream} uses Ollama's streaming API (chunked). When {@code false}, the
-     * non-streaming API is used so that {@code model.stream(...).blockLast()} returns the full
-     * reply. Exposed for configuration/diagnostic introspection.
-     *
-     * @return {@code true} if streaming, {@code false} if non-streaming
-     */
     public boolean isStreaming() {
         return this.stream;
     }
@@ -186,12 +164,14 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        boolean effectiveStream =
+                options != null && options.getStream() != null ? options.getStream() : this.stream;
         return streamWithHttpClient(
                 messages,
                 tools,
                 options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
-                this.stream);
+                effectiveStream);
     }
 
     /**
@@ -303,6 +283,15 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets whether streaming should be enabled.
+         * <p>Default is {@code true}
+         */
+        public Builder stream(boolean stream) {
+            this.stream = stream;
+            return this;
+        }
+
         public Builder defaultOptions(OllamaOptions defaultOptions) {
             this.defaultOptions = defaultOptions;
             return this;
@@ -372,23 +361,6 @@ public class OllamaChatModel extends ChatModelBase {
 
         public Builder contextWindowSize(int contextWindowSize) {
             this.contextWindowSize = contextWindowSize;
-            return this;
-        }
-
-        /**
-         * Sets whether {@link OllamaChatModel#doStream} should use Ollama's streaming API (chunked)
-         * or the non-streaming API (single complete response).
-         *
-         * <p>Default is {@code true} (streaming) for backward compatibility. Set to {@code false}
-         * when callers consume the model via {@code model.stream(...).blockLast()} and expect the
-         * full reply — with streaming, {@code blockLast()} returns only the last (often empty)
-         * chunk; with non-streaming, it returns the single aggregated response.
-         *
-         * @param stream {@code true} for streaming, {@code false} for non-streaming
-         * @return this builder instance
-         */
-        public Builder stream(boolean stream) {
-            this.stream = stream;
             return this;
         }
 
