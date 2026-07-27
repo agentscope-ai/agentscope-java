@@ -23,8 +23,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -108,6 +110,9 @@ public class WorkspaceTaskRepository implements TaskRepository {
      * user's namespace.
      */
     private final Map<String, RuntimeContext> localTaskContexts = new ConcurrentHashMap<>();
+
+    /** Per-task transition locks; lifecycle writes for one task are serialized in this process. */
+    private final Map<String, Object> taskTransitionLocks = new ConcurrentHashMap<>();
 
     private final ExecutorService executor;
     private final boolean ownsExecutor;
@@ -221,7 +226,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String sessionId,
             TaskRunSpec spec) {
         RuntimeContext capturedRc = rc != null ? rc : RuntimeContext.empty();
-        TaskRecord record = new TaskRecord(taskId, subAgentId, parentAgentId, sessionId, null);
+        String subSessionId =
+                spec instanceof TaskRunSpec.SuspensibleLocalTaskRunSpec suspensible
+                        ? suspensible.subSessionId()
+                        : null;
+        TaskRecord record =
+                new TaskRecord(taskId, subAgentId, parentAgentId, sessionId, subSessionId);
+        record.setUserId(capturedRc.getUserId());
         record.setStatus(TaskStatus.PENDING);
         if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             record.setTransportType(TRANSPORT_AGENT_PROTOCOL);
@@ -274,6 +285,20 @@ public class WorkspaceTaskRepository implements TaskRepository {
                                             subAgentId,
                                             local.execution()),
                             executor);
+        } else if (spec instanceof TaskRunSpec.SuspensibleLocalTaskRunSpec suspensible) {
+            future = new CompletableFuture<>();
+            BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
+            registerLocalTask(localKey, sessionId, capturedRc, bgTask);
+            executor.execute(
+                    () ->
+                            runSuspensibleSupplier(
+                                    capturedRc,
+                                    sessionId,
+                                    taskId,
+                                    subAgentId,
+                                    suspensible.execution(),
+                                    bgTask));
+            return bgTask;
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             future =
                     CompletableFuture.supplyAsync(
@@ -291,10 +316,208 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
 
         BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
-        localTasks.put(localKey, bgTask);
-        localTaskSessionIds.put(localKey, sessionId != null ? sessionId : "");
-        localTaskContexts.put(localKey, capturedRc);
+        registerLocalTask(localKey, sessionId, capturedRc, bgTask);
         return bgTask;
+    }
+
+    private void registerLocalTask(
+            String localKey, String sessionId, RuntimeContext runtimeContext, BackgroundTask task) {
+        localTasks.put(localKey, task);
+        localTaskSessionIds.put(localKey, sessionId != null ? sessionId : "");
+        localTaskContexts.put(localKey, runtimeContext);
+    }
+
+    private void runSuspensibleSupplier(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            Supplier<TaskRunOutcome> execution,
+            BackgroundTask task) {
+        task.markStatus(TaskStatus.RUNNING);
+        if (!tryUpdateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null)) {
+            restorePersistedStatus(rc, sessionId, taskId, task);
+            return;
+        }
+        applySuspensibleOutcome(rc, sessionId, taskId, subAgentId, task, execution);
+    }
+
+    private void applySuspensibleOutcome(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            BackgroundTask task,
+            Supplier<TaskRunOutcome> execution) {
+        try {
+            TaskRunOutcome outcome = execution.get();
+            if (outcome instanceof TaskRunOutcome.WaitingForApproval waiting) {
+                task.markStatus(TaskStatus.WAITING_FOR_APPROVAL);
+                if (!persistWaiting(rc, sessionId, taskId, waiting.suspension())) {
+                    restorePersistedStatus(rc, sessionId, taskId, task);
+                }
+                return;
+            }
+            if (outcome instanceof TaskRunOutcome.Denied denied) {
+                if (!tryUpdateStatus(
+                        rc, sessionId, taskId, TaskStatus.DENIED, denied.result(), null)) {
+                    restorePersistedStatus(rc, sessionId, taskId, task);
+                    return;
+                }
+                task.complete(denied.result(), TaskStatus.DENIED);
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, denied.result());
+                return;
+            }
+            TaskRunOutcome.Completed completed = (TaskRunOutcome.Completed) outcome;
+            if (!tryUpdateStatus(
+                    rc, sessionId, taskId, TaskStatus.COMPLETED, completed.result(), null)) {
+                restorePersistedStatus(rc, sessionId, taskId, task);
+                return;
+            }
+            task.complete(completed.result(), TaskStatus.COMPLETED);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, completed.result());
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            if (!tryUpdateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, message)) {
+                restorePersistedStatus(rc, sessionId, taskId, task);
+                return;
+            }
+            task.completeExceptionally(e);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+        }
+    }
+
+    private boolean persistWaiting(
+            RuntimeContext rc, String sessionId, String taskId, TaskSuspension suspension) {
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty() || existing.get().getStatus().isTerminal()) {
+            return false;
+        }
+        TaskRecord record = existing.get();
+        record.setStatus(TaskStatus.WAITING_FOR_APPROVAL);
+        record.setSuspension(suspension);
+        record.setSubSessionId(suspension.subSessionId());
+        record.setUserId(suspension.userId());
+        record.touch();
+        persistRecord(rc, sessionId, record);
+        return true;
+    }
+
+    private void restorePersistedStatus(
+            RuntimeContext rc, String sessionId, String taskId, BackgroundTask task) {
+        workspaceManager
+                .readTaskRecord(rc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::getStatus)
+                .ifPresent(task::markStatus);
+    }
+
+    @Override
+    public boolean resumeTask(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            Supplier<TaskRunOutcome> continuation) {
+        Objects.requireNonNull(continuation, "continuation must not be null");
+        RuntimeContext effectiveRc = rc != null ? rc : RuntimeContext.empty();
+        String key = localKey(sessionId, taskId);
+        Object transitionLock = taskTransitionLocks.computeIfAbsent(key, ignored -> new Object());
+        synchronized (transitionLock) {
+            Optional<TaskRecord> existing =
+                    workspaceManager.readTaskRecord(effectiveRc, parentAgentId, sessionId, taskId);
+            if (existing.isEmpty()
+                    || existing.get().getStatus() != TaskStatus.WAITING_FOR_APPROVAL) {
+                return false;
+            }
+            TaskRecord record = existing.get();
+            record.setStatus(TaskStatus.RUNNING);
+            record.touch();
+            persistRecord(effectiveRc, sessionId, record);
+            CompletableFuture<String> future = new CompletableFuture<>();
+            BackgroundTask task =
+                    localTasks.computeIfAbsent(
+                            key,
+                            ignored -> new BackgroundTask(taskId, record.getSubAgentId(), future));
+            task.markStatus(TaskStatus.RUNNING);
+            localTaskSessionIds.put(key, sessionId != null ? sessionId : "");
+            localTaskContexts.put(key, effectiveRc);
+            executor.execute(
+                    () ->
+                            applySuspensibleOutcome(
+                                    effectiveRc,
+                                    sessionId,
+                                    taskId,
+                                    record.getSubAgentId(),
+                                    task,
+                                    continuation));
+            return true;
+        }
+    }
+
+    @Override
+    public Optional<TaskSuspension> getTaskSuspension(
+            RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effectiveRc = rc != null ? rc : RuntimeContext.empty();
+        return workspaceManager
+                .readTaskRecord(effectiveRc, parentAgentId, sessionId, taskId)
+                .filter(record -> record.getStatus() == TaskStatus.WAITING_FOR_APPROVAL)
+                .map(TaskRecord::getSuspension);
+    }
+
+    @Override
+    public Optional<SuspendedTaskRef> findSuspendedTaskByChildSession(
+            RuntimeContext childContext, String childSessionId) {
+        if (childContext == null
+                || childContext.getUserId() == null
+                || childContext.getUserId().isBlank()
+                || childSessionId == null
+                || childSessionId.isBlank()) {
+            return Optional.empty();
+        }
+        Map<String, TaskRecord> candidates = new LinkedHashMap<>();
+        for (Map.Entry<String, BackgroundTask> entry : localTasks.entrySet()) {
+            String key = entry.getKey();
+            RuntimeContext taskContext = localTaskContexts.get(key);
+            String parentSessionId = localTaskSessionIds.get(key);
+            if (taskContext == null
+                    || !Objects.equals(childContext.getUserId(), taskContext.getUserId())
+                    || parentSessionId == null) {
+                continue;
+            }
+            workspaceManager
+                    .readTaskRecord(
+                            taskContext,
+                            parentAgentId,
+                            parentSessionId,
+                            entry.getValue().getTaskId())
+                    .ifPresent(record -> candidates.put(record.getTaskId(), record));
+        }
+        for (TaskRecord record :
+                workspaceManager.listAllTaskRecords(
+                        childContext, parentAgentId, Duration.ofDays(36_500))) {
+            candidates.putIfAbsent(record.getTaskId(), record);
+        }
+        List<SuspendedTaskRef> matches =
+                candidates.values().stream()
+                        .filter(record -> record.getStatus() == TaskStatus.WAITING_FOR_APPROVAL)
+                        .filter(record -> record.getSuspension() != null)
+                        .filter(
+                                record ->
+                                        childContext
+                                                .getUserId()
+                                                .equals(record.getSuspension().userId()))
+                        .filter(
+                                record ->
+                                        childSessionId.equals(
+                                                record.getSuspension().subSessionId()))
+                        .map(
+                                record ->
+                                        new SuspendedTaskRef(
+                                                record.getTaskId(),
+                                                record.getParentSessionId(),
+                                                record.getSuspension()))
+                        .toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
     }
 
     private String runLocalSupplier(
@@ -559,6 +782,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         localTasks.clear();
         localTaskSessionIds.clear();
         localTaskContexts.clear();
+        taskTransitionLocks.clear();
     }
 
     /** Shuts down the maintenance scheduler and (if owned) the task executor. */
@@ -749,22 +973,31 @@ public class WorkspaceTaskRepository implements TaskRepository {
             TaskStatus status,
             String result,
             String error) {
+        tryUpdateStatus(rc, sessionId, taskId, status, result, error);
+    }
+
+    private boolean tryUpdateStatus(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            TaskStatus status,
+            String result,
+            String error) {
         Optional<TaskRecord> existing =
                 workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
-        // Guard 1: terminal states are immutable — never overwrite COMPLETED, FAILED, or CANCELLED
-        // with any other status. This prevents a late COMPLETED/FAILED write from a still-running
-        // thread from clobbering a CANCELLED status set concurrently by cancelTask().
+        // Guard 1: terminal states are immutable. This prevents a late terminal or non-terminal
+        // write from a still-running thread from clobbering the transition that won the race.
         if (existing.isPresent()
                 && existing.get().getStatus() != null
                 && existing.get().getStatus().isTerminal()) {
-            return;
+            return false;
         }
         // Guard 2: if cancellation has been requested but the workspace record has not yet reached
         // a terminal state (e.g. heartbeat races cancelTask()), refuse to persist non-terminal
         // updates. This stops the heartbeat from writing RUNNING back over a record whose
         // cancelRequested flag was just set by cancelTask().
         if (!status.isTerminal() && existing.isPresent() && existing.get().isCancelRequested()) {
-            return;
+            return false;
         }
         TaskRecord record =
                 existing.orElseGet(
@@ -783,6 +1016,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             record.setErrorMessage(error);
         }
         persistRecord(rc, sessionId, record);
+        return true;
     }
 
     private void markCancelled(RuntimeContext rc, String sessionId, String taskId) {
@@ -809,6 +1043,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 future = new CompletableFuture<>();
                 future.cancel(false);
             }
+            case DENIED -> future = CompletableFuture.completedFuture(record.getResult());
             default -> {
                 if (record.isAgentProtocolTransport()
                         && record.getRemoteBaseUrl() != null
@@ -858,7 +1093,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 }
             }
         }
-        return new BackgroundTask(record.getTaskId(), record.getSubAgentId(), future);
+        BackgroundTask task =
+                new BackgroundTask(record.getTaskId(), record.getSubAgentId(), future);
+        task.markStatus(record.getStatus());
+        return task;
     }
 
     private void fireCompletionCallback(
@@ -875,7 +1113,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     /**
-     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
+     * Callback invoked when a background task reaches a terminal state.
      * Implementations typically push the result to the session inbox and enqueue a wakeup signal.
      * {@code result} is {@code null} when the task failed; callers should read the persisted
      * {@link TaskRecord} for the error message.

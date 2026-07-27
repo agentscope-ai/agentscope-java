@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.gateway;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -94,6 +95,46 @@ public final class StoreBackedSubagentRegistry implements SubagentRegistry {
     }
 
     @Override
+    public Optional<SubagentRecord> findByLineage(
+            String userId, String parentSessionId, String childSessionId) {
+        if (isBlank(userId) || isBlank(parentSessionId) || isBlank(childSessionId)) {
+            return Optional.empty();
+        }
+        try {
+            int offset = 0;
+            SubagentRecord latest = null;
+            while (true) {
+                List<StoreItem> items = store.search(NAMESPACE, SCAN_PAGE_SIZE, offset);
+                if (items == null || items.isEmpty()) {
+                    break;
+                }
+                for (StoreItem item : items) {
+                    SubagentRecord record = SubagentRecord.fromMap(item.value());
+                    if (record != null
+                            && !record.isExpired(Instant.now())
+                            && Objects.equals(userId, record.userId())
+                            && Objects.equals(parentSessionId, record.parentSessionId())
+                            && Objects.equals(childSessionId, record.sessionId())
+                            && (latest == null
+                                    || Comparator.nullsFirst(Instant::compareTo)
+                                                    .compare(record.createdAt(), latest.createdAt())
+                                            > 0)) {
+                        latest = record;
+                    }
+                }
+                if (items.size() < SCAN_PAGE_SIZE) {
+                    break;
+                }
+                offset += items.size();
+            }
+            return Optional.ofNullable(latest);
+        } catch (RuntimeException e) {
+            log.warn("Failed to resolve exposed-subagent lineage: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public void revoke(String subagentId) {
         if (subagentId == null) {
             return;
@@ -111,15 +152,26 @@ public final class StoreBackedSubagentRegistry implements SubagentRegistry {
             return;
         }
         try {
-            List<StoreItem> items = store.search(NAMESPACE, SCAN_PAGE_SIZE, 0);
-            if (items == null) {
-                return;
-            }
-            for (StoreItem item : items) {
-                SubagentRecord r = SubagentRecord.fromMap(item.value());
-                if (r != null && parentSessionId.equals(r.parentSessionId())) {
-                    revoke(r.subagentId());
+            int offset = 0;
+            List<String> matches = new java.util.ArrayList<>();
+            while (true) {
+                List<StoreItem> items = store.search(NAMESPACE, SCAN_PAGE_SIZE, offset);
+                if (items == null || items.isEmpty()) {
+                    break;
                 }
+                for (StoreItem item : items) {
+                    SubagentRecord record = SubagentRecord.fromMap(item.value());
+                    if (record != null && parentSessionId.equals(record.parentSessionId())) {
+                        matches.add(record.subagentId());
+                    }
+                }
+                if (items.size() < SCAN_PAGE_SIZE) {
+                    break;
+                }
+                offset += items.size();
+            }
+            for (String subagentId : matches) {
+                revoke(subagentId);
             }
         } catch (RuntimeException e) {
             log.warn(
@@ -127,5 +179,9 @@ public final class StoreBackedSubagentRegistry implements SubagentRegistry {
                     parentSessionId,
                     e.getMessage());
         }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

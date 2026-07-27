@@ -21,16 +21,24 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.subagent.task.TaskRunOutcome;
+import io.agentscope.harness.agent.subagent.task.TaskSuspension;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -48,6 +56,7 @@ public final class DefaultAgentManager {
     private volatile Map<String, SubagentFactory> agentFactories;
     private volatile Map<String, SubagentDeclaration> declarations;
     private final WorkspaceManager workspaceManager;
+    private volatile Consumer<Agent> materializationCustomizer = ignored -> {};
 
     /**
      * Builds a manager from subagent entries (factories plus optional {@link SubagentDeclaration}
@@ -120,7 +129,7 @@ public final class DefaultAgentManager {
         if (decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY) {
             return Optional.empty();
         }
-        return Optional.of(factory.create(parentRc != null ? parentRc : RuntimeContext.empty()));
+        return Optional.of(customize(factory.create(effectiveContext(parentRc))));
     }
 
     /**
@@ -160,7 +169,21 @@ public final class DefaultAgentManager {
         if (factory == null) {
             throw new IllegalArgumentException("Unknown agent_id: " + agentId);
         }
-        return factory.create(parentRc != null ? parentRc : RuntimeContext.empty());
+        return customize(factory.create(effectiveContext(parentRc)));
+    }
+
+    /** Applies a host customization after every native child materialization. */
+    public void setMaterializationCustomizer(Consumer<Agent> customizer) {
+        materializationCustomizer = customizer != null ? customizer : ignored -> {};
+    }
+
+    private Agent customize(Agent agent) {
+        materializationCustomizer.accept(agent);
+        return agent;
+    }
+
+    private static RuntimeContext effectiveContext(RuntimeContext context) {
+        return context != null ? context : RuntimeContext.empty();
     }
 
     /**
@@ -196,6 +219,86 @@ public final class DefaultAgentManager {
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));
+    }
+
+    /**
+     * Invokes a local child through typed {@link AgentEvent}s and returns a task lifecycle outcome.
+     * Permission pauses retain the exact reply and tool identities needed for durable resume.
+     */
+    public TaskRunOutcome invokeAgentTask(
+            Agent agent,
+            String sessionId,
+            String userId,
+            List<Msg> messages,
+            RuntimeContext parentRc) {
+        Objects.requireNonNull(agent, "agent must not be null");
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        RuntimeContext childContext = childRuntimeContext(sessionId, userId, parentRc);
+        List<Msg> input = messages == null ? List.of() : List.copyOf(messages);
+        List<AgentEvent> events;
+        if (agent instanceof ReActAgent react) {
+            events = react.streamEvents(input, childContext).collectList().block();
+        } else if (agent instanceof HarnessAgent harness) {
+            events = harness.streamEvents(input, childContext).collectList().block();
+        } else {
+            Msg result = agent.call(input).block();
+            if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+                throw new IllegalStateException(
+                        "Permission-suspended task requires an AgentScope typed event stream");
+            }
+            return new TaskRunOutcome.Completed(result != null ? result.getTextContent() : "");
+        }
+        List<AgentEvent> captured = events != null ? events : List.of();
+        Msg result =
+                captured.stream()
+                        .filter(AgentResultEvent.class::isInstance)
+                        .map(AgentResultEvent.class::cast)
+                        .map(AgentResultEvent::getResult)
+                        .reduce((first, last) -> last)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Child event stream has no result"));
+        if (result.getGenerateReason() != GenerateReason.PERMISSION_ASKING) {
+            return new TaskRunOutcome.Completed(result.getTextContent());
+        }
+        RequireUserConfirmEvent approval =
+                captured.stream()
+                        .filter(RequireUserConfirmEvent.class::isInstance)
+                        .map(RequireUserConfirmEvent.class::cast)
+                        .reduce((first, last) -> last)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Permission pause has no confirmation event"));
+        String parentSessionId = parentRc != null ? parentRc.getSessionId() : null;
+        TaskSuspension suspension =
+                new TaskSuspension(
+                        userId,
+                        Objects.requireNonNull(
+                                parentSessionId,
+                                "parent RuntimeContext sessionId must not be null"),
+                        sessionId,
+                        approval.getReplyId(),
+                        approval.getToolCalls().stream()
+                                .map(
+                                        toolCall ->
+                                                new TaskSuspension.PendingToolCall(
+                                                        toolCall.getId(), toolCall.getName()))
+                                .toList());
+        return new TaskRunOutcome.WaitingForApproval(suspension);
+    }
+
+    public TaskRunOutcome invokeAgentTask(
+            Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
+        return invokeAgentTask(agent, sessionId, userId, List.of(userMessage(prompt)), parentRc);
+    }
+
+    private static RuntimeContext childRuntimeContext(
+            String sessionId, String userId, RuntimeContext parentRc) {
+        return parentRc != null
+                ? RuntimeContext.builder(parentRc).sessionId(sessionId).userId(userId).build()
+                : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
     }
 
     /**

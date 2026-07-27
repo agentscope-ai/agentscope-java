@@ -40,6 +40,7 @@ public class BackgroundTask {
     private final Instant createdAt;
     private volatile Instant lastCheckedAt;
     private volatile boolean cancelled;
+    private volatile TaskStatus lifecycleStatus;
 
     public BackgroundTask(String taskId, String agentId, CompletableFuture<String> future) {
         this.taskId = taskId;
@@ -81,6 +82,11 @@ public class BackgroundTask {
         if (cancelled || future.isCancelled()) {
             return TaskStatus.CANCELLED;
         }
+        if (lifecycleStatus != null
+                && (lifecycleStatus.isTerminal()
+                        || lifecycleStatus == TaskStatus.WAITING_FOR_APPROVAL)) {
+            return lifecycleStatus;
+        }
         if (future.isCompletedExceptionally()) {
             return TaskStatus.FAILED;
         }
@@ -88,6 +94,23 @@ public class BackgroundTask {
             return TaskStatus.COMPLETED;
         }
         return TaskStatus.RUNNING;
+    }
+
+    void markStatus(TaskStatus status) {
+        this.lifecycleStatus = status;
+    }
+
+    void complete(String result, TaskStatus terminalStatus) {
+        if (!terminalStatus.isTerminal()) {
+            throw new IllegalArgumentException("terminalStatus must be terminal");
+        }
+        this.lifecycleStatus = terminalStatus;
+        future.complete(result);
+    }
+
+    void completeExceptionally(Throwable error) {
+        this.lifecycleStatus = TaskStatus.FAILED;
+        future.completeExceptionally(error);
     }
 
     /** Returns a human-readable status string. */
@@ -147,6 +170,7 @@ public class BackgroundTask {
      */
     public boolean cancel(boolean mayInterruptIfRunning) {
         this.cancelled = true;
+        this.lifecycleStatus = TaskStatus.CANCELLED;
         return future.cancel(mayInterruptIfRunning);
     }
 }

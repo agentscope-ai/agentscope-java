@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.gateway;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -52,6 +54,24 @@ public final class InMemorySubagentRegistry implements SubagentRegistry {
     }
 
     @Override
+    public Optional<SubagentRecord> findByLineage(
+            String userId, String parentSessionId, String childSessionId) {
+        if (isBlank(userId) || isBlank(parentSessionId) || isBlank(childSessionId)) {
+            return Optional.empty();
+        }
+        Instant now = Instant.now();
+        records.values().removeIf(record -> record.isExpired(now));
+        return records.values().stream()
+                .filter(record -> Objects.equals(userId, record.userId()))
+                .filter(record -> Objects.equals(parentSessionId, record.parentSessionId()))
+                .filter(record -> Objects.equals(childSessionId, record.sessionId()))
+                .max(
+                        Comparator.comparing(
+                                SubagentRecord::createdAt,
+                                Comparator.nullsFirst(Instant::compareTo)));
+    }
+
+    @Override
     public void revoke(String subagentId) {
         if (subagentId != null) {
             records.remove(subagentId);
@@ -64,5 +84,9 @@ public final class InMemorySubagentRegistry implements SubagentRegistry {
             return;
         }
         records.values().removeIf(r -> parentSessionId.equals(r.parentSessionId()));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

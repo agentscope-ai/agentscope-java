@@ -19,11 +19,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -262,6 +264,18 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     /** Returns the {@link TaskRepository} used by this middleware. */
     public TaskRepository getTaskRepository() {
         return taskRepository;
+    }
+
+    /** Resume a native {@link AgentSpawnTool} task suspended for permission approval. */
+    public boolean resumeSubagentTask(
+            RuntimeContext parentContext,
+            AgentState parentState,
+            String taskId,
+            String replyId,
+            List<ConfirmResult> confirmResults) {
+        return subagentTool instanceof AgentSpawnTool spawnTool
+                && spawnTool.resumeSuspendedTask(
+                        parentContext, parentState, taskId, replyId, confirmResults);
     }
 
     /**
@@ -508,6 +522,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                     sb.append("\n</task_error>\n");
                 }
                 case CANCELLED -> sb.append("Task was cancelled before producing a result.\n");
+                case DENIED -> {
+                    sb.append("<task_denied>\n");
+                    sb.append(
+                            d.result() != null ? d.result() : "User denied the pending operation.");
+                    sb.append("\n</task_denied>\n");
+                }
                 default ->
                         sb.append("Task ended in non-terminal state ")
                                 .append(d.status())

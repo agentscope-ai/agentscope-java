@@ -173,6 +173,17 @@ class SubagentDeliveryTest {
     }
 
     @Test
+    void reminder_deniedRendersDeniedResult() {
+        Msg msg =
+                SubagentsMiddleware.buildDeliveryReminder(
+                        List.of(delivery("td", TaskStatus.DENIED, "user denied edit_file", null)));
+        String text = textOf(msg);
+        assertTrue(text.contains("state=\"denied\""));
+        assertTrue(text.contains("<task_denied>"));
+        assertTrue(text.contains("user denied edit_file"));
+    }
+
+    @Test
     void reminder_capsAndSummarisesOverflow() {
         List<TaskDelivery> ds = new ArrayList<>();
         for (int i = 0; i < SubagentsMiddleware.MAX_DELIVERIES_PER_REMINDER + 5; i++) {

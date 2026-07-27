@@ -297,9 +297,11 @@ public final class AgentProtocolTaskStore {
         return switch (s) {
             case PENDING -> "pending";
             case RUNNING -> "running";
+            case WAITING_FOR_APPROVAL -> "pending";
             case COMPLETED -> "success";
             case FAILED -> "error";
             case CANCELLED -> "cancelled";
+            case DENIED -> "error";
         };
     }
 }

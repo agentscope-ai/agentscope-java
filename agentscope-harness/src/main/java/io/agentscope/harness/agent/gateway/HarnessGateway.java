@@ -247,6 +247,8 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             String subagentId,
             String agentId,
             String sessionId,
+            String userId,
+            String parentSessionId,
             Agent agent,
             OutboundAddress replyTo) {}
 
@@ -262,14 +264,34 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     public String exposeSubagent(
             String agentId, String sessionId, Agent agent, OutboundAddress replyTo) {
+        return exposeSubagent(agentId, sessionId, agent, replyTo, null, null);
+    }
+
+    /** Exposes a subagent while preserving its complete runtime lineage. */
+    public String exposeSubagent(
+            String agentId,
+            String sessionId,
+            Agent agent,
+            OutboundAddress replyTo,
+            String userId,
+            String parentSessionId) {
         Objects.requireNonNull(agent, "agent");
         String subagentId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
         exposedSessions.put(
-                subagentId, new ExposedSession(subagentId, agentId, sessionId, agent, replyTo));
+                subagentId,
+                new ExposedSession(
+                        subagentId, agentId, sessionId, userId, parentSessionId, agent, replyTo));
         try {
             subagentRegistry.register(
                     new SubagentRecord(
-                            subagentId, agentId, sessionId, null, null, Instant.now(), null));
+                            subagentId,
+                            agentId,
+                            sessionId,
+                            userId,
+                            parentSessionId,
+                            replyTo,
+                            Instant.now(),
+                            null));
         } catch (RuntimeException e) {
             log.warn(
                     "Failed to persist exposed-subagent record {}: {}", subagentId, e.getMessage());
@@ -312,6 +334,12 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         this.subagentMaterializer = materializer;
     }
 
+    /** Resolves a child only when user, parent and child session lineage all match. */
+    public Optional<SubagentRecord> findExposedSubagent(
+            String userId, String parentSessionId, String childSessionId) {
+        return subagentRegistry.findByLineage(userId, parentSessionId, childSessionId);
+    }
+
     /**
      * Resolves an exposed subagent to a runnable session: returns the cached live session when
      * present, otherwise rebuilds it from the durable registry via the configured
@@ -332,10 +360,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             return null;
         }
         SubagentRecord record = recordOpt.get();
-        RuntimeContext.Builder rcb = RuntimeContext.builder().sessionId(record.sessionId());
-        if (record.userId() != null && !record.userId().isBlank()) {
-            rcb.userId(record.userId());
-        }
+        RuntimeContext.Builder rcb = runtimeContextBuilder(record);
         Optional<Agent> agentOpt = materializer.materialize(record.agentId(), rcb.build());
         if (agentOpt.isEmpty()) {
             log.warn(
@@ -349,8 +374,10 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                         record.subagentId(),
                         record.agentId(),
                         record.sessionId(),
+                        record.userId(),
+                        record.parentSessionId(),
                         agentOpt.get(),
-                        null);
+                        record.replyTo());
         exposedSessions.putIfAbsent(subagentId, rebuilt);
         return exposedSessions.get(subagentId);
     }
@@ -362,7 +389,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             return Mono.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
-        RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
+        RuntimeContext rtc = runtimeContext(session);
         String gateKey = "subagent:" + subagentId;
 
         return withGatedTurn(gateKey, () -> invokeExposedAgent(session.agent(), messages, rtc))
@@ -417,7 +444,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             return Flux.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
-        RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
+        RuntimeContext rtc = runtimeContext(session);
         String gateKey = "subagent:" + subagentId;
 
         return withGatedStream(gateKey, () -> streamExposedAgent(session.agent(), messages, rtc));
@@ -436,6 +463,28 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                         "Agent type "
                                 + agent.getClass().getName()
                                 + " does not support streaming"));
+    }
+
+    private static RuntimeContext runtimeContext(ExposedSession session) {
+        return runtimeContextBuilder(
+                        session.sessionId(), session.userId(), session.parentSessionId())
+                .build();
+    }
+
+    private static RuntimeContext.Builder runtimeContextBuilder(SubagentRecord record) {
+        return runtimeContextBuilder(record.sessionId(), record.userId(), record.parentSessionId());
+    }
+
+    private static RuntimeContext.Builder runtimeContextBuilder(
+            String sessionId, String userId, String parentSessionId) {
+        RuntimeContext.Builder builder = RuntimeContext.builder().sessionId(sessionId);
+        if (userId != null && !userId.isBlank()) {
+            builder.userId(userId);
+        }
+        if (parentSessionId != null && !parentSessionId.isBlank()) {
+            builder.put(SubagentRecord.RUNTIME_PARENT_SESSION_ID, parentSessionId);
+        }
+        return builder;
     }
 
     // ------------------------------------------------------------------
