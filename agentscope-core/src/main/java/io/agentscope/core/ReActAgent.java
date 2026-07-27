@@ -883,7 +883,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             signal -> {
                                                                 sink.next(
                                                                         new AgentEndEvent(replyId));
-                                                                sink.complete();
+                                                                FluxSink.EmitResult result =
+                                                                        sink.tryEmitComplete();
+                                                                if (result.isFailure()) {
+                                                                    log.warn(
+                                                                            "sink.tryEmitComplete"
+                                                                                    + " failed:"
+                                                                                    + " {}",
+                                                                            result);
+                                                                }
                                                             })
                                                     .contextWrite(subscriberCtx)
                                                     .subscribe(
