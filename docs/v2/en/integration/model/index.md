@@ -4,6 +4,7 @@ Model provider extensions connect AgentScope Java to hosted or local chat model 
 
 - [OpenAI](openai.md)
 - [DeepSeek](deepseek.md)
+- [GLM](glm.md)
 - [DashScope](dashscope.md)
 - [Gemini](gemini.md)
 - [Anthropic](anthropic.md)
