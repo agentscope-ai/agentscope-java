@@ -90,6 +90,10 @@ public final class OllamaModelProvider implements ModelProvider {
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
         }
+        Boolean stream = context.getStream();
+        if (stream != null) {
+            builder.stream(stream);
+        }
     }
 
     private static String firstNonBlank(String preferred, String fallback) {

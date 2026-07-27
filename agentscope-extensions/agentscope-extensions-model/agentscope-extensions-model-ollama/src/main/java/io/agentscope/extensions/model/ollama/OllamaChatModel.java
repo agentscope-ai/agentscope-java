@@ -68,6 +68,8 @@ public class OllamaChatModel extends ChatModelBase {
     private final OllamaOptions defaultOptions;
     private final Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
 
+    private boolean stream = true;
+
     /**
      * Creates a new OllamaChatModel.
      *
@@ -119,6 +121,29 @@ public class OllamaChatModel extends ChatModelBase {
     }
 
     /**
+     * Sets whether streaming responses should be used.
+     *
+     * <p>When {@code stream} is {@code false}, {@link #doStream(List, List, GenerateOptions)}
+     * dispatches to a non-streaming HTTP call and returns a single complete
+     * {@link ChatResponse} (suitable for consumption via {@code blockLast()}).
+     * When {@code true} (the default), responses are streamed incrementally.
+     *
+     * @param stream {@code true} to stream, {@code false} to use a single non-streaming call
+     */
+    public void setStream(boolean stream) {
+        this.stream = stream;
+    }
+
+    /**
+     * Returns whether streaming responses are enabled.
+     *
+     * @return the current streaming flag
+     */
+    public boolean isStream() {
+        return stream;
+    }
+
+    /**
      * Chat with the model using Ollama-specific options.
      * <p>
      * This method uses Ollama-specific options directly without conversion.
@@ -145,12 +170,16 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        boolean effectiveStream = stream;
+        if (options != null && options.getStream() != null) {
+            effectiveStream = options.getStream();
+        }
         return streamWithHttpClient(
                 messages,
                 tools,
                 options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
-                true);
+                effectiveStream);
     }
 
     /**
@@ -250,6 +279,7 @@ public class OllamaChatModel extends ChatModelBase {
         private HttpTransport httpTransport;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private boolean stream = true;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -333,6 +363,22 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets whether streaming responses should be used.
+         *
+         * <p>When {@code stream} is {@code false}, {@link #doStream(List, List, GenerateOptions)}
+         * dispatches to a non-streaming HTTP call and returns a single complete
+         * response. When {@code true} (the default), responses are streamed
+         * incrementally.
+         *
+         * @param stream {@code true} to stream, {@code false} to use a non-streaming call
+         * @return this builder instance
+         */
+        public Builder stream(boolean stream) {
+            this.stream = stream;
+            return this;
+        }
+
         public OllamaChatModel build() {
             OllamaOptions finalOptions =
                     defaultOptions != null
@@ -349,6 +395,7 @@ public class OllamaChatModel extends ChatModelBase {
 
             OllamaChatModel model =
                     new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, transport);
+            model.setStream(stream);
             if (contextWindowSize >= 0) {
                 model.setContextWindowSize(contextWindowSize);
             }
