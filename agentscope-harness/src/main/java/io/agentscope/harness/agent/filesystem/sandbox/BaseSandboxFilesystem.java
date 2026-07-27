@@ -72,6 +72,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path);
+        // Pre-check: verify the path exists and is a directory
+        String checkCmd = "if [ ! -d " + escapedPath + " ]; then "
+                + "if [ ! -e " + escapedPath + " ]; then echo '__NOT_FOUND__'; "
+                + "else echo '__NOT_A_DIR__'; fi; "
+                + "else echo '__IS_DIR__'; fi";
+        ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
+        String checkOutput = checkResult.output() != null ? checkResult.output().strip() : "";
+        if ("__NOT_FOUND__".equals(checkOutput)) {
+            return LsResult.fail("Path not found: " + path);
+        }
+        if ("__NOT_A_DIR__".equals(checkOutput)) {
+            return LsResult.fail("Not a directory: " + path);
+        }
+
         String cmd =
                 "for f in "
                         + escapedPath
@@ -84,7 +98,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
                         + "    printf 'FILE:%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
                         + "  fi; "
-                        + "done 2>/dev/null";
+                        + "done";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         List<FileInfo> entries = new ArrayList<>();
