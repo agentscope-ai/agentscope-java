@@ -191,6 +191,11 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                 List.of(
                                         ThinkingBlock.builder()
                                                 .thinking("Let me think...")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "signature-123"))
                                                 .build()))
                         .build();
 
@@ -199,8 +204,32 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
         assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isThinking());
+        assertEquals("Let me think...", blocks.get(0).asThinking().thinking());
+        assertEquals("signature-123", blocks.get(0).asThinking().signature());
+    }
+
+    @Test
+    void testConvertUnsignedThinkingBlockSkipsIt() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Unsigned thinking")
+                                                .build(),
+                                        TextBlock.builder().text("Visible answer").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).isText());
-        assertEquals("Let me think...", blocks.get(0).asText().text());
+        assertEquals("Visible answer", blocks.get(0).asText().text());
     }
 
     @Test
