@@ -3562,6 +3562,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         shutdownManager.saveOnInterruptObserved(requestId);
                         return Mono.error(new AgentShuttingDownException());
                     }
+                    // Reconcile any pending ToolUseBlocks before persisting the recovery
+                    // message. An interrupt that fires after reasoning writes a ToolUseBlock
+                    // to the last assistant message but before acting skips tool execution,
+                    // leaving a dangling tool_call with no matching tool result. Models may
+                    // reject such an inconsistent context on the next resumed run, so we
+                    // remove the unfulfilled ToolUseBlocks in-place.
+                    Msg assistantBeforeInterrupt = findLastAssistantMsg();
+                    if (assistantBeforeInterrupt != null) {
+                        List<ContentBlock> blocks =
+                                new ArrayList<>(assistantBeforeInterrupt.getContent());
+                        Set<String> pending = getPendingToolUseIds();
+                        blocks.removeIf(
+                                b ->
+                                        b instanceof ToolUseBlock t
+                                                && pending.contains(t.getId()));
+                        if (!blocks.equals(assistantBeforeInterrupt.getContent())) {
+                            scope.state.contextMutable()
+                                    .set(
+                                            assistantBeforeInterrupt.getIndex(),
+                                            assistantBeforeInterrupt.withContent(blocks));
+                        }
+                    }
+
                     String recoveryText =
                             "I noticed that you have interrupted me. What can I do for you?";
                     Msg recoveryMsg =
