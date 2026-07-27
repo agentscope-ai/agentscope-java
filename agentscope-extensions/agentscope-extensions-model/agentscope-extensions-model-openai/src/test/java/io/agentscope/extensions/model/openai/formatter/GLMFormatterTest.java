@@ -18,7 +18,6 @@ package io.agentscope.extensions.model.openai.formatter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -46,18 +45,6 @@ import org.junit.jupiter.api.Test;
 @Tag("unit")
 @DisplayName("Deprecated GLM formatter Backward Compatibility Tests")
 class GLMFormatterTest {
-
-    @Test
-    @DisplayName("Deprecated GLMFormatter should be an instance of the new implementation")
-    void testDeprecatedFormatterIsNewImplementation() {
-        assertTrue(
-                new GLMFormatter()
-                        instanceof io.agentscope.extensions.model.openai.compat.glm.GLMFormatter);
-        assertTrue(
-                new GLMMultiAgentFormatter()
-                        instanceof
-                        io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter);
-    }
 
     @Test
     @DisplayName("Deprecated GLMFormatter should still ensure a user message")

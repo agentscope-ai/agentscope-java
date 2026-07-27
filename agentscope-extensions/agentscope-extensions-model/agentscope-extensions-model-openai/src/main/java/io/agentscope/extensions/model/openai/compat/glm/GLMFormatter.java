@@ -23,7 +23,6 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +33,9 @@ import org.slf4j.LoggerFactory;
  * ({@code https://open.bigmodel.cn/api/paas/v4/chat/completions}):
  * <ul>
  *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>{@code tool_choice} only supports {@code "auto"}; other values are degraded</li>
+ *   <li>Does NOT support the {@code name} parameter in messages</li>
+ *   <li>{@code tool_choice} only supports {@code "auto"}; forced choices are degraded, while
+ *       {@code none} removes tools to preserve the no-tool-call contract</li>
  *   <li>Does NOT support the {@code strict} parameter in tool definitions</li>
  *   <li>Does NOT support {@code frequency_penalty} / {@code presence_penalty} /
  *       {@code thinking_budget}; they are stripped from the request</li>
@@ -42,9 +43,6 @@ import org.slf4j.LoggerFactory;
  *       {@code max_tokens} when the latter is not set</li>
  *   <li>{@code temperature} range is [0.0, 1.0] (OpenAI allows up to 2.0) and {@code top_p}
  *       range is [0.01, 1.0]; out-of-range values are clamped</li>
- *   <li>{@code temperature = 0} is not applicable on the GLM endpoint and is translated to
- *       {@code do_sample = false} (deterministic decoding) per the official OpenAI
- *       compatibility guide</li>
  * </ul>
  *
  * <p>Thinking mode: GLM-4.5 and later models accept a {@code thinking} object (e.g.
@@ -83,6 +81,15 @@ public class GLMFormatter extends OpenAIChatFormatter {
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
         List<OpenAIMessage> messages = super.doFormat(msgs);
         return ensureUserMessage(messages);
+    }
+
+    @Override
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        OpenAIMessage message = super.convertMessage(msg, hasMedia);
+        if (message != null) {
+            message.setName(null);
+        }
+        return message;
     }
 
     @Override
@@ -131,7 +138,8 @@ public class GLMFormatter extends OpenAIChatFormatter {
      * Apply GLM-specific tool choice handling.
      *
      * <p>Per the latest Zhipu API reference, {@code tool_choice} defaults to and only supports
-     * {@code "auto"}. All other options are degraded to {@code "auto"}.
+     * {@code "auto"}. Unsupported forced choices are degraded to {@code "auto"}. For
+     * {@link ToolChoice.None}, tools are removed instead.
      *
      * <p>This method is static to allow sharing with {@link GLMMultiAgentFormatter}.
      *
@@ -140,6 +148,13 @@ public class GLMFormatter extends OpenAIChatFormatter {
      */
     protected static void applyGLMToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         if (request.getTools() == null || request.getTools().isEmpty()) {
+            return;
+        }
+
+        if (toolChoice instanceof ToolChoice.None) {
+            log.info("GLM does not support tool_choice='none', removing tools from the request");
+            request.setTools(null);
+            request.setToolChoice(null);
             return;
         }
 
@@ -162,8 +177,6 @@ public class GLMFormatter extends OpenAIChatFormatter {
      *   <li>{@code max_completion_tokens} is not supported; it is mapped to {@code max_tokens}
      *       when {@code max_tokens} is not set</li>
      *   <li>{@code temperature} is clamped to [0.0, 1.0] and {@code top_p} to [0.01, 1.0]</li>
-     *   <li>{@code temperature = 0} is translated to {@code do_sample = false}, as documented in
-     *       the official OpenAI compatibility guide</li>
      * </ul>
      *
      * <p>This method is static to allow sharing with {@link GLMMultiAgentFormatter}.
@@ -184,6 +197,10 @@ public class GLMFormatter extends OpenAIChatFormatter {
                     "GLM does not support thinking_budget, removing it from the request; use the"
                         + " 'thinking' body param or reasoning_effort (GLM-5.2 and later) instead");
             request.setThinkingBudget(null);
+        }
+        if (request.getStreamOptions() != null) {
+            log.debug("GLM does not support stream_options, removing it from the request");
+            request.setStreamOptions(null);
         }
 
         // GLM only supports max_tokens; map OpenAI-style max_completion_tokens onto it
@@ -209,18 +226,7 @@ public class GLMFormatter extends OpenAIChatFormatter {
         if (temperature != null) {
             if (temperature < 0.0) {
                 log.warn("GLM temperature range is [0.0, 1.0], clamping {} to 0.0", temperature);
-                temperature = 0.0;
-                request.setTemperature(temperature);
-            }
-            if (temperature == 0.0) {
-                // Per the official OpenAI compatibility guide, temperature = 0 is not
-                // applicable on the GLM endpoint; deterministic decoding uses do_sample=false
-                log.debug("GLM: translating temperature=0 to do_sample=false");
-                request.setTemperature(null);
-                Map<String, Object> extraParams = request.getExtraParams();
-                if (extraParams == null || !extraParams.containsKey("do_sample")) {
-                    request.addExtraParam("do_sample", false);
-                }
+                request.setTemperature(0.0);
             } else if (temperature > 1.0) {
                 log.warn("GLM temperature range is [0.0, 1.0], clamping {} to 1.0", temperature);
                 request.setTemperature(1.0);

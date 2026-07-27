@@ -30,7 +30,9 @@ import java.util.List;
  * handling as {@link GLMFormatter}:
  * <ul>
  *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>{@code tool_choice} only supports {@code "auto"}; other values are degraded</li>
+ *   <li>Does NOT support the {@code name} parameter in messages</li>
+ *   <li>{@code tool_choice} only supports {@code "auto"}; forced choices are degraded, while
+ *       {@code none} removes tools to preserve the no-tool-call contract</li>
  *   <li>Does NOT support the {@code strict} parameter in tool definitions</li>
  *   <li>Unsupported sampling parameters are stripped, {@code max_completion_tokens} is mapped
  *       to {@code max_tokens}, and {@code temperature} / {@code top_p} are clamped to the GLM
@@ -63,6 +65,15 @@ public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
         List<OpenAIMessage> messages = super.doFormat(msgs);
         return GLMFormatter.ensureUserMessage(messages);
+    }
+
+    @Override
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        OpenAIMessage message = super.convertMessage(msg, hasMedia);
+        if (message != null) {
+            message.setName(null);
+        }
+        return message;
     }
 
     @Override

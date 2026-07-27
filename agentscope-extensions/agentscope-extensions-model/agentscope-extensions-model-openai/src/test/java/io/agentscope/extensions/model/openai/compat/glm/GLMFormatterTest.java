@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -28,6 +29,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
+import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAITool;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolFunction;
 import java.util.List;
@@ -43,7 +45,8 @@ import org.junit.jupiter.api.Test;
  * <p>Tests verify Zhipu GLM-specific requirements per the latest official API reference:
  * <ul>
  *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>Only supports "auto" for tool_choice</li>
+ *   <li>Does NOT support name parameter in messages</li>
+ *   <li>Only supports "auto" for tool_choice, while ToolChoice.None removes tools</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>Does NOT support frequency_penalty / presence_penalty</li>
  * </ul>
@@ -186,13 +189,14 @@ class GLMFormatterTest {
         }
 
         @Test
-        @DisplayName("Should degrade None to auto")
-        void testToolChoiceNoneDegradesToAuto() {
+        @DisplayName("Should remove tools for None")
+        void testToolChoiceNoneRemovesTools() {
             OpenAIRequest request = createRequestWithTools();
 
             GLMFormatter.applyGLMToolChoice(request, new ToolChoice.None());
 
-            assertEquals("auto", request.getToolChoice());
+            assertNull(request.getTools());
+            assertNull(request.getToolChoice());
         }
 
         @Test
@@ -309,6 +313,19 @@ class GLMFormatterTest {
         }
 
         @Test
+        @DisplayName("Should strip stream_options from streaming requests")
+        void testStripStreamOptions() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("glm-5.2").messages(List.of()).stream(true)
+                            .streamOptions(new OpenAIStreamOptions(true))
+                            .build();
+
+            formatter.applyOptions(request, GenerateOptions.builder().build(), null);
+
+            assertNull(request.getStreamOptions());
+        }
+
+        @Test
         @DisplayName("Should map max_completion_tokens to max_tokens")
         void testMapMaxCompletionTokensToMaxTokens() {
             OpenAIRequest request =
@@ -352,7 +369,7 @@ class GLMFormatterTest {
         }
 
         @Test
-        @DisplayName("Should clamp negative temperature to 0 and translate to do_sample=false")
+        @DisplayName("Should clamp negative temperature to 0")
         void testClampNegativeTemperature() {
             OpenAIRequest request =
                     OpenAIRequest.builder().model("glm-5.2").messages(List.of()).build();
@@ -361,43 +378,7 @@ class GLMFormatterTest {
 
             formatter.applyOptions(request, options, null);
 
-            // Clamped to 0.0, then translated to do_sample=false like an explicit 0
-            assertNull(request.getTemperature());
-            assertNotNull(request.getExtraParams());
-            assertEquals(false, request.getExtraParams().get("do_sample"));
-        }
-
-        @Test
-        @DisplayName("Should translate temperature=0 to do_sample=false")
-        void testTemperatureZeroBecomesDoSampleFalse() {
-            OpenAIRequest request =
-                    OpenAIRequest.builder().model("glm-5.2").messages(List.of()).build();
-
-            GenerateOptions options = GenerateOptions.builder().temperature(0.0).build();
-
-            formatter.applyOptions(request, options, null);
-
-            assertNull(request.getTemperature());
-            assertNotNull(request.getExtraParams());
-            assertEquals(false, request.getExtraParams().get("do_sample"));
-        }
-
-        @Test
-        @DisplayName("Should not override an explicitly configured do_sample")
-        void testExplicitDoSampleIsPreserved() {
-            OpenAIRequest request =
-                    OpenAIRequest.builder().model("glm-5.2").messages(List.of()).build();
-
-            GenerateOptions options =
-                    GenerateOptions.builder()
-                            .temperature(0.0)
-                            .additionalBodyParam("do_sample", true)
-                            .build();
-
-            formatter.applyOptions(request, options, null);
-
-            assertNull(request.getTemperature());
-            assertEquals(true, request.getExtraParams().get("do_sample"));
+            assertEquals(0.0, request.getTemperature());
         }
 
         @Test
@@ -492,6 +473,37 @@ class GLMFormatterTest {
         }
 
         @Test
+        @DisplayName("Should strip name from all GLM messages")
+        void testFormatStripsMessageNames() {
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .name("System Agent")
+                                    .content(
+                                            List.of(
+                                                    TextBlock.builder()
+                                                            .text("You are helpful")
+                                                            .build()))
+                                    .build(),
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .name("Alice")
+                                    .content(List.of(TextBlock.builder().text("Hello").build()))
+                                    .build(),
+                            Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .name("Bob")
+                                    .content(List.of(TextBlock.builder().text("Hi").build()))
+                                    .build());
+
+            List<OpenAIMessage> result = formatter.format(messages);
+
+            assertEquals(3, result.size());
+            assertTrue(result.stream().allMatch(message -> message.getName() == null));
+        }
+
+        @Test
         @DisplayName("Should handle empty message list")
         void testFormatEmptyList() {
             List<OpenAIMessage> result = formatter.format(List.of());
@@ -524,8 +536,30 @@ class GLMFormatterTest {
 
             formatter.applyToolChoice(request, new ToolChoice.Specific("get_weather"));
 
-            // GLM should degrade to auto
+            // GLM should degrade unsupported forced choices to auto
             assertEquals("auto", request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("Should remove tools through formatter for None")
+        void testApplyToolChoiceNoneThroughFormatter() {
+            OpenAIToolFunction function = new OpenAIToolFunction();
+            function.setName("get_weather");
+            OpenAITool tool = new OpenAITool();
+            tool.setFunction(function);
+            tool.setType("function");
+
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("glm-4.7")
+                            .messages(List.of())
+                            .tools(List.of(tool))
+                            .build();
+
+            formatter.applyToolChoice(request, new ToolChoice.None());
+
+            assertNull(request.getTools());
+            assertNull(request.getToolChoice());
         }
     }
 }

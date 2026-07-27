@@ -62,7 +62,7 @@ public final class DeepSeekModelProvider implements ModelProvider {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported DeepSeek model id: " + modelId);
         }
-        String modelName = modelId.substring(PREFIX.length());
+        String modelName = trimToNull(modelId.substring(PREFIX.length()));
         String apiKey = firstNonBlank(context.getApiKey(), System.getenv("DEEPSEEK_API_KEY"));
         if (apiKey == null) {
             throw new IllegalStateException(

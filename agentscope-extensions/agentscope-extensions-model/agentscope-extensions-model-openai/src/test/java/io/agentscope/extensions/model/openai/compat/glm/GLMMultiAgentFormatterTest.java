@@ -45,7 +45,8 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li>Inherits multi-agent conversation merging from OpenAIMultiAgentFormatter</li>
  *   <li>At least one user message is required</li>
- *   <li>Only supports "auto" tool_choice</li>
+ *   <li>Does NOT support name parameter in messages</li>
+ *   <li>Only supports "auto" tool_choice, while ToolChoice.None removes tools</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
  *   <li>Does NOT support frequency_penalty / presence_penalty</li>
  * </ul>
@@ -123,6 +124,20 @@ class GLMMultiAgentFormatterTest {
             assertEquals("user", result.get(1).getRole());
             assertEquals("", result.get(1).getContentAsString());
         }
+
+        @Test
+        @DisplayName("Should strip name from direct multi-agent messages")
+        void testStripsNameFromDirectMessages() {
+            List<Msg> messages = List.of(textMsg(MsgRole.SYSTEM, "System Agent", "Be helpful"));
+
+            List<OpenAIMessage> result = formatter.format(messages);
+
+            assertEquals(2, result.size());
+            assertEquals("system", result.get(0).getRole());
+            assertNull(result.get(0).getName());
+            assertEquals("user", result.get(1).getRole());
+            assertNull(result.get(1).getName());
+        }
     }
 
     @Nested
@@ -155,8 +170,8 @@ class GLMMultiAgentFormatterTest {
         }
 
         @Test
-        @DisplayName("applyToolChoice should degrade all options to auto")
-        void testToolChoiceDegradesToAuto() {
+        @DisplayName("applyToolChoice should degrade forced choices to auto")
+        void testForcedToolChoiceDegradesToAuto() {
             OpenAIToolFunction function = new OpenAIToolFunction();
             function.setName("test_tool");
             OpenAITool tool = new OpenAITool();
@@ -173,6 +188,28 @@ class GLMMultiAgentFormatterTest {
             formatter.applyToolChoice(request, new ToolChoice.Required());
 
             assertEquals("auto", request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("applyToolChoice should remove tools for None")
+        void testToolChoiceNoneRemovesTools() {
+            OpenAIToolFunction function = new OpenAIToolFunction();
+            function.setName("test_tool");
+            OpenAITool tool = new OpenAITool();
+            tool.setFunction(function);
+            tool.setType("function");
+
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("glm-4.7")
+                            .messages(List.of())
+                            .tools(List.of(tool))
+                            .build();
+
+            formatter.applyToolChoice(request, new ToolChoice.None());
+
+            assertNull(request.getTools());
+            assertNull(request.getToolChoice());
         }
 
         @Test

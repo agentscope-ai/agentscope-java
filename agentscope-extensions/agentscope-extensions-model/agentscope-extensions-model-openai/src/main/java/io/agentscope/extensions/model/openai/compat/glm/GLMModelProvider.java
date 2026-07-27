@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openai.compat.glm;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -26,6 +27,7 @@ import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -87,25 +89,30 @@ public final class GLMModelProvider implements ModelProvider {
         }
         // supports() guarantees the suffix is non-blank
         String modelName = trimToNull(modelId.substring(PREFIX.length()));
-        String apiKey =
-                firstNonBlank(
-                        context.getApiKey(),
-                        System.getenv("GLM_API_KEY"),
-                        System.getenv("ZHIPUAI_API_KEY"));
+        String apiKey = resolveApiKey(context, System::getenv);
         if (apiKey == null) {
             throw new IllegalStateException(
-                    "An API key is required to auto-create model "
-                            + modelId
-                            + ": provide it via ModelCreationContext#apiKey or the GLM_API_KEY /"
-                            + " ZHIPUAI_API_KEY environment variable");
+                    "Environment variable ZAI_API_KEY/GLM_API_KEY/ZHIPUAI_API_KEY is required to"
+                            + " auto-create model: "
+                            + modelId);
         }
-        String baseUrl = trimToNull(context.getBaseUrl());
+
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder()
                         .apiKey(apiKey)
                         .modelName(modelName)
-                        .baseUrl(baseUrl != null ? baseUrl : DEFAULT_BASE_URL)
+                        .baseUrl(DEFAULT_BASE_URL)
+                        .formatter(new GLMFormatter())
+                        .contextWindowSize(
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.GLM))
+                        .nativeStructuredOutput(false)
+                        .nativeStructuredOutputWithTools(false)
                         .stream(context.getStream() != null ? context.getStream() : true);
+
+        String baseUrl = trimToNull(context.getBaseUrl());
+        if (baseUrl != null) {
+            builder.baseUrl(baseUrl);
+        }
         String endpointPath = trimToNull(context.getEndpointPath());
         if (endpointPath != null) {
             builder.endpointPath(endpointPath);
@@ -132,7 +139,9 @@ public final class GLMModelProvider implements ModelProvider {
         Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter =
                 (Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest>)
                         findAssignableComponent(context, Formatter.class);
-        builder.formatter(formatter != null ? formatter : new GLMFormatter());
+        if (formatter != null) {
+            builder.formatter(formatter);
+        }
         Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
@@ -140,13 +149,22 @@ public final class GLMModelProvider implements ModelProvider {
         // GLM response_format only supports json_object, so native structured output is
         // disabled by default; the option can explicitly re-enable it.
         Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
-        builder.nativeStructuredOutput(
-                nativeStructuredOutput != null ? nativeStructuredOutput : false);
+        if (nativeStructuredOutput != null) {
+            builder.nativeStructuredOutput(nativeStructuredOutput);
+        }
         Boolean nativeStructuredOutputWithTools =
                 booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
         if (nativeStructuredOutputWithTools != null) {
             builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
         }
+    }
+
+    static String resolveApiKey(ModelCreationContext context, Function<String, String> env) {
+        return firstNonBlank(
+                context.getApiKey(),
+                env.apply("ZAI_API_KEY"),
+                env.apply("GLM_API_KEY"),
+                env.apply("ZHIPUAI_API_KEY"));
     }
 
     private static String firstNonBlank(String... candidates) {

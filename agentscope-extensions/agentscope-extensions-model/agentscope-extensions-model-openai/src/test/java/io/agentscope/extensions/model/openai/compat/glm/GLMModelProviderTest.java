@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.compat.glm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -30,6 +31,7 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -78,6 +80,19 @@ class GLMModelProviderTest {
         Model model = provider.create("glm: glm-5.2", context);
 
         assertEquals("glm-5.2", model.getModelName());
+    }
+
+    @Test
+    void createUsesGlmContextWindowDefaults() {
+        GLMModelProvider provider = new GLMModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-glm-key").build();
+
+        assertEquals(1_000_000, provider.create("glm:glm-5.2", context).getContextWindowSize());
+        assertEquals(200_000, provider.create("glm:glm-4.7-flash", context).getContextWindowSize());
+        assertEquals(
+                128_000,
+                provider.create("glm:glm-4-flashx-250414", context).getContextWindowSize());
     }
 
     @Test
@@ -174,8 +189,40 @@ class GLMModelProviderTest {
     }
 
     @Test
+    void resolveApiKeyUsesContextThenZaiThenLegacyEnvironmentVariables() {
+        Map<String, String> allEnvKeys =
+                Map.of(
+                        "ZAI_API_KEY", "zai-key",
+                        "GLM_API_KEY", "glm-key",
+                        "ZHIPUAI_API_KEY", "zhipu-key");
+
+        assertEquals(
+                "context-key",
+                GLMModelProvider.resolveApiKey(
+                        ModelCreationContext.builder().apiKey(" context-key ").build(),
+                        allEnvKeys::get));
+        assertEquals(
+                "zai-key",
+                GLMModelProvider.resolveApiKey(ModelCreationContext.empty(), allEnvKeys::get));
+        assertEquals(
+                "glm-key",
+                GLMModelProvider.resolveApiKey(
+                        ModelCreationContext.empty(),
+                        Map.of("GLM_API_KEY", "glm-key", "ZHIPUAI_API_KEY", "zhipu-key")::get));
+        assertEquals(
+                "zhipu-key",
+                GLMModelProvider.resolveApiKey(
+                        ModelCreationContext.empty(), Map.of("ZHIPUAI_API_KEY", "zhipu-key")::get));
+        assertNull(
+                GLMModelProvider.resolveApiKey(
+                        ModelCreationContext.builder().apiKey(" ").build(),
+                        Map.of("ZAI_API_KEY", " ", "GLM_API_KEY", " ")::get));
+    }
+
+    @Test
     void createWithoutApiKeyThrowsIllegalStateException() {
         // Only meaningful when the environment provides no GLM API key either
+        assumeTrue(isBlank(System.getenv("ZAI_API_KEY")));
         assumeTrue(isBlank(System.getenv("GLM_API_KEY")));
         assumeTrue(isBlank(System.getenv("ZHIPUAI_API_KEY")));
 
@@ -183,7 +230,7 @@ class GLMModelProviderTest {
 
         IllegalStateException fromEmptyContext =
                 assertThrows(IllegalStateException.class, () -> provider.create("glm:glm-5.2"));
-        assertTrue(fromEmptyContext.getMessage().contains("ModelCreationContext#apiKey"));
+        assertTrue(fromEmptyContext.getMessage().contains("ZAI_API_KEY"));
         assertTrue(fromEmptyContext.getMessage().contains("GLM_API_KEY"));
         assertTrue(fromEmptyContext.getMessage().contains("ZHIPUAI_API_KEY"));
 
