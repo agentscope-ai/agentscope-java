@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.model.openai.compat.deepseek;
+package io.agentscope.extensions.model.openai.compat.glm;
 
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
@@ -27,16 +27,39 @@ import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
-import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
-/** DeepSeek provider registered through {@link java.util.ServiceLoader}. */
-public final class DeepSeekModelProvider implements ModelProvider {
+/**
+ * Zhipu AI (Z.ai) GLM provider registered through {@link java.util.ServiceLoader}.
+ *
+ * <p>GLM exposes an OpenAI-compatible Chat Completions endpoint, so this provider creates
+ * {@link OpenAIChatModel} instances preconfigured for GLM:
+ * <ul>
+ *   <li>Base URL defaults to {@code https://open.bigmodel.cn/api/paas/v4}</li>
+ *   <li>Formatter defaults to {@link GLMFormatter} (a custom {@link Formatter} component in the
+ *       {@link ModelCreationContext} takes precedence, e.g. {@link GLMMultiAgentFormatter})</li>
+ *   <li>Native structured output defaults to disabled, because the GLM {@code response_format}
+ *       only supports {@code json_object} (not {@code json_schema}); the agent falls back to the
+ *       {@code generate_response} tool instead</li>
+ * </ul>
+ *
+ * <p>The API key is taken from {@link ModelCreationContext#getApiKey()}, then from the
+ * {@code GLM_API_KEY} environment variable, then from {@code ZHIPUAI_API_KEY}.
+ *
+ * <p>Usage:
+ * <pre>{@code
+ * ReActAgent agent = ReActAgent.builder()
+ *     .name("assistant")
+ *     .model("glm:glm-5.2") // resolved by ModelRegistry through this provider
+ *     .build();
+ * }</pre>
+ */
+public final class GLMModelProvider implements ModelProvider {
 
-    public static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
-
-    private static final String PREFIX = "deepseek:";
-    private static final Pattern MODEL_ID = Pattern.compile("deepseek:.+");
+    private static final String PREFIX = "glm:";
+    private static final Pattern MODEL_ID = Pattern.compile("glm:.+");
+    private static final String DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
     private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
@@ -44,12 +67,14 @@ public final class DeepSeekModelProvider implements ModelProvider {
 
     @Override
     public String providerId() {
-        return "deepseek";
+        return "glm";
     }
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null && MODEL_ID.matcher(modelId).matches();
+        return modelId != null
+                && MODEL_ID.matcher(modelId).matches()
+                && trimToNull(modelId.substring(PREFIX.length())) != null;
     }
 
     @Override
@@ -60,13 +85,15 @@ public final class DeepSeekModelProvider implements ModelProvider {
     @Override
     public Model create(String modelId, ModelCreationContext context) {
         if (!supports(modelId)) {
-            throw new IllegalArgumentException("Unsupported DeepSeek model id: " + modelId);
+            throw new IllegalArgumentException("Unsupported GLM model id: " + modelId);
         }
+        // supports() guarantees the suffix is non-blank
         String modelName = trimToNull(modelId.substring(PREFIX.length()));
-        String apiKey = firstNonBlank(context.getApiKey(), System.getenv("DEEPSEEK_API_KEY"));
+        String apiKey = resolveApiKey(context, System::getenv);
         if (apiKey == null) {
             throw new IllegalStateException(
-                    "Environment variable DEEPSEEK_API_KEY is required to auto-create model: "
+                    "Environment variable ZAI_API_KEY/GLM_API_KEY/ZHIPUAI_API_KEY is required to"
+                            + " auto-create model: "
                             + modelId);
         }
 
@@ -75,9 +102,9 @@ public final class DeepSeekModelProvider implements ModelProvider {
                         .apiKey(apiKey)
                         .modelName(modelName)
                         .baseUrl(DEFAULT_BASE_URL)
-                        .formatter(new DeepSeekFormatter())
+                        .formatter(new GLMFormatter())
                         .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.DEEPSEEK))
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.GLM))
                         .nativeStructuredOutput(false)
                         .nativeStructuredOutputWithTools(false)
                         .stream(context.getStream() != null ? context.getStream() : true);
@@ -97,13 +124,10 @@ public final class DeepSeekModelProvider implements ModelProvider {
     @SuppressWarnings("unchecked")
     private static void applyAdvancedOptions(
             OpenAIChatModel.Builder builder, ModelCreationContext context) {
-        GenerateOptions userOptions = context.component(GenerateOptions.class);
-        GenerateOptions deepSeekDefaults = deepSeekDefaultOptions(context);
-        GenerateOptions mergedOptions = GenerateOptions.mergeOptions(userOptions, deepSeekDefaults);
-        if (mergedOptions != null) {
-            builder.generateOptions(mergedOptions);
+        GenerateOptions generateOptions = context.component(GenerateOptions.class);
+        if (generateOptions != null) {
+            builder.generateOptions(generateOptions);
         }
-
         HttpTransport httpTransport = context.component(HttpTransport.class);
         if (httpTransport != null) {
             builder.httpTransport(httpTransport);
@@ -122,6 +146,8 @@ public final class DeepSeekModelProvider implements ModelProvider {
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
         }
+        // GLM response_format only supports json_object, so native structured output is
+        // disabled by default; the option can explicitly re-enable it.
         Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
         if (nativeStructuredOutput != null) {
             builder.nativeStructuredOutput(nativeStructuredOutput);
@@ -133,21 +159,22 @@ public final class DeepSeekModelProvider implements ModelProvider {
         }
     }
 
-    private static GenerateOptions deepSeekDefaultOptions(ModelCreationContext context) {
-        Boolean thinkingEnabled = context.getEnableThinking();
-        if (thinkingEnabled == null) {
-            return null;
-        }
-
-        return GenerateOptions.builder()
-                .additionalBodyParam(
-                        "thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"))
-                .build();
+    static String resolveApiKey(ModelCreationContext context, Function<String, String> env) {
+        return firstNonBlank(
+                context.getApiKey(),
+                env.apply("ZAI_API_KEY"),
+                env.apply("GLM_API_KEY"),
+                env.apply("ZHIPUAI_API_KEY"));
     }
 
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
+    private static String firstNonBlank(String... candidates) {
+        for (String candidate : candidates) {
+            String normalized = trimToNull(candidate);
+            if (normalized != null) {
+                return normalized;
+            }
+        }
+        return null;
     }
 
     private static String trimToNull(String value) {
