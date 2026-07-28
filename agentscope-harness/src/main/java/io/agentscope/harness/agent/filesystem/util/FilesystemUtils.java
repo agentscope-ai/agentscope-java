@@ -55,6 +55,10 @@ public final class FilesystemUtils {
      */
     public static Object[] performStringReplacement(
             String content, String oldString, String newString, boolean replaceAll) {
+        if (oldString == null || oldString.isEmpty()) {
+            return new Object[] {"Error: old_string must not be empty"};
+        }
+
         int occurrences = countOccurrences(content, oldString);
 
         if (occurrences == 0) {
