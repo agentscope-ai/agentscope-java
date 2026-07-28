@@ -102,17 +102,50 @@ public class AnthropicResponseParser {
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
+        ChatUsage[] accumulatedUsage = new ChatUsage[1];
         return eventFlux
                 .flatMap(
                         event -> {
                             try {
-                                return Flux.just(parseStreamEvent(event, startTime));
+                                ChatResponse response = parseStreamEvent(event, startTime);
+                                // Accumulate usage across events: message_start gives inputTokens,
+                                // message_delta gives outputTokens
+                                if (response.getUsage() != null) {
+                                    ChatUsage newUsage = response.getUsage();
+                                    ChatUsage existing = accumulatedUsage[0];
+                                    if (existing == null) {
+                                        accumulatedUsage[0] = newUsage;
+                                    } else {
+                                        int inputTokens = newUsage.getInputTokens() > 0
+                                                ? newUsage.getInputTokens()
+                                                : existing.getInputTokens();
+                                        int outputTokens = newUsage.getOutputTokens() > 0
+                                                ? newUsage.getOutputTokens()
+                                                : existing.getOutputTokens();
+                                        accumulatedUsage[0] = ChatUsage.builder()
+                                                .inputTokens(inputTokens)
+                                                .outputTokens(outputTokens)
+                                                .time(newUsage.getTime())
+                                                .build();
+                                    }
+                                }
+                                // Attach accumulated usage to content events
+                                if (!response.getContent().isEmpty()
+                                        && accumulatedUsage[0] != null) {
+                                    return Flux.just(ChatResponse.builder()
+                                            .id(response.getId())
+                                            .content(response.getContent())
+                                            .usage(accumulatedUsage[0])
+                                            .build());
+                                }
+                                return Flux.just(response);
                             } catch (Exception e) {
                                 log.warn("Error parsing stream event: {}", e.getMessage());
                                 return Flux.empty();
                             }
                         })
-                .filter(response -> response != null && !response.getContent().isEmpty());
+                .filter(
+                        response -> response != null && !response.getContent().isEmpty());
     }
 
     /**
@@ -125,7 +158,13 @@ public class AnthropicResponseParser {
 
         // Message start
         if (event.isMessageStart()) {
-            messageId = event.asMessageStart().message().id();
+            var msgStart = event.asMessageStart();
+            messageId = msgStart.message().id();
+            // Parse input tokens from message_start event
+            usage = ChatUsage.builder()
+                    .inputTokens((int) msgStart.message().usage().inputTokens())
+                    .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
+                    .build();
         }
 
         // Content block delta - text
