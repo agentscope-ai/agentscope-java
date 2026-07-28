@@ -21,6 +21,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
 import io.agentscope.harness.agent.memory.session.SessionTree;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -123,10 +124,46 @@ class MemoryFlushManagerOffloadTest {
                         .count());
     }
 
+    @Test
+    void offloadMessages_persistsCompactionSummariesAndDedupesStableIds() throws Exception {
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            List<Msg> batch =
+                    List.of(
+                            compactionSummary("summary-id", "summary should stay recoverable"),
+                            message("m1", MsgRole.USER, "real follow-up"));
+            flushManager.offloadMessages(rc, batch, "agent-a", "session-1");
+            flushManager.offloadMessages(rc, batch, "agent-a", "session-1");
+        }
+
+        Path context = workspace.resolve("agents/agent-a/sessions/session-1.jsonl");
+        SessionTree tree = new SessionTree(context, workspace, null);
+        tree.load();
+
+        List<SessionEntry.MessageEntry> entries = tree.getMessageEntries();
+        assertEquals(2, entries.size());
+        assertEquals(
+                List.of("summary-id", "m1"), entries.stream().map(SessionEntry::getId).toList());
+        assertEquals("summary should stay recoverable", entries.get(0).getContent());
+        assertEquals("real follow-up", entries.get(1).getContent());
+    }
+
     private static Msg message(String id, MsgRole role, String text) {
         return Msg.builder()
                 .id(id)
                 .role(role)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private static Msg compactionSummary(String id, String text) {
+        return Msg.builder()
+                .id(id)
+                .role(MsgRole.USER)
+                .name(ConversationCompactor.SUMMARY_MSG_NAME)
                 .content(TextBlock.builder().text(text).build())
                 .build();
     }
