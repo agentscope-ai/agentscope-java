@@ -94,7 +94,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                         conversation = messages != null ? new ArrayList<>(messages) : List.of();
                     }
 
-                    String agentId = agent.getName();
+                    String agentId = agent.getAgentId();
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
