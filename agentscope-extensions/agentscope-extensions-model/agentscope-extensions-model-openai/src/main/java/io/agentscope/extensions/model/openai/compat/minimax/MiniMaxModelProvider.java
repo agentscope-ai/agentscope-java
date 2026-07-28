@@ -13,29 +13,37 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.model.openai;
+
+package io.agentscope.extensions.model.openai.compat.minimax;
 
 import static io.agentscope.extensions.model.openai.ModelProviderSupport.applyAdvancedOptions;
 import static io.agentscope.extensions.model.openai.ModelProviderSupport.firstNonBlank;
 import static io.agentscope.extensions.model.openai.ModelProviderSupport.trimToNull;
 
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
-import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.util.Map;
 import java.util.regex.Pattern;
 
-/** OpenAI provider registered through {@link java.util.ServiceLoader}. */
-public final class OpenAIModelProvider implements ModelProvider {
+/**
+ * MiniMax provider registered through {@link java.util.ServiceLoader}.
+ *
+ * <p>MiniMax <a href="https://platform.minimaxi.com/docs/api-reference/text-chat-openai">OpenAI
+ * compatible Chat Completions API</a>.
+ */
+public final class MiniMaxModelProvider implements ModelProvider {
 
-    private static final String PREFIX = "openai:";
-    private static final Pattern MODEL_ID = Pattern.compile("openai:.+");
-    private static final String DEFAULT_BASE_URL = OpenAIClient.DEFAULT_BASE_URL_WITH_VERSION;
+    private static final String PREFIX = "minimax:";
+    private static final Pattern MODEL_ID = Pattern.compile("minimax:.+");
+    private static final String DEFAULT_BASE_URL = "https://api.minimaxi.com/v1";
 
     @Override
     public String providerId() {
-        return "openai";
+        return "minimax";
     }
 
     @Override
@@ -51,13 +59,13 @@ public final class OpenAIModelProvider implements ModelProvider {
     @Override
     public Model create(String modelId, ModelCreationContext context) {
         if (!supports(modelId)) {
-            throw new IllegalArgumentException("Unsupported OpenAI model id: " + modelId);
+            throw new IllegalArgumentException("Unsupported MiniMax model id: " + modelId);
         }
 
-        String apiKey = firstNonBlank(context.getApiKey(), System.getenv("OPENAI_API_KEY"));
+        String apiKey = firstNonBlank(context.getApiKey(), System.getenv("MINIMAX_API_KEY"));
         if (apiKey == null) {
             throw new IllegalStateException(
-                    "Environment variable OPENAI_API_KEY is required to auto-create model: "
+                    "Environment variable MINIMAX_API_KEY is required to auto-create model: "
                             + modelId);
         }
         String modelName = modelId.substring(PREFIX.length());
@@ -65,15 +73,34 @@ public final class OpenAIModelProvider implements ModelProvider {
         String endpointPath = trimToNull(context.getEndpointPath());
         boolean stream = context.getStream() != null ? context.getStream() : true;
 
+        // Prefer AgentScope's synthetic-tool fallback for structured output. MiniMax accepts
+        // OpenAI-compatible requests, but native json_schema strict output is not documented as a
+        // reliable contract across MiniMax-M3 and M2.x models.
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
                         .baseUrl(baseUrl)
                         .endpointPath(endpointPath)
-                        .formatter(new OpenAIChatFormatter())
-                        .nativeStructuredOutput(true)
+                        .formatter(new MiniMaxFormatter())
+                        .nativeStructuredOutput(false)
                         .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
-        applyAdvancedOptions(builder, context);
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.MINIMAX));
+
+        GenerateOptions userOptions = context.component(GenerateOptions.class);
+        GenerateOptions miniMaxDefaults = miniMaxDefaultOptions(context);
+        applyAdvancedOptions(
+                builder, context, GenerateOptions.mergeOptions(userOptions, miniMaxDefaults));
         return builder.build();
+    }
+
+    private static GenerateOptions miniMaxDefaultOptions(ModelCreationContext context) {
+        Boolean thinkingEnabled = context.getEnableThinking();
+        if (thinkingEnabled == null) {
+            return null;
+        }
+
+        return GenerateOptions.builder()
+                .additionalBodyParam(
+                        "thinking", Map.of("type", thinkingEnabled ? "adaptive" : "disabled"))
+                .build();
     }
 }
