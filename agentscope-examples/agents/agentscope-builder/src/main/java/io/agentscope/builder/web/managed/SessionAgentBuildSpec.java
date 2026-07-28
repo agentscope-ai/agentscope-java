@@ -16,12 +16,13 @@
 package io.agentscope.builder.web.managed;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Runtime build parameters for a managed-session {@link io.agentscope.harness.agent.HarnessAgent}.
  *
- * <p>Cache key is {@code (owner, agent, version, environmentId)}; overrides / memory / vaults are
- * applied at build time so distinct mount sets get distinct agent instances.
+ * <p>Cache key is {@code (owner, agent, version, environmentId)}; overrides / memory / vaults /
+ * resources are applied at build time so distinct mount sets get distinct agent instances.
  */
 public record SessionAgentBuildSpec(
         Integer version,
@@ -29,7 +30,18 @@ public record SessionAgentBuildSpec(
         EnvironmentDto environment,
         String overridesJson,
         List<String> memoryStoreIds,
-        List<String> vaultIds) {
+        List<String> vaultIds,
+        List<Map<String, Object>> resources) {
+
+    public SessionAgentBuildSpec(
+            Integer version,
+            String environmentId,
+            EnvironmentDto environment,
+            String overridesJson,
+            List<String> memoryStoreIds,
+            List<String> vaultIds) {
+        this(version, environmentId, environment, overridesJson, memoryStoreIds, vaultIds, null);
+    }
 
     /** Builds a cache/gateway suffix from the stable identity fields. */
     public String cacheSuffix() {
@@ -41,6 +53,7 @@ public record SessionAgentBuildSpec(
                         : String.join(",", memoryStoreIds);
         String vault = vaultIds == null || vaultIds.isEmpty() ? "-" : String.join(",", vaultIds);
         int ovrHash = overridesJson == null ? 0 : overridesJson.hashCode();
+        int resHash = resources == null ? 0 : resources.hashCode();
         return "v"
                 + ver
                 + "/e"
@@ -50,6 +63,8 @@ public record SessionAgentBuildSpec(
                 + "/vt"
                 + vault.hashCode()
                 + "/o"
-                + ovrHash;
+                + ovrHash
+                + "/r"
+                + resHash;
     }
 }

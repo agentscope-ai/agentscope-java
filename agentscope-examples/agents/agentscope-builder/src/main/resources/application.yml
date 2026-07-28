@@ -82,6 +82,27 @@ builder:
   vault:
     master-key: ${BUILDER_VAULT_MASTER_KEY:}
 
+  # Multi-replica coordination (JDBC tables by default; override CoordinationStore bean for Redis).
+  instance-id: ${BUILDER_INSTANCE_ID:}
+  coord:
+    turn-lease-ttl-seconds: ${BUILDER_TURN_LEASE_TTL_SECONDS:90}
+  tool-confirmation:
+    timeout-ms: ${BUILDER_TOOL_CONFIRMATION_TIMEOUT_MS:3600000}
+  hands:
+    # Default true for local testing. Set false when running HandsWorkerMain separately.
+    in-process-worker: ${BUILDER_HANDS_IN_PROCESS_WORKER:true}
+
+  # ---- E2B cloud sandbox (Managed Environment type=sandbox) ----
+  # Per-environment config.apiKey overrides these defaults.
+  e2b:
+    api-key: ${BUILDER_E2B_API_KEY:${E2B_API_KEY:}}
+    template-id: ${BUILDER_E2B_TEMPLATE_ID:base}
+    workspace-root: ${BUILDER_E2B_WORKSPACE_ROOT:/home/user}
+    sandbox-timeout-seconds: ${BUILDER_E2B_SANDBOX_TIMEOUT_SECONDS:300}
+    api-base-url: ${BUILDER_E2B_API_BASE_URL:}
+    domain: ${BUILDER_E2B_DOMAIN:}
+    persistence-mode: ${BUILDER_E2B_PERSISTENCE_MODE:TAR}
+
   # ---- Workspace storage topology (multi-tenant filesystem) ----
   # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
   # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,

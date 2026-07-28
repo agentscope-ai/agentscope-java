@@ -128,66 +128,64 @@ class AgentAclServiceTest {
         return new AgentDefinition(
                 "agent-1",
                 "Agent 1",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                null, // description
+                null, // system
+                null, // model
+                null, // maxIters
+                null, // tools
+                null, // mcpServers
+                null, // skills
+                null, // multiagent
+                null, // identityName
+                null, // identityEmoji
+                null, // groupChatMentionPatterns
+                null, // groupChatRequireMention
                 AgentDefinition.SCOPE_USER,
                 ownerId,
                 0L,
                 0L,
                 shares,
                 AgentDefinition.RUN_AS_INVOKER,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+                null, // forkOf
+                null, // workspacePath
+                null, // sandboxMode
+                null, // sandboxScope
+                null, // version
+                null, // archivedAt
+                null, // metadata
+                null); // tierForCurrentUser
     }
 
     private static AgentDefinition globalAgent() {
         return new AgentDefinition(
                 "default",
                 "Default",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                null, // description
+                null, // system
+                null, // model
+                null, // maxIters
+                null, // tools
+                null, // mcpServers
+                null, // skills
+                null, // multiagent
+                null, // identityName
+                null, // identityEmoji
+                null, // groupChatMentionPatterns
+                null, // groupChatRequireMention
                 AgentDefinition.SCOPE_GLOBAL,
                 null,
                 0L,
                 0L,
                 null,
                 AgentDefinition.RUN_AS_INVOKER,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+                null, // forkOf
+                null, // workspacePath
+                null, // sandboxMode
+                null, // sandboxScope
+                null, // version
+                null, // archivedAt
+                null, // metadata
+                null); // tierForCurrentUser
     }
 
     private static AgentShareGrant userGrant(String userId, String tier) {

@@ -83,6 +83,13 @@ public class EnvironmentController {
         return Mono.fromRunnable(() -> environmentService.delete(userId, id));
     }
 
+    /** Rotates the environment worker API key; returns the new key once. */
+    @PostMapping("/{id}/keys/rotate")
+    public Mono<EnvironmentDto> rotateKey(@PathVariable("id") String id, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        return Mono.fromCallable(() -> environmentService.rotateKey(userId, id));
+    }
+
     /** Lists share grants on an environment. Owner-only. */
     @GetMapping("/{id}/shares")
     public Mono<List<ResourceShareDto>> listShares(

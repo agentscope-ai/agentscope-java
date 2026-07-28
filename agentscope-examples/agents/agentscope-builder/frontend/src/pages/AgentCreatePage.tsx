@@ -101,7 +101,7 @@ export default function AgentCreatePage() {
       const req: AgentCreateRequest = {
         name: name.trim(),
         description: description.trim() || undefined,
-        sysPrompt: sysPrompt.trim() || undefined,
+        system: sysPrompt.trim() || undefined,
         workspacePath: workspacePath.trim() || undefined,
         templateId: mode === 'template' && templateId ? templateId : undefined,
         aiDraft: mode === 'ai' && draft ? draft : undefined,

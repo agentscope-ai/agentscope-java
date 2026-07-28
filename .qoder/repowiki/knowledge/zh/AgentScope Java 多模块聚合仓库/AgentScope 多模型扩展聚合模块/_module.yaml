@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: 0d920187-7299-448b-b82b-f64870c7e9cc
-title: AgentScope 多模型扩展聚合模块
-scope:
-    - agentscope-extensions/agentscope-extensions-model/
-source_files: []
-depends_on: []
-related_to: []

@@ -16,6 +16,7 @@ export interface Deployment {
   lastRunAt?: number | null;
   lastSessionId?: string | null;
   lastStatus?: string | null;
+  lastHandsStats?: { acquires: number; releases: number; timeouts: number } | null;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number | null;

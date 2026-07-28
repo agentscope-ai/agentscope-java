@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: b93b588d-66bf-4dd1-8d3f-17cf5c939fb1/de9aee80-6612-4567-8da4-b042fdfbd6b3/3ea597a7-c256-4704-9f3e-62f6cbd104eb
-title: AgentScope 协议扩展聚合层
-scope:
-    - agentscope-extensions/agentscope-extensions-protocol/
-source_files: []
-depends_on: []
-related_to:
-    - path: ac8bea04-ac6b-46a4-ba34-9ab629d54392

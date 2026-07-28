@@ -32,6 +32,7 @@ public record ManagedSessionDto(
         String environmentId,
         List<String> memoryStoreIds,
         List<String> vaultIds,
+        List<Map<String, Object>> resources,
         String status,
         Map<String, Object> stopReason,
         long createdAt,

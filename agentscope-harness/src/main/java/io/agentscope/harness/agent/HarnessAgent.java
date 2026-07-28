@@ -42,7 +42,9 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -112,8 +114,10 @@ import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -1084,6 +1088,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         SandboxFilesystemSpec sandboxFilesystemSpec;
         RemoteFilesystemSpec remoteFilesystemSpec;
         LocalFilesystemSpec localFilesystemSpec;
+        final Map<String, AbstractFilesystem> filesystemRoutes = new LinkedHashMap<>();
 
         // AgentStateStore — mirrored only to pass through to inner; the user-set AgentStateStore
         // can also be replaced inside orchestration when none is provided (defaults to a
@@ -1564,6 +1569,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Mounts an additional {@link AbstractFilesystem} under a path prefix, alongside the
+         * primary filesystem configured via {@link #filesystem(SandboxFilesystemSpec)}, {@link
+         * #filesystem(RemoteFilesystemSpec)}, or {@link #filesystem(LocalFilesystemSpec)}.
+         *
+         * <p>When the primary filesystem is sandbox-backed, the route is applied via {@link
+         * RoutedSandboxFilesystem} so {@code shell_execute} still targets the sandbox. Otherwise
+         * the route is applied via {@link CompositeFilesystem}.
+         *
+         * @param prefix path prefix for the route (e.g. {@code "memory-stores/notes/"})
+         * @param filesystem backend serving paths under {@code prefix}
+         */
+        public Builder filesystemRoute(String prefix, AbstractFilesystem filesystem) {
+            this.filesystemRoutes.put(prefix, filesystem);
+            return this;
+        }
+
+        /**
          * Overrides the default {@link CompactionMiddleware} configuration.
          * Compaction is enabled by default with {@link CompactionConfig#builder()}.build()
          * defaults (dynamic trigger based on model context window, dynamic tail preservation).
@@ -1726,6 +1748,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Skips registration of {@link ShellExecuteTool}. */
         public Builder disableShellTool() {
             this.disableShellTool = true;
+            return this;
+        }
+
+        /**
+         * Registers schema-only external tools on the builder toolkit (merged into the final
+         * agent toolkit at {@link #build()}). Used by {@code self_hosted} environments to expose
+         * hands tools that suspend for worker execution.
+         */
+        public Builder registerExternalSchemas(
+                java.util.List<io.agentscope.core.model.ToolSchema> schemas) {
+            if (schemas != null) {
+                this.toolkit.registerSchemas(schemas);
+            }
             return this;
         }
 
@@ -2048,7 +2083,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
                 capturedSandboxFs = new SandboxBackedFilesystem();
-                filesystem = capturedSandboxFs;
+                filesystem =
+                        filesystemRoutes.isEmpty()
+                                ? capturedSandboxFs
+                                : new RoutedSandboxFilesystem(capturedSandboxFs, filesystemRoutes);
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
 
@@ -2075,6 +2113,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 executionGuard);
                 sandboxLifecycleMw =
                         new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
+            } else if (!filesystemRoutes.isEmpty()) {
+                filesystem = new CompositeFilesystem(filesystem, filesystemRoutes);
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
@@ -2422,7 +2462,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                     .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem) {
+                } else if (filesystem instanceof SandboxBackedFilesystem
+                        || (filesystem instanceof RoutedSandboxFilesystem routed
+                                && routed.primary() instanceof SandboxBackedFilesystem)) {
                     String wsPrefix =
                             defaultSandboxContext != null
                                             && defaultSandboxContext.getClientOptions() != null

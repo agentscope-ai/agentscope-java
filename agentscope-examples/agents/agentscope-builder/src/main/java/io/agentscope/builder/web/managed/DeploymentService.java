@@ -16,12 +16,16 @@
 package io.agentscope.builder.web.managed;
 
 import io.agentscope.builder.web.catalog.AgentCatalogService;
+import io.agentscope.builder.web.coord.BuilderInstanceId;
+import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.managed.ManagedSessionService.CreateSessionRequest;
 import io.agentscope.builder.web.persistence.jpa.DeploymentEntity;
 import io.agentscope.builder.web.persistence.jpa.DeploymentEntityRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -72,16 +76,25 @@ public class DeploymentService {
     private final AgentCatalogService catalogService;
     private final EnvironmentService environmentService;
     private final ManagedSessionService sessionService;
+    private final HandsMetrics handsMetrics;
+    private final CoordinationStore coordinationStore;
+    private final BuilderInstanceId instanceId;
 
     public DeploymentService(
             DeploymentEntityRepository repository,
             AgentCatalogService catalogService,
             EnvironmentService environmentService,
-            @Lazy ManagedSessionService sessionService) {
+            @Lazy ManagedSessionService sessionService,
+            HandsMetrics handsMetrics,
+            CoordinationStore coordinationStore,
+            BuilderInstanceId instanceId) {
         this.repository = repository;
         this.catalogService = catalogService;
         this.environmentService = environmentService;
         this.sessionService = sessionService;
+        this.handsMetrics = handsMetrics;
+        this.coordinationStore = coordinationStore;
+        this.instanceId = instanceId;
     }
 
     /** Creates a deployment after validating the agent, environment, and trigger config. */
@@ -121,7 +134,7 @@ public class DeploymentService {
     @Transactional(readOnly = true)
     public List<DeploymentDto> list(String ownerId) {
         return repository.findByOwnerIdOrderByCreatedAtDesc(ownerId).stream()
-                .map(DeploymentService::toDto)
+                .map(this::toDto)
                 .toList();
     }
 
@@ -211,16 +224,27 @@ public class DeploymentService {
      */
     public List<DeploymentDto> fireDueCronDeployments() {
         List<DeploymentDto> fired = new ArrayList<>();
+        String fireWindow = Instant.now().truncatedTo(ChronoUnit.MINUTES).toString();
         for (DeploymentEntity entity :
                 repository.findByTriggerTypeAndEnabledTrueAndArchivedAtIsNull(TRIGGER_CRON)) {
-            if (isCronDue(entity)) {
-                try {
-                    fired.add(fire(entity, null));
-                } catch (Exception ex) {
-                    entity.setLastStatus("errored");
-                    entity.setUpdatedAt(System.currentTimeMillis());
-                    repository.save(entity);
-                }
+            if (!isCronDue(entity)) {
+                continue;
+            }
+            boolean won =
+                    coordinationStore.tryAcquireFireLease(
+                            entity.getDeploymentId(),
+                            fireWindow,
+                            instanceId.get(),
+                            Duration.ofMinutes(2));
+            if (!won) {
+                continue;
+            }
+            try {
+                fired.add(fire(entity, null));
+            } catch (Exception ex) {
+                entity.setLastStatus("errored");
+                entity.setUpdatedAt(System.currentTimeMillis());
+                repository.save(entity);
             }
         }
         return fired;
@@ -320,7 +344,11 @@ public class DeploymentService {
         return value.trim();
     }
 
-    private static DeploymentDto toDto(DeploymentEntity entity) {
+    private DeploymentDto toDto(DeploymentEntity entity) {
+        HandsMetrics.Snapshot hands =
+                entity.getLastSessionId() == null
+                        ? null
+                        : handsMetrics.snapshot(entity.getLastSessionId());
         return new DeploymentDto(
                 entity.getDeploymentId(),
                 entity.getOwnerId(),
@@ -335,6 +363,7 @@ public class DeploymentService {
                 entity.getLastRunAt(),
                 entity.getLastSessionId(),
                 entity.getLastStatus(),
+                hands,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 entity.getArchivedAt());

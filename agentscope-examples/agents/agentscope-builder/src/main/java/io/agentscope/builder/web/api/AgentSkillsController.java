@@ -24,6 +24,8 @@ import io.agentscope.builder.web.audit.ActivityEvent;
 import io.agentscope.builder.web.audit.AgentActivityStore;
 import io.agentscope.builder.web.catalog.AgentCatalogService;
 import io.agentscope.builder.web.catalog.AgentDefinition;
+import io.agentscope.builder.web.catalog.DefinitionStore;
+import io.agentscope.builder.web.catalog.DefinitionStoreSkillRepository;
 import io.agentscope.builder.web.share.AgentAccessGuard;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.core.agent.RuntimeContext;
@@ -63,10 +65,10 @@ import reactor.core.publisher.Mono;
 /**
  * Per-agent skills management for the platform. Mirrors claw's {@code AgentSkillsController} in
  * URL/payload shape, but every operation is gated by {@link AgentAccessGuard} (RUN to browse, EDIT
- * to mutate) and every file I/O goes through the per-(owner, agent) workspace returned by
- * {@code HarnessAgent.workspaceFor(ownerId, null)} — writes land in the shared
- * {@code RemoteFilesystem} route under {@code skills/}, so changes are visible to every pod that
- * serves the same workspace.
+ * to mutate). Workspace skill file payloads are persisted in the control-plane {@link
+ * DefinitionStore} (shared across replicas) and loaded into {@code HarnessAgent} via {@link
+ * DefinitionStoreSkillRepository}. Optional best-effort mirrors into the Hands workspace
+ * filesystem remain for IDE convenience only and are not the source of truth.
  *
  * <p>Cross-user guardrails:
  *
@@ -110,16 +112,19 @@ public class AgentSkillsController {
     private final AgentActivityStore activity;
     private final AgentCatalogService catalogService;
     private final UserMarketplaceRegistry marketplaceRegistry;
+    private final DefinitionStore definitionStore;
 
     public AgentSkillsController(
             AgentAccessGuard guard,
             AgentActivityStore activity,
             AgentCatalogService catalogService,
-            UserMarketplaceRegistry marketplaceRegistry) {
+            UserMarketplaceRegistry marketplaceRegistry,
+            DefinitionStore definitionStore) {
         this.guard = guard;
         this.activity = activity;
         this.catalogService = catalogService;
         this.marketplaceRegistry = marketplaceRegistry;
+        this.definitionStore = definitionStore;
     }
 
     // -----------------------------------------------------------------
@@ -132,19 +137,16 @@ public class AgentSkillsController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
-                    guard.require(userId, agentId, Tier.RUN);
-                    AbstractFilesystem fs = resolveFilesystem(userId, agentId);
-                    LsResult ls = fs.ls(null, "/skills");
-                    if (ls == null || !ls.isSuccess() || ls.entries() == null) {
-                        return List.<WorkspaceSkillInfo>of();
-                    }
+                    AgentDefinition def = guard.require(userId, agentId, Tier.RUN);
+                    String ownerId = resolveOwnerId(userId, agentId, def);
+                    DefinitionStoreSkillRepository repo =
+                            new DefinitionStoreSkillRepository(definitionStore, ownerId, agentId);
                     List<WorkspaceSkillInfo> out = new ArrayList<>();
-                    for (FileInfo info : ls.entries()) {
-                        if (!info.isDirectory()) continue;
-                        String dirName = leafName(info.path());
-                        if (dirName.isBlank()) continue;
-                        WorkspaceSkillInfo skill = readWorkspaceSkill(fs, dirName);
-                        if (skill != null) out.add(skill);
+                    for (String dirName : repo.listSkillNames()) {
+                        WorkspaceSkillInfo skill = readDefinitionSkill(ownerId, agentId, dirName);
+                        if (skill != null) {
+                            out.add(skill);
+                        }
                     }
                     out.sort(Comparator.comparing(WorkspaceSkillInfo::name));
                     return out;
@@ -157,15 +159,22 @@ public class AgentSkillsController {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
                 () -> {
-                    guard.require(userId, agentId, Tier.RUN);
+                    AgentDefinition def = guard.require(userId, agentId, Tier.RUN);
                     validateSkillName(name);
-                    AbstractFilesystem fs = resolveFilesystem(userId, agentId);
-                    String markdown = readUtf8(fs, "/skills/" + name + "/SKILL.md");
+                    String ownerId = resolveOwnerId(userId, agentId, def);
+                    String markdown =
+                            definitionStore
+                                    .getText(
+                                            ownerId,
+                                            agentId,
+                                            DefinitionStoreSkillRepository.skillMdPath(name))
+                                    .orElse(null);
                     if (markdown == null) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "SKILL.md missing for: " + name);
                     }
-                    Map<String, String> resources = collectResources(fs, name);
+                    Map<String, String> resources =
+                            collectDefinitionResources(ownerId, agentId, name);
                     String description = parseFrontMatterField(markdown, DESCRIPTION_LINE);
                     return new WorkspaceSkillDetail(name, description, markdown, resources);
                 });
@@ -186,30 +195,34 @@ public class AgentSkillsController {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_REQUEST, "markdown is required");
                     }
-                    OwnerCtx ctx = resolveOwner(userId, agentId, def);
-                    WorkspaceManager wsm = ctx.workspaceManager();
-                    wsm.writeUtf8WorkspaceRelative(
-                            RuntimeContext.empty(), "skills/" + name + "/SKILL.md", req.markdown());
+                    String ownerId = resolveOwnerId(userId, agentId, def);
+                    definitionStore.putText(
+                            ownerId,
+                            agentId,
+                            DefinitionStoreSkillRepository.skillMdPath(name),
+                            req.markdown());
                     if (req.resources() != null) {
                         for (Map.Entry<String, String> e : req.resources().entrySet()) {
                             String key = e.getKey();
                             if (key == null || key.isBlank()) continue;
                             String safe = sanitiseRelativePath(key);
-                            wsm.writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(),
-                                    "skills/" + name + "/" + safe,
+                            definitionStore.putText(
+                                    ownerId,
+                                    agentId,
+                                    DefinitionStoreSkillRepository.skillFilePath(name, safe),
                                     e.getValue() != null ? e.getValue() : "");
                         }
                     }
+                    bestEffortMirrorSkillToHands(userId, agentId, ownerId, name);
                     activity.record(
-                            ctx.ownerId(),
+                            ownerId,
                             agentId,
                             activity.actor(userId),
                             ActivityEvent.Action.EDIT_FILE,
                             "skills/" + name,
                             null);
-                    catalogService.invalidateUca(ctx.ownerId(), agentId);
-                    return readWorkspaceSkill(wsm.getFilesystem(), name);
+                    catalogService.invalidateUca(ownerId, agentId);
+                    return readDefinitionSkill(ownerId, agentId, name);
                 });
     }
 
@@ -222,21 +235,26 @@ public class AgentSkillsController {
                 () -> {
                     AgentDefinition def = guard.require(userId, agentId, Tier.EDIT);
                     validateSkillName(name);
-                    OwnerCtx ctx = resolveOwner(userId, agentId, def);
-                    AbstractFilesystem fs = ctx.workspaceManager().getFilesystem();
-                    if (!fs.exists(null, "/skills/" + name)) {
+                    String ownerId = resolveOwnerId(userId, agentId, def);
+                    if (definitionStore
+                            .getText(
+                                    ownerId,
+                                    agentId,
+                                    DefinitionStoreSkillRepository.skillMdPath(name))
+                            .isEmpty()) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "Skill not found: " + name);
                     }
-                    fs.delete(null, "/skills/" + name);
+                    definitionStore.deletePrefix(ownerId, agentId, "skills/" + name);
+                    bestEffortDeleteHandsSkill(userId, agentId, ownerId, name);
                     activity.record(
-                            ctx.ownerId(),
+                            ownerId,
                             agentId,
                             activity.actor(userId),
                             ActivityEvent.Action.DELETE_FILE,
                             "skills/" + name,
                             null);
-                    catalogService.invalidateUca(ctx.ownerId(), agentId);
+                    catalogService.invalidateUca(ownerId, agentId);
                 });
     }
 
@@ -363,15 +381,17 @@ public class AgentSkillsController {
                     validateSkillName(targetName);
 
                     OwnerCtx ctx = resolveOwner(userId, agentId, def);
-                    AbstractFilesystem fs = ctx.workspaceManager().getFilesystem();
-                    if (fs.exists(null, "/skills/" + targetName)
+                    String ownerId = ctx.ownerId();
+                    if (definitionStore
+                                    .getText(
+                                            ownerId,
+                                            agentId,
+                                            DefinitionStoreSkillRepository.skillMdPath(targetName))
+                                    .isPresent()
                             && !Boolean.TRUE.equals(req.overwrite())) {
                         throw new ResponseStatusException(
                                 HttpStatus.CONFLICT,
                                 "Workspace skill already exists: " + targetName);
-                    }
-                    if (fs.exists(null, "/skills/" + targetName)) {
-                        fs.delete(null, "/skills/" + targetName);
                     }
                     String markdown = skill.getSkillContent();
                     if (markdown == null || markdown.isBlank()) {
@@ -379,10 +399,13 @@ public class AgentSkillsController {
                                 HttpStatus.BAD_GATEWAY,
                                 "Repository returned empty SKILL.md for: " + req.skillName());
                     }
-                    WorkspaceManager wsm = ctx.workspaceManager();
-                    wsm.writeUtf8WorkspaceRelative(
-                            RuntimeContext.empty(), "skills/" + targetName + "/SKILL.md", markdown);
-                    writeResources(wsm, targetName, skill.getResources());
+                    definitionStore.deletePrefix(ownerId, agentId, "skills/" + targetName);
+                    definitionStore.putText(
+                            ownerId,
+                            agentId,
+                            DefinitionStoreSkillRepository.skillMdPath(targetName),
+                            markdown);
+                    writeDefinitionResources(ownerId, agentId, targetName, skill.getResources());
                     AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
                     SkillMarketplaceMeta meta =
                             new SkillMarketplaceMeta(
@@ -390,9 +413,10 @@ public class AgentSkillsController {
                                     repoInfo != null ? repoInfo.getLocation() : "",
                                     skill.getName(),
                                     Instant.now().toString());
-                    writeInstallMeta(wsm, targetName, meta);
+                    writeDefinitionInstallMeta(ownerId, agentId, targetName, meta);
+                    bestEffortMirrorSkillToHands(userId, agentId, ownerId, targetName);
                     activity.record(
-                            ctx.ownerId(),
+                            ownerId,
                             agentId,
                             activity.actor(userId),
                             ActivityEvent.Action.CREATE_FILE,
@@ -401,8 +425,8 @@ public class AgentSkillsController {
                                     "source", "repository",
                                     "repoType", meta.repoType(),
                                     "originalName", meta.originalName()));
-                    catalogService.invalidateUca(ctx.ownerId(), agentId);
-                    return readWorkspaceSkill(fs, targetName);
+                    catalogService.invalidateUca(ownerId, agentId);
+                    return readDefinitionSkill(ownerId, agentId, targetName);
                 });
     }
 
@@ -457,36 +481,40 @@ public class AgentSkillsController {
                     validateSkillName(targetName);
 
                     OwnerCtx ctx = resolveOwner(userId, agentId, def);
-                    AbstractFilesystem fs = ctx.workspaceManager().getFilesystem();
-                    if (fs.exists(null, "/skills/" + targetName)
+                    String ownerId = ctx.ownerId();
+                    if (definitionStore
+                                    .getText(
+                                            ownerId,
+                                            agentId,
+                                            DefinitionStoreSkillRepository.skillMdPath(targetName))
+                                    .isPresent()
                             && !Boolean.TRUE.equals(req.overwrite())) {
                         throw new ResponseStatusException(
                                 HttpStatus.CONFLICT,
                                 "Workspace skill already exists: " + targetName);
-                    }
-                    if (fs.exists(null, "/skills/" + targetName)) {
-                        fs.delete(null, "/skills/" + targetName);
                     }
                     if (content.markdown() == null || content.markdown().isBlank()) {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_GATEWAY,
                                 "Marketplace returned empty SKILL.md for: " + req.skillName());
                     }
-                    WorkspaceManager wsm = ctx.workspaceManager();
-                    wsm.writeUtf8WorkspaceRelative(
-                            RuntimeContext.empty(),
-                            "skills/" + targetName + "/SKILL.md",
+                    definitionStore.deletePrefix(ownerId, agentId, "skills/" + targetName);
+                    definitionStore.putText(
+                            ownerId,
+                            agentId,
+                            DefinitionStoreSkillRepository.skillMdPath(targetName),
                             content.markdown());
-                    writeResources(wsm, targetName, content.resources());
+                    writeDefinitionResources(ownerId, agentId, targetName, content.resources());
                     SkillMarketplaceMeta meta =
                             new SkillMarketplaceMeta(
                                     mp.type(),
                                     mp.displayLocation(),
                                     content.name(),
                                     Instant.now().toString());
-                    writeInstallMeta(wsm, targetName, meta);
+                    writeDefinitionInstallMeta(ownerId, agentId, targetName, meta);
+                    bestEffortMirrorSkillToHands(userId, agentId, ownerId, targetName);
                     activity.record(
-                            ctx.ownerId(),
+                            ownerId,
                             agentId,
                             activity.actor(userId),
                             ActivityEvent.Action.CREATE_FILE,
@@ -496,8 +524,8 @@ public class AgentSkillsController {
                                     "marketplaceId", req.marketplaceId(),
                                     "marketplaceType", meta.repoType(),
                                     "originalName", meta.originalName()));
-                    catalogService.invalidateUca(ctx.ownerId(), agentId);
-                    return readWorkspaceSkill(fs, targetName);
+                    catalogService.invalidateUca(ownerId, agentId);
+                    return readDefinitionSkill(ownerId, agentId, targetName);
                 });
     }
 
@@ -536,18 +564,193 @@ public class AgentSkillsController {
         if (agent == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found: " + agentId);
         }
-        String ownerId;
-        if (catalogService.isGlobal(agentId)) {
-            // Globals: writes land in the caller's per-user overlay (the shared agentscope.json
-            // base is admin-managed and untouched here).
-            ownerId = userId;
-        } else {
-            ownerId =
-                    def != null && def.ownerId() != null
-                            ? def.ownerId()
-                            : catalogService.findOwnerOf(agentId).orElse(userId);
-        }
+        String ownerId = resolveOwnerId(userId, agentId, def);
         return new OwnerCtx(ownerId, agent.workspaceFor(ownerId, null));
+    }
+
+    private String resolveOwnerId(String userId, String agentId, AgentDefinition def) {
+        if (catalogService.isGlobal(agentId)) {
+            return userId;
+        }
+        return def != null && def.ownerId() != null
+                ? def.ownerId()
+                : catalogService.findOwnerOf(agentId).orElse(userId);
+    }
+
+    private void writeDefinitionResources(
+            String ownerId, String agentId, String targetName, Map<String, String> resources) {
+        if (resources == null) {
+            return;
+        }
+        for (Map.Entry<String, String> e : resources.entrySet()) {
+            String rel = e.getKey();
+            if (rel == null || rel.isBlank()) {
+                continue;
+            }
+            String safe = sanitiseRelativePath(rel);
+            definitionStore.putText(
+                    ownerId,
+                    agentId,
+                    DefinitionStoreSkillRepository.skillFilePath(targetName, safe),
+                    e.getValue() != null ? e.getValue() : "");
+        }
+    }
+
+    private void writeDefinitionInstallMeta(
+            String ownerId, String agentId, String targetName, SkillMarketplaceMeta meta) {
+        try {
+            String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(meta);
+            definitionStore.putText(
+                    ownerId,
+                    agentId,
+                    DefinitionStoreSkillRepository.skillFilePath(targetName, INSTALL_META_FILE),
+                    json);
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to write {} for {}: {}", INSTALL_META_FILE, targetName, e.getMessage());
+        }
+    }
+
+    private WorkspaceSkillInfo readDefinitionSkill(String ownerId, String agentId, String dirName) {
+        String content =
+                definitionStore
+                        .getText(
+                                ownerId,
+                                agentId,
+                                DefinitionStoreSkillRepository.skillMdPath(dirName))
+                        .orElse(null);
+        if (content == null) {
+            return null;
+        }
+        String description = parseFrontMatterField(content, DESCRIPTION_LINE);
+        String name = parseFrontMatterField(content, NAME_LINE);
+        if (name == null || name.isBlank()) {
+            name = dirName;
+        }
+        Map<String, String> resources = collectDefinitionResources(ownerId, agentId, dirName);
+        long totalBytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        for (String body : resources.values()) {
+            if (body != null) {
+                totalBytes += body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            }
+        }
+        SkillMarketplaceMeta meta = readDefinitionInstallMeta(ownerId, agentId, dirName);
+        String origin = meta != null ? ORIGIN_MARKETPLACE : ORIGIN_CUSTOM;
+        boolean hasRefs =
+                resources.keySet().stream()
+                        .anyMatch(k -> k.startsWith("references/") || k.equals("references"));
+        boolean hasScripts =
+                resources.keySet().stream()
+                        .anyMatch(k -> k.startsWith("scripts/") || k.equals("scripts"));
+        return new WorkspaceSkillInfo(
+                dirName,
+                name,
+                description,
+                totalBytes,
+                resources.size(),
+                hasRefs,
+                hasScripts,
+                origin,
+                meta);
+    }
+
+    private SkillMarketplaceMeta readDefinitionInstallMeta(
+            String ownerId, String agentId, String dirName) {
+        String json =
+                definitionStore
+                        .getText(
+                                ownerId,
+                                agentId,
+                                DefinitionStoreSkillRepository.skillFilePath(
+                                        dirName, INSTALL_META_FILE))
+                        .orElse(null);
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, SkillMarketplaceMeta.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Map<String, String> collectDefinitionResources(
+            String ownerId, String agentId, String dirName) {
+        Map<String, String> out = new LinkedHashMap<>();
+        String prefix = "skills/" + dirName;
+        for (String path : definitionStore.list(ownerId, agentId, prefix)) {
+            if (path.equals(DefinitionStoreSkillRepository.skillMdPath(dirName))) {
+                continue;
+            }
+            String relative =
+                    path.startsWith(prefix + "/") ? path.substring(prefix.length() + 1) : path;
+            if (relative.isBlank()
+                    || relative.equals("SKILL.md")
+                    || relative.equals(INSTALL_META_FILE)) {
+                continue;
+            }
+            definitionStore
+                    .getText(ownerId, agentId, path)
+                    .ifPresent(body -> out.put(relative, body));
+        }
+        return out;
+    }
+
+    /** Best-effort Hands workspace mirror for IDE tooling; never required for correctness. */
+    private void bestEffortMirrorSkillToHands(
+            String userId, String agentId, String ownerId, String skillName) {
+        try {
+            OwnerCtx ctx =
+                    new OwnerCtx(
+                            ownerId,
+                            catalogService
+                                    .getOrInstantiateRunningAgent(userId, agentId)
+                                    .workspaceFor(ownerId, null));
+            WorkspaceManager wsm = ctx.workspaceManager();
+            String markdown =
+                    definitionStore
+                            .getText(
+                                    ownerId,
+                                    agentId,
+                                    DefinitionStoreSkillRepository.skillMdPath(skillName))
+                            .orElse(null);
+            if (markdown == null) {
+                return;
+            }
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), "skills/" + skillName + "/SKILL.md", markdown);
+            writeResources(wsm, skillName, collectDefinitionResources(ownerId, agentId, skillName));
+            SkillMarketplaceMeta meta = readDefinitionInstallMeta(ownerId, agentId, skillName);
+            if (meta != null) {
+                writeInstallMeta(wsm, skillName, meta);
+            }
+        } catch (Exception ex) {
+            log.debug(
+                    "Skipping Hands mirror for skill {}/{}: {}",
+                    agentId,
+                    skillName,
+                    ex.getMessage());
+        }
+    }
+
+    private void bestEffortDeleteHandsSkill(
+            String userId, String agentId, String ownerId, String skillName) {
+        try {
+            AbstractFilesystem fs =
+                    catalogService
+                            .getOrInstantiateRunningAgent(userId, agentId)
+                            .workspaceFor(ownerId, null)
+                            .getFilesystem();
+            if (fs.exists(null, "/skills/" + skillName)) {
+                fs.delete(null, "/skills/" + skillName);
+            }
+        } catch (Exception ex) {
+            log.debug(
+                    "Skipping Hands delete for skill {}/{}: {}",
+                    agentId,
+                    skillName,
+                    ex.getMessage());
+        }
     }
 
     /** Read-only filesystem for browsing — RUN-tier callers, no owner mutation. */

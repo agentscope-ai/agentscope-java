@@ -228,17 +228,17 @@ public class AgentShareController {
                 e.id(),
                 e.name(),
                 e.description(),
-                e.sysPrompt(),
+                e.system(),
                 e.model(),
                 e.maxIters(),
-                e.toolsAllow(),
-                e.toolsDeny(),
+                e.tools(),
+                e.mcpServers(),
+                e.skills(),
+                e.multiagent(),
                 e.identityName(),
                 e.identityEmoji(),
                 e.groupChatMentionPatterns(),
                 e.groupChatRequireMention(),
-                e.skillsAllow(),
-                e.skillsDeny(),
                 e.createdAt(),
                 e.updatedAt(),
                 newShares == null || newShares.isEmpty() ? null : List.copyOf(newShares),
@@ -249,8 +249,7 @@ public class AgentShareController {
                 e.sandboxMode(),
                 e.sandboxScope(),
                 e.version(),
-                e.archivedAt(),
-                e.permissionPolicies());
+                e.archivedAt());
     }
 
     public record AddShareRequest(String granteeType, String granteeId, String tier) {}

@@ -11,13 +11,63 @@ export interface AgentShareGrant {
   createdBy: string;
 }
 
+/** Matches backend AgentSpecTypes.PermissionPolicy */
+export interface PermissionPolicy {
+  type: 'always_allow' | 'always_ask' | 'deny' | string;
+}
+
+export interface ToolDefaultConfig {
+  enabled?: boolean;
+  permissionPolicy?: PermissionPolicy;
+}
+
+export interface ToolConfigEntry {
+  name: string;
+  enabled?: boolean;
+  permissionPolicy?: PermissionPolicy;
+}
+
+/** Matches backend AgentSpecTypes.AgentToolset */
+export interface AgentToolset {
+  type: 'agent_toolset' | 'mcp_toolset' | string;
+  defaultConfig?: ToolDefaultConfig;
+  configs?: ToolConfigEntry[];
+  mcpServerName?: string;
+}
+
+/** Matches backend AgentSpecTypes.McpServerSpec */
+export interface McpServerSpec {
+  name: string;
+  type?: string;
+  url?: string;
+  transport?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  queryParams?: Record<string, string>;
+  enableTools?: string[];
+  timeout?: string;
+}
+
+export interface SkillRef {
+  type?: string;
+  name?: string;
+  id?: string;
+  version?: string;
+}
+
 export interface AgentDefinition {
   id: string;
   name: string;
   description?: string;
-  sysPrompt?: string;
+  /** System prompt (API field name is `system`, not sysPrompt). */
+  system?: string;
+  model?: string;
   maxIters?: number;
-  tools?: string[];
+  tools?: AgentToolset[];
+  mcpServers?: McpServerSpec[];
+  skills?: SkillRef[];
   scope: 'global' | 'user';
   ownerId?: string;
   createdAt: number;
@@ -29,7 +79,6 @@ export interface AgentDefinition {
   tierForCurrentUser?: ShareTier;
   version?: number;
   archivedAt?: number | null;
-  permissionPolicies?: Record<string, string>;
 }
 
 export interface AgentVersionEntry {
@@ -41,6 +90,7 @@ export interface AgentVersionEntry {
 export interface AgentDraft {
   name: string;
   description?: string;
+  /** Draft helper still uses sysPrompt; mapped to `system` on create. */
   sysPrompt?: string;
   suggestedTools?: string[];
   suggestedSkills?: { name: string; content: string }[];
@@ -51,11 +101,17 @@ export interface AgentCreateRequest {
   id?: string;
   name: string;
   description?: string;
-  sysPrompt?: string;
+  system?: string;
+  model?: string;
   maxIters?: number;
+  tools?: AgentToolset[];
+  mcpServers?: McpServerSpec[];
+  skills?: SkillRef[];
   templateId?: string;
   aiDraft?: AgentDraft;
   workspacePath?: string;
+  /** Required on PUT for optimistic locking. */
+  version?: number;
 }
 
 function authHeaders() {

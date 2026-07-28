@@ -160,8 +160,8 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
       out.push({ id: evt.id, role: 'assistant', text: payloadText(evt.payload) || '[agent response]', tools: [] });
     } else if (evt.type === 'agent.tool_use') {
       const tool: ToolEntry = {
-        id: String(evt.payload?.toolUseId ?? evt.id),
-        name: String(evt.payload?.toolName ?? 'tool'),
+        id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
+        name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
         input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       };
       const last = out[out.length - 1];
@@ -294,8 +294,8 @@ export default function ChatPanel({
       replyMsgIdRef.current = null;
     } else if (evt.type === 'agent.tool_use') {
       const tool: ToolEntry = {
-        id: String(evt.payload?.toolUseId ?? evt.id),
-        name: String(evt.payload?.toolName ?? 'tool'),
+        id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
+        name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
         input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       };
       const replyId = replyMsgIdRef.current;

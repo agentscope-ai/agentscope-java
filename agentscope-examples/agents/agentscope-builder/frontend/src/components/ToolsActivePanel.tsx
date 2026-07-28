@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActiveTool,
   ActiveToolsResponse,
-  ToolsConfig,
-  fetchActive,
-  fetchConfig,
-  saveConfig,
+  disableConfiguredTool,
+  fetchConfiguredActive,
 } from '../api/tools';
 
 interface Props {
@@ -79,7 +77,7 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null);
-    fetchActive(agentId)
+    fetchConfiguredActive(agentId)
       .then(d => { if (!cancelled) setData(d); })
       .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -89,7 +87,7 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
   const grouped = useMemo(() => {
     const out = new Map<string, ActiveTool[]>();
     for (const t of data?.tools ?? []) {
-      const key = t.source || 'unknown';
+      const key = t.source.startsWith('mcp:') ? 'mcp' : (t.source || 'unknown');
       if (!out.has(key)) out.set(key, []);
       out.get(key)!.push(t);
     }
@@ -99,20 +97,10 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
   async function disableTool(t: ActiveTool) {
     setActionErr(null);
     try {
-      const cfg: ToolsConfig = await fetchConfig(agentId);
-      if (t.source === 'built-in') {
-        const deny = new Set(cfg.deny ?? []);
-        deny.add(t.name);
-        cfg.deny = Array.from(deny);
-      } else {
-        const map = cfg.mcpServers ?? {};
-        delete map[t.name];
-        cfg.mcpServers = map;
-      }
-      await saveConfig(agentId, cfg);
+      await disableConfiguredTool(agentId, t);
       onChange();
     } catch (e: unknown) {
-      setActionErr(e instanceof Error ? e.message : 'Failed to update config');
+      setActionErr(e instanceof Error ? e.message : 'Failed to update agent');
     }
   }
 
@@ -120,9 +108,9 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
     <div style={S.root}>
       <div style={S.headerRow}>
         <div style={{ flex: 1 }}>
-          <div style={S.title}>Active tools</div>
+          <div style={S.title}>Configured tools</div>
           <div style={S.sub}>
-            Live view, resolved by introspecting a transient agent against this workspace.
+            From Agent body (<code>tools</code> / <code>mcpServers</code>). Saves create a new agent version.
           </div>
         </div>
         <button style={S.refreshBtn} onClick={() => onChange()} disabled={loading}>
@@ -143,14 +131,16 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
 
       <div style={S.list}>
         {!err && !loading && (data?.tools ?? []).length === 0 && (
-          <div style={S.empty}>No tools available. Click <b>Add / configure</b> to enable some.</div>
+          <div style={S.empty}>No tools configured. Click <b>Add / configure</b> to enable some.</div>
         )}
         {Array.from(grouped.entries()).map(([source, tools]) => (
           <div key={source}>
-            <div style={S.groupHeader}>{source === 'built-in' ? 'Built-in' : `MCP — ${source}`}</div>
+            <div style={S.groupHeader}>{source === 'built-in' || source === 'unknown' ? 'Built-in' : 'MCP servers'}</div>
             {tools.map(t => (
               <div key={`${source}:${t.name}`} style={S.card}>
-                <span style={t.source === 'built-in' ? S.badge : S.mcpBadge}>{t.source}</span>
+                <span style={t.source === 'built-in' ? S.badge : S.mcpBadge}>
+                  {t.source === 'built-in' ? 'built-in' : 'mcp'}
+                </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={S.cardName}>{t.name}</div>
                   {t.description && <div style={S.cardDesc}>{t.description}</div>}
@@ -158,7 +148,7 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
                 <button
                   style={S.disableBtn}
                   onClick={() => disableTool(t)}
-                  title={t.source === 'built-in' ? 'Add to deny list' : 'Remove this MCP server'}
+                  title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
                 >
                   Disable
                 </button>

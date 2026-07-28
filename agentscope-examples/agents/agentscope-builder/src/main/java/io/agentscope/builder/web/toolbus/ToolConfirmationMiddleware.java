@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder.web.toolbus;
 
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
 import io.agentscope.builder.web.managed.AgentVersionService;
 import io.agentscope.builder.web.persistence.jpa.AgentEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.ManagedSessionEntity;
@@ -46,6 +47,7 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
 
     public static final String POLICY_ALWAYS_ALLOW = "always_allow";
     public static final String POLICY_ALWAYS_ASK = "always_ask";
+    public static final String POLICY_DENY = "deny";
 
     private final ToolConfirmationCoordinator coordinator;
     private final ManagedSessionEntityRepository sessionRepository;
@@ -77,6 +79,14 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
         List<ToolUseBlock> allowed = new ArrayList<>();
         for (ToolUseBlock toolUse : input.toolCalls()) {
             String policy = policies.get(toolUse.getName());
+            if (POLICY_DENY.equals(policy)) {
+                log.info(
+                        "Tool execution denied by policy: session={}, tool={}, toolUseId={}",
+                        sessionId,
+                        toolUse.getName(),
+                        toolUse.getId());
+                continue;
+            }
             if (POLICY_ALWAYS_ASK.equals(policy)) {
                 Map<String, Object> toolInput = new LinkedHashMap<>();
                 if (toolUse.getInput() != null) {
@@ -95,6 +105,7 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                             toolUse.getId());
                 }
             } else {
+                // always_allow or unspecified → allow
                 allowed.add(toolUse);
             }
         }
@@ -125,8 +136,10 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                         versionService.getVersion(
                                 ownerId, session.getAgentId(), session.getAgentVersion());
                 var snapshot = versionService.fromJson(version.getSnapshotJson());
-                if (snapshot.permissionPolicies() != null) {
-                    return snapshot.permissionPolicies();
+                Map<String, String> policies =
+                        AgentSpecCodec.toPermissionPolicyMap(snapshot.tools());
+                if (!policies.isEmpty()) {
+                    return policies;
                 }
             } catch (Exception ex) {
                 log.debug(
@@ -141,9 +154,7 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                         entity -> {
                             try {
                                 var snapshot = versionService.snapshotFromEntity(entity);
-                                return snapshot.permissionPolicies() != null
-                                        ? snapshot.permissionPolicies()
-                                        : Map.<String, String>of();
+                                return AgentSpecCodec.toPermissionPolicyMap(snapshot.tools());
                             } catch (Exception ex) {
                                 return Map.<String, String>of();
                             }

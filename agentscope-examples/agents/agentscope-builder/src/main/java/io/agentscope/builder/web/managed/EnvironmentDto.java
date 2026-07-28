@@ -21,10 +21,11 @@ import java.util.Map;
 /**
  * API representation of an execution environment template.
  *
- * <p>{@code type} is one of {@link EnvironmentService#TYPE_LOCAL}, {@link
- * EnvironmentService#TYPE_SANDBOX}, {@link EnvironmentService#TYPE_REMOTE}, or {@link
- * EnvironmentService#TYPE_SELF_HOSTED} — see {@link EnvironmentSpecFactory#applyEnvironment} for
- * how each type is mapped onto a harness filesystem spec.
+ * <p>{@code type} is one of {@link EnvironmentService#TYPE_LOCAL} (host FS), {@link
+ * EnvironmentService#TYPE_SANDBOX} (cloud-equivalent Docker hands), {@link
+ * EnvironmentService#TYPE_REMOTE} (distributed KV FS, no shell), or {@link
+ * EnvironmentService#TYPE_SELF_HOSTED} (worker-owned hands via {@code externalSandbox}) — see
+ * {@link EnvironmentSpecFactory#applyEnvironment}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record EnvironmentDto(
@@ -35,4 +36,5 @@ public record EnvironmentDto(
         String ownerId,
         Long archivedAt,
         long createdAt,
-        long updatedAt) {}
+        long updatedAt,
+        String environmentKey) {}

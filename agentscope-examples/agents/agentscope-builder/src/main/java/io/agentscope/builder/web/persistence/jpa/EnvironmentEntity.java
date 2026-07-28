@@ -70,6 +70,9 @@ public class EnvironmentEntity {
     @Column(name = "updated_at", nullable = false)
     private long updatedAt;
 
+    @Column(name = "api_key_hash", length = 64)
+    private String apiKeyHash;
+
     public EnvironmentEntity() {}
 
     public Long getRowId() {
@@ -142,5 +145,13 @@ public class EnvironmentEntity {
 
     public void setUpdatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getApiKeyHash() {
+        return apiKeyHash;
+    }
+
+    public void setApiKeyHash(String apiKeyHash) {
+        this.apiKeyHash = apiKeyHash;
     }
 }

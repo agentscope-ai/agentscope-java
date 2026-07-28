@@ -17,11 +17,13 @@ package io.agentscope.builder.web.persistence.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.BuilderApp;
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore.StoredEntry;
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -128,14 +130,14 @@ class JpaPersistenceIntegrationTest {
                         "system prompt body",
                         "qwen-max",
                         12,
-                        List.of("read_file", "list_files"),
-                        List.of("execute"),
+                        AgentSpecCodec.toolsetsFromAllowList(List.of("read_file", "list_files")),
+                        null,
+                        AgentSpecCodec.workspaceSkills(List.of("foo-skill")),
+                        null,
                         "Demo",
                         ":rocket:",
                         null,
                         Boolean.FALSE,
-                        List.of("foo-skill"),
-                        null,
                         100L,
                         200L,
                         List.of(
@@ -152,7 +154,6 @@ class JpaPersistenceIntegrationTest {
                         null,
                         null,
                         1,
-                        null,
                         null);
 
         StoredEntry saved = agentStore.save("bob-1", entry);
@@ -160,9 +161,14 @@ class JpaPersistenceIntegrationTest {
 
         StoredEntry reloaded = agentStore.findById("bob-1", "demo").orElseThrow();
         assertThat(reloaded.name()).isEqualTo("Demo Agent");
-        assertThat(reloaded.toolsAllow()).containsExactly("read_file", "list_files");
-        assertThat(reloaded.toolsDeny()).containsExactly("execute");
-        assertThat(reloaded.skillsAllow()).containsExactly("foo-skill");
+        assertThat(reloaded.tools()).hasSize(1);
+        assertThat(reloaded.tools().get(0).configs())
+                .extracting(
+                        io.agentscope.builder.web.catalog.spec.AgentSpecTypes.ToolConfigEntry::name)
+                .containsExactly("read_file", "list_files");
+        assertThat(reloaded.skills())
+                .extracting(io.agentscope.builder.web.catalog.spec.AgentSpecTypes.SkillRef::name)
+                .containsExactly("foo-skill");
         assertThat(reloaded.shares()).hasSize(1);
         assertThat(reloaded.shares().get(0).granteeId()).isEqualTo("bob-1");
         assertThat(reloaded.workspacePath()).isEqualTo("/tmp/agentscope-test/demo");
@@ -176,6 +182,13 @@ class JpaPersistenceIntegrationTest {
 
     @TestConfiguration
     static class StubModelConfig {
+        /** WebEnvironment.NONE does not auto-register Jackson's ObjectMapper bean. */
+        @Bean
+        @Primary
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
         @Bean
         @Primary
         Model stubModel() {

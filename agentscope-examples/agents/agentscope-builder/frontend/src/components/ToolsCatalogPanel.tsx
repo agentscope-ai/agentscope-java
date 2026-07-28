@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getAgent } from '../api/agents';
 import {
   BuiltinToolInfo,
   McpCatalogEntry,
   McpServerConfig,
-  ToolsConfig,
+  computeEnabledBuiltins,
   fetchBuiltinCatalog,
-  fetchConfig,
   fetchMcpCatalog,
-  saveConfig,
+  installMcpServer,
+  listInstalledMcpNames,
+  saveBuiltinEnabled,
 } from '../api/tools';
 
 interface Props {
@@ -113,29 +115,22 @@ export default function ToolsCatalogPanel({ agentId, onSaved }: Props) {
   );
 }
 
-// -------------------- Built-in tab --------------------
-
 function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
-  const [cfg, setCfg] = useState<ToolsConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // Track checked names — the saved state derives from cfg.allow/deny semantics.
-  // Empty allow + non-empty deny is the canonical default; if allow is non-empty we treat
-  // it as "only these"; otherwise "all minus deny".
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null);
-    Promise.all([fetchBuiltinCatalog(agentId), fetchConfig(agentId)])
-      .then(([cat, c]) => {
+    Promise.all([fetchBuiltinCatalog(agentId), getAgent(agentId)])
+      .then(([cat, agent]) => {
         if (cancelled) return;
         setCatalog(cat);
-        setCfg(c);
-        setEnabled(computeEnabled(cat, c));
+        setEnabled(computeEnabledBuiltins(cat, agent.tools));
         setDirty(false);
       })
       .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
@@ -154,24 +149,9 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   }
 
   async function save() {
-    if (!cfg) return;
     setSaving(true); setErr(null);
     try {
-      // Translate the checkbox state back into allow/deny. We use deny-as-default
-      // (empty allow + deny = catalog-minus-enabled) to match the scaffolder.
-      const next: ToolsConfig = { ...cfg };
-      const all = catalog.map(b => b.id);
-      const disabled = all.filter(id => !enabled.has(id));
-      if (next.allow && next.allow.length > 0) {
-        // user previously used allow-list mode; respect it.
-        next.allow = all.filter(id => enabled.has(id));
-        next.deny = [];
-      } else {
-        next.allow = [];
-        next.deny = disabled;
-      }
-      await saveConfig(agentId, next);
-      setCfg(next);
+      await saveBuiltinEnabled(agentId, catalog, enabled);
       setDirty(false);
       onSaved();
     } catch (e: unknown) {
@@ -232,22 +212,9 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   );
 }
 
-function computeEnabled(catalog: BuiltinToolInfo[], cfg: ToolsConfig): Set<string> {
-  const allow = cfg.allow ?? [];
-  const deny = new Set(cfg.deny ?? []);
-  if (allow.length > 0) {
-    // Allow-list mode: only listed tools are on.
-    return new Set(allow);
-  }
-  // Deny-list mode (default): everything except denied.
-  return new Set(catalog.map(b => b.id).filter(id => !deny.has(id)));
-}
-
-// -------------------- MCP tab --------------------
-
 function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
   const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
-  const [cfg, setCfg] = useState<ToolsConfig | null>(null);
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState<McpCatalogEntry | null>(null);
@@ -255,11 +222,11 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null);
-    Promise.all([fetchMcpCatalog(agentId), fetchConfig(agentId)])
-      .then(([cat, c]) => {
+    Promise.all([fetchMcpCatalog(agentId), listInstalledMcpNames(agentId)])
+      .then(([cat, inst]) => {
         if (cancelled) return;
         setCatalog(cat);
-        setCfg(c);
+        setInstalled(inst.names);
       })
       .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -267,16 +234,11 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
   }, [agentId]);
 
   async function install(name: string, server: McpServerConfig) {
-    if (!cfg) return;
-    const next: ToolsConfig = { ...cfg };
-    next.mcpServers = { ...(next.mcpServers ?? {}), [name]: server };
-    await saveConfig(agentId, next);
-    setCfg(next);
+    await installMcpServer(agentId, name, server);
+    setInstalled(prev => new Set([...prev, name]));
     setAdding(null);
     onSaved();
   }
-
-  const installed = useMemo(() => new Set(Object.keys(cfg?.mcpServers ?? {})), [cfg]);
 
   return (
     <>
@@ -285,8 +247,7 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
         {err && <div style={S.err}>{err}</div>}
         {!loading && catalog.length === 0 && (
           <div style={{ color: '#94a3b8', padding: 24, textAlign: 'center' }}>
-            No MCP servers in the catalog. You can still add servers by editing
-            <code> workspace/tools.json</code> directly.
+            No MCP servers in the catalog. Add servers via Agent body <code>mcpServers</code>.
           </div>
         )}
         {catalog.map(entry => {
@@ -359,9 +320,6 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
       if (entry.headers) server.headers = { ...entry.headers };
       if (entry.queryParams) server.queryParams = { ...entry.queryParams };
       if (entry.env) server.env = { ...entry.env };
-      // Merge any user-supplied env values into server.env so they're persisted at the
-      // agent-config level. (Substitution still resolves ${VAR} at agent boot if
-      // the value happens to reference an env var.)
       if (Object.keys(envValues).length > 0) {
         server.env = { ...(server.env ?? {}), ...envValues };
       }
@@ -384,7 +342,7 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
           {entry.url && <> &middot; URL: <code>{entry.url}</code></>}
         </div>
 
-        <label style={S.formLabel}>Server name (key in tools.json)</label>
+        <label style={S.formLabel}>Server name (key in Agent mcpServers)</label>
         <input
           style={S.formInput}
           value={name}
@@ -398,7 +356,6 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
             <div style={{ ...S.formLabel, marginTop: 18 }}>Environment variables</div>
             <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: 6 }}>
               Leave blank to use the process environment (recommended for secrets).
-              Values here are persisted into <code>tools.json</code>.
             </div>
             {(entry.requiredEnv ?? []).map(envKey => (
               <div key={envKey} style={{ marginBottom: 8 }}>

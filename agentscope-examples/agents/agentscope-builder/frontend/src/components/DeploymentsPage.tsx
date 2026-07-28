@@ -234,6 +234,13 @@ export default function DeploymentsPage() {
             <div style={S.meta}>
               last run: {formatTime(d.lastRunAt)}{d.lastStatus ? ` (${d.lastStatus})` : ''}
             </div>
+            {d.lastSessionId && (
+              <div style={S.meta}>
+                <a href={`/agents/${encodeURIComponent(d.agentId)}/sessions/_managed?managed=${encodeURIComponent(d.lastSessionId)}`}>
+                  Replay last session
+                </a>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
               {!d.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === d.id} onClick={() => handleRun(d)}>

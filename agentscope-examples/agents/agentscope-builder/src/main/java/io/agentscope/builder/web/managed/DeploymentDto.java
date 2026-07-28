@@ -33,6 +33,7 @@ public record DeploymentDto(
         Long lastRunAt,
         String lastSessionId,
         String lastStatus,
+        HandsMetrics.Snapshot lastHandsStats,
         long createdAt,
         long updatedAt,
         Long archivedAt) {}

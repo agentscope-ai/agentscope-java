@@ -126,6 +126,7 @@ export function streamEvents(
   sessionId: string,
   onEvent: (event: SessionEvent) => void,
   onError?: (err: Error) => void,
+  options?: { eventDeltas?: string[] },
 ): EventStreamHandle {
   const token = getToken();
   const controller = new AbortController();
@@ -133,8 +134,13 @@ export function streamEvents(
 
   (async () => {
     try {
+      const params = new URLSearchParams();
+      for (const t of options?.eventDeltas ?? []) {
+        params.append('event_deltas', t);
+      }
+      const qs = params.toString();
       const res = await fetch(
-        `/api/sessions/${encodeURIComponent(sessionId)}/events/stream`,
+        `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
         {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           signal: controller.signal,
@@ -190,7 +196,12 @@ export async function postToolConfirmation(
 ): Promise<SessionEvent[]> {
   return postEvents(sessionId, [{
     type: 'user.tool_confirmation',
-    payload: { toolUseId, allow, ...(denyMessage ? { denyMessage } : {}) },
+    payload: {
+      tool_use_id: toolUseId,
+      toolUseId,
+      allow,
+      ...(denyMessage ? { denyMessage } : {}),
+    },
   }]);
 }
 

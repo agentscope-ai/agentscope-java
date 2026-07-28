@@ -15,27 +15,33 @@
  */
 package io.agentscope.builder.web.managed;
 
+import io.agentscope.builder.web.api.error.ApiErrorDetail;
+import io.agentscope.builder.web.api.error.ApiErrorType;
+import io.agentscope.builder.web.api.error.ApiException;
 import io.agentscope.builder.web.catalog.AgentCatalogService;
+import io.agentscope.builder.web.coord.CoordinationStore;
+import io.agentscope.builder.web.coord.TurnLeaseService;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.AgentStartEvent;
-import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.ModelCallStartEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.harness.agent.HarnessAgent;
-import java.nio.file.Path;
+import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -53,68 +59,145 @@ public class SessionTurnRunner {
     private final AgentCatalogService catalogService;
     private final ManagedSessionService sessionService;
     private final SessionEventLog eventLog;
+    private final SessionEventMapper eventMapper;
+    private final SessionEventPreviewBus previewBus;
     private final EnvironmentService environmentService;
-    private final MemoryMountService memoryMountService;
+    private final HandsLeaseService handsLeaseService;
+    private final TurnLeaseService turnLeaseService;
+    private final CoordinationStore coordinationStore;
     private final ConcurrentHashMap<String, Disposable> activeTurns = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, TurnLeaseService.TurnLease> activeTurnLeases =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SessionEventMapper.PreviewIds> previewIdsBySession =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> startedPreviewTypes =
+            new ConcurrentHashMap<>();
 
     public SessionTurnRunner(
             AgentCatalogService catalogService,
             @Lazy ManagedSessionService sessionService,
             SessionEventLog eventLog,
+            SessionEventMapper eventMapper,
+            SessionEventPreviewBus previewBus,
             EnvironmentService environmentService,
-            MemoryMountService memoryMountService) {
+            HandsLeaseService handsLeaseService,
+            TurnLeaseService turnLeaseService,
+            CoordinationStore coordinationStore) {
         this.catalogService = catalogService;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
+        this.eventMapper = eventMapper;
+        this.previewBus = previewBus;
         this.environmentService = environmentService;
-        this.memoryMountService = memoryMountService;
+        this.handsLeaseService = handsLeaseService;
+        this.turnLeaseService = turnLeaseService;
+        this.coordinationStore = coordinationStore;
     }
 
     /** Runs a turn asynchronously so inbound HTTP handlers can return quickly. */
     public void runTurnAsync(ManagedSessionDto session, String userMessage) {
+        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(userMessage).build();
+        runTurnAsync(session, List.of(userMsg));
+    }
+
+    /**
+     * Resumes a suspended turn with external tool results (self-hosted worker /
+     * {@code user.tool_result}).
+     */
+    public void resumeWithToolResults(
+            ManagedSessionDto session, List<ToolResultBlock> toolResults) {
+        if (toolResults == null || toolResults.isEmpty()) {
+            throw ApiException.invalidRequest(
+                    "missing_tool_results", "tool results are required to resume", "payload");
+        }
+        Msg.Builder resumeBuilder = ToolResultMessage.builder();
+        for (ToolResultBlock block : toolResults) {
+            ((ToolResultMessage.Builder) resumeBuilder).result(block);
+        }
+        runTurnAsync(session, List.of(resumeBuilder.build()));
+    }
+
+    private void runTurnAsync(ManagedSessionDto session, List<Msg> inputMsgs) {
+        TurnLeaseService.TurnLease lease =
+                turnLeaseService.acquireOrConflict(session.id(), session.ownerId());
+        activeTurnLeases.put(session.id(), lease);
+        sessionService.updateStatus(
+                session.ownerId(), session.id(), ManagedSessionService.STATUS_RUNNING, null);
         Schedulers.boundedElastic()
                 .schedule(
                         () -> {
                             try {
-                                runTurn(session, userMessage);
+                                runTurn(session, inputMsgs, lease);
                             } catch (Exception ex) {
                                 log.warn(
                                         "Managed session turn failed: sessionId={}, error={}",
                                         session.id(),
                                         ex.getMessage());
-                                Map<String, Object> stopReason = new LinkedHashMap<>();
-                                stopReason.put("error", ex.getMessage());
-                                sessionService.updateStatus(
-                                        session.ownerId(),
-                                        session.id(),
-                                        ManagedSessionService.STATUS_ERRORED,
-                                        stopReason);
+                                failTurn(session, ex, "turn_failed");
+                            } finally {
+                                activeTurnLeases.remove(session.id(), lease);
+                                lease.close();
+                                previewIdsBySession.remove(session.id());
+                                startedPreviewTypes.remove(session.id());
                             }
                         });
     }
 
     /**
-     * Cancels an in-flight turn for the given managed session: disposes the Reactor subscription
-     * and invokes {@link HarnessAgent#interrupt()}.
+     * Cancels an in-flight turn. Cross-instance interrupt records {@code session.interrupted}
+     * with a pending target and returns 409.
      */
     public void interrupt(String sessionId) {
-        HarnessAgent agent = activeAgents.remove(sessionId);
+        HarnessAgent agent = activeAgents.get(sessionId);
         if (agent != null) {
             try {
                 agent.interrupt();
             } catch (Exception ex) {
                 log.warn("Harness interrupt failed for {}: {}", sessionId, ex.getMessage());
             }
+            activeAgents.remove(sessionId);
+            Disposable disposable = activeTurns.remove(sessionId);
+            if (disposable != null) {
+                disposable.dispose();
+            }
+            handsLeaseService.release(sessionId);
+            TurnLeaseService.TurnLease lease = activeTurnLeases.remove(sessionId);
+            if (lease != null) {
+                lease.close();
+            }
+            eventLog.append(
+                    sessionId,
+                    SessionEventTypes.SESSION_INTERRUPTED,
+                    Map.of("status", "interrupted"));
+            return;
         }
-        Disposable disposable = activeTurns.remove(sessionId);
-        if (disposable != null) {
-            disposable.dispose();
+
+        Optional<CoordinationStore.LeaseHandle> remote = coordinationStore.getTurnLease(sessionId);
+        if (remote.isPresent()
+                && !turnLeaseService.localInstanceId().equals(remote.get().instanceId())) {
+            eventLog.append(
+                    sessionId,
+                    SessionEventTypes.SESSION_INTERRUPTED,
+                    Map.of(
+                            "status",
+                            "interrupt_pending",
+                            "targetInstanceId",
+                            remote.get().instanceId()));
+            throw ApiException.conflict(
+                    "turn_lease_conflict",
+                    "Turn is running on instance "
+                            + remote.get().instanceId()
+                            + "; interrupt this request against that owner or retry after lease"
+                            + " expiry");
         }
-        eventLog.append(sessionId, "session.interrupted", Map.of("status", "interrupted"));
+
+        eventLog.append(
+                sessionId, SessionEventTypes.SESSION_INTERRUPTED, Map.of("status", "interrupted"));
     }
 
-    private void runTurn(ManagedSessionDto session, String userMessage) {
+    private void runTurn(
+            ManagedSessionDto session, List<Msg> inputMsgs, TurnLeaseService.TurnLease lease) {
         EnvironmentDto environment = null;
         if (session.environmentId() != null) {
             environment = environmentService.get(session.ownerId(), session.environmentId());
@@ -126,7 +209,8 @@ public class SessionTurnRunner {
                         environment,
                         session.agentOverridesJson(),
                         session.memoryStoreIds(),
-                        session.vaultIds());
+                        session.vaultIds(),
+                        session.resources());
 
         HarnessAgent agent =
                 catalogService.getOrInstantiateRunningAgent(
@@ -135,128 +219,185 @@ public class SessionTurnRunner {
             throw new IllegalStateException("Agent not available: " + session.agentId());
         }
 
-        Path workspace =
-                catalogService.resolveAgentWorkspace(
-                        session.agentOwnerId() != null ? session.agentOwnerId() : session.ownerId(),
-                        session.agentId());
-        // Re-materialize memory mounts for this turn (agent may have been cached).
-        memoryMountService.materialize(session.ownerId(), workspace, session.memoryStoreIds());
+        RuntimeContext.Builder rcBuilder =
+                RuntimeContext.builder().userId(session.ownerId()).sessionId(session.id());
+        Optional<Sandbox> handsSandbox = handsLeaseService.acquire(session, environment);
+        handsSandbox.ifPresent(
+                sandbox ->
+                        rcBuilder.put(
+                                SandboxContext.class,
+                                SandboxContext.builder()
+                                        .externalSandbox(sandbox)
+                                        .isolationScope(IsolationScope.SESSION)
+                                        .build()));
+        RuntimeContext rc = rcBuilder.build();
 
-        RuntimeContext rc =
-                RuntimeContext.builder().userId(session.ownerId()).sessionId(session.id()).build();
+        Flux<AgentEvent> stream = agent.streamEvents(inputMsgs, rc);
 
-        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(userMessage).build();
-        Flux<AgentEvent> stream = agent.streamEvents(List.of(userMsg), rc);
-
+        previewIdsBySession.put(session.id(), new SessionEventMapper.PreviewIds());
+        startedPreviewTypes.put(session.id(), ConcurrentHashMap.newKeySet());
         activeAgents.put(session.id(), agent);
+        AtomicBoolean suspended = new AtomicBoolean(false);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> errorRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
         Disposable subscription =
                 stream.subscribe(
-                        event -> handleAgentEvent(session.id(), event),
-                        error -> {
-                            activeTurns.remove(session.id());
-                            activeAgents.remove(session.id());
-                            writebackMemory(session, workspace);
-                            Map<String, Object> stopReason = new LinkedHashMap<>();
-                            stopReason.put("error", error.getMessage());
-                            sessionService.updateStatus(
-                                    session.ownerId(),
-                                    session.id(),
-                                    ManagedSessionService.STATUS_ERRORED,
-                                    stopReason);
+                        event -> {
+                            if (handleAgentEvent(session.id(), event)) {
+                                suspended.set(true);
+                            }
                         },
-                        () -> {
-                            activeTurns.remove(session.id());
-                            activeAgents.remove(session.id());
-                            writebackMemory(session, workspace);
-                            sessionService.updateStatus(
-                                    session.ownerId(),
-                                    session.id(),
-                                    ManagedSessionService.STATUS_IDLE,
-                                    null);
-                        });
-
+                        error -> {
+                            errorRef.set(error);
+                            done.countDown();
+                        },
+                        done::countDown);
         activeTurns.put(session.id(), subscription);
-    }
-
-    private void writebackMemory(ManagedSessionDto session, Path workspace) {
         try {
-            memoryMountService.writeback(session.ownerId(), workspace, session.memoryStoreIds());
-        } catch (Exception ex) {
-            log.warn("Memory writeback failed for session {}: {}", session.id(), ex.getMessage());
+            done.await();
+            Throwable error = errorRef.get();
+            if (error != null) {
+                failTurn(session, error, "model_call_failed");
+                if (error instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new RuntimeException(error);
+            }
+            if (suspended.get()) {
+                sessionService.updateStatus(
+                        session.ownerId(),
+                        session.id(),
+                        ManagedSessionService.STATUS_REQUIRES_ACTION,
+                        Map.of("reason", "tool_suspended"));
+                eventLog.append(
+                        session.id(),
+                        SessionEventTypes.SESSION_REQUIRES_ACTION,
+                        Map.of("reason", "tool_suspended"));
+            } else {
+                sessionService.updateStatus(
+                        session.ownerId(), session.id(), ManagedSessionService.STATUS_IDLE, null);
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            subscription.dispose();
+            failTurn(session, ie, "interrupted");
+        } finally {
+            activeTurns.remove(session.id());
+            activeAgents.remove(session.id());
+            // Keep work-queue lease for suspended turns so workers can finish pending tools.
+            if (!suspended.get()) {
+                handsLeaseService.release(session.id());
+            }
         }
     }
 
-    private void handleAgentEvent(String sessionId, AgentEvent event) {
-        if (event instanceof TextBlockDeltaEvent delta) {
-            if (delta.getDelta() != null && !delta.getDelta().isEmpty()) {
-                eventLog.append(
-                        sessionId,
-                        "agent.message",
-                        Map.of("delta", delta.getDelta(), "streaming", true));
-            }
-            return;
+    private void failTurn(ManagedSessionDto session, Throwable error, String code) {
+        ApiErrorDetail detail =
+                ApiErrorDetail.of(
+                                ApiErrorType.API,
+                                code,
+                                error.getMessage() != null ? error.getMessage() : code)
+                        .withSessionId(session.id())
+                        .withRetryStatus("not_retrying");
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("error", detail.toMap());
+        eventLog.append(session.id(), SessionEventTypes.SESSION_ERROR, payload);
+        Map<String, Object> stopReason = new LinkedHashMap<>();
+        stopReason.put("error", detail.toMap());
+        sessionService.updateStatus(
+                session.ownerId(),
+                session.id(),
+                ManagedSessionService.STATUS_TERMINATED,
+                stopReason);
+        handsLeaseService.release(session.id());
+    }
+
+    /**
+     * @return {@code true} when the event indicates {@link GenerateReason#TOOL_SUSPENDED}
+     */
+    private boolean handleAgentEvent(String sessionId, AgentEvent event) {
+        if (event instanceof AgentResultEvent result
+                && result.getResult() != null
+                && result.getResult().getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+            persistSuspendedToolUses(sessionId, result.getResult());
+            return true;
         }
-        if (event instanceof ThinkingBlockDeltaEvent thinking) {
-            if (thinking.getDelta() != null && !thinking.getDelta().isEmpty()) {
-                eventLog.append(
-                        sessionId,
-                        "agent.reasoning",
-                        Map.of("delta", thinking.getDelta(), "streaming", true));
-            }
-            return;
-        }
-        if (event instanceof AgentResultEvent result) {
-            String text =
-                    result.getResult() != null && result.getResult().getTextContent() != null
-                            ? result.getResult().getTextContent()
-                            : "";
-            eventLog.append(sessionId, "agent.message", Map.of("text", text));
-            return;
-        }
-        if (event instanceof ToolCallStartEvent toolUse) {
+
+        SessionEventMapper.PreviewIds ids =
+                previewIdsBySession.computeIfAbsent(
+                        sessionId, ignored -> new SessionEventMapper.PreviewIds());
+        SessionEventMapper.MappingResult mapped = eventMapper.map(event, ids);
+        mapped.preview()
+                .ifPresent(
+                        frame -> {
+                            Set<String> started =
+                                    startedPreviewTypes.computeIfAbsent(
+                                            sessionId, ignored -> ConcurrentHashMap.newKeySet());
+                            if (started.add(frame.targetType() + ":" + frame.eventId())) {
+                                previewBus.emitStart(
+                                        sessionId, frame.targetType(), frame.eventId());
+                            }
+                            previewBus.emitDelta(
+                                    sessionId, frame.targetType(), frame.eventId(), frame.delta());
+                        });
+        mapped.persisted()
+                .ifPresent(
+                        persisted ->
+                                eventLog.append(sessionId, persisted.type(), persisted.payload()));
+        return false;
+    }
+
+    private void persistSuspendedToolUses(String sessionId, Msg result) {
+        for (ToolUseBlock tub : result.getContentBlocks(ToolUseBlock.class)) {
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("toolCallId", toolUse.getToolCallId());
-            payload.put("toolName", toolUse.getToolCallName());
-            eventLog.append(sessionId, "agent.tool_use", payload);
-            return;
+            payload.put("id", tub.getId());
+            payload.put("name", tub.getName());
+            payload.put("input", tub.getInput() != null ? tub.getInput() : Map.of());
+            payload.put("toolCallId", tub.getId());
+            payload.put("toolName", tub.getName());
+            payload.put("state", "pending");
+            eventLog.append(sessionId, SessionEventTypes.AGENT_TOOL_USE, payload);
         }
-        if (event instanceof ToolCallDeltaEvent toolDelta) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("toolCallId", toolDelta.getToolCallId());
-            if (toolDelta.getDelta() != null) {
-                payload.put("delta", toolDelta.getDelta());
-            }
-            eventLog.append(sessionId, "agent.tool_use_delta", payload);
-            return;
+    }
+
+    /** Builds a {@link ToolResultBlock} from a worker/user tool_result payload. */
+    public static ToolResultBlock toolResultFromPayload(Map<String, Object> payload) {
+        String toolUseId = stringValue(payload.get("tool_use_id"));
+        if (toolUseId == null) {
+            toolUseId = stringValue(payload.get("toolUseId"));
         }
-        if (event instanceof ToolResultEndEvent toolResult) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("toolCallId", toolResult.getToolCallId());
-            payload.put("toolName", toolResult.getToolCallName());
-            if (toolResult.getState() != null) {
-                payload.put("state", toolResult.getState().name());
-            }
-            eventLog.append(sessionId, "agent.tool_result", payload);
-            return;
+        if (toolUseId == null) {
+            throw ApiException.invalidRequest(
+                    "missing_tool_use_id",
+                    "tool_use_id is required",
+                    "events[].payload.tool_use_id");
         }
-        if (event instanceof ModelCallStartEvent) {
-            eventLog.append(sessionId, "agent.model_call_start", Map.of());
-            return;
+        String name = stringValue(payload.get("name"));
+        if (name == null) {
+            name = stringValue(payload.get("toolName"));
         }
-        if (event instanceof ModelCallEndEvent modelEnd) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            if (modelEnd.getUsage() != null) {
-                payload.put("usage", modelEnd.getUsage());
-            }
-            eventLog.append(sessionId, "agent.model_call_end", payload);
-            return;
+        String content = stringValue(payload.get("content"));
+        if (content == null) {
+            content = stringValue(payload.get("output"));
         }
-        if (event instanceof AgentStartEvent) {
-            eventLog.append(sessionId, "session.agent_start", Map.of());
-            return;
+        if (content == null) {
+            content = "";
         }
-        if (event instanceof AgentEndEvent) {
-            eventLog.append(sessionId, "session.agent_end", Map.of());
+        boolean isError =
+                Boolean.TRUE.equals(payload.get("is_error"))
+                        || Boolean.TRUE.equals(payload.get("isError"));
+        if (isError) {
+            return ToolResultBlock.of(
+                    toolUseId,
+                    name,
+                    TextBlock.builder().text(content).build(),
+                    Map.of("error", true));
         }
+        return ToolResultBlock.of(toolUseId, name, TextBlock.builder().text(content).build());
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 }

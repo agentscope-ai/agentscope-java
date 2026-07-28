@@ -22,10 +22,6 @@ import io.agentscope.builder.web.persistence.jpa.VaultCredentialEntity;
 import io.agentscope.builder.web.persistence.jpa.VaultCredentialEntityRepository;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
-import io.agentscope.harness.agent.workspace.WorkspaceConstants;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,33 +54,42 @@ public class VaultCredentialResolver {
     }
 
     /**
-     * Loads {@code workspace/tools.json}, substitutes {@code ${ENV}} using vault secrets (falling
-     * back to {@link System#getenv}), and merges targeted credentials into MCP server env maps.
+     * Patches an in-memory {@link ToolsConfig} (typically derived from the agent version
+     * snapshot) with vault secrets: substitutes {@code ${ENV}} placeholders and merges
+     * targeted credentials into MCP server env maps.
      *
-     * @return patched config, or {@code null} when tools.json is missing/unreadable
+     * @param base config to patch; when {@code null}, returns {@code null}
+     * @return a new patched config, or {@code base} unchanged when no vault secrets apply
      */
-    public ToolsConfig resolveToolsConfig(String ownerId, Path workspace, List<String> vaultIds) {
-        Map<String, String> secrets = resolveEnvSecrets(ownerId, vaultIds);
-        Path toolsJson = workspace.resolve(WorkspaceConstants.TOOLS_JSON);
-        if (!Files.isRegularFile(toolsJson)) {
-            if (secrets.isEmpty()) {
-                return null;
-            }
-            // No tools.json but vaults present — synthesize empty config with nothing to inject.
+    public ToolsConfig resolveToolsConfig(String ownerId, ToolsConfig base, List<String> vaultIds) {
+        if (base == null) {
             return null;
         }
-        try {
-            String raw = Files.readString(toolsJson, StandardCharsets.UTF_8);
-            String substituted = substituteEnv(raw, secrets);
-            ToolsConfig cfg = MAPPER.readValue(substituted, ToolsConfig.class);
-            mergeTargetedCredentials(cfg, ownerId, vaultIds, secrets);
+        Map<String, String> secrets = resolveEnvSecrets(ownerId, vaultIds);
+        ToolsConfig cfg = copyToolsConfig(base);
+        if (secrets.isEmpty() && (vaultIds == null || vaultIds.isEmpty())) {
             return cfg;
+        }
+        try {
+            // Round-trip through JSON so ${ENV} placeholders inside string fields are rewritten.
+            String raw = MAPPER.writeValueAsString(cfg);
+            String substituted = substituteEnv(raw, secrets);
+            ToolsConfig parsed = MAPPER.readValue(substituted, ToolsConfig.class);
+            mergeTargetedCredentials(parsed, ownerId, vaultIds, secrets);
+            return parsed;
         } catch (Exception ex) {
             log.warn(
-                    "Failed to resolve vault-patched tools.json at {}: {}",
-                    toolsJson,
-                    ex.getMessage());
-            return null;
+                    "Failed to vault-patch ToolsConfig for owner {}: {}", ownerId, ex.getMessage());
+            mergeTargetedCredentials(cfg, ownerId, vaultIds, secrets);
+            return cfg;
+        }
+    }
+
+    private static ToolsConfig copyToolsConfig(ToolsConfig base) {
+        try {
+            return MAPPER.readValue(MAPPER.writeValueAsString(base), ToolsConfig.class);
+        } catch (Exception ex) {
+            return base;
         }
     }
 
@@ -122,6 +127,20 @@ public class VaultCredentialResolver {
                 }
                 Map<String, String> asMap = tryParseJsonMap(plaintext);
                 if (asMap != null && !asMap.isEmpty()) {
+                    String type = cred.getCredentialType();
+                    if ("mcp_oauth".equalsIgnoreCase(type)
+                            || "oauth_token".equalsIgnoreCase(type)) {
+                        // Best-effort: prefer access_token; full OAuth refresh is not implemented
+                        // in-builder yet — operators should rotate via vault updates.
+                        log.debug(
+                                "Injecting oauth-shaped credential {} (refresh not auto-managed)",
+                                cred.getCredentialId());
+                        if (asMap.containsKey("access_token")
+                                && !asMap.containsKey("Authorization")) {
+                            asMap.putIfAbsent(
+                                    "Authorization", "Bearer " + asMap.get("access_token"));
+                        }
+                    }
                     out.putAll(asMap);
                     continue;
                 }

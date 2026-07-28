@@ -118,13 +118,18 @@ public class MemoryStoreController {
                 () -> memoryStoreService.deleteMemory(userId, id, normalizePath(path)));
     }
 
-    /** Lists versions of a memory document. */
-    @GetMapping("/{id}/memories/{*path}/versions")
+    /**
+     * Lists versions of a memory document.
+     *
+     * <p>Path uses {@code /memories/versions/{*path}} so the catch-all segment stays at the end
+     * (Spring {@code PathPattern} forbids {@code {*path}} in the middle of a pattern).
+     */
+    @GetMapping("/{id}/memories/versions/{*path}")
     public Mono<List<MemoryVersionDto>> listVersions(
             @PathVariable("id") String id, @PathVariable("path") String path, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
-                () -> memoryStoreService.listVersions(userId, id, stripVersionsSuffix(path)));
+                () -> memoryStoreService.listVersions(userId, id, normalizePath(path)));
     }
 
     /** Lists share grants on a memory store. Owner-only. */
@@ -167,13 +172,5 @@ public class MemoryStoreController {
             return "";
         }
         return path.startsWith("/") ? path.substring(1) : path;
-    }
-
-    private static String stripVersionsSuffix(String path) {
-        String normalized = normalizePath(path);
-        if (normalized.endsWith("/versions")) {
-            return normalized.substring(0, normalized.length() - "/versions".length());
-        }
-        return normalized;
     }
 }

@@ -32,19 +32,17 @@ or a company, that's Builder.
 |---|---|
 | **Use it when** | A whole team or organisation needs to build and run self-evolving agents |
 | **Users** | Many — every authenticated user has their own workspace |
-| **Isolation** | Per-`(userId, agentId)` workspace namespaces; optional Docker sandbox per user |
+| **Isolation** | Per-`(userId, agentId)` workspace namespaces; Managed Environment `sandbox` (E2B) or `self_hosted` Worker |
 | **Self-evolution** | ✅ Same as claw — but inside each user's own workspace |
 | **Sharing** | ✅ With specific users, groups, or globally — and with run / edit / fork tiers |
-| **Distribution** | ✅ Horizontally scalable once the remote filesystem and a distributed session backend are configured |
-| **Filesystem** | `CompositeFilesystem` — composes per-user namespaced storage with optional sandbox / remote stores |
+| **Distribution** | ✅ Horizontally scalable with shared JDBC (+ optional remote FS); Hands Worker is outbound-only |
+| **Execution** | Environment types: `local` / `sandbox` (E2B) / `remote` / `self_hosted` (outbound Worker) |
 
 ### Architecture
 
-Builder runs every agent through a **HarnessAgent on a `CompositeFilesystem`**.
-The composite splits each agent's filesystem into namespaced layers, so the
-same `WorkspaceManager` API serves a tenant locally, in a Docker sandbox, or
-against a distributed `BaseStore` — all driven by the `builder.workspace-store.fs-spec`
-switch.
+Builder runs Managed Agents through **HarnessAgent** with Hands resolved by **Environment type**:
+local host FS, **E2B** cloud sandboxes (`type=sandbox`), remote KV FS, or event-driven
+**self_hosted** Workers. Brain and Hands stay split — Workers never need inbound ports or a shared disk.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -54,27 +52,22 @@ switch.
 │                  │                                                  │
 │                  ▼                                                  │
 │   ┌──────────────────────────────────────────────────────────────┐  │
-│   │  HarnessGateway                                              │  │
-│   │   ├─ Agent (alice, agent-A) ──┐                              │  │
-│   │   ├─ Agent (alice, agent-B)   │  HarnessAgent per (user,id)  │  │
-│   │   └─ Agent (bob,   agent-A) ──┘                              │  │
+│   │  Managed Sessions (Brain)                                    │  │
+│   │   Agent × Environment → HarnessAgent + event log / SSE       │  │
 │   └──────────────────────────────────┬───────────────────────────┘  │
 │                                      ▼                              │
-│   ┌──────────────────────────────────────────────────────────────┐  │
-│   │  CompositeFilesystem  (per-(userId, agentId) namespace)      │  │
-│   │   ┌──────────────┬──────────────┬─────────────────────────┐  │  │
-│   │   │  local       │  sandbox     │  remote                 │  │  │
-│   │   │  (default)   │  (Docker)    │  (BaseStore: Redis/OSS) │  │  │
-│   │   └──────────────┴──────────────┴─────────────────────────┘  │  │
-│   └──────────────────────────────────────────────────────────────┘  │
+│   ┌──────────────┬──────────────┬──────────────┬─────────────────┐  │
+│   │ local        │ sandbox      │ remote       │ self_hosted     │  │
+│   │ (host FS)    │ (E2B cloud)  │ (BaseStore)  │ (outbound Worker)│ │
+│   └──────────────┴──────────────┴──────────────┴─────────────────┘  │
 │                                                                     │
-│   User & agent records  (H2 by default; switch to MySQL/PG for prod)│
+│   Catalog + sessions (H2 by default; MySQL/PG for prod)             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-The three `fs-spec` modes (`local` / `sandbox` / `remote`) all reuse the
-**same** `CompositeFilesystem` shape — only the underlying storage engine
-changes. See **[Filesystem Modes](#filesystem-modes)** below for picking one.
+Product surface is **Environment type** on Sessions (not legacy Docker). E2B config:
+`builder.e2b.*` / `BUILDER_E2B_API_KEY`. Details: **[Filesystem Modes](#filesystem-modes)**
+and [docs/guide/05-environments.md](docs/guide/05-environments.md).
 
 ---
 
@@ -86,9 +79,9 @@ the existing HarnessAgent runtime:
 | Resource | API | Role |
 |---|---|---|
 | **Agent** (versioned) | `/api/agents`, `/api/agents/{id}/versions` | Optimistic-lock updates (`version` required); archive; immutable config snapshots (globals materialize under owner `__global__`) |
-| **Environment** | `/api/environments` | Execution template: `local` / `sandbox` / `remote` / `self_hosted` + `isolationScope`; shareable via `/shares` |
+| **Environment** | `/api/environments` | Execution template: `local` (host) / `sandbox` (E2B cloud hands) / `remote` (distributed KV FS, no shell) / `self_hosted` (outbound Worker hands); shareable via `/shares`. Worker API: `/api/environments/{id}/work/*` |
 | **Session** | `/api/sessions` | Agent × Environment run; append-only `{domain}.{action}` event log; SSE stream; IM channels also bridge here |
-| **Memory store** | `/api/memory-stores` | Cross-session memories mounted at `workspace/memory/{name}/` with versioned writeback |
+| **Memory store** | `/api/memory-stores` | Cross-session JPA documents mounted as live FS routes at `memory-stores/{name}/` (not host materialize); orthogonal to harness-native `MEMORY.md` / `memory/` LTM |
 | **Vault** | `/api/vaults` | Per-user encrypted credentials (AES-GCM); injected into MCP `tools.json` `${ENV}` / server env at session build |
 | **Deployment** | `/api/deployments` | Cron / webhook / manual triggers that create a managed session and run a turn |
 | **Multiagent** | `/api/multiagent/run` | Sequential fan-out across agents (subagents also via SessionsTool on UCAs) |
@@ -98,6 +91,19 @@ Chat UI defaults to **managed session** mode (create session → post `user.mess
 Session turns resolve a HarnessAgent keyed by `(owner, agent, version, environment, mounts)` so pinned versions and environments actually affect runtime filesystem topology and prompts. Tool calls with `permissionPolicies` of `always_ask` pause the session (`requires_action`) until the UI posts `user.tool_confirmation`. `user.interrupt` cancels the Reactor subscription and calls `HarnessAgent.interrupt()`.
 
 Set `BUILDER_VAULT_MASTER_KEY` in production for vault encryption.
+
+Production follow-ups that do **not** block trial completeness (multi-replica interrupt, Files mounts, Worker custom-tool SPI, legacy chat retirement, etc.) are tracked in [docs/FOLLOW_UP_PRODUCTION.md](docs/FOLLOW_UP_PRODUCTION.md).
+
+Managed Agents HTTP surface (control plane / data plane / gaps vs Claude): [docs/MANAGED_AGENTS_API.md](docs/MANAGED_AGENTS_API.md).
+
+**Product guide**: [docs/guide/README.md](docs/guide/README.md).  
+**Deploy**: [docs/guide/13-operations.md](docs/guide/13-operations.md).  
+**Trial checklist** (local / E2B / self_hosted / HITL): [docs/guide/14-validation.md](docs/guide/14-validation.md).
+
+API shape refactor (Agent body consolidation, etc.): [docs/API_REFACTOR.md](docs/API_REFACTOR.md).
+
+Data-plane contract (events, deltas, worker, errors): [docs/DATA_PLANE_CONTRACT.md](docs/DATA_PLANE_CONTRACT.md).
+Event type reference: [docs/events/README.md](docs/events/README.md).
 
 ---
 
@@ -157,7 +163,8 @@ builder:
 
 ## Filesystem Modes
 
-Builder supports three filesystem modes that control how per-(user, agent) workspaces are backed. Set via `builder.workspace-store.fs-spec`.
+For **Managed Agents trials**, pick an Environment type (`local` / `sandbox` / `self_hosted` / `remote`) — see [14-validation.md](docs/guide/14-validation.md).  
+The `builder.workspace-store.fs-spec` switch below is the older workspace-store backing knobs; Managed `type=sandbox` always uses **E2B**, not local Docker.
 
 ### Local Mode (default)
 
@@ -173,49 +180,41 @@ Agents run directly on the host with `LocalFilesystemWithShell`. Each user's wor
 
 **When to use:** Single-node deployments, local development, trusted environments.
 
-### Sandbox Mode
+### Sandbox Mode (Managed Environment `type=sandbox` → E2B)
+
+Managed Agents sessions with `environment.type=sandbox` run hands tools inside **E2B cloud sandboxes** via `agentscope-extensions-sandbox-e2b` (`E2bFilesystemSpec`). Builder does **not** use local Docker or Daytona for this path.
 
 ```yaml
 builder:
-  workspace-store:
-    fs-spec: sandbox
-  sandbox:
-    enabled: true
-    image: agentscope/python-sandbox:py311-slim
-    network: none
-    workspace-root: /workspace
-    isolation: USER
-    projection-roots: AGENTS.md,skills,subagents,knowledge
-    cpu-count: 1
-    memory-bytes: 1073741824   # 1 GiB
+  e2b:
+    api-key: ${BUILDER_E2B_API_KEY:}   # or set E2B_API_KEY; per-env config.apiKey overrides
+    template-id: base
+    workspace-root: /home/user
+    sandbox-timeout-seconds: 300
+    persistence-mode: TAR
 ```
 
-Agents run inside Docker containers, providing OS-level isolation per user. Workspace files (skills, subagents, AGENTS.md, knowledge) are projected from the host into the container. The web API continues managing projected files on the host filesystem.
-
 **Prerequisites:**
-- Docker daemon accessible to the application
-- The sandbox image built and available locally (or pullable)
+- Valid E2B API key
+- Optional custom E2B template for pre-installed runtimes (prefer templates over Claude-style `packages` — not enforced yet; see `docs/SANDBOX_GAPS.md`)
 
 **Configuration reference:**
 
 | Property | Env Var | Default | Description |
 |---|---|---|---|
-| `builder.sandbox.enabled` | `BUILDER_SANDBOX_ENABLED` | `false` | Enable sandbox mode |
-| `builder.sandbox.image` | `BUILDER_SANDBOX_IMAGE` | `agentscope/python-sandbox:py311-slim` | Docker image |
-| `builder.sandbox.network` | `BUILDER_SANDBOX_NETWORK` | `none` | Docker network mode |
-| `builder.sandbox.workspace-root` | `BUILDER_SANDBOX_WORKSPACE_ROOT` | `/workspace` | Mount path inside container |
-| `builder.sandbox.isolation` | `BUILDER_SANDBOX_ISOLATION` | `USER` | Isolation scope: `SESSION`, `USER`, `AGENT`, `GLOBAL` |
-| `builder.sandbox.projection-roots` | `BUILDER_SANDBOX_PROJECTION_ROOTS` | `AGENTS.md,skills,subagents,knowledge` | Host files projected into container |
-| `builder.sandbox.cpu-count` | `BUILDER_SANDBOX_CPU_COUNT` | `0` (no limit) | CPU limit per container |
-| `builder.sandbox.memory-bytes` | `BUILDER_SANDBOX_MEMORY_BYTES` | `0` (no limit) | Memory limit per container (bytes) |
+| `builder.e2b.api-key` | `BUILDER_E2B_API_KEY` (fallback `E2B_API_KEY`) | empty | E2B API key (required for `type=sandbox`) |
+| `builder.e2b.template-id` | `BUILDER_E2B_TEMPLATE_ID` | `base` | Default E2B template |
+| `builder.e2b.workspace-root` | `BUILDER_E2B_WORKSPACE_ROOT` | `/home/user` | Workspace path inside sandbox |
+| `builder.e2b.sandbox-timeout-seconds` | `BUILDER_E2B_SANDBOX_TIMEOUT_SECONDS` | `300` | Sandbox timeout |
+| `builder.e2b.api-base-url` | `BUILDER_E2B_API_BASE_URL` | empty | Optional API base override |
+| `builder.e2b.domain` | `BUILDER_E2B_DOMAIN` | empty | Optional domain override |
+| `builder.e2b.persistence-mode` | `BUILDER_E2B_PERSISTENCE_MODE` | `TAR` | `TAR` or `NATIVE_SNAPSHOT` |
 
-**Isolation scopes:**
-- `SESSION` — one container per chat session
-- `USER` — one container per user, shared across sessions
-- `AGENT` — one container per agent, shared across users
-- `GLOBAL` — single container shared globally
+**Isolation scopes** (environment `config.isolationScope`, default `SESSION`):
+- `SESSION` — one sandbox isolation key per chat session (Claude-aligned default)
+- `USER` / `AGENT` / `GLOBAL` — coarser sharing (advanced)
 
-**Distributed sandbox:** By default, sandbox runs in single-node mode. For multi-replica deployments, provide a distributed `Session` bean (e.g. Redis-backed) so sandbox state is shared across instances.
+Create example: see [docs/guide/05-environments.md](docs/guide/05-environments.md).
 
 **When to use:** Multi-tenant deployments where agents execute untrusted code, or when OS-level isolation between users is required.
 
@@ -239,7 +238,7 @@ Both agent runtime and workspace management use a distributed `BaseStore` store.
 
 ## Persistence
 
-Builder ships with embedded H2 for instant local quick-start — users, agent definitions and share grants are persisted automatically; default `admin/admin`, `bob/bob` and `alice/alice` accounts are seeded so you can log in immediately. For production, switch to MySQL or PostgreSQL by activating the bundled `jdbc` Spring profile and overriding the JDBC URL / credentials (`BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD`); both drivers are already on the classpath.
+Builder ships with embedded H2 for instant local quick-start — users, agent definitions, share grants, short-term agent brain state (`AgentStateStore` → `builder_agent_state`), and multi-replica coordination tables (`builder_coord_*` for turn leases, HITL tickets, hands work queue, cron fire leases) are persisted automatically; default `admin/admin`, `bob/bob` and `alice/alice` accounts are seeded so you can log in immediately. For production, switch to MySQL or PostgreSQL by activating the bundled `jdbc` Spring profile and overriding the JDBC URL / credentials (`BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD`); both drivers are already on the classpath. Pointing replicas at the same DataSource shares catalog data, conversation state, and coordination without a separate Redis requirement (override the `AgentStateStore` / `CoordinationStore` beans if you prefer Redis). Set `builder.hands.in-process-worker=false` and run `io.agentscope.builder.worker.HandsWorkerMain` for an out-of-process Hands worker.
 
 ---
 
@@ -267,7 +266,7 @@ Agents are defined in `~/.agentscope/builder/agentscope.json`:
 
 Omit the `workspace` field to use the per-app default (`~/.agentscope/builder/workspace`).
 
-Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata stored with the agent definition. The runtime sandbox behavior is currently controlled globally via `builder.sandbox.*` properties.
+Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata on the agent definition. Managed session execution uses the Session's Environment (`type=sandbox` → E2B via `builder.e2b.*` / env `config`).
 
 ---
 
@@ -280,9 +279,9 @@ Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata stored w
 | `BUILDER_WORKSPACE` | `builder.workspace` | (JVM cwd) | Working directory |
 | `BUILDER_JWT_SECRET` | `builder.jwt.secret` | (dev default) | JWT signing secret |
 | `BUILDER_WORKSPACE_FS_SPEC` | `builder.workspace-store.fs-spec` | `local` | Filesystem mode |
-| `BUILDER_SANDBOX_ENABLED` | `builder.sandbox.enabled` | `false` | Enable sandbox |
-| `BUILDER_SANDBOX_IMAGE` | `builder.sandbox.image` | `agentscope/python-sandbox:py311-slim` | Sandbox Docker image |
-| `BUILDER_SANDBOX_ISOLATION` | `builder.sandbox.isolation` | `USER` | Sandbox isolation scope |
+| `BUILDER_E2B_API_KEY` | `builder.e2b.api-key` | empty | E2B API key for `type=sandbox` |
+| `BUILDER_E2B_TEMPLATE_ID` | `builder.e2b.template-id` | `base` | Default E2B template |
+| `BUILDER_E2B_SANDBOX_TIMEOUT_SECONDS` | `builder.e2b.sandbox-timeout-seconds` | `300` | E2B sandbox timeout |
 | `BUILDER_AGENT_NAME` | `builder.agent.name` | `builder-agent` | Default agent name |
 | `SPRING_PROFILES_ACTIVE` | `spring.profiles.active` | (none) | Set to `jdbc` to switch the database from H2 to MySQL / PostgreSQL |
 | `BUILDER_DB_URL` / `BUILDER_DB_USER` / `BUILDER_DB_PASSWORD` | `spring.datasource.*` | H2 file under `${user.home}/.agentscope-builder/` | Production database connection — see [Persistence](#persistence) |

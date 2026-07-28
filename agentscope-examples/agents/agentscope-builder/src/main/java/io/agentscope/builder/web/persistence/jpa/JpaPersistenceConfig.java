@@ -65,6 +65,12 @@ public class JpaPersistenceConfig {
     private static final Logger log = LoggerFactory.getLogger(JpaPersistenceConfig.class);
 
     @Bean
+    public org.springframework.transaction.support.TransactionTemplate transactionTemplate(
+            org.springframework.transaction.PlatformTransactionManager txManager) {
+        return new org.springframework.transaction.support.TransactionTemplate(txManager);
+    }
+
+    @Bean
     public UserStore jpaUserStore(UserEntityRepository repository) {
         log.info("Persistence: user store backed by JPA");
         return new JpaUserStore(repository);

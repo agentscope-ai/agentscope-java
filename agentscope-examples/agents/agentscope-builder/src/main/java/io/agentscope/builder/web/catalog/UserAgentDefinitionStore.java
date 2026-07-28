@@ -19,18 +19,22 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.McpServerSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.MultiagentSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.SkillRef;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
  * Abstraction over the per-user custom agent definition registry.
  *
  * <p>Agent definitions carry the user-facing metadata for every custom agent (id, name,
- * description, system prompt, model overrides, tool allow/deny lists, identity config,
- * sharing grants, ...). Workspace files (skills, subagents, memory, ...) are stored separately
- * under the agent's namespaced workspace directory; only the lightweight definition lives here.
+ * description, system prompt, model overrides, tools/mcpServers/skills, identity config, sharing
+ * grants, ...). Workspace files (skills, subagents, memory, ...) are stored separately under the
+ * agent's namespaced workspace directory; only the lightweight definition lives here.
  *
  * <p>The only bundled implementation is
  * {@link io.agentscope.builder.web.persistence.jpa.JpaUserAgentDefinitionStore}, which persists
@@ -71,17 +75,17 @@ public interface UserAgentDefinitionStore {
             String id,
             String name,
             String description,
-            String sysPrompt,
+            String system,
             String model,
             Integer maxIters,
-            List<String> toolsAllow,
-            List<String> toolsDeny,
+            List<AgentToolset> tools,
+            List<McpServerSpec> mcpServers,
+            List<SkillRef> skills,
+            MultiagentSpec multiagent,
             String identityName,
             String identityEmoji,
             List<String> groupChatMentionPatterns,
             Boolean groupChatRequireMention,
-            List<String> skillsAllow,
-            List<String> skillsDeny,
             long createdAt,
             long updatedAt,
             List<AgentShareGrant> shares,
@@ -92,26 +96,24 @@ public interface UserAgentDefinitionStore {
             String sandboxMode,
             String sandboxScope,
             int version,
-            Long archivedAt,
-            Map<String, String> permissionPolicies) {
+            Long archivedAt) {
 
         public AgentDefinition toDefinition(String ownerId) {
             return new AgentDefinition(
                     id,
                     name != null ? name : id,
                     description,
-                    sysPrompt,
+                    system,
                     model,
                     maxIters,
-                    null, // effective tool list resolved at runtime
-                    toolsAllow,
-                    toolsDeny,
+                    tools,
+                    mcpServers,
+                    skills,
+                    multiagent,
                     identityName,
                     identityEmoji,
                     groupChatMentionPatterns,
                     groupChatRequireMention,
-                    skillsAllow,
-                    skillsDeny,
                     AgentDefinition.SCOPE_USER,
                     ownerId,
                     createdAt,
@@ -124,7 +126,7 @@ public interface UserAgentDefinitionStore {
                     sandboxScope,
                     version,
                     archivedAt,
-                    permissionPolicies,
+                    null, // metadata
                     null); // tierForCurrentUser — populated by the controller
         }
 
@@ -133,13 +135,14 @@ public interface UserAgentDefinitionStore {
             AgentConfigEntry e = new AgentConfigEntry();
             e.setName(name);
             e.setDescription(description);
-            e.setSysPrompt(sysPrompt);
+            e.setSysPrompt(system);
             e.setModel(model);
             e.setMaxIters(maxIters);
-            if (toolsAllow != null || toolsDeny != null) {
+            var toolsConfig = AgentSpecCodec.toToolsConfig(tools, mcpServers);
+            if (toolsConfig.getAllow() != null || toolsConfig.getDeny() != null) {
                 AgentConfigEntry.ToolsConfig tc = new AgentConfigEntry.ToolsConfig();
-                tc.setAllow(toolsAllow);
-                tc.setDeny(toolsDeny);
+                tc.setAllow(toolsConfig.getAllow());
+                tc.setDeny(toolsConfig.getDeny());
                 e.setTools(tc);
             }
             if (identityName != null || identityEmoji != null) {
@@ -154,10 +157,10 @@ public interface UserAgentDefinitionStore {
                 gc.setRequireMention(groupChatRequireMention);
                 e.setGroupChat(gc);
             }
-            if (skillsAllow != null || skillsDeny != null) {
+            List<String> skillNames = AgentSpecCodec.workspaceSkillNames(skills);
+            if (!skillNames.isEmpty()) {
                 AgentConfigEntry.SkillsConfig sk = new AgentConfigEntry.SkillsConfig();
-                sk.setAllow(skillsAllow);
-                sk.setDeny(skillsDeny);
+                sk.setAllow(skillNames);
                 e.setSkills(sk);
             }
             if (skillRepositories != null && !skillRepositories.isEmpty()) {

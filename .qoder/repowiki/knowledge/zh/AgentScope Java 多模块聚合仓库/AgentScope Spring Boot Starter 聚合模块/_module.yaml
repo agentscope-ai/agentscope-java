@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: d5b7e3bf-4f63-4416-96b5-5714b23ede93
-title: AgentScope Spring Boot Starter 聚合模块
-scope:
-    - agentscope-extensions/agentscope-spring-boot-starters/
-source_files: []
-depends_on: []
-related_to: []

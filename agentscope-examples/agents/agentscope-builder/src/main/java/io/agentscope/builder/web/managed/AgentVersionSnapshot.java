@@ -17,8 +17,11 @@ package io.agentscope.builder.web.managed;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.McpServerSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.MultiagentSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.SkillRef;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Immutable snapshot of versioned agent configuration fields persisted in {@link
@@ -28,18 +31,17 @@ import java.util.Map;
 public record AgentVersionSnapshot(
         String name,
         String description,
-        String sysPrompt,
+        String system,
         String model,
         Integer maxIters,
-        List<String> toolsAllow,
-        List<String> toolsDeny,
+        List<AgentToolset> tools,
+        List<McpServerSpec> mcpServers,
+        List<SkillRef> skills,
+        MultiagentSpec multiagent,
         String identityName,
         String identityEmoji,
         List<String> groupChatMentionPatterns,
         Boolean groupChatRequireMention,
-        List<String> skillsAllow,
-        List<String> skillsDeny,
         List<SkillRepositoryConfigEntry> skillRepositories,
         String sandboxMode,
-        String sandboxScope,
-        Map<String, String> permissionPolicies) {}
+        String sandboxScope) {}

@@ -15,15 +15,8 @@
  */
 package io.agentscope.builder.web.managed;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -31,14 +24,23 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Materializes session-bound memory stores into {@code workspace/memory/{storeName}/} and
- * writes filesystem changes back as versioned memory documents after a turn.
+ * Resolves session-bound memory stores into {@link MemoryStoreFilesystem} routes mounted under
+ * {@code memory-stores/{storeName}/} in the harness filesystem (see {@link
+ * MemoryStoreFilesystem#routePrefix} and {@link
+ * EnvironmentSpecFactory#applyMemoryStoreRoutes}).
+ *
+ * <p>Memory documents are read/written directly against the {@link MemoryStoreService} JPA store
+ * — there is no host-disk materialization step, so mounts stay in sync across concurrent turns
+ * and cached {@link io.agentscope.harness.agent.HarnessAgent} instances without an explicit
+ * writeback pass.
  */
 @Service
 public class MemoryMountService {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMountService.class);
-    public static final String MEMORY_ROOT = "memory";
+
+    /** Root path segment under which memory-store routes are mounted. */
+    public static final String MEMORY_ROOT = "memory-stores";
 
     private final MemoryStoreService memoryStoreService;
 
@@ -47,36 +49,69 @@ public class MemoryMountService {
     }
 
     /**
-     * Writes each memory document into the workspace mount directory. Returns mount descriptions
-     * suitable for system-prompt injection.
+     * Loads store metadata for each requested memory store id and returns mount descriptions
+     * suitable for system-prompt injection. Stores that fail to resolve (deleted, no access) are
+     * skipped with a warning.
      */
-    public List<MountInfo> materialize(
-            String ownerId, Path workspace, List<String> memoryStoreIds) {
+    public List<MountInfo> resolveMounts(String ownerId, List<String> memoryStoreIds) {
         List<MountInfo> mounts = new ArrayList<>();
-        if (memoryStoreIds == null || memoryStoreIds.isEmpty() || workspace == null) {
+        if (memoryStoreIds == null || memoryStoreIds.isEmpty()) {
             return mounts;
         }
         for (String storeId : memoryStoreIds) {
             try {
                 MemoryStoreDto store = memoryStoreService.getStore(ownerId, storeId);
                 String safeName = sanitize(store.name());
-                Path mountRoot = workspace.resolve(MEMORY_ROOT).resolve(safeName);
-                Files.createDirectories(mountRoot);
-                for (MemoryDto memory : memoryStoreService.listMemories(ownerId, storeId)) {
-                    Path file = resolveSafe(mountRoot, memory.path());
-                    Files.createDirectories(file.getParent());
-                    String content = memory.content() == null ? "" : memory.content();
-                    Files.writeString(file, content, StandardCharsets.UTF_8);
-                }
                 mounts.add(new MountInfo(storeId, store.name(), MEMORY_ROOT + "/" + safeName));
             } catch (Exception ex) {
-                log.warn("Failed to materialize memory store {}: {}", storeId, ex.getMessage());
+                log.warn("Failed to resolve memory store {}: {}", storeId, ex.getMessage());
             }
         }
         return mounts;
     }
 
-    /** Builds a system-prompt appendix describing mounted memory directories. */
+    /**
+     * Builds one {@link MemoryStoreFilesystem} per resolvable memory store id, ready to be
+     * mounted via {@link EnvironmentSpecFactory#applyMemoryStoreRoutes}. All mounts default to
+     * {@code read_write}; use {@link #createFilesystems(String, List, Map)} to mount some stores
+     * {@code read_only}.
+     */
+    public List<MemoryStoreFilesystem> createFilesystems(
+            String ownerId, List<String> memoryStoreIds) {
+        return createFilesystems(ownerId, memoryStoreIds, Map.of());
+    }
+
+    /**
+     * Builds one {@link MemoryStoreFilesystem} per resolvable memory store id, applying a
+     * per-store access mode ({@code read_only} | {@code read_write}, default {@code
+     * read_write}) from {@code accessByStoreId} (typically sourced from the session's
+     * environment config, e.g. {@code config.memoryAccess = {storeId: "read_only"}}).
+     */
+    public List<MemoryStoreFilesystem> createFilesystems(
+            String ownerId, List<String> memoryStoreIds, Map<String, String> accessByStoreId) {
+        List<MemoryStoreFilesystem> filesystems = new ArrayList<>();
+        if (memoryStoreIds == null || memoryStoreIds.isEmpty()) {
+            return filesystems;
+        }
+        Map<String, String> access = accessByStoreId != null ? accessByStoreId : Map.of();
+        for (String storeId : memoryStoreIds) {
+            try {
+                MemoryStoreDto store = memoryStoreService.getStore(ownerId, storeId);
+                filesystems.add(
+                        new MemoryStoreFilesystem(
+                                memoryStoreService,
+                                ownerId,
+                                storeId,
+                                store.name(),
+                                access.get(storeId)));
+            } catch (Exception ex) {
+                log.warn("Failed to mount memory store {}: {}", storeId, ex.getMessage());
+            }
+        }
+        return filesystems;
+    }
+
+    /** Builds a system-prompt appendix describing mounted memory-store directories. */
     public String promptAppendix(List<MountInfo> mounts) {
         if (mounts == null || mounts.isEmpty()) {
             return null;
@@ -85,11 +120,13 @@ public class MemoryMountService {
         sb.append("\n\n## Mounted Memory Stores\n");
         sb.append(
                 "The following directories contain persistent cross-session memory. Read and update"
-                        + " files under these paths; changes are versioned after each turn.\n");
+                    + " files under these paths; changes are versioned immediately on write.\n");
         for (MountInfo mount : mounts) {
             sb.append("- `")
                     .append(mount.relativePath())
-                    .append("/` — store \"")
+                    .append("/` (also conceptually `/mnt/memory/")
+                    .append(sanitize(mount.storeName()))
+                    .append("/`) — store \"")
                     .append(mount.storeName())
                     .append("\"\n");
         }
@@ -97,59 +134,24 @@ public class MemoryMountService {
     }
 
     /**
-     * Walks mounted directories and persists file contents back into the memory store (versioned).
+     * @deprecated host-disk materialization is no longer used; memory stores are mounted live via
+     *     {@link #createFilesystems}. Retained only so callers mid-migration keep compiling;
+     *     delegates to {@link #resolveMounts}.
      */
+    @Deprecated
+    public List<MountInfo> materialize(
+            String ownerId, Path workspace, List<String> memoryStoreIds) {
+        return resolveMounts(ownerId, memoryStoreIds);
+    }
+
+    /**
+     * @deprecated writeback is a no-op: {@link MemoryStoreFilesystem} writes directly through to
+     *     {@link MemoryStoreService} on every tool call, so there is nothing left to reconcile
+     *     after a turn.
+     */
+    @Deprecated
     public void writeback(String ownerId, Path workspace, List<String> memoryStoreIds) {
-        if (memoryStoreIds == null || memoryStoreIds.isEmpty() || workspace == null) {
-            return;
-        }
-        for (String storeId : memoryStoreIds) {
-            try {
-                MemoryStoreDto store = memoryStoreService.getStore(ownerId, storeId);
-                Path mountRoot = workspace.resolve(MEMORY_ROOT).resolve(sanitize(store.name()));
-                if (!Files.isDirectory(mountRoot)) {
-                    continue;
-                }
-                Map<String, String> files = new LinkedHashMap<>();
-                Files.walkFileTree(
-                        mountRoot,
-                        new SimpleFileVisitor<>() {
-                            @Override
-                            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
-                                    throws IOException {
-                                if (attrs.isRegularFile()) {
-                                    String rel =
-                                            mountRoot
-                                                    .relativize(file)
-                                                    .toString()
-                                                    .replace('\\', '/');
-                                    files.put(rel, Files.readString(file, StandardCharsets.UTF_8));
-                                }
-                                return FileVisitResult.CONTINUE;
-                            }
-                        });
-                for (Map.Entry<String, String> entry : files.entrySet()) {
-                    String existing = null;
-                    try {
-                        existing =
-                                memoryStoreService
-                                        .getMemory(ownerId, storeId, entry.getKey())
-                                        .content();
-                    } catch (Exception ignored) {
-                        // new file
-                    }
-                    if (existing == null || !existing.equals(entry.getValue())) {
-                        memoryStoreService.putMemory(
-                                ownerId,
-                                storeId,
-                                entry.getKey(),
-                                new MemoryStoreService.PutMemoryRequest(entry.getValue()));
-                    }
-                }
-            } catch (Exception ex) {
-                log.warn("Memory writeback failed for store {}: {}", storeId, ex.getMessage());
-            }
-        }
+        // no-op — MemoryStoreFilesystem writes through immediately.
     }
 
     private static String sanitize(String name) {
@@ -159,15 +161,6 @@ public class MemoryMountService {
         return name.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-    private static Path resolveSafe(Path root, String relative) throws IOException {
-        String rel = relative == null || relative.isBlank() ? "MEMORY.md" : relative;
-        Path resolved = root.resolve(rel).normalize();
-        if (!resolved.startsWith(root.normalize())) {
-            throw new IOException("Path escapes memory mount: " + relative);
-        }
-        return resolved;
-    }
-
-    /** Description of one materialized memory mount. */
+    /** Description of one mounted memory store. */
     public record MountInfo(String storeId, String storeName, String relativePath) {}
 }

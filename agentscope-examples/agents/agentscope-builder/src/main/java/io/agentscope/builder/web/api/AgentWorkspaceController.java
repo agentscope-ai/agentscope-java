@@ -621,10 +621,11 @@ public class AgentWorkspaceController {
                                     description,
                                     source.model(),
                                     source.maxIters(),
-                                    source.tools(),
+                                    null, // built-in tool names resolved at runtime, not on the
+                                    // body
                                     "shared",
                                     null,
-                                    source.sysPrompt(),
+                                    source.system(),
                                     req.sourceAgentId());
                     String markdown = renderSubagentMarkdown(upsert);
                     WorkspaceContext ctx = resolveContext(userId, agentId);

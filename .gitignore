@@ -53,6 +53,8 @@ docs/_build
 openspec
 AGENTS.md
 CLAUDE.md
+.omc/
+.qoder/
 
 ##Log
 logs/
@@ -86,5 +88,3 @@ logs/
 ## harness db
 **/*.db
 
-## oh-my-claudecode
-.omc/

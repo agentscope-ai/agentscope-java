@@ -20,11 +20,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +47,6 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final TypeReference<List<SkillRepositoryConfigEntry>> SKILL_REPO_LIST =
             new TypeReference<>() {};
-    private static final TypeReference<Map<String, String>> POLICY_MAP = new TypeReference<>() {};
 
     private final AgentEntityRepository repository;
 
@@ -86,17 +85,17 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
 
         entity.setName(entry.name());
         entity.setDescription(entry.description());
-        entity.setSysPrompt(entry.sysPrompt());
+        entity.setSysPrompt(entry.system());
         entity.setModel(entry.model());
         entity.setMaxIters(entry.maxIters());
-        entity.setToolsAllowJson(writeList(entry.toolsAllow()));
-        entity.setToolsDenyJson(writeList(entry.toolsDeny()));
+        entity.setToolsJson(AgentSpecCodec.writeJson(entry.tools()));
+        entity.setMcpServersJson(AgentSpecCodec.writeJson(entry.mcpServers()));
         entity.setIdentityName(entry.identityName());
         entity.setIdentityEmoji(entry.identityEmoji());
         entity.setGroupChatMentionPatternsJson(writeList(entry.groupChatMentionPatterns()));
         entity.setGroupChatRequireMention(entry.groupChatRequireMention());
-        entity.setSkillsAllowJson(writeList(entry.skillsAllow()));
-        entity.setSkillsDenyJson(writeList(entry.skillsDeny()));
+        entity.setSkillsJson(AgentSpecCodec.writeJson(entry.skills()));
+        entity.setMultiagentJson(AgentSpecCodec.writeJson(entry.multiagent()));
         entity.setRunAs(entry.runAs());
         entity.setForkOf(entry.forkOf());
         entity.setSkillRepositoriesJson(writeSkillRepositories(entry.skillRepositories()));
@@ -104,7 +103,9 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
         entity.setSandboxScope(entry.sandboxScope());
         entity.setHeadVersion(entry.version());
         entity.setArchivedAt(entry.archivedAt());
-        entity.setPermissionPoliciesJson(writePolicyMap(entry.permissionPolicies()));
+        // Permission policies now live inline in tools[].configs[].permissionPolicy — this legacy
+        // column is no longer a source of truth and is left unset.
+        entity.setPermissionPoliciesJson(null);
         entity.setCreatedAt(entry.createdAt());
         entity.setUpdatedAt(entry.updatedAt());
 
@@ -155,14 +156,14 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
                 e.getSysPrompt(),
                 e.getModel(),
                 e.getMaxIters(),
-                readList(e.getToolsAllowJson()),
-                readList(e.getToolsDenyJson()),
+                AgentSpecCodec.readTools(e.getToolsJson()),
+                AgentSpecCodec.readMcpServers(e.getMcpServersJson()),
+                AgentSpecCodec.readSkills(e.getSkillsJson()),
+                AgentSpecCodec.readMultiagent(e.getMultiagentJson()),
                 e.getIdentityName(),
                 e.getIdentityEmoji(),
                 readList(e.getGroupChatMentionPatternsJson()),
                 e.getGroupChatRequireMention(),
-                readList(e.getSkillsAllowJson()),
-                readList(e.getSkillsDenyJson()),
                 e.getCreatedAt(),
                 e.getUpdatedAt(),
                 mapShares(e.getShares(), AgentShareEntity::getCreatedBy),
@@ -173,8 +174,7 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
                 e.getSandboxMode(),
                 e.getSandboxScope(),
                 e.getHeadVersion(),
-                e.getArchivedAt(),
-                readPolicyMap(e.getPermissionPoliciesJson()));
+                e.getArchivedAt());
     }
 
     private static List<AgentShareGrant> mapShares(
@@ -226,24 +226,6 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
         if (list == null || list.isEmpty()) return null;
         try {
             return MAPPER.writeValueAsString(list);
-        } catch (JsonProcessingException ex) {
-            return null;
-        }
-    }
-
-    private static Map<String, String> readPolicyMap(String json) {
-        if (json == null || json.isBlank()) return null;
-        try {
-            return MAPPER.readValue(json, POLICY_MAP);
-        } catch (JsonProcessingException ex) {
-            return null;
-        }
-    }
-
-    private static String writePolicyMap(Map<String, String> map) {
-        if (map == null || map.isEmpty()) return null;
-        try {
-            return MAPPER.writeValueAsString(map);
         } catch (JsonProcessingException ex) {
             return null;
         }

@@ -6,6 +6,7 @@ import {
   deleteEnvironment,
   listEnvironments,
 } from '../api/environments';
+import { HandsStatus, fetchHandsStatus } from '../api/hands';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -61,12 +62,18 @@ export default function EnvironmentsHubPage() {
   const [name, setName] = useState('');
   const [type, setType] = useState('local');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [hands, setHands] = useState<HandsStatus | null>(null);
 
   async function refresh() {
     setLoading(true);
     setErr(null);
     try {
       setItems(await listEnvironments());
+      try {
+        setHands(await fetchHandsStatus());
+      } catch {
+        setHands(null);
+      }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -129,6 +136,24 @@ export default function EnvironmentsHubPage() {
       <p style={S.blurb}>
         Execution environment templates used by managed agent sessions. Each session runs against one environment.
       </p>
+      {hands && (
+        <div style={{ ...S.card, marginBottom: 18 }}>
+          <div style={{ fontWeight: 600 }}>Hands / worker status</div>
+          <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+            brain <code>{hands.brainInstanceId}</code>
+            {' · '}pending work {hands.pendingWorkItems}
+            {' · '}local sandboxes {hands.localSandboxRegistrySize}
+          </div>
+          <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+            workers:{' '}
+            {Object.keys(hands.workerHeartbeats).length === 0
+              ? 'none'
+              : Object.entries(hands.workerHeartbeats)
+                  .map(([id, ts]) => `${id}@${new Date(ts).toLocaleTimeString()}`)
+                  .join(', ')}
+          </div>
+        </div>
+      )}
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
@@ -173,6 +198,14 @@ export default function EnvironmentsHubPage() {
                 <option value="remote">remote</option>
                 <option value="self_hosted">self_hosted</option>
               </select>
+              {type === 'self_hosted' && (
+                <p style={{ margin: '-14px 0 20px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                  Sessions on this environment attach a hands sandbox from an Environment Worker
+                  at the start of each turn (the built-in in-process worker handles this
+                  automatically for single-server deployments). No Docker image or remote sandbox
+                  is required.
+                </p>
+              )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>

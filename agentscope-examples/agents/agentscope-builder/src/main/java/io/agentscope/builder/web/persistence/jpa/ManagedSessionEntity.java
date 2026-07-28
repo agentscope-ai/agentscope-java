@@ -96,6 +96,15 @@ public class ManagedSessionEntity {
     private String vaultIdsJson;
 
     /**
+     * JSON-encoded list of resource mount descriptors (e.g. {@code github_repository} or {@code
+     * file}) applied to the session's workspace at build time. See {@code
+     * SessionResourceMountService}.
+     */
+    @Lob
+    @Column(name = "resources_json")
+    private String resourcesJson;
+
+    /**
      * {@code created} | {@code running} | {@code idle} | {@code requires_action} | {@code errored}
      * | {@code archived}
      */
@@ -211,6 +220,14 @@ public class ManagedSessionEntity {
 
     public void setVaultIdsJson(String vaultIdsJson) {
         this.vaultIdsJson = vaultIdsJson;
+    }
+
+    public String getResourcesJson() {
+        return resourcesJson;
+    }
+
+    public void setResourcesJson(String resourcesJson) {
+        this.resourcesJson = resourcesJson;
     }
 
     public String getStatus() {

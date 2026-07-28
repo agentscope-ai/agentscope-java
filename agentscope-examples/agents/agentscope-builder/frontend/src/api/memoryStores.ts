@@ -113,7 +113,7 @@ export async function deleteMemory(storeId: string, path: string): Promise<void>
 
 export async function listMemoryVersions(storeId: string, path: string): Promise<MemoryVersion[]> {
   const res = await fetch(
-    `/api/memory-stores/${encodeURIComponent(storeId)}/memories/${encodePath(path)}/versions`,
+    `/api/memory-stores/${encodeURIComponent(storeId)}/memories/versions/${encodePath(path)}`,
     { headers: authHeaders() },
   );
   if (!res.ok) throw new Error(`Failed to list memory versions: ${res.status}`);

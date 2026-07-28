@@ -15,8 +15,17 @@
  */
 package io.agentscope.builder.web.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
+import io.agentscope.builder.web.coord.CoordinationStore;
+import io.agentscope.builder.web.coord.JdbcCoordinationStore;
+import io.agentscope.builder.web.persistence.jpa.AgentStateEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.CoordHitlTicketEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.CoordLeaseEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.CoordWorkItemEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.CoordWorkerHeartbeatEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.JpaAgentStateStore;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
@@ -45,6 +54,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Spring Boot configuration for the agentscope-builder web module.
@@ -122,6 +132,16 @@ public class BuilderConfig {
     // -----------------------------------------------------------------
 
     /**
+     * Ensures a shared {@link ObjectMapper} is available for {@code ManagedJsonHelper} and API
+     * layers when Jackson auto-configuration does not expose one (WebFlux / Boot 4 setups).
+     */
+    @Bean
+    @ConditionalOnMissingBean(ObjectMapper.class)
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper().findAndRegisterModules();
+    }
+
+    /**
      * Creates a {@link DashScopeChatModel} bean when {@code builder.dashscope.api-key} (or the
      * legacy {@code claw.dashscope.api-key}) is configured and no other {@link Model} bean is
      * present. Skipped entirely when both properties are blank so that {@code Optional<Model>}
@@ -159,6 +179,39 @@ public class BuilderConfig {
         return JdbcStore.builder(dataSource).initializeSchema(true).build();
     }
 
+    /**
+     * Default {@link AgentStateStore} persisted in the builder catalog database ({@code
+     * builder_agent_state} table). Shared across replicas that point at the same DataSource.
+     * Operators can override by declaring their own {@link AgentStateStore} bean (e.g. Redis).
+     */
+    @Bean
+    @ConditionalOnMissingBean(AgentStateStore.class)
+    public AgentStateStore agentStateStore(AgentStateEntityRepository repository) {
+        log.info("Wiring default JpaAgentStateStore on the Spring DataSource / JPA schema");
+        return new JpaAgentStateStore(repository);
+    }
+
+    /**
+     * Default multi-replica coordination store (turn leases, HITL tickets, Hands work queue)
+     * persisted in the builder catalog database. Operators can override with Redis etc.
+     */
+    @Bean
+    @ConditionalOnMissingBean(CoordinationStore.class)
+    public CoordinationStore coordinationStore(
+            CoordLeaseEntityRepository leaseRepository,
+            CoordHitlTicketEntityRepository hitlRepository,
+            CoordWorkItemEntityRepository workRepository,
+            CoordWorkerHeartbeatEntityRepository workerRepository,
+            TransactionTemplate transactionTemplate) {
+        log.info("Wiring default JdbcCoordinationStore on the Spring DataSource / JPA schema");
+        return new JdbcCoordinationStore(
+                leaseRepository,
+                hitlRepository,
+                workRepository,
+                workerRepository,
+                transactionTemplate);
+    }
+
     // -----------------------------------------------------------------
     //  Core bootstrap — model injected as method parameter (no field
     //  @Autowired) to avoid circular dependency with dashscopeModel() above.
@@ -182,7 +235,7 @@ public class BuilderConfig {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             BaseStore baseStore,
-            Optional<AgentStateStore> sessionOpt)
+            AgentStateStore stateStore)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -198,19 +251,7 @@ public class BuilderConfig {
                             + " available.");
         }
 
-        AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
-        if (sessionOpt.isEmpty()) {
-            log.warn(
-                    "No distributed AgentStateStore bean configured ({}); using"
-                            + " InMemoryAgentStateStore. For multi-replica deployments, provide"
-                            + " a distributed AgentStateStore bean"
-                            + " (e.g. from agentscope-extensions-redis).",
-                    AgentStateStore.class.getName());
-        }
-
-        // RemoteFilesystemSpec requires a distributed AgentStateStore; when the effective store is
-        // local (InMemory/JsonFile), use LocalFilesystemSpec instead so the harness won't reject
-        // the topology at build time.
+        // RemoteFilesystemSpec requires a non-local AgentStateStore; JpaAgentStateStore qualifies.
         boolean localStore = isLocalStateStore(stateStore);
         if (localStore) {
             log.info(
@@ -218,7 +259,8 @@ public class BuilderConfig {
                     stateStore.getClass().getSimpleName());
         } else {
             log.info(
-                    "Effective AgentStateStore is distributed ({}); using RemoteFilesystemSpec.",
+                    "Effective AgentStateStore is shared/DB ({}); using RemoteFilesystemSpec"
+                            + " for bootstrap agents.",
                     stateStore.getClass().getSimpleName());
         }
 

@@ -15,16 +15,24 @@
  */
 package io.agentscope.builder.web.catalog;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.auth.UserStore.UserRecord;
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.McpServerSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.MultiagentSpec;
+import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.SkillRef;
 import io.agentscope.builder.web.managed.AgentVersionService;
 import io.agentscope.builder.web.managed.AgentVersionSnapshot;
 import io.agentscope.builder.web.managed.EnvironmentDto;
 import io.agentscope.builder.web.managed.MemoryMountService;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
+import io.agentscope.builder.web.managed.SessionResourceMountService;
 import io.agentscope.builder.web.managed.VaultCredentialResolver;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntity;
 import io.agentscope.builder.web.scaffold.WorkspaceScaffolder;
@@ -32,6 +40,8 @@ import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.template.TemplateRegistry;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.io.IOException;
@@ -49,6 +59,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -79,6 +90,10 @@ public class AgentCatalogService {
     /** Prefix for user-custom agent IDs when registered in the gateway. */
     public static final String UCA_PREFIX = "uca-";
 
+    /** Writes derived {@code workspace/tools.json} with human-readable indentation. */
+    private static final ObjectMapper TOOLS_JSON_MAPPER =
+            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+
     private final BuilderBootstrap builderBootstrap;
     private final UserAgentDefinitionStore store;
     private final Model model;
@@ -93,6 +108,9 @@ public class AgentCatalogService {
     private final AgentVersionService versionService;
     private final MemoryMountService memoryMountService;
     private final VaultCredentialResolver vaultCredentialResolver;
+    private final AgentStateStore agentStateStore;
+    private final SessionResourceMountService sessionResourceMountService;
+    private final DefinitionStore definitionStore;
 
     /**
      * In-flight cache of dynamically-registered gateway agent IDs. Key: {@code {userId}/{agentId}}
@@ -121,9 +139,14 @@ public class AgentCatalogService {
             AgentAclService aclService,
             AgentVersionService versionService,
             io.agentscope.builder.web.managed.EnvironmentSpecFactory environmentSpecFactory,
-            io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware toolConfirmationMiddleware,
+            @Lazy
+                    io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware
+                            toolConfirmationMiddleware,
             MemoryMountService memoryMountService,
-            VaultCredentialResolver vaultCredentialResolver) {
+            VaultCredentialResolver vaultCredentialResolver,
+            AgentStateStore agentStateStore,
+            SessionResourceMountService sessionResourceMountService,
+            DefinitionStore definitionStore) {
         this.builderBootstrap = builderBootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
@@ -137,6 +160,9 @@ public class AgentCatalogService {
         this.toolConfirmationMiddleware = toolConfirmationMiddleware;
         this.memoryMountService = memoryMountService;
         this.vaultCredentialResolver = vaultCredentialResolver;
+        this.agentStateStore = agentStateStore;
+        this.sessionResourceMountService = sessionResourceMountService;
+        this.definitionStore = definitionStore;
         // Install the owner-pinned filesystem user-id resolver on the gateway so chat-time reads
         // for shared (SCOPE_USER) agents land in the same namespace the controller writes to.
         // See {@link #resolveFilesystemUserId} for the resolution rules.
@@ -287,22 +313,24 @@ public class AgentCatalogService {
         if (workspacePath == null) {
             workspacePath = id + WORKSPACE_DIR_SUFFIX;
         }
+        List<AgentToolset> tools =
+                req.tools() != null ? req.tools() : AgentSpecCodec.defaultToolsets();
         UserAgentDefinitionStore.StoredEntry entry =
                 new UserAgentDefinitionStore.StoredEntry(
                         id,
                         req.name() != null ? req.name() : id,
                         req.description(),
-                        req.sysPrompt(),
+                        req.system(),
                         req.model(),
                         req.maxIters(),
-                        req.toolsAllow(),
-                        req.toolsDeny(),
+                        tools,
+                        req.mcpServers(),
+                        req.skills(),
+                        req.multiagent(),
                         req.identityName(),
                         req.identityEmoji(),
                         req.groupChatMentionPatterns(),
                         req.groupChatRequireMention(),
-                        req.skillsAllow(),
-                        req.skillsDeny(),
                         now,
                         now,
                         null, // shares — new agents start unshared
@@ -313,8 +341,7 @@ public class AgentCatalogService {
                         req.sandboxMode(),
                         req.sandboxScope(),
                         1,
-                        null,
-                        req.permissionPolicies());
+                        null);
         UserAgentDefinitionStore.StoredEntry saved = store.save(userId, entry);
         versionService.createInitialVersion(
                 userId, id, versionService.snapshotFromStoredEntry(saved));
@@ -334,8 +361,9 @@ public class AgentCatalogService {
             } else if (req.aiDraft() != null) {
                 writeDraftFiles(workspace, req.aiDraft(), entry);
             } else {
-                WorkspaceScaffolder.scaffold(workspace, entry.name(), entry.sysPrompt());
+                WorkspaceScaffolder.scaffold(workspace, entry.name(), entry.system());
             }
+            writeToolsJson(workspace, saved.tools(), saved.mcpServers());
         } catch (ResponseStatusException e) {
             throw e;
         } catch (IOException e) {
@@ -348,6 +376,45 @@ public class AgentCatalogService {
         }
 
         return saved.toDefinition(userId);
+    }
+
+    /**
+     * Best-effort local cache of derived {@code workspace/tools.json}. Authoritative tools/MCP
+     * config lives in the agent version snapshot and is injected via {@code b.toolsConfig} at
+     * build time — this file is optional for operators / IDE inspection and must not be required
+     * for multi-replica correctness.
+     */
+    private static void writeToolsJson(
+            Path workspace, List<AgentToolset> tools, List<McpServerSpec> mcpServers)
+            throws IOException {
+        ToolsConfig cfg = AgentSpecCodec.toToolsConfig(tools, mcpServers);
+        String json = TOOLS_JSON_MAPPER.writeValueAsString(cfg);
+        Path file = workspace.resolve("tools.json");
+        Files.createDirectories(workspace);
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, json + "\n", StandardCharsets.UTF_8);
+        try {
+            Files.move(
+                    tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** Optional read of a local tools.json cache (globals / operator inspection). */
+    private static ToolsConfig readOptionalToolsJson(Path workspace) {
+        if (workspace == null) {
+            return null;
+        }
+        Path file = workspace.resolve("tools.json");
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        try {
+            return TOOLS_JSON_MAPPER.readValue(Files.readString(file), ToolsConfig.class);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private Path userWorkspacePath(String userId, UserAgentDefinitionStore.StoredEntry entry) {
@@ -414,11 +481,11 @@ public class AgentCatalogService {
                 draft.description() != null && !draft.description().isBlank()
                         ? draft.description()
                         : (entry.description() != null ? entry.description() : "");
-        String sysPrompt =
+        String system =
                 draft.sysPrompt() != null && !draft.sysPrompt().isBlank()
                         ? draft.sysPrompt()
-                        : (entry.sysPrompt() != null
-                                ? entry.sysPrompt()
+                        : (entry.system() != null
+                                ? entry.system()
                                 : "You are a helpful assistant.");
 
         StringBuilder agentsMd = new StringBuilder();
@@ -426,22 +493,18 @@ public class AgentCatalogService {
         if (!description.isEmpty()) {
             agentsMd.append("> ").append(description.trim()).append("\n\n");
         }
-        agentsMd.append(sysPrompt.trim()).append("\n");
+        agentsMd.append(system.trim()).append("\n");
         writeIfMissing(workspace.resolve("AGENTS.md"), agentsMd.toString());
 
-        // tools.json
+        // tools.json — derived from the AI-suggested tool names via the same toolset shape used
+        // by the Agent body, so the workspace file matches what the catalog would persist.
         if (draft.suggestedTools() != null && !draft.suggestedTools().isEmpty()) {
-            StringBuilder tools = new StringBuilder();
-            tools.append("{\n  \"allow\": [\n");
-            for (int i = 0; i < draft.suggestedTools().size(); i++) {
-                String t = draft.suggestedTools().get(i);
-                if (t == null) continue;
-                tools.append("    \"").append(escapeJson(t)).append("\"");
-                if (i < draft.suggestedTools().size() - 1) tools.append(",");
-                tools.append("\n");
-            }
-            tools.append("  ],\n  \"deny\": []\n}\n");
-            writeIfMissing(workspace.resolve("tools.json"), tools.toString());
+            List<AgentToolset> toolsets =
+                    AgentSpecCodec.toolsetsFromAllowList(draft.suggestedTools());
+            ToolsConfig cfg = AgentSpecCodec.toToolsConfig(toolsets, null);
+            writeIfMissing(
+                    workspace.resolve("tools.json"),
+                    TOOLS_JSON_MAPPER.writeValueAsString(cfg) + "\n");
         }
 
         // Skills
@@ -469,10 +532,6 @@ public class AgentCatalogService {
 
     private static String sanitizeName(String raw) {
         return raw.replaceAll("[^a-zA-Z0-9_-]", "-").toLowerCase();
-    }
-
-    private static String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static void writeIfMissing(Path file, String content) throws IOException {
@@ -513,11 +572,13 @@ public class AgentCatalogService {
                         agentId,
                         req.name() != null ? req.name() : existing.name(),
                         req.description() != null ? req.description() : existing.description(),
-                        req.sysPrompt() != null ? req.sysPrompt() : existing.sysPrompt(),
+                        req.system() != null ? req.system() : existing.system(),
                         req.model() != null ? req.model() : existing.model(),
                         req.maxIters() != null ? req.maxIters() : existing.maxIters(),
-                        req.toolsAllow() != null ? req.toolsAllow() : existing.toolsAllow(),
-                        req.toolsDeny() != null ? req.toolsDeny() : existing.toolsDeny(),
+                        req.tools() != null ? req.tools() : existing.tools(),
+                        req.mcpServers() != null ? req.mcpServers() : existing.mcpServers(),
+                        req.skills() != null ? req.skills() : existing.skills(),
+                        req.multiagent() != null ? req.multiagent() : existing.multiagent(),
                         req.identityName() != null ? req.identityName() : existing.identityName(),
                         req.identityEmoji() != null
                                 ? req.identityEmoji()
@@ -528,8 +589,6 @@ public class AgentCatalogService {
                         req.groupChatRequireMention() != null
                                 ? req.groupChatRequireMention()
                                 : existing.groupChatRequireMention(),
-                        req.skillsAllow() != null ? req.skillsAllow() : existing.skillsAllow(),
-                        req.skillsDeny() != null ? req.skillsDeny() : existing.skillsDeny(),
                         existing.createdAt(),
                         now,
                         existing.shares(), // sharing is managed via the share API, not settings
@@ -544,10 +603,7 @@ public class AgentCatalogService {
                         req.sandboxMode() != null ? req.sandboxMode() : existing.sandboxMode(),
                         req.sandboxScope() != null ? req.sandboxScope() : existing.sandboxScope(),
                         existing.version(),
-                        existing.archivedAt(),
-                        req.permissionPolicies() != null
-                                ? req.permissionPolicies()
-                                : existing.permissionPolicies());
+                        existing.archivedAt());
         UserAgentDefinitionStore.StoredEntry saved = store.save(userId, updated);
         int newVersion =
                 versionService.appendVersion(
@@ -557,17 +613,17 @@ public class AgentCatalogService {
                         saved.id(),
                         saved.name(),
                         saved.description(),
-                        saved.sysPrompt(),
+                        saved.system(),
                         saved.model(),
                         saved.maxIters(),
-                        saved.toolsAllow(),
-                        saved.toolsDeny(),
+                        saved.tools(),
+                        saved.mcpServers(),
+                        saved.skills(),
+                        saved.multiagent(),
                         saved.identityName(),
                         saved.identityEmoji(),
                         saved.groupChatMentionPatterns(),
                         saved.groupChatRequireMention(),
-                        saved.skillsAllow(),
-                        saved.skillsDeny(),
                         saved.createdAt(),
                         saved.updatedAt(),
                         saved.shares(),
@@ -578,8 +634,18 @@ public class AgentCatalogService {
                         saved.sandboxMode(),
                         saved.sandboxScope(),
                         newVersion,
-                        saved.archivedAt(),
-                        saved.permissionPolicies());
+                        saved.archivedAt());
+
+        try {
+            Path workspace = userWorkspacePath(userId, saved);
+            writeToolsJson(workspace, saved.tools(), saved.mcpServers());
+        } catch (IOException e) {
+            log.warn(
+                    "Failed to write tools.json for user-custom agent '{}/{}': {}",
+                    userId,
+                    agentId,
+                    e.getMessage());
+        }
 
         // Evict cached gateway registration so the next conversation picks up the new definition.
         evictUcaCache(userId, agentId);
@@ -606,17 +672,17 @@ public class AgentCatalogService {
                         existing.id(),
                         existing.name(),
                         existing.description(),
-                        existing.sysPrompt(),
+                        existing.system(),
                         existing.model(),
                         existing.maxIters(),
-                        existing.toolsAllow(),
-                        existing.toolsDeny(),
+                        existing.tools(),
+                        existing.mcpServers(),
+                        existing.skills(),
+                        existing.multiagent(),
                         existing.identityName(),
                         existing.identityEmoji(),
                         existing.groupChatMentionPatterns(),
                         existing.groupChatRequireMention(),
-                        existing.skillsAllow(),
-                        existing.skillsDeny(),
                         existing.createdAt(),
                         now,
                         existing.shares(),
@@ -627,8 +693,7 @@ public class AgentCatalogService {
                         existing.sandboxMode(),
                         existing.sandboxScope(),
                         existing.version(),
-                        now,
-                        existing.permissionPolicies());
+                        now);
         UserAgentDefinitionStore.StoredEntry saved = store.save(userId, archived);
         evictUcaCache(userId, agentId);
         log.info("User '{}' archived custom agent '{}'", userId, agentId);
@@ -709,17 +774,17 @@ public class AgentCatalogService {
                         id,
                         name,
                         src.description(),
-                        src.sysPrompt(),
+                        src.system(),
                         src.model(),
                         src.maxIters(),
-                        src.toolsAllow(),
-                        src.toolsDeny(),
+                        src.tools(),
+                        src.mcpServers(),
+                        src.skills(),
+                        src.multiagent(),
                         src.identityName(),
                         src.identityEmoji(),
                         src.groupChatMentionPatterns(),
                         src.groupChatRequireMention(),
-                        src.skillsAllow(),
-                        src.skillsDeny(),
                         now,
                         now,
                         null, // shares — clones start unshared
@@ -731,8 +796,7 @@ public class AgentCatalogService {
                         src.sandboxMode(),
                         src.sandboxScope(),
                         1,
-                        null,
-                        src.permissionPolicies());
+                        null);
         UserAgentDefinitionStore.StoredEntry saved = store.save(newOwnerId, clone);
         versionService.createInitialVersion(
                 newOwnerId, id, versionService.snapshotFromStoredEntry(saved));
@@ -967,19 +1031,19 @@ public class AgentCatalogService {
             String name = cfg != null && cfg.getName() != null ? cfg.getName() : id;
             String desc = cfg != null ? cfg.getDescription() : null;
 
-            // HarnessAgent does not expose a public getToolkit(); report standard built-in tools.
-            List<String> toolNames =
-                    List.of(
-                            "filesystem",
-                            "shell_execute",
-                            "memory_search",
-                            "memory_get",
-                            "session_search");
-
             AgentConfigEntry.ToolsConfig tc = cfg != null ? cfg.getTools() : null;
             AgentConfigEntry.IdentityConfig ic = cfg != null ? cfg.getIdentity() : null;
             AgentConfigEntry.GroupChatConfig gc = cfg != null ? cfg.getGroupChat() : null;
             AgentConfigEntry.SkillsConfig sk = cfg != null ? cfg.getSkills() : null;
+
+            List<AgentToolset> toolsSpec =
+                    tc != null && tc.getAllow() != null && !tc.getAllow().isEmpty()
+                            ? AgentSpecCodec.toolsetsFromAllowList(tc.getAllow())
+                            : null;
+            List<SkillRef> skillsSpec =
+                    sk != null && sk.getAllow() != null
+                            ? AgentSpecCodec.workspaceSkills(sk.getAllow())
+                            : null;
 
             AgentVersionSnapshot snapshot =
                     new AgentVersionSnapshot(
@@ -988,18 +1052,17 @@ public class AgentCatalogService {
                             cfg != null ? cfg.getSysPrompt() : null,
                             cfg != null ? cfg.getModel() : null,
                             cfg != null ? cfg.getMaxIters() : null,
-                            tc != null ? tc.getAllow() : null,
-                            tc != null ? tc.getDeny() : null,
+                            toolsSpec,
+                            null, // mcpServers — globals declare MCP servers via tools.json only
+                            skillsSpec,
+                            null, // multiagent
                             ic != null ? ic.getName() : null,
                             ic != null ? ic.getEmoji() : null,
                             gc != null ? gc.getMentionPatterns() : null,
                             gc != null ? gc.getRequireMention() : null,
-                            sk != null ? sk.getAllow() : null,
-                            sk != null ? sk.getDeny() : null,
                             cfg != null ? cfg.effectiveSkillRepositories() : null,
                             null, // sandboxMode — globals follow the platform default
-                            null, // sandboxScope
-                            null); // permissionPolicies
+                            null); // sandboxScope
             Integer headVersion = versionService.ensureGlobalVersion(id, snapshot);
 
             result.add(
@@ -1007,18 +1070,17 @@ public class AgentCatalogService {
                             id,
                             name,
                             desc,
-                            null, // don't expose sysPrompt in global catalog
+                            null, // don't expose system prompt in global catalog
                             cfg != null ? cfg.getModel() : null,
                             cfg != null ? cfg.getMaxIters() : null,
-                            toolNames,
-                            tc != null ? tc.getAllow() : null,
-                            tc != null ? tc.getDeny() : null,
+                            toolsSpec,
+                            null, // mcpServers
+                            skillsSpec,
+                            null, // multiagent
                             ic != null ? ic.getName() : null,
                             ic != null ? ic.getEmoji() : null,
                             gc != null ? gc.getMentionPatterns() : null,
                             gc != null ? gc.getRequireMention() : null,
-                            sk != null ? sk.getAllow() : null,
-                            sk != null ? sk.getDeny() : null,
                             AgentDefinition.SCOPE_GLOBAL,
                             null,
                             0L,
@@ -1031,7 +1093,7 @@ public class AgentCatalogService {
                             null, // sandboxScope
                             headVersion, // version — head of the materialized global snapshot
                             null, // archivedAt
-                            null, // permissionPolicies
+                            null, // metadata
                             null)); // tierForCurrentUser — populated by the controller
         }
         return result;
@@ -1091,9 +1153,31 @@ public class AgentCatalogService {
             b.model(model);
         }
         b.workspace(workspace);
+        b.stateStore(agentStateStore);
         b.externalSubagentTool(builderBootstrap.sessionsTool());
+
+        // Prefer an in-memory ToolsConfig so vault injection does not require node-local
+        // tools.json affinity. When the file is absent, still allow vault-only env injection
+        // onto an empty MCP map.
+        ToolsConfig baseTools = readOptionalToolsJson(workspace);
+        if (baseTools == null) {
+            baseTools = new ToolsConfig();
+        }
+        ToolsConfig patched =
+                vaultCredentialResolver.resolveToolsConfig(
+                        sessionOwnerId, baseTools, spec.vaultIds());
+        if (patched != null) {
+            b.toolsConfig(patched);
+        }
+
+        // Hands primary filesystem is owned exclusively by Environment.
         applyManagedSessionBuildOptions(
-                b, sessionOwnerId, workspace, spec, cfg != null ? cfg.getSysPrompt() : null);
+                b,
+                sessionOwnerId,
+                agentId,
+                workspace,
+                spec,
+                cfg != null ? cfg.getSysPrompt() : null);
 
         HarnessAgent agent = b.build();
         builderBootstrap.gateway().registerAgent(gatewayAgentId, agent);
@@ -1142,7 +1226,7 @@ public class AgentCatalogService {
                         ? snapshot.name()
                         : (entry.name() != null ? entry.name() : entry.id());
         String description = snapshot != null ? snapshot.description() : entry.description();
-        String sysPrompt = snapshot != null ? snapshot.sysPrompt() : entry.sysPrompt();
+        String sysPrompt = snapshot != null ? snapshot.system() : entry.system();
         String modelName = snapshot != null ? snapshot.model() : entry.model();
         Integer maxIters = snapshot != null ? snapshot.maxIters() : entry.maxIters();
         var skillRepos =
@@ -1158,7 +1242,10 @@ public class AgentCatalogService {
             if (overrides.get("description") instanceof String s) {
                 description = s;
             }
-            if (overrides.get("sysPrompt") instanceof String s) {
+            if (overrides.get("system") instanceof String s) {
+                sysPrompt = s;
+            } else if (overrides.get("sysPrompt") instanceof String s) {
+                // legacy override key — prefer "system"
                 sysPrompt = s;
             }
             if (overrides.get("model") instanceof String s) {
@@ -1193,16 +1280,38 @@ public class AgentCatalogService {
             b.model(model);
         }
         b.workspace(workspace);
+        b.stateStore(agentStateStore);
 
-        // Layered skill repositories: workspace overlay is implicit; explicit entries from the
-        // user's saved definition are appended in order so earlier entries win on name clashes.
+        // Tools / MCP: version snapshot (or head entry) is authoritative — inject ToolsConfig
+        // so HarnessAgent.build does not depend on a node-local tools.json.
+        List<AgentToolset> tools = snapshot != null ? snapshot.tools() : entry.tools();
+        List<McpServerSpec> mcpServers =
+                snapshot != null ? snapshot.mcpServers() : entry.mcpServers();
+        List<SkillRef> skillRefs = snapshot != null ? snapshot.skills() : entry.skills();
+        ToolsConfig toolsConfig = AgentSpecCodec.toToolsConfig(tools, mcpServers);
+        List<String> vaultIds = managed ? spec.vaultIds() : List.of();
+        ToolsConfig resolved =
+                vaultCredentialResolver.resolveToolsConfig(userId, toolsConfig, vaultIds);
+        if (resolved != null) {
+            b.toolsConfig(resolved);
+        }
+
+        // Skills: control-plane DefinitionStore + optional git/fs skillRepositories.
+        // Do not rely on Hands primary filesystem Layer-4 workspace skills (sandbox would
+        // look inside the sandbox, not the definition store).
+        List<AgentSkillRepository> skillReposList = new ArrayList<>();
+        skillReposList.add(new DefinitionStoreSkillRepository(definitionStore, userId, entry.id()));
         if (skillRepos != null && !skillRepos.isEmpty()) {
             var repos =
                     io.agentscope.builder.runtime.config.SkillRepositorySupport.createAll(
                             workspace, skillRepos);
-            if (!repos.isEmpty()) {
-                b.skillRepositories(repos);
-            }
+            skillReposList.addAll(repos);
+        }
+        b.skillRepositories(skillReposList);
+        b.disableDefaultWorkspaceSkills();
+        List<String> workspaceSkillNames = AgentSpecCodec.workspaceSkillNames(skillRefs);
+        if (!workspaceSkillNames.isEmpty()) {
+            b.enableSkills(workspaceSkillNames.toArray(String[]::new));
         }
 
         // Pre-populate this user-custom agent's toolkit with the outbound-send tool so the agent
@@ -1216,6 +1325,12 @@ public class AgentCatalogService {
 
         // Inject the shared SessionsTool so user-custom agents can spawn SUBAGENT sessions
         // through the same SessionAgentManager as global (agentscope.json) agents.
+        //
+        // Hands note: subagent sessions spawned via SessionsTool do not get their own
+        // HandsLeaseService lease — they run in-process against the parent's RuntimeContext, so a
+        // self_hosted subagent currently shares the parent turn's externalSandbox (same
+        // SandboxContext, same worker-attached WorkspaceSandbox). Isolating subagent hands behind
+        // their own lease/IsolationScope is deferred (see Hands/Worker plan Phase D).
         b.externalSubagentTool(builderBootstrap.sessionsTool());
 
         // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
@@ -1223,8 +1338,11 @@ public class AgentCatalogService {
                 new io.agentscope.builder.web.toolbus.ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
 
+        // Hands primary filesystem is owned exclusively by Environment (managed) or agent
+        // sandbox fields (legacy). Do not pre-mount RemoteFilesystem here — it conflicts with
+        // sandbox/local (at most one of local/remote/sandbox spec).
         if (managed) {
-            applyManagedSessionBuildOptions(b, userId, workspace, spec, sysPrompt);
+            applyManagedSessionBuildOptions(b, userId, entry.id(), workspace, spec, sysPrompt);
         } else {
             environmentSpecFactory.applyAgentSandboxFields(b, sandboxMode, sandboxScope);
         }
@@ -1252,6 +1370,7 @@ public class AgentCatalogService {
     private void applyManagedSessionBuildOptions(
             HarnessAgent.Builder b,
             String ownerId,
+            String agentId,
             Path workspace,
             SessionAgentBuildSpec spec,
             String baseSysPrompt) {
@@ -1262,18 +1381,50 @@ public class AgentCatalogService {
             environmentSpecFactory.applyAgentSandboxFields(b, null, null);
         }
 
-        var mounts = memoryMountService.materialize(ownerId, workspace, spec.memoryStoreIds());
+        var filesystems =
+                memoryMountService.createFilesystems(
+                        ownerId, spec.memoryStoreIds(), memoryAccessOverrides(environment));
+        environmentSpecFactory.applyMemoryStoreRoutes(b, ownerId, filesystems);
+        var mounts = memoryMountService.resolveMounts(ownerId, spec.memoryStoreIds());
         String appendix = memoryMountService.promptAppendix(mounts);
         if (appendix != null) {
             String combined = (baseSysPrompt == null ? "" : baseSysPrompt) + appendix;
             b.sysPrompt(combined);
         }
 
-        ToolsConfig patched =
-                vaultCredentialResolver.resolveToolsConfig(ownerId, workspace, spec.vaultIds());
-        if (patched != null) {
-            b.toolsConfig(patched);
+        // ToolsConfig already injected from the version snapshot in buildAndRegisterUca.
+        // Vault patching also happens there using spec.vaultIds().
+
+        // Stage session resources into the Hands workspace Path used by the Environment
+        // filesystem (local disk / sandbox workspace root). Not a RemoteFilesystem primary.
+        sessionResourceMountService.restageFromDefinitionStore(
+                definitionStore, ownerId, agentId, workspace);
+        sessionResourceMountService.apply(workspace, spec.resources());
+        sessionResourceMountService.mirrorFileResourcesToDefinitionStore(
+                definitionStore, ownerId, agentId, spec.resources());
+    }
+
+    /**
+     * Extracts a {@code storeId -> "read_only"|"read_write"} map from {@code
+     * environment.config().memoryAccess}, if present, so a session's environment can pin some
+     * mounted memory stores read-only (e.g. shared reference knowledge bases).
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> memoryAccessOverrides(EnvironmentDto environment) {
+        if (environment == null || environment.config() == null) {
+            return Map.of();
         }
+        Object raw = environment.config().get("memoryAccess");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() != null && entry.getValue() != null) {
+                result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+            }
+        }
+        return result;
     }
 
     @SuppressWarnings("unchecked")
@@ -1320,25 +1471,24 @@ public class AgentCatalogService {
             String id,
             String name,
             String description,
-            String sysPrompt,
+            String system,
             String model,
             Integer maxIters,
-            List<String> toolsAllow,
-            List<String> toolsDeny,
+            List<AgentToolset> tools,
+            List<McpServerSpec> mcpServers,
+            List<SkillRef> skills,
+            MultiagentSpec multiagent,
             String identityName,
             String identityEmoji,
             List<String> groupChatMentionPatterns,
             Boolean groupChatRequireMention,
-            List<String> skillsAllow,
-            List<String> skillsDeny,
             String workspacePath,
             String templateId,
             AgentDraft aiDraft,
             List<io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry> skillRepositories,
             String sandboxMode,
             String sandboxScope,
-            Integer version,
-            Map<String, String> permissionPolicies) {}
+            Integer version) {}
 
     /** Summary metadata for one agent version row. */
     public record AgentVersionSummary(int version, long createdAt) {}

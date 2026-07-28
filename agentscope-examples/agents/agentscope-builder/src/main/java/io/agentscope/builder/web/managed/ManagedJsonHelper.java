@@ -32,6 +32,8 @@ public class ManagedJsonHelper {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
+    private static final TypeReference<List<Map<String, Object>>> OBJECT_LIST =
+            new TypeReference<>() {};
 
     private final ObjectMapper objectMapper;
 
@@ -83,6 +85,18 @@ public class ManagedJsonHelper {
         }
         try {
             return objectMapper.readValue(json, STRING_LIST);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    /** Deserializes JSON into a list of object maps (session resources, etc.). */
+    public List<Map<String, Object>> readObjectList(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, OBJECT_LIST);
         } catch (JsonProcessingException ex) {
             return null;
         }

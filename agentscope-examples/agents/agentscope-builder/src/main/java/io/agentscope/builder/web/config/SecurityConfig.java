@@ -15,7 +15,9 @@
  */
 package io.agentscope.builder.web.config;
 
+import io.agentscope.builder.web.auth.EnvironmentKeyAuthFilter;
 import io.agentscope.builder.web.auth.JwtService;
+import io.agentscope.builder.web.managed.EnvironmentService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import java.util.List;
@@ -47,7 +49,8 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li>{@code POST /api/auth/login} — public (no token required)
  *   <li>{@code POST /api/deployments/webhook/**} — public; gated by the webhook token itself
- *   <li>{@code /api/**} — requires authenticated user
+ *   <li>{@code /api/**} — requires authenticated user or environment worker key for worker ops
+ *       under {@code /api/environments/{id}/work/**} (see {@code WorkerEnvironmentController})
  *   <li>{@code /**} — public (serves React SPA static files)
  * </ul>
  *
@@ -61,7 +64,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(
-            ServerHttpSecurity http, JwtService jwtService) {
+            ServerHttpSecurity http, JwtService jwtService, EnvironmentService environmentService) {
         return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(
@@ -81,6 +84,9 @@ public class SecurityConfig {
                         ex ->
                                 ex.authenticationEntryPoint(
                                         new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .addFilterBefore(
+                        new EnvironmentKeyAuthFilter(environmentService),
+                        SecurityWebFiltersOrder.AUTHENTICATION)
                 .addFilterBefore(
                         new JwtAuthFilter(jwtService), SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();

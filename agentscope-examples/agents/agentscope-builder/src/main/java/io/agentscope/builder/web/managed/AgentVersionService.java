@@ -20,12 +20,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
+import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
 import io.agentscope.builder.web.persistence.jpa.AgentEntity;
 import io.agentscope.builder.web.persistence.jpa.AgentEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntity;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntityRepository;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -47,45 +47,41 @@ public class AgentVersionService {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final TypeReference<List<SkillRepositoryConfigEntry>> SKILL_REPO_LIST =
             new TypeReference<>() {};
-    private static final TypeReference<Map<String, String>> POLICY_MAP = new TypeReference<>() {};
 
     private final AgentVersionEntityRepository versionRepository;
     private final AgentEntityRepository agentRepository;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentVersionService(
-            AgentVersionEntityRepository versionRepository,
-            AgentEntityRepository agentRepository,
-            ObjectMapper objectMapper) {
+            AgentVersionEntityRepository versionRepository, AgentEntityRepository agentRepository) {
         this.versionRepository = versionRepository;
         this.agentRepository = agentRepository;
-        this.objectMapper = objectMapper;
     }
 
-    /** Builds a snapshot from a stored catalog entry (permission policies omitted). */
+    /** Builds a snapshot from a stored catalog entry. */
     public AgentVersionSnapshot snapshotFromStoredEntry(
             UserAgentDefinitionStore.StoredEntry entry) {
         return new AgentVersionSnapshot(
                 entry.name(),
                 entry.description(),
-                entry.sysPrompt(),
+                entry.system(),
                 entry.model(),
                 entry.maxIters(),
-                entry.toolsAllow(),
-                entry.toolsDeny(),
+                entry.tools(),
+                entry.mcpServers(),
+                entry.skills(),
+                entry.multiagent(),
                 entry.identityName(),
                 entry.identityEmoji(),
                 entry.groupChatMentionPatterns(),
                 entry.groupChatRequireMention(),
-                entry.skillsAllow(),
-                entry.skillsDeny(),
                 entry.skillRepositories(),
                 entry.sandboxMode(),
-                entry.sandboxScope(),
-                entry.permissionPolicies());
+                entry.sandboxScope());
     }
 
-    /** Builds a snapshot from a persisted agent entity including permission policies. */
+    /** Builds a snapshot from a persisted agent entity. Used as a fallback when no version row
+     * is available for a session (e.g. legacy sessions predating version snapshots). */
     public AgentVersionSnapshot snapshotFromEntity(AgentEntity entity) {
         return new AgentVersionSnapshot(
                 entity.getName(),
@@ -93,18 +89,17 @@ public class AgentVersionService {
                 entity.getSysPrompt(),
                 entity.getModel(),
                 entity.getMaxIters(),
-                readStringList(entity.getToolsAllowJson()),
-                readStringList(entity.getToolsDenyJson()),
+                AgentSpecCodec.readTools(entity.getToolsJson()),
+                AgentSpecCodec.readMcpServers(entity.getMcpServersJson()),
+                AgentSpecCodec.readSkills(entity.getSkillsJson()),
+                AgentSpecCodec.readMultiagent(entity.getMultiagentJson()),
                 entity.getIdentityName(),
                 entity.getIdentityEmoji(),
                 readStringList(entity.getGroupChatMentionPatternsJson()),
                 entity.getGroupChatRequireMention(),
-                readStringList(entity.getSkillsAllowJson()),
-                readStringList(entity.getSkillsDenyJson()),
                 readSkillRepositories(entity.getSkillRepositoriesJson()),
                 entity.getSandboxMode(),
-                entity.getSandboxScope(),
-                readPolicyMap(entity.getPermissionPoliciesJson()));
+                entity.getSandboxScope());
     }
 
     /** Serializes a snapshot to JSON. */
@@ -184,26 +179,37 @@ public class AgentVersionService {
     }
 
     /**
-     * Materializes version 1 for a global agent (owner {@link #GLOBAL_OWNER}) if it does not
-     * already exist, and returns the current head version. Global agents have no {@link
-     * io.agentscope.builder.web.persistence.jpa.AgentEntity} row, so unlike {@link
-     * #createInitialVersion} this does not touch a head-version pointer on that entity — the
-     * version-1 row itself is the head until global version history is supported.
+     * Ensures a global agent has a version row. When the snapshot content changes, appends a new
+     * version (global agents have no {@link AgentEntity} head pointer, so versions are listed by
+     * max version number).
      */
     public int ensureGlobalVersion(String agentId, AgentVersionSnapshot snapshot) {
-        if (versionRepository
-                .findByOwnerIdAndAgentIdAndVersion(GLOBAL_OWNER, agentId, 1)
-                .isPresent()) {
+        List<AgentVersionEntity> versions =
+                versionRepository.findByOwnerIdAndAgentIdOrderByVersionAsc(GLOBAL_OWNER, agentId);
+        String json = toJson(snapshot);
+        if (versions.isEmpty()) {
+            AgentVersionEntity version = new AgentVersionEntity();
+            version.setOwnerId(GLOBAL_OWNER);
+            version.setAgentId(agentId);
+            version.setVersion(1);
+            version.setSnapshotJson(json);
+            version.setCreatedAt(System.currentTimeMillis());
+            versionRepository.save(version);
             return 1;
         }
+        AgentVersionEntity head = versions.get(versions.size() - 1);
+        if (json != null && json.equals(head.getSnapshotJson())) {
+            return head.getVersion();
+        }
+        int next = head.getVersion() + 1;
         AgentVersionEntity version = new AgentVersionEntity();
         version.setOwnerId(GLOBAL_OWNER);
         version.setAgentId(agentId);
-        version.setVersion(1);
-        version.setSnapshotJson(toJson(snapshot));
+        version.setVersion(next);
+        version.setSnapshotJson(json);
         version.setCreatedAt(System.currentTimeMillis());
         versionRepository.save(version);
-        return 1;
+        return next;
     }
 
     /** Lists all versions for an agent in ascending order. */
@@ -241,17 +247,6 @@ public class AgentVersionService {
         }
         try {
             return objectMapper.readValue(json, SKILL_REPO_LIST);
-        } catch (JsonProcessingException ex) {
-            return null;
-        }
-    }
-
-    private Map<String, String> readPolicyMap(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, POLICY_MAP);
         } catch (JsonProcessingException ex) {
             return null;
         }

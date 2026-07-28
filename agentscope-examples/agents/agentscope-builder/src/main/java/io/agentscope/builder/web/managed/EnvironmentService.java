@@ -20,10 +20,14 @@ import io.agentscope.builder.web.persistence.jpa.EnvironmentEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.ManagedSessionEntityRepository;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.builder.web.share.ResourceAccessService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,11 +43,10 @@ public class EnvironmentService {
     public static final String TYPE_REMOTE = "remote";
 
     /**
-     * Remote-worker variant: the agent's filesystem/state still run against the shared remote
-     * {@link io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec} store (same wiring
-     * as {@link #TYPE_REMOTE}), but the config is marked {@code selfHosted=true} so operators can
-     * distinguish "runs on our own remote worker fleet" environments from the platform-managed
-     * remote default when listing/filtering environments.
+     * Self-hosted hands environment: tool/FS/shell execution is owned by an Environment Worker
+     * via event-driven outbound tool results (Claude-style). This is <em>not</em> the same as
+     * {@link #TYPE_REMOTE} (distributed KV filesystem with no shell) or {@link #TYPE_SANDBOX}
+     * (E2B cloud). Config is marked {@code selfHosted=true} for listing/filtering.
      */
     public static final String TYPE_SELF_HOSTED = "self_hosted";
 
@@ -59,16 +62,19 @@ public class EnvironmentService {
     private final ManagedSessionEntityRepository sessionRepository;
     private final ManagedJsonHelper jsonHelper;
     private final ResourceAccessService resourceAccessService;
+    private final EnvironmentSpecFactory environmentSpecFactory;
 
     public EnvironmentService(
             EnvironmentEntityRepository repository,
             ManagedSessionEntityRepository sessionRepository,
             ManagedJsonHelper jsonHelper,
-            ResourceAccessService resourceAccessService) {
+            ResourceAccessService resourceAccessService,
+            EnvironmentSpecFactory environmentSpecFactory) {
         this.repository = repository;
         this.sessionRepository = sessionRepository;
         this.jsonHelper = jsonHelper;
         this.resourceAccessService = resourceAccessService;
+        this.environmentSpecFactory = environmentSpecFactory;
     }
 
     /** Request body for creating an environment. */
@@ -105,7 +111,37 @@ public class EnvironmentService {
                 jsonHelper.writeJson(normalizeConfig(request.type(), request.config())));
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
-        return toDto(repository.save(entity));
+        String plaintextKey = generateEnvironmentKey();
+        entity.setApiKeyHash(sha256Hex(plaintextKey));
+        EnvironmentEntity saved = repository.save(entity);
+        return toDto(saved, plaintextKey);
+    }
+
+    /** Rotates the environment API key; returns the new plaintext key once. */
+    public EnvironmentDto rotateKey(String ownerId, String environmentId) {
+        EnvironmentEntity entity = requireAccess(ownerId, environmentId, Tier.EDIT);
+        long now = System.currentTimeMillis();
+        String plaintextKey = generateEnvironmentKey();
+        entity.setApiKeyHash(sha256Hex(plaintextKey));
+        entity.setUpdatedAt(now);
+        return toDto(repository.save(entity), plaintextKey);
+    }
+
+    /** Returns true when {@code plaintextKey} matches the stored hash for {@code environmentId}. */
+    @Transactional(readOnly = true)
+    public boolean matchesApiKey(String environmentId, String plaintextKey) {
+        if (environmentId == null
+                || environmentId.isBlank()
+                || plaintextKey == null
+                || plaintextKey.isBlank()) {
+            return false;
+        }
+        return repository
+                .findByEnvironmentId(environmentId)
+                .map(entity -> entity.getApiKeyHash())
+                .filter(hash -> hash != null && !hash.isBlank())
+                .map(hash -> hash.equals(sha256Hex(plaintextKey)))
+                .orElse(false);
     }
 
     /** Archives an environment (soft delete). */
@@ -213,23 +249,33 @@ public class EnvironmentService {
             normalized.putIfAbsent("selfHosted", Boolean.TRUE);
             return normalized;
         }
-        if (config == null || config.isEmpty()) {
-            return config;
-        }
         if (!TYPE_SANDBOX.equals(type)) {
             return config;
         }
-        Map<String, Object> normalized = new HashMap<>(config);
+        Map<String, Object> normalized = config != null ? new HashMap<>(config) : new HashMap<>();
         Object scope = normalized.get("isolationScope");
         if (scope != null && !ALLOWED_ISOLATION_SCOPES.contains(String.valueOf(scope))) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "isolationScope must be one of: SESSION, USER, AGENT, GLOBAL");
         }
+        if (!environmentSpecFactory.hasE2bApiKey(normalized)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "sandbox environments require an E2B API key (config.apiKey,"
+                            + " builder.e2b.api-key / BUILDER_E2B_API_KEY, or E2B_API_KEY)");
+        }
+        // Legacy Docker keys (image/cpus/…) and Claude-style packages/networking may still be
+        // present in stored JSON; runtime ignores them — use E2B templateId for runtimes.
+        normalized.putIfAbsent("isolationScope", "SESSION");
         return normalized;
     }
 
     private EnvironmentDto toDto(EnvironmentEntity entity) {
+        return toDto(entity, null);
+    }
+
+    private EnvironmentDto toDto(EnvironmentEntity entity, String environmentKey) {
         return new EnvironmentDto(
                 entity.getEnvironmentId(),
                 entity.getName(),
@@ -238,6 +284,25 @@ public class EnvironmentService {
                 entity.getOwnerId(),
                 entity.getArchivedAt(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt());
+                entity.getUpdatedAt(),
+                environmentKey);
+    }
+
+    private static String generateEnvironmentKey() {
+        return "ebk_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static String sha256Hex(String plaintext) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(plaintext.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }

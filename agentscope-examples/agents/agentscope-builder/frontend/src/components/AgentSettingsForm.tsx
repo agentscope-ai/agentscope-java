@@ -72,8 +72,9 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
 
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? '');
-  const [sysPrompt, setSysPrompt] = useState(agent.sysPrompt ?? '');
+  const [system, setSystem] = useState(agent.system ?? '');
   const [maxIters, setMaxIters] = useState<string>(String(agent.maxIters ?? 12));
+  const [version, setVersion] = useState<number | undefined>(agent.version);
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -84,9 +85,10 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
   useEffect(() => {
     setName(agent.name);
     setDescription(agent.description ?? '');
-    setSysPrompt(agent.sysPrompt ?? '');
+    setSystem(agent.system ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
-  }, [agent.id]);
+    setVersion(agent.version);
+  }, [agent.id, agent.version, agent.system, agent.name, agent.description, agent.maxIters]);
 
   useEffect(() => {
     if (agent.scope === 'global' || !agent.ownerId) return;
@@ -95,20 +97,23 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
       .then(v => { if (!cancelled) { setVersions(v); setVersionsErr(null); } })
       .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : 'Failed to load versions'); });
     return () => { cancelled = true; };
-  }, [agent.id, agent.scope, agent.ownerId]);
+  }, [agent.id, agent.scope, agent.ownerId, agent.version]);
 
   async function handleSave() {
     setOk(false);
     setErr(null);
     setSaving(true);
     try {
+      if (version == null) throw new Error('Missing agent version for optimistic lock');
       const iters = Number.parseInt(maxIters, 10);
-      await updateAgent(agent.id, {
+      const updated = await updateAgent(agent.id, {
         name: name.trim() || agent.id,
         description: description.trim() || undefined,
-        sysPrompt: sysPrompt || undefined,
+        system: system || undefined,
         maxIters: Number.isFinite(iters) && iters > 0 ? iters : undefined,
+        version,
       });
+      setVersion(updated.version);
       setOk(true);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Save failed');
@@ -166,7 +171,7 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
         {agent.version != null && (
           <div style={S.row}>
             <label style={S.fieldLabel}>Current version</label>
-            <div style={S.meta}>v{agent.version}</div>
+            <div style={S.meta}>v{version ?? agent.version}</div>
           </div>
         )}
 
@@ -176,15 +181,6 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
             background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.88rem',
           }}>
             Archived {new Date(agent.archivedAt).toLocaleString()}
-          </div>
-        )}
-
-        {agent.permissionPolicies && Object.keys(agent.permissionPolicies).length > 0 && (
-          <div style={S.row}>
-            <label style={S.fieldLabel}>Permission policies</label>
-            <pre style={{ ...S.meta, whiteSpace: 'pre-wrap', margin: 0 }}>
-              {JSON.stringify(agent.permissionPolicies, null, 2)}
-            </pre>
           </div>
         )}
 
@@ -217,8 +213,8 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
           <label style={S.fieldLabel}>System prompt</label>
           <textarea
             style={S.textarea}
-            value={sysPrompt}
-            onChange={e => setSysPrompt(e.target.value)}
+            value={system}
+            onChange={e => setSystem(e.target.value)}
             disabled={readOnly}
             placeholder="High-level instructions. Workspace AGENTS.md still takes precedence at runtime."
           />

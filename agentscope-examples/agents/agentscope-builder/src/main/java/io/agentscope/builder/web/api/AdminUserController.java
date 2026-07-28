@@ -240,17 +240,17 @@ public class AdminUserController {
                 e.id(),
                 e.name(),
                 e.description(),
-                e.sysPrompt(),
+                e.system(),
                 e.model(),
                 e.maxIters(),
-                e.toolsAllow(),
-                e.toolsDeny(),
+                e.tools(),
+                e.mcpServers(),
+                e.skills(),
+                e.multiagent(),
                 e.identityName(),
                 e.identityEmoji(),
                 e.groupChatMentionPatterns(),
                 e.groupChatRequireMention(),
-                e.skillsAllow(),
-                e.skillsDeny(),
                 e.createdAt(),
                 e.updatedAt(),
                 newShares.isEmpty() ? null : newShares,
@@ -261,8 +261,7 @@ public class AdminUserController {
                 e.sandboxMode(),
                 e.sandboxScope(),
                 e.version(),
-                e.archivedAt(),
-                e.permissionPolicies());
+                e.archivedAt());
     }
 
     private static AdminUserView toView(UserRecord u) {

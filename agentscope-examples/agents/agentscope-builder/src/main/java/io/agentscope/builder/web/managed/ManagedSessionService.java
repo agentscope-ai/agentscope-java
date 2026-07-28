@@ -44,7 +44,11 @@ public class ManagedSessionService {
     public static final String STATUS_RUNNING = "running";
     public static final String STATUS_IDLE = "idle";
     public static final String STATUS_REQUIRES_ACTION = "requires_action";
-    public static final String STATUS_ERRORED = "errored";
+
+    /** Unrecoverable turn failure (Claude {@code terminated}). */
+    public static final String STATUS_TERMINATED = "terminated";
+
+    public static final String STATUS_RESCHEDULED = "rescheduled";
     public static final String STATUS_ARCHIVED = "archived";
 
     public static final String REF_LATEST = "latest";
@@ -56,7 +60,17 @@ public class ManagedSessionService {
             Object agent,
             String environmentId,
             List<String> memoryStoreIds,
-            List<String> vaultIds) {}
+            List<String> vaultIds,
+            List<Map<String, Object>> resources) {
+        /** Backward-compatible 4-arg form used by deployments / IM bridge. */
+        public CreateSessionRequest(
+                Object agent,
+                String environmentId,
+                List<String> memoryStoreIds,
+                List<String> vaultIds) {
+            this(agent, environmentId, memoryStoreIds, vaultIds, null);
+        }
+    }
 
     private final ManagedSessionEntityRepository repository;
     private final EnvironmentEntityRepository environmentRepository;
@@ -125,6 +139,7 @@ public class ManagedSessionService {
         entity.setEnvironmentId(environment.getEnvironmentId());
         entity.setMemoryStoreIdsJson(jsonHelper.writeJson(request.memoryStoreIds()));
         entity.setVaultIdsJson(jsonHelper.writeJson(request.vaultIds()));
+        entity.setResourcesJson(jsonHelper.writeJson(request.resources()));
         entity.setStatus(STATUS_CREATED);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
@@ -138,6 +153,18 @@ public class ManagedSessionService {
     @Transactional(readOnly = true)
     public ManagedSessionDto get(String ownerId, String sessionId) {
         return toDto(requireOwned(ownerId, sessionId));
+    }
+
+    /** Looks up a session by id without owner scoping (worker / internal use). */
+    public ManagedSessionDto requireById(String sessionId) {
+        return toDto(
+                repository
+                        .findBySessionId(sessionId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Session not found: " + sessionId)));
     }
 
     /** Lists sessions for an owner, optionally filtered by agent id. */
@@ -168,8 +195,32 @@ public class ManagedSessionService {
     /** Hard-deletes a session and its event log. */
     public void delete(String ownerId, String sessionId) {
         requireOwned(ownerId, sessionId);
+        eventLog.append(sessionId, SessionEventTypes.SESSION_DELETED, Map.of("status", "deleted"));
         eventLog.deleteBySessionId(sessionId);
         repository.findBySessionId(sessionId).ifPresent(repository::delete);
+    }
+
+    /**
+     * Merges session-scoped agent overrides (e.g. {@code system.message}) without writing back to
+     * the Agent resource. Takes effect on the next turn.
+     */
+    public ManagedSessionDto mergeAgentOverrides(
+            String ownerId, String sessionId, Map<String, Object> patch) {
+        ManagedSessionEntity entity = requireOwned(ownerId, sessionId);
+        Map<String, Object> current = jsonHelper.readMap(entity.getAgentOverridesJson());
+        if (current == null) {
+            current = new LinkedHashMap<>();
+        } else {
+            current = new LinkedHashMap<>(current);
+        }
+        if (patch != null) {
+            current.putAll(patch);
+        }
+        entity.setAgentOverridesJson(jsonHelper.writeJson(current));
+        entity.setUpdatedAt(System.currentTimeMillis());
+        ManagedSessionDto dto = toDto(repository.save(entity));
+        eventLog.append(sessionId, SessionEventTypes.SESSION_UPDATED, Map.of("overrides", current));
+        return dto;
     }
 
     /** Updates session status and optional stop reason metadata. */
@@ -192,8 +243,9 @@ public class ManagedSessionService {
     /** Runs one harness turn for the session asynchronously. */
     public void runTurn(String ownerId, String sessionId, Map<String, Object> messagePayload) {
         ManagedSessionDto session = get(ownerId, sessionId);
-        updateStatus(ownerId, sessionId, STATUS_RUNNING, null);
         String userMessage = extractUserMessage(messagePayload);
+        // Turn lease is acquired inside runTurnAsync on this thread; CONFLICT throws before
+        // status flips to running.
         turnRunner.runTurnAsync(session, userMessage);
     }
 
@@ -389,6 +441,7 @@ public class ManagedSessionService {
                 entity.getEnvironmentId(),
                 jsonHelper.readStringList(entity.getMemoryStoreIdsJson()),
                 jsonHelper.readStringList(entity.getVaultIdsJson()),
+                jsonHelper.readObjectList(entity.getResourcesJson()),
                 entity.getStatus(),
                 jsonHelper.readMap(entity.getStopReasonJson()),
                 entity.getCreatedAt(),

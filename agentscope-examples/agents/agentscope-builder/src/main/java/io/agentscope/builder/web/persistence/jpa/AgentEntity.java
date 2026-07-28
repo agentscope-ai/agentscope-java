@@ -109,13 +109,15 @@ public class AgentEntity {
     @Column(name = "max_iters")
     private Integer maxIters;
 
+    /** JSON-serialised {@code List<AgentSpecTypes.AgentToolset>} (Agent body {@code tools[]}). */
     @Lob
     @Column(name = "tools_allow_json")
-    private String toolsAllowJson;
+    private String toolsJson;
 
+    /** JSON-serialised {@code List<AgentSpecTypes.McpServerSpec>} (Agent body {@code mcpServers[]}). */
     @Lob
     @Column(name = "tools_deny_json")
-    private String toolsDenyJson;
+    private String mcpServersJson;
 
     @Column(name = "identity_name", length = 200)
     private String identityName;
@@ -130,13 +132,15 @@ public class AgentEntity {
     @Column(name = "group_chat_require_mention")
     private Boolean groupChatRequireMention;
 
+    /** JSON-serialised {@code List<AgentSpecTypes.SkillRef>} (Agent body {@code skills[]}). */
     @Lob
     @Column(name = "skills_allow_json")
-    private String skillsAllowJson;
+    private String skillsJson;
 
+    /** JSON-serialised {@code AgentSpecTypes.MultiagentSpec} (Agent body {@code multiagent}). */
     @Lob
     @Column(name = "skills_deny_json")
-    private String skillsDenyJson;
+    private String multiagentJson;
 
     @Column(name = "run_as", length = 20)
     private String runAs;
@@ -180,8 +184,9 @@ public class AgentEntity {
     private Long archivedAt;
 
     /**
-     * JSON map of per-tool permission policies ({@code always_allow} / {@code always_ask}).
-     * Null means builtins default to allow and MCP tools default to ask.
+     * Legacy JSON map of per-tool permission policies. No longer written by the Agent body API
+     * (permission policies now live inline in {@link #toolsJson}'s {@code AgentToolset} entries);
+     * retained only as a nullable column for backward-compatible schema/migrations.
      */
     @Lob
     @Column(name = "permission_policies_json")
@@ -274,20 +279,20 @@ public class AgentEntity {
         this.maxIters = maxIters;
     }
 
-    public String getToolsAllowJson() {
-        return toolsAllowJson;
+    public String getToolsJson() {
+        return toolsJson;
     }
 
-    public void setToolsAllowJson(String toolsAllowJson) {
-        this.toolsAllowJson = toolsAllowJson;
+    public void setToolsJson(String toolsJson) {
+        this.toolsJson = toolsJson;
     }
 
-    public String getToolsDenyJson() {
-        return toolsDenyJson;
+    public String getMcpServersJson() {
+        return mcpServersJson;
     }
 
-    public void setToolsDenyJson(String toolsDenyJson) {
-        this.toolsDenyJson = toolsDenyJson;
+    public void setMcpServersJson(String mcpServersJson) {
+        this.mcpServersJson = mcpServersJson;
     }
 
     public String getIdentityName() {
@@ -322,20 +327,20 @@ public class AgentEntity {
         this.groupChatRequireMention = groupChatRequireMention;
     }
 
-    public String getSkillsAllowJson() {
-        return skillsAllowJson;
+    public String getSkillsJson() {
+        return skillsJson;
     }
 
-    public void setSkillsAllowJson(String skillsAllowJson) {
-        this.skillsAllowJson = skillsAllowJson;
+    public void setSkillsJson(String skillsJson) {
+        this.skillsJson = skillsJson;
     }
 
-    public String getSkillsDenyJson() {
-        return skillsDenyJson;
+    public String getMultiagentJson() {
+        return multiagentJson;
     }
 
-    public void setSkillsDenyJson(String skillsDenyJson) {
-        this.skillsDenyJson = skillsDenyJson;
+    public void setMultiagentJson(String multiagentJson) {
+        this.multiagentJson = multiagentJson;
     }
 
     public String getRunAs() {

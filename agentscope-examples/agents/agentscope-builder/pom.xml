@@ -51,6 +51,12 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <!-- Managed Environment type=sandbox → E2B cloud (no Docker/Daytona in Builder) -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-model-dashscope</artifactId>

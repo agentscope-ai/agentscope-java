@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: cd5d548a-d858-4e19-89e2-c2d02728e1df
-title: PostgreSQL 分布式后端扩展
-scope:
-    - agentscope-extensions/agentscope-extensions-postgresql/
-source_files: []
-depends_on: []
-related_to:
-    - path: 0ba18167-8922-47ad-b2a1-763652787e98/06b216fa-1e39-41ae-bf4b-c63e471ad03d

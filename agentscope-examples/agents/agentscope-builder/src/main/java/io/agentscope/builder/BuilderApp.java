@@ -15,8 +15,10 @@
  */
 package io.agentscope.builder;
 
+import io.agentscope.builder.web.config.BuilderE2bProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
  * Entry point for the agentscope-builder platform.
@@ -33,6 +35,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * </ul>
  */
 @SpringBootApplication
+@EnableConfigurationProperties(BuilderE2bProperties.class)
 public class BuilderApp {
     public static void main(String[] args) {
         SpringApplication.run(BuilderApp.class, args);
