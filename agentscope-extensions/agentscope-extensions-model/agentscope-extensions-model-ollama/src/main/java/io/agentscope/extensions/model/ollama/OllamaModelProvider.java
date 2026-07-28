@@ -61,6 +61,9 @@ public final class OllamaModelProvider implements ModelProvider {
         }
         OllamaChatModel.Builder builder =
                 OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl);
+        if (context.getStream() != null) {
+            builder.stream(context.getStream());
+        }
         applyAdvancedOptions(builder, context);
         return builder.build();
     }
