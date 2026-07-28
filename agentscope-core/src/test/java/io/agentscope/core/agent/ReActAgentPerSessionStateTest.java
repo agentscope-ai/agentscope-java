@@ -17,14 +17,19 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -42,6 +47,10 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.shutdown.AgentShuttingDownException;
+import io.agentscope.core.shutdown.GracefulShutdownConfig;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.legacy.ToolkitState;
@@ -54,7 +63,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -269,7 +280,15 @@ class ReActAgentPerSessionStateTest {
     @DisplayName("user interrupt drops a partial streaming tool call from persisted reasoning")
     void userInterruptDropsPartialStreamingToolCall() throws Exception {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
-        GatedStreamingToolModel model = new GatedStreamingToolModel();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(
+                                TextBlock.builder().text("partial response").build(),
+                                ToolUseBlock.builder()
+                                        .id("call-streaming")
+                                        .name("echo")
+                                        .content("{\"value\":")
+                                        .build()));
         RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("streaming").build();
         ReActAgent first =
                 ReActAgent.builder()
@@ -284,7 +303,7 @@ class ReActAgentPerSessionStateTest {
                         .subscribeOn(Schedulers.parallel())
                         .toFuture();
         assertTrue(
-                model.afterToolChunk.await(5, TimeUnit.SECONDS),
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
                 "partial tool call should be consumed before interrupt");
 
         first.interrupt(ctx);
@@ -347,6 +366,175 @@ class ReActAgentPerSessionStateTest {
         assertTrue(allText(restoredState).contains("completed response"));
     }
 
+    @Test
+    @DisplayName("user interrupt preserves partial reasoning when no tool call was generated")
+    void userInterruptPreservesPartialTextWithoutToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(TextBlock.builder().text("text before interrupt").build()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("text-only").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
+                "partial text should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        assertEquals(
+                GenerateReason.INTERRUPTED, future.get(5, TimeUnit.SECONDS).getGenerateReason());
+        assertTrue(
+                allText(first.getAgentState("u1", "text-only")).contains("text before interrupt"));
+    }
+
+    @Test
+    @DisplayName("user interrupt does not persist a reasoning message containing only a tool call")
+    void userInterruptDropsToolOnlyReasoningMessage() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id("call-only")
+                                        .name("echo")
+                                        .input(Map.of("value", "pending"))
+                                        .build()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("tool-only").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
+                "tool call should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        assertEquals(
+                GenerateReason.INTERRUPTED, future.get(5, TimeUnit.SECONDS).getGenerateReason());
+        assertFalse(hasToolUse(first.getAgentState("u1", "tool-only"), "call-only"));
+    }
+
+    @Test
+    @DisplayName("system interrupt saves partial reasoning under the SAVE policy")
+    void systemInterruptSavesPartialReasoning() throws Exception {
+        AgentState state =
+                runSystemInterruptDuringReasoning(PartialReasoningPolicy.SAVE, "system-save");
+
+        assertTrue(hasToolUse(state, "call-complete"));
+        assertTrue(allText(state).contains("completed response"));
+    }
+
+    @Test
+    @DisplayName("system interrupt discards partial reasoning under the DISCARD policy")
+    void systemInterruptDiscardsPartialReasoning() throws Exception {
+        AgentState state =
+                runSystemInterruptDuringReasoning(PartialReasoningPolicy.DISCARD, "system-discard");
+
+        assertFalse(hasToolUse(state, "call-complete"));
+        assertFalse(allText(state).contains("completed response"));
+    }
+
+    @Test
+    @DisplayName("gotoReasoning persists only non-null reasoning messages")
+    @SuppressWarnings("removal")
+    void gotoReasoningPersistsOnlyNonNullReasoningMessages() {
+        AtomicInteger reasoningRound = new AtomicInteger();
+        Hook gotoHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent reasoningEvent) {
+                            int round = reasoningRound.getAndIncrement();
+                            if (round == 0) {
+                                reasoningEvent.gotoReasoning();
+                            } else if (round == 1) {
+                                reasoningEvent.setReasoningMessage(null);
+                                reasoningEvent.gotoReasoning();
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new SequentialTextModel("first response", "discarded", "final"))
+                        .hook(gotoHook)
+                        .build();
+
+        Msg result = agent.call(userMsg("hello")).block(Duration.ofSeconds(5));
+
+        assertEquals("final", result.getTextContent());
+        List<String> texts = allText(agent.getAgentState());
+        assertTrue(texts.contains("first response"));
+        assertFalse(texts.contains("discarded"));
+        assertTrue(texts.contains("final"));
+    }
+
+    private AgentState runSystemInterruptDuringReasoning(
+            PartialReasoningPolicy policy, String sessionId) throws Exception {
+        GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
+        manager.resetForTesting();
+        manager.setConfig(new GracefulShutdownConfig(Duration.ofSeconds(30), policy));
+
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GateReasoningCompletionMiddleware gate = new GateReasoningCompletionMiddleware();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId(sessionId).build();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new CompletedToolCallModel())
+                        .stateStore(store)
+                        .middleware(gate)
+                        .build();
+        try {
+            CompletableFuture<Msg> future =
+                    agent.call(List.of(userMsg("hello")), ctx)
+                            .subscribeOn(Schedulers.parallel())
+                            .toFuture();
+            assertTrue(
+                    gate.reasoningCompleted.await(5, TimeUnit.SECONDS),
+                    "model reasoning should complete before shutdown");
+
+            assertTrue(manager.performGracefulShutdown());
+            gate.release.tryEmitEmpty();
+
+            ExecutionException error =
+                    assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(AgentShuttingDownException.class, error.getCause());
+            return agent.getAgentState("u1", sessionId);
+        } finally {
+            gate.release.tryEmitEmpty();
+            agent.close();
+            manager.resetForTesting();
+            manager.setConfig(GracefulShutdownConfig.DEFAULT);
+        }
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
@@ -378,31 +566,28 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
-    private static final class GatedStreamingToolModel extends ChatModelBase {
-        private final CountDownLatch afterToolChunk = new CountDownLatch(1);
+    private static final class GatedReasoningModel extends ChatModelBase {
+        private final List<ContentBlock> initialBlocks;
+        private final CountDownLatch afterInitialChunks = new CountDownLatch(1);
         private final Sinks.One<Void> release = Sinks.one();
+
+        private GatedReasoningModel(List<ContentBlock> initialBlocks) {
+            this.initialBlocks = List.copyOf(initialBlocks);
+        }
 
         @Override
         public String getModelName() {
-            return "gated-streaming-tool";
+            return "gated-reasoning";
         }
 
         @Override
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-            ToolUseBlock partialToolCall =
-                    ToolUseBlock.builder()
-                            .id("call-streaming")
-                            .name("echo")
-                            .content("{\"value\":")
-                            .build();
             return Flux.concat(
-                    Flux.just(
-                            response(TextBlock.builder().text("partial response").build()),
-                            response(partialToolCall)),
+                    Flux.fromIterable(initialBlocks).map(ReActAgentPerSessionStateTest::response),
                     Flux.defer(
                             () -> {
-                                afterToolChunk.countDown();
+                                afterInitialChunks.countDown();
                                 return release.asMono()
                                         .thenReturn(
                                                 response(
@@ -410,6 +595,30 @@ class ReActAgentPerSessionStateTest {
                                                                 .text("not consumed")
                                                                 .build()));
                             }));
+        }
+    }
+
+    private static final class SequentialTextModel extends ChatModelBase {
+        private final List<String> responses;
+        private final AtomicInteger index = new AtomicInteger();
+
+        private SequentialTextModel(String... responses) {
+            this.responses = List.of(responses);
+        }
+
+        @Override
+        public String getModelName() {
+            return "sequential-text";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    response(
+                            TextBlock.builder()
+                                    .text(responses.get(index.getAndIncrement()))
+                                    .build()));
         }
     }
 
