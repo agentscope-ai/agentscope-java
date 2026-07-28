@@ -215,9 +215,8 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Flux<Map<String, Object>> subscribe(String key) {
-        return Flux.interval(POLL_INTERVAL)
-                .map(tick -> Map.<String, Object>of())
-                .subscribeOn(Schedulers.boundedElastic());
+        return Flux.interval(POLL_INTERVAL, Schedulers.boundedElastic())
+                .map(tick -> Map.<String, Object>of());
     }
 
     // ---- Internal helpers ----

@@ -226,7 +226,15 @@ class ReActAgentHitlTest {
         assertNotNull(firstResult);
         assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
 
-        // Verify state has been persisted: ToolUseBlock should be in ASKING state
+        // The returned Msg must contain the ASKING ToolUseBlocks so blocking-API
+        // callers can extract them to build ConfirmResult (issue #2066).
+        List<ToolUseBlock> returnedBlocks = firstResult.getContentBlocks(ToolUseBlock.class);
+        assertEquals(
+                1, returnedBlocks.size(), "returned Msg must contain the pending ToolUseBlock");
+        assertEquals(ToolCallState.ASKING, returnedBlocks.get(0).getState());
+        assertEquals("tc1", returnedBlocks.get(0).getId());
+
+        // Also verify state has been persisted consistently
         Msg lastAssistant = null;
         for (int i = agent.getAgentState().getContext().size() - 1; i >= 0; i--) {
             Msg m = agent.getAgentState().getContext().get(i);
@@ -333,6 +341,38 @@ class ReActAgentHitlTest {
                                                         .build()))
                                 .block(),
                 "expected explicit failure when no ConfirmResult is supplied");
+    }
+
+    @Test
+    void blockingApiCanExtractToolCallsFromReturnedMsgAndResume() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "data")),
+                                () -> Flux.just(textResponse("completed"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        // First call returns PERMISSION_ASKING with ToolUseBlocks in content
+        Msg result = agent.call(List.of()).block();
+        assertNotNull(result);
+        assertEquals(GenerateReason.PERMISSION_ASKING, result.getGenerateReason());
+
+        // Extract ToolUseBlocks directly from the returned Msg — no state access
+        List<ToolUseBlock> pending =
+                result.getContent().stream()
+                        .filter(b -> b instanceof ToolUseBlock)
+                        .map(ToolUseBlock.class::cast)
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .toList();
+        assertEquals(1, pending.size(), "must find exactly one ASKING tool in returned Msg");
+
+        // Build ConfirmResult from the extracted ToolUseBlock and resume
+        Msg resumed = agent.call(List.of(confirmMsg(true, pending.get(0)))).block();
+        assertNotNull(resumed);
+        assertTrue(
+                resumed.getGenerateReason() == GenerateReason.MODEL_STOP
+                        || resumed.getGenerateReason() == GenerateReason.TOOL_CALLS,
+                "expected normal completion after confirm, got " + resumed.getGenerateReason());
     }
 
     @Test

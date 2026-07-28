@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.dashscope.formatter;
 
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -122,6 +123,17 @@ public class DashScopeConversationMerger {
                     } catch (Exception e) {
                         log.warn("Failed to process VideoBlock: {}", e.getMessage());
                         textAccumulator.append(name).append(": [Video - processing failed]\n");
+                    }
+
+                } else if (block instanceof DataBlock dataBlock) {
+                    try {
+                        DashScopeContentPart dataPart =
+                                mediaConverter.convertDataBlockToContentPart(dataBlock);
+                        imageContents.add(dataPart);
+                        textAccumulator.append(name).append(": [Data]\n");
+                    } catch (Exception e) {
+                        log.warn("Failed to process DataBlock: {}", e.getMessage());
+                        textAccumulator.append(name).append(": [Data - processing failed]\n");
                     }
 
                 } else if (block instanceof ThinkingBlock) {
@@ -257,6 +269,24 @@ public class DashScopeConversationMerger {
                         content.add(
                                 DashScopeContentPart.text(
                                         "[Video - processing failed: " + e.getMessage() + "]"));
+                    }
+
+                } else if (block instanceof DataBlock dataBlock) {
+                    // Flush accumulated text before adding data block
+                    if (!accumulatedText.isEmpty()) {
+                        content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
+                        accumulatedText.clear();
+                    }
+
+                    try {
+                        DashScopeContentPart dataPart =
+                                mediaConverter.convertDataBlockToContentPart(dataBlock);
+                        content.add(dataPart);
+                    } catch (Exception e) {
+                        log.warn("Failed to process DataBlock in multimodal: {}", e.getMessage());
+                        content.add(
+                                DashScopeContentPart.text(
+                                        "[Media - processing failed: " + e.getMessage() + "]"));
                     }
 
                 } else if (block instanceof ThinkingBlock) {

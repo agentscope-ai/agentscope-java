@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -39,6 +41,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,10 +107,12 @@ public class OpenAIMessageConverter {
      */
     private OpenAIMessage convertSystemMessage(Msg msg) {
         String content = textExtractor.apply(msg);
-        return OpenAIMessage.builder()
-                .role("system")
-                .content(content != null ? content : "")
-                .build();
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role("system").content(content != null ? content : "");
+        if (msg.getName() != null) {
+            builder.name(sanitizeName(msg.getName()));
+        }
+        return builder.build();
     }
 
     /**
@@ -121,7 +126,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -249,6 +254,46 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Video - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DataBlock db) {
+                try {
+                    Source source = db.getSource();
+                    if (source == null) {
+                        log.warn("DataBlock has null source, skipping");
+                        continue;
+                    }
+                    String mimeType = MediaUtils.resolveMimeType(source);
+                    if (mimeType.startsWith("image/")) {
+                        contentParts.add(
+                                OpenAIContentPart.imageUrl(convertImageSourceToUrl(source)));
+                    } else if (mimeType.startsWith("video/")) {
+                        contentParts.add(
+                                OpenAIContentPart.videoUrl(convertVideoSourceToUrl(source)));
+                    } else if (mimeType.startsWith("audio/")) {
+                        if (source instanceof Base64Source b64) {
+                            String format = detectAudioFormat(b64.getMediaType());
+                            contentParts.add(OpenAIContentPart.inputAudio(b64.getData(), format));
+                        } else {
+                            log.warn(
+                                    "URL-based audio DataBlock not supported by OpenAI input_audio;"
+                                            + " using text reference");
+                            contentParts.add(
+                                    OpenAIContentPart.text(
+                                            "[Audio URL: " + ((URLSource) source).getUrl() + "]"));
+                        }
+                    } else {
+                        log.warn("DataBlock has unroutable MIME type '{}', skipping", mimeType);
+                        contentParts.add(
+                                OpenAIContentPart.text(
+                                        "[Media - unsupported MIME type: " + mimeType + "]"));
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process DataBlock: {}", errorMsg);
+                    contentParts.add(
+                            OpenAIContentPart.text(
+                                    "[Media - processing failed: " + errorMsg + "]"));
+                }
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -308,7 +353,7 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         // Handle tool calls
@@ -432,7 +477,8 @@ public class OpenAIMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
@@ -470,6 +516,17 @@ public class OpenAIMessageConverter {
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }
+
+    /** Sanitizes a message name to satisfy OpenAI's {@code ^[a-zA-Z0-9_-]{1,64}$} constraint. */
+    static String sanitizeName(String name) {
+        String sanitized = OPENAI_NAME_ILLEGAL_CHARS.matcher(name).replaceAll("_");
+        if (sanitized.length() > 64) {
+            sanitized = sanitized.substring(0, 64);
+        }
+        return sanitized.isEmpty() ? "agent" : sanitized;
+    }
+
+    private static final Pattern OPENAI_NAME_ILLEGAL_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
 
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.

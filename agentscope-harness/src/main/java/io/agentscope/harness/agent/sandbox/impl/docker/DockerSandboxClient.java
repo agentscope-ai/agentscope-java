@@ -22,6 +22,9 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -129,5 +132,29 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             throw new SandboxException.SandboxConfigurationException(
                     "Failed to deserialize Docker sandbox state", e);
         }
+    }
+
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        try {
+            SandboxState state = objectMapper.readValue(json, SandboxState.class);
+            rebindRemoteSnapshot(state, snapshotSpec);
+            return state;
+        } catch (Exception e) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Failed to deserialize Docker sandbox state", e);
+        }
+    }
+
+    private static void rebindRemoteSnapshot(SandboxState state, SandboxSnapshotSpec snapshotSpec) {
+        if (!(snapshotSpec instanceof RemoteSnapshotSpec remoteSnapshotSpec)) {
+            return;
+        }
+        SandboxSnapshot snapshot = state.getSnapshot();
+        if (!(snapshot instanceof RemoteSandboxSnapshot)) {
+            return;
+        }
+        state.setSnapshot(
+                new RemoteSandboxSnapshot(remoteSnapshotSpec.getClient(), snapshot.getId()));
     }
 }

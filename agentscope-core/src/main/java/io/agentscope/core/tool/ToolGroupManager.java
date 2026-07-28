@@ -139,6 +139,26 @@ class ToolGroupManager {
     }
 
     /**
+     * Find all {@link SkillToolGroup} instances whose {@code activateOnSkill} matches the given
+     * skill name.
+     *
+     * @param skillName The skill name to match against
+     * @return List of matching group names (never null, may be empty)
+     */
+    public List<String> findSkillToolGroupsByActivateOnSkill(String skillName) {
+        if (skillName == null) {
+            return List.of();
+        }
+        return toolGroups.values().stream()
+                .filter(
+                        g ->
+                                g instanceof SkillToolGroup stg
+                                        && skillName.equals(stg.getActivateOnSkill()))
+                .map(ToolGroup::getName)
+                .toList();
+    }
+
+    /**
      * Update the active status of tool groups.
      *
      * @param groupNames List of tool group names to update

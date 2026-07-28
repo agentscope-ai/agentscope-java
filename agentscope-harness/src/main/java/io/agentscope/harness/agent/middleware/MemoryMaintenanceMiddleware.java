@@ -78,12 +78,24 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
 
     /**
-     * Per-isolation-key maintenance timestamps. The key is derived from {@link #isolationScope}
-     * and the per-call {@link RuntimeContext} so the throttle window matches the memory data
-     * namespace (see {@link MemoryFlushMiddleware} for the identical pattern).
+     * Process-wide per-isolation-key maintenance timestamps. Static so that the throttle window
+     * survives across {@code HarnessAgent.Builder.build()} calls — each rebuild creates a new
+     * middleware instance, and an instance-level map would reset to {@link Instant#EPOCH} on
+     * every request, defeating the gap-based throttle.
+     *
+     * <p>The key is a composite of {@link IsolationScope} name and the per-call identity
+     * (see {@link #timerKeyFor(RuntimeContext)}) so the shared map correctly isolates throttle
+     * windows across scope dimensions.
      */
-    private final ConcurrentHashMap<String, AtomicReference<Instant>> lastRunAtByKey =
+    static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_RUN_AT =
             new ConcurrentHashMap<>();
+
+    /**
+     * Entries in {@link #SHARED_LAST_RUN_AT} whose timestamp is older than this threshold
+     * are considered stale and removed on the next cleanup sweep. This bounds the map size
+     * in long-running services with high user/session churn.
+     */
+    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
 
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
@@ -158,14 +170,38 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private AtomicReference<Instant> lastRunAtFor(RuntimeContext rc) {
-        return lastRunAtByKey.computeIfAbsent(
-                timerKeyFor(rc), k -> new AtomicReference<>(Instant.EPOCH));
+        return SHARED_LAST_RUN_AT.computeIfAbsent(
+                compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
     }
 
     /**
-     * Derives the timer map key from the configured {@link IsolationScope} and the per-call
-     * {@link RuntimeContext}, mirroring the memory data namespace. See
-     * {@link MemoryFlushMiddleware#timerKeyFor(RuntimeContext)} for the same logic.
+     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
+     * {@link #SHARED_LAST_RUN_AT}. This bounds the map size in long-running services with
+     * high user/session churn — stale entries represent keys that have not run maintenance
+     * recently and are safe to re-create on demand.
+     *
+     * <p>Package-private for unit testing.
+     */
+    static void cleanupStaleEntries() {
+        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
+        SHARED_LAST_RUN_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
+    }
+
+    /**
+     * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that the shared
+     * {@link #SHARED_LAST_RUN_AT} map never conflates throttle windows from different
+     * isolation dimensions.
+     */
+    private String compositeTimerKey(RuntimeContext rc) {
+        return isolationScope.name() + ":" + timerKeyFor(rc);
+    }
+
+    /**
+     * Derives the per-call identity portion of the composite timer key from the configured
+     * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
+     * namespace. See {@link MemoryFlushMiddleware#timerKeyFor(RuntimeContext)} for the
+     * identical logic.
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {

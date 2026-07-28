@@ -56,12 +56,26 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         List<OpenAIMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
             boolean hasMedia = hasMediaContent(msg);
-            OpenAIMessage openAIMsg = messageConverter.convertToMessage(msg, hasMedia);
+            OpenAIMessage openAIMsg = convertMessage(msg, hasMedia);
             if (openAIMsg != null) {
                 result.add(openAIMsg);
             }
         }
         return result;
+    }
+
+    /**
+     * Convert one AgentScope message to OpenAI message format.
+     *
+     * <p>Provider-specific subclasses may override this when the target API supports a slightly
+     * different message shape.
+     *
+     * @param msg the message to convert
+     * @param hasMedia whether the message contains media content
+     * @return converted OpenAI message
+     */
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        return messageConverter.convertToMessage(msg, hasMedia);
     }
 
     @Override
@@ -79,6 +93,12 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getReasoningEffort);
         if (reasoningEffort != null) {
             request.setReasoningEffort(reasoningEffort);
+        }
+        // Apply thinking budget
+        Integer thinkingBudget =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (thinkingBudget != null) {
+            request.setThinkingBudget(thinkingBudget);
         }
 
         // Apply top_p
@@ -250,6 +270,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                     case "include_reasoning":
                         if (value instanceof Boolean) {
                             request.setIncludeReasoning((Boolean) value);
+                        }
+                        break;
+                    case "thinking_budget":
+                        if (value instanceof Number number) {
+                            request.setThinkingBudget(number.intValue());
                         }
                         break;
                     case "stop":

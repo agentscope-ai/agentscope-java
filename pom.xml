@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>2.0.0-SNAPSHOT</revision>
+        <revision>2.0.1-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -370,35 +370,11 @@
                             <publishingServerId>central</publishingServerId>
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
-                                <artifact>a2a</artifact>
-                                <artifact>advanced</artifact>
-                                <artifact>agui</artifact>
-                                <artifact>boba-tea-shop</artifact>
-                                <artifact>supervisor-agent</artifact>
-                                <artifact>business-mcp-server</artifact>
-                                <artifact>business-sub-agent</artifact>
-                                <artifact>consult-sub-agent</artifact>
-                                <artifact>chat-completions-web</artifact>
-                                <artifact>chat-tts</artifact>
-                                <artifact>hitl-chat</artifact>
-                                <artifact>micronaut</artifact>
-                                <artifact>model-request-compression</artifact>
-                                <artifact>plan-notebook</artifact>
-                                <artifact>quarkus</artifact>
-                                <artifact>quickstart</artifact>
-                                <artifact>werewolf</artifact>
-                                <artifact>werewolf-hitl</artifact>
-                                <artifact>a2a-rocketmq</artifact>
-                                <artifact>agentscope-client</artifact>
-                                <artifact>agentscope-server</artifact>
-                                <artifact>graceful-shutdown</artifact>
-                                <artifact>handoffs</artifact>
-                                <artifact>pipeline</artifact>
-                                <artifact>routing</artifact>
-                                <artifact>skills</artifact>
-                                <artifact>subagent</artifact>
-                                <artifact>supervisor</artifact>
-                                <artifact>workflow</artifact>
+                                <artifact>documentation</artifact>
+                                <artifact>agentscope-builder</artifact>
+                                <artifact>agentscope-codingagent</artifact>
+                                <artifact>agentscope-dataagent</artifact>
+                                <artifact>agentscope-paw</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

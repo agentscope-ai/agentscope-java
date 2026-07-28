@@ -36,6 +36,10 @@ public class RemoteSnapshotSpec implements SandboxSnapshotSpec {
         this.client = client;
     }
 
+    public RemoteSnapshotClient getClient() {
+        return client;
+    }
+
     /**
      * {@inheritDoc}
      *

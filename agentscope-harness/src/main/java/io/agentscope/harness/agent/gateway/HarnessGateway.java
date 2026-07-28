@@ -459,15 +459,38 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     }
 
     /**
-     * Triggers a wakeup-driven run for an idle session. Called by {@link WakeupDispatcher} when a
-     * background task completes or a team message arrives. The agent starts a reasoning round with
-     * no user input; {@link io.agentscope.harness.agent.middleware.InboxMiddleware} drains the
-     * inbox and injects the pending results as context.
+     * {@inheritDoc}
      *
+     * <p>Delegates to {@link #runWakeup(String, String)} with a {@code null} user id.
+     *
+     * @deprecated use {@link #runWakeup(String, String)} so the wakeup-driven round loads agent
+     *     state from the correct {@code (userId, sessionId)} slot. This overload preserves legacy
+     *     anonymous-wakeup behavior.
+     */
+    @Deprecated
+    @Override
+    public Mono<Msg> runWakeup(String sessionId) {
+        return runWakeup(null, sessionId);
+    }
+
+    /**
+     * Triggers a wakeup-driven run for an idle session, propagating the owning user id when
+     * present. Called by {@link WakeupDispatcher} when a background task completes or a team
+     * message arrives. The agent starts a reasoning round with no user input; {@link
+     * io.agentscope.harness.agent.middleware.InboxMiddleware} drains the inbox and injects the
+     * pending results as context.
+     *
+     * <p>When {@code userId} is non-blank it is set on the {@link RuntimeContext}, so the agent
+     * loads state from the same {@code (userId, sessionId)} slot as the original user-driven run
+     * — matching {@code runStream}. A blank or null user id preserves the legacy anonymous
+     * behavior.
+     *
+     * @param userId the owning user id carried by the wakeup entry; may be {@code null} or blank
      * @param sessionId the session to wake up
      * @return the agent's response, or {@link Mono#empty()} if the session is unknown
      */
-    public Mono<Msg> runWakeup(String sessionId) {
+    @Override
+    public Mono<Msg> runWakeup(String userId, String sessionId) {
         String gateKey = sessionToGateKey.get(sessionId);
         if (gateKey == null) {
             log.debug("runWakeup: unknown sessionId={}, skipping", sessionId);
@@ -477,12 +500,15 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ha == null) {
             return Mono.empty();
         }
-        RuntimeContext rtc =
+        RuntimeContext.Builder rtcBuilder =
                 RuntimeContext.builder()
                         .sessionId(sessionId)
                         .put("gateKey", gateKey)
-                        .put("outboundAddress", lastRouteBySession.get(sessionId))
-                        .build();
+                        .put("outboundAddress", lastRouteBySession.get(sessionId));
+        if (userId != null && !userId.isBlank()) {
+            rtcBuilder.userId(userId);
+        }
+        RuntimeContext rtc = rtcBuilder.build();
 
         if (messageBus == null) {
             return withGatedTurn(gateKey, () -> ha.call(List.of(), rtc));

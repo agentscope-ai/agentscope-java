@@ -250,23 +250,30 @@ The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`
 
 ## HITL integration
 
-When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The caller inspects this, presents the pending operation to the user, and resumes the agent after collecting a decision.
+When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The returned `Msg` contains the `ToolUseBlock`s in `ASKING` state. The caller extracts them, presents the pending operation to the user, and resumes the agent with `ConfirmResult` objects.
 
 ### Interaction flow
 
 1. Configure ASK rules for tools that require human confirmation
 2. Agent pauses on ASK tools, returning `PERMISSION_ASKING`
-3. Caller checks `getGenerateReason()` and shows the pending tool calls to the user
-4. After user confirms, send a new message to resume the agent
+3. Extract `ToolUseBlock`s (with `ASKING` state) from the returned `Msg` and show them to the user
+4. Build `ConfirmResult` objects and attach them to the resume message via metadata
 
 ```java
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 // 1. Configure permissions: safe_read auto-allowed, dangerous_delete requires confirmation
 PermissionContextState permCtx =
@@ -296,15 +303,98 @@ Msg result = agent.call(new UserMessage("Delete /tmp/important.txt")).block();
 
 // 3. Check whether user confirmation is needed
 if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
-    // Show the pending tool calls to the user
-    result.getContent().forEach(block -> System.out.println("Pending: " + block));
+    // Extract the ASKING ToolUseBlocks from the returned Msg
+    List<ToolUseBlock> askingTools =
+            result.getContent().stream()
+                    .filter(b -> b instanceof ToolUseBlock)
+                    .map(ToolUseBlock.class::cast)
+                    .filter(t -> t.getState() == ToolCallState.ASKING)
+                    .toList();
 
-    // 4. Collect the user's decision and resume the agent
+    // Show pending operations to the user
+    askingTools.forEach(t -> System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+    // 4. Collect the user's decision, build ConfirmResult, and resume
     boolean approved = askUser();
-    String resumeText = approved ? "yes, proceed" : "no, cancel";
-    Msg finalResult = agent.call(new UserMessage(resumeText)).block();
+    List<ConfirmResult> confirmResults =
+            askingTools.stream()
+                    .map(t -> new ConfirmResult(approved, t))
+                    .toList();
+
+    Map<String, Object> meta = new HashMap<>();
+    meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+    Msg resumeMsg =
+            Msg.builder()
+                    .name("user")
+                    .role(MsgRole.USER)
+                    .textContent(approved ? "approved" : "denied")
+                    .metadata(meta)
+                    .build();
+
+    Msg finalResult = agent.call(List.of(resumeMsg)).block();
 }
 ```
+
+### All tools denied
+
+When the user denies **all** tool calls from a reasoning step in the confirmation UI, the agent continues to the next reasoning iteration by default — the model only sees "Permission denied by user" tool results, which often leads to unhelpful reasoning.
+
+To stop the agent in this scenario, wire up an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`. After stopping, `Msg.getGenerateReason()` returns `ALL_TOOLS_DENIED`.
+
+See [Middleware — Stop agent when all tools are denied](./middleware.md#stop-agent-when-all-tools-are-denied) for the implementation.
+### Streaming mode
+
+When using `streamEvents()`, you don't need to extract `ToolUseBlock`s from the returned `Msg` — the event stream delivers a `RequireUserConfirmEvent` that carries the pending tool calls directly:
+
+```java
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// Subscribe to the event stream
+agent.streamEvents(List.of(new UserMessage("Delete /tmp/important.txt")))
+        .doOnNext(event -> {
+            if (event instanceof RequireUserConfirmEvent confirmEvent) {
+                // Get pending ToolUseBlocks directly from the event
+                List<ToolUseBlock> pending = confirmEvent.getToolCalls();
+                pending.forEach(t ->
+                        System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+                // Collect user decision, store pending list for the resume call
+            }
+        })
+        .blockLast();
+
+// Resume is the same as with the blocking API: build ConfirmResult in metadata
+List<ConfirmResult> confirmResults =
+        pendingTools.stream()
+                .map(t -> new ConfirmResult(true, t))
+                .toList();
+Map<String, Object> meta = new HashMap<>();
+meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+Msg resumeMsg =
+        Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("approved")
+                .metadata(meta)
+                .build();
+agent.call(List.of(resumeMsg)).block();
+```
+
+Comparison of the two modes:
+
+| | Blocking `call()` | Streaming `streamEvents()` |
+|---|---|---|
+| Getting pending tools | Filter `ToolUseBlock`s (state `ASKING`) from `Msg.getContent()` | Get directly from `RequireUserConfirmEvent.getToolCalls()` |
+| Resuming | Same: build `ConfirmResult` in metadata and issue a new `call()` | Same |
+| Use case | REST APIs, simple synchronous services | WebSocket, SSE, real-time UIs |
 
 ### Unattended mode
 

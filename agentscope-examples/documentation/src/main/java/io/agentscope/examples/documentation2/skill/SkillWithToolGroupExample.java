@@ -45,7 +45,7 @@ import java.nio.file.Paths;
  * <pre>
  *   toolkit.createSkillToolGroup("analysis-tools", "Data analysis tools", false, "data-analysis");
  *   toolkit.registration().tool(new AnalysisTools()).group("analysis-tools").apply();
- *   // Agent loads the "data-analysis" SKILL.md → "analysis-tools" group becomes active
+ *   // Agent loads "data-analysis" SKILL.md → "analysis-tools" group becomes active via activateOnSkill
  * </pre>
  *
  * <p><b>Skill file structure (SKILLS_DIR/data-analysis/SKILL.md):</b>
@@ -80,9 +80,10 @@ public class SkillWithToolGroupExample {
     private static final String ACTIVATING_SKILL = "data-analysis";
 
     /**
-     * Name of the tool group bound to the skill.
+     * Name of the tool group bound to the skill. Can be any name — the group is activated
+     * automatically when the skill matching {@code activateOnSkill} is loaded.
      */
-    private static final String TOOL_GROUP = "skill-tools";
+    private static final String TOOL_GROUP = "data-analysis-tools";
 
     /**
      * Runs the skill-with-tool-group example.

@@ -18,6 +18,7 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -134,7 +135,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
@@ -218,6 +220,9 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             } else if (block instanceof VideoBlock vb) {
                 String reference = convertMediaBlockToTextReference(vb, "video");
                 textualOutput.add(reference);
+            } else if (block instanceof DataBlock db) {
+                String reference = convertMediaBlockToTextReference(db, "data");
+                textualOutput.add(reference);
             }
             // Other block types (e.g., ThinkingBlock) are ignored
         }
@@ -272,6 +277,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             return ab.getSource();
         } else if (block instanceof VideoBlock vb) {
             return vb.getSource();
+        } else if (block instanceof DataBlock db) {
+            return db.getSource();
         }
         throw new IllegalArgumentException("Unsupported block type: " + block.getClass());
     }

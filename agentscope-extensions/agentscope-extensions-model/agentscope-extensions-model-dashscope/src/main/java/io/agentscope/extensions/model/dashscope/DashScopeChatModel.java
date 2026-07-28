@@ -392,7 +392,10 @@ public class DashScopeChatModel extends ChatModelBase {
 
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return true;
+        if (Boolean.TRUE.equals(enableThinking)) {
+            return false;
+        }
+        return super.supportsNativeStructuredOutput();
     }
 
     public static class Builder {
@@ -409,6 +412,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean enableEncrypt = false;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
 
         /**
@@ -640,12 +644,32 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model supports native structured output via {@code response_format}
+         * with {@code json_schema} type.
+         *
+         * <p>Defaults to {@code false}. DashScope's native endpoint only supports
+         * {@code json_object} (free-form JSON), not {@code json_schema} (strict schema
+         * validation). When {@code false}, the framework uses the {@code generate_response}
+         * tool fallback for structured output requests.
+         *
+         * <p>Set to {@code true} only if your model/endpoint is confirmed to support
+         * {@code json_schema} in {@code response_format}.
+         *
+         * @param nativeStructuredOutput true to enable native json_schema path
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutput(boolean nativeStructuredOutput) {
+            this.nativeStructuredOutput = nativeStructuredOutput;
+            return this;
+        }
+
+        /**
          * Sets whether this model correctly handles native structured output
          * ({@code response_format}) alongside tool calling.
          *
-         * <p>Defaults to {@code true}, which is correct for Qwen models on DashScope.
-         * Set to {@code false} for third-party models hosted on DashScope that
-         * prioritise {@code response_format} over tool invocations.
+         * <p>Defaults to {@code false} (inherits from
+         * {@link #nativeStructuredOutput(boolean)}). Set to {@code true} only for models
+         * that support both {@code response_format} and tool calling simultaneously.
          *
          * @param nativeStructuredOutputWithTools false to use fallback when tools are present
          * @return this builder instance
@@ -707,6 +731,9 @@ public class DashScopeChatModel extends ChatModelBase {
                     contextWindowSize >= 0
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
+            if (nativeStructuredOutput != null) {
+                model.setNativeStructuredOutput(nativeStructuredOutput);
+            }
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
             }

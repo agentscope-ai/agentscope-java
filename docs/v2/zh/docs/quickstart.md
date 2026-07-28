@@ -23,9 +23,19 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](others/release-notes.md)。
 :::
 
-只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 子 agent / 沙箱），单独依赖 `agentscope-core` 即可。两种用法的区别详见 [Harness 架构](./harness/architecture.md)。
+如果只需要裸 `ReActAgent` 的框架 API（不需要工作区 / 持久化 / 子 agent / 沙箱），`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见 [Harness 架构](./harness/architecture.md)。
 
-DashScope / OpenAI / Anthropic / Gemini / Ollama 的 formatter 与 chat model 都在 `agentscope-core` 里；MCP 集成需要官方 MCP SDK，参考 `agentscope-examples/documentation/pom.xml`。
+下面的 quickstart 通过 `.model("dashscope:qwen-plus")` 使用 DashScope，因此还需要引入对应模型扩展：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+MCP 集成需要官方 MCP SDK，参考 `agentscope-examples/documentation/pom.xml`。
 
 ## 第一个智能体
 
@@ -113,7 +123,7 @@ agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"))
 ```
 
 :::{tip}
-运行前在环境变量里设置 `DASHSCOPE_API_KEY`。切换厂商只需改 `.model(...)` 的字符串并设置对应的 API key（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。需要更精细地控制超时 / 自定义 endpoint 等参数时，仍可显式 `DashScopeChatModel.builder()...build()` 构造实例后传给 `.model(Model)`。
+运行前在环境变量里设置 `DASHSCOPE_API_KEY`。切换模型提供商时，需要引入对应的 `agentscope-extensions-model-*` 模型扩展模块，修改 `.model(...)` 的字符串，并设置对应的 API key（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。需要更精细地控制超时 / 自定义 endpoint 等参数时，可使用对应模型提供商的 builder（例如 `DashScopeChatModel.builder()...build()`）构造实例后传给 `.model(Model)`。
 :::
 
 ### 多用户并发

@@ -46,7 +46,13 @@ public class MessageEventHandler implements ClientEventHandler<MessageEvent> {
         // Automatically trigger PreReasoningEvent and PostReasoningEvent
         msg = context.publishPostReasoning(msg);
 
-        context.getSink().success(msg);
+        if (!context.complete(msg)) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] MessageEventHandler: duplicate terminal event ignored.",
+                    currentRequestId);
+            return;
+        }
         LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
         LoggerUtil.debug(log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);
         LoggerUtil.logTextMsgDetail(log, List.of(msg));

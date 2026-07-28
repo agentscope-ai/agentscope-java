@@ -111,6 +111,29 @@ class ReActAgentNewLoopBuilderTest {
     }
 
     @Test
+    void fromAgentCopiesModelResilienceConfig() {
+        ChatModelBase model = newFakeModel();
+        ChatModelBase fallback = newFakeModel();
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .sysPrompt("sys")
+                        .model(model)
+                        .fallbackModel(fallback)
+                        .maxRetries(7)
+                        .toolkit(new Toolkit())
+                        .build();
+
+        ReActAgent copy = ReActAgent.Builder.fromAgent(source).build();
+
+        assertNotNull(copy.getModelConfig());
+        assertEquals(7, copy.getModelConfig().maxRetries());
+        assertSame(fallback, copy.getModelConfig().fallbackModel());
+        assertSame(model, copy.getModel());
+    }
+
+    @Test
     void observeAddsMessagesToState() {
         ReActAgent agent =
                 ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();

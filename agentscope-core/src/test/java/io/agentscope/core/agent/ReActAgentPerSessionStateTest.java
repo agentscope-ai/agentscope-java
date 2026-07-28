@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,9 +36,14 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.legacy.ToolkitState;
+import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -73,6 +79,63 @@ class ReActAgentPerSessionStateTest {
                 .model(new NoopModel())
                 .stateStore(store)
                 .build();
+    }
+
+    @Test
+    @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
+    void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "u1",
+                "persisted-empty",
+                "agent_state",
+                AgentState.builder().userId("u1").sessionId("persisted-empty").build());
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "fresh").getToolContext().getActivatedGroups());
+        assertTrue(
+                agent.getAgentState("u1", "persisted-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "An explicitly persisted empty group list must remain empty");
+    }
+
+    @Test
+    @DisplayName("legacy empty tool groups remain explicitly empty")
+    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertTrue(
+                agent.getAgentState("u1", "legacy-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
     }
 
     @Test
@@ -114,6 +177,83 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("user interrupt persists recovery state to the store")
+    void userInterruptPersistsRecoveryState() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CountDownLatch subscribed = new CountDownLatch(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new DelayedFirstChunkModel(subscribed))
+                        .stateStore(store)
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        CompletableFuture<Msg> future =
+                agent.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+
+        assertTrue(subscribed.await(5, TimeUnit.SECONDS), "model stream should start");
+        agent.interrupt("u1", "sessA");
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(
+                "I noticed that you have interrupted me. What can I do for you?",
+                reply.getTextContent());
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
+
+        ReActAgent reborn = agent(store);
+        AgentState restoredState = reborn.getAgentState("u1", "sessA");
+        List<String> texts = allText(restoredState);
+        assertTrue(texts.contains("hello"), "user input should remain in persisted session state");
+        assertTrue(
+                texts.contains("I noticed that you have interrupted me. What can I do for you?"),
+                "interrupt recovery message should be persisted to the state store");
+        Msg restoredRecovery =
+                restoredState.getContext().stream()
+                        .filter(
+                                msg ->
+                                        "I noticed that you have interrupted me. What can I do for you?"
+                                                .equals(msg.getTextContent()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
+    }
+
+    private static final class DelayedFirstChunkModel extends ChatModelBase {
+        private final CountDownLatch subscribed;
+
+        private DelayedFirstChunkModel(CountDownLatch subscribed) {
+            this.subscribed = subscribed;
+        }
+
+        @Override
+        public String getModelName() {
+            return "delayed-first-chunk";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.defer(
+                    () -> {
+                        subscribed.countDown();
+                        return Flux.just(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("model reply")
+                                                                        .build()))
+                                                .build())
+                                .delaySubscription(Duration.ofMillis(200));
+                    });
+        }
     }
 
     private static Msg userMsg(String text) {

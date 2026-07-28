@@ -55,7 +55,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * Simple subagent tool for agent-internal use. Much lighter than {@code SessionsTool}:
@@ -110,6 +112,14 @@ public class AgentSpawnTool {
      * argument → {@code false}.
      */
     public static final String CTX_EXPOSE_TO_USER = "agentscope.subagent.expose_to_user";
+
+    /**
+     * {@link RuntimeContext} string key for the immutable subagent registry selected by the
+     * current parent-agent invocation. {@link
+     * io.agentscope.harness.agent.middleware.SubagentsMiddleware} installs a namespace-scoped
+     * manager here so concurrent callers never overwrite each other's declarations.
+     */
+    public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
 
     private static final String BG_RESULT_TEMPLATE =
             """
@@ -238,23 +248,24 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
+            if (manager.isPrimaryOnly(agentId)) {
                 return Mono.just(
                         "Error: agent_id '"
                                 + agentId
                                 + "' is PRIMARY-only and cannot be spawned as a subagent.");
             }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
             return Mono.just("Error: Unknown agent_id: " + agentId);
         }
         log.debug("agent_spawn resolved: agentId={}", agentId);
         Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(agentId);
+        var declOpt = manager.getDeclaration(agentId);
         boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
 
         String key;
@@ -266,6 +277,8 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                propagatePlanMode(
+                        parentState, currentUserId, existing.sessionId(), existing.agent());
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -293,11 +306,7 @@ public class AgentSpawnTool {
         persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
-        if (parentState != null
-                && parentState.getPlanModeContext().isPlanActive()
-                && agent instanceof HarnessAgent ha) {
-            ha.enterPlanMode(currentUserId, sessionId);
-        }
+        propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
         boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
@@ -351,8 +360,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
@@ -499,7 +507,9 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(spawned.agentId());
+        DefaultAgentManager manager = managerFor(runtimeContext);
+        propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
+        var declOpt = manager.getDeclaration(spawned.agentId());
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -517,8 +527,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -590,6 +599,30 @@ public class AgentSpawnTool {
     //  Helpers
     // -----------------------------------------------------------------
 
+    private DefaultAgentManager managerFor(RuntimeContext runtimeContext) {
+        DefaultAgentManager scoped =
+                runtimeContext != null
+                        ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
+                        : null;
+        return scoped != null ? scoped : agentManager;
+    }
+
+    /**
+     * Activates plan mode on a local child immediately before it can be invoked.
+     *
+     * <p>This must run for both newly-created and reused children. In particular, a persistent
+     * child may have been created while its parent was in build mode and then reused after the
+     * parent entered plan mode.
+     */
+    private static void propagatePlanMode(
+            AgentState parentState, String userId, String sessionId, Agent child) {
+        if (parentState != null
+                && parentState.getPlanModeContext().isPlanActive()
+                && child instanceof HarnessAgent harnessChild) {
+            harnessChild.enterPlanMode(userId, sessionId);
+        }
+    }
+
     /**
      * Returns a {@link Mono} that invokes the local subagent.
      *
@@ -619,6 +652,7 @@ public class AgentSpawnTool {
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
                 ctxView -> {
+                    DefaultAgentManager manager = managerFor(parentCtx);
                     // ── Path 1: streamEvents() — AgentEvent forwarding ──
                     Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
                     if (emitterOpt.isPresent()) {
@@ -631,8 +665,7 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
-                        return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
+                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
@@ -650,8 +683,7 @@ public class AgentSpawnTool {
                         SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
                         EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                        return agentManager
-                                .invokeAgentStream(
+                        return manager.invokeAgentStream(
                                         agent,
                                         sessionId,
                                         userId,
@@ -675,13 +707,13 @@ public class AgentSpawnTool {
                                 .switchIfEmpty(
                                         Mono.defer(
                                                 () ->
-                                                        agentManager.invokeAgent(
+                                                        manager.invokeAgent(
                                                                 agent, sessionId, userId, prompt,
                                                                 parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -720,16 +752,40 @@ public class AgentSpawnTool {
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
 
-                                    execLocalSync(
-                                                    agent,
-                                                    sessionId,
-                                                    userId,
-                                                    task,
-                                                    spawned,
-                                                    runtimeContext)
-                                            .contextWrite(
-                                                    c -> reactor.util.context.Context.of(parentCtx))
-                                            .subscribe(
+                                    Mono<Msg> inner =
+                                            execLocalSync(
+                                                            agent,
+                                                            sessionId,
+                                                            userId,
+                                                            task,
+                                                            spawned,
+                                                            runtimeContext)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    reactor.util.context.Context.of(
+                                                                            parentCtx))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                // Parent subscription was
+                                                                // cancelled (outer Mono.timeout,
+                                                                // user stop, or upstream Reactor
+                                                                // cancel). The fire-and-forget
+                                                                // subscribe below detaches the
+                                                                // inner execution from the parent
+                                                                // lifecycle, so without this
+                                                                // doFinally the sub-agent would
+                                                                // keep running as an orphan and
+                                                                // the eventual sink.success(...)
+                                                                // would be a no-op on the
+                                                                // already-cancelled sink.
+                                                                if (signal == SignalType.CANCEL) {
+                                                                    interruptAgent(
+                                                                            agent, runtimeContext);
+                                                                }
+                                                            });
+
+                                    Disposable innerSub =
+                                            inner.subscribe(
                                                     bridge::complete,
                                                     bridge::completeExceptionally,
                                                     () -> {
@@ -762,7 +818,33 @@ public class AgentSpawnTool {
                                                                     + textOf(msg));
                                                 }
                                             });
+
+                                    // Propagate parent cancellation to the inner fire-and-forget
+                                    // subscription. Without this, doFinally(CANCEL) above never
+                                    // fires because the inner is subscribed independently of the
+                                    // parent Mono.create sink.
+                                    sink.onCancel(innerSub);
                                 }));
+    }
+
+    /**
+     * Interrupts the sub-agent's reasoning loop when its parent tool-call subscription is
+     * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
+     * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
+     *
+     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
+     * implementations are no-ops here; their inner execution will still be disposed by the caller's
+     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     */
+    private void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            log.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
+                            + " subscription was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
+        }
     }
 
     /**
@@ -849,7 +931,7 @@ public class AgentSpawnTool {
             return null;
         }
         Optional<Agent> agentOpt =
-                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+                managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
         if (agentOpt.isEmpty()) {
             log.warn(
                     "Failed to restore subagent from state: agentId={} not found in registry",
@@ -1072,6 +1154,7 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -1089,8 +1172,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,

@@ -32,18 +32,18 @@ Each capability answers one problem; opt in on the builder.
 
 | Capability | What it solves | Builder hook | Detail |
 |---|---|---|---|
-| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace) |
-| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](../building-blocks/context) |
-| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory) |
-| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](./compaction) |
-| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](./compaction) |
-| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent) |
-| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](./filesystem) |
-| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](./sandbox) |
-| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](./plan-mode) |
-| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](./skill) |
-| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](./workspace) |
-| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel) |
+| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace.md) |
+| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](../building-blocks/context.md) |
+| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory.md) |
+| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](./compaction.md) |
+| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](./compaction.md) |
+| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent.md) |
+| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](./filesystem.md) |
+| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](./sandbox.md) |
+| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](./plan-mode.md) |
+| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](./skill.md) |
+| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](./workspace.md) |
+| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel.md) |
 
 ## How state flows
 
@@ -69,13 +69,13 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Related pages
 
-- [Workspace](./workspace) — directory layout, what gets injected into the system prompt, `tools.json`
-- [Context & AgentState](../building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
-- [Memory](./memory) — two-layer memory
-- [Compaction](./compaction) — summary compaction, large-result offloading, overflow recovery
-- [Filesystem](./filesystem) — local + shell / shared store / sandbox
-- [Sandbox](./sandbox) — isolated execution, cross-call recovery, distributed
-- [Subagent](./subagent) — declarations, sync/background, streaming forwarding
-- [Skill](./skill) — four-layer composition, self-learning loop
-- [Plan Mode](./plan-mode) — read-only phase + HITL exit
-- [Channel](./channel) — session management, multi-agent routing, streaming SSE
+- [Workspace](./workspace.md) — directory layout, what gets injected into the system prompt, `tools.json`
+- [Context & AgentState](../building-blocks/context.md) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
+- [Memory](./memory.md) — two-layer memory
+- [Compaction](./compaction.md) — summary compaction, large-result offloading, overflow recovery
+- [Filesystem](./filesystem.md) — local + shell / shared store / sandbox
+- [Sandbox](./sandbox.md) — isolated execution, cross-call recovery, distributed
+- [Subagent](./subagent.md) — declarations, sync/background, streaming forwarding
+- [Skill](./skill.md) — four-layer composition, self-learning loop
+- [Plan Mode](./plan-mode.md) — read-only phase + HITL exit
+- [Channel](./channel.md) — session management, multi-agent routing, streaming SSE

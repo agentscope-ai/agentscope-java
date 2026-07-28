@@ -62,7 +62,7 @@ class ChannelRouterGroupTest {
         assertEquals("peer", route.matchedBy());
         // Outbound address must encode the kind so e.g. WeComOutboundClient routes to
         // /cgi-bin/appchat/send instead of /cgi-bin/message/send.
-        assertEquals("wecom-prod:gid_123", route.outboundAddress().to());
+        assertEquals("wecom-prod:GROUP:gid_123", route.outboundAddress().to());
         assertEquals("corp-1", route.outboundAddress().accountId());
         assertNull(route.outboundAddress().threadId());
     }
@@ -79,7 +79,7 @@ class ChannelRouterGroupTest {
 
         assertEquals("main", route.agentId());
         assertEquals("channel-default", route.matchedBy());
-        assertEquals("wecom-prod:u9", route.outboundAddress().to());
+        assertEquals("wecom-prod:DIRECT:u9", route.outboundAddress().to());
     }
 
     @Test

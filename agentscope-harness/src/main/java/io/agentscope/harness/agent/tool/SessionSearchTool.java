@@ -171,7 +171,8 @@ public class SessionSearchTool {
     public String sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
-            @ToolParam(name = "sessionId", description = "AgentStateStore ID") String sessionId,
+            @ToolParam(name = "sessionId", description = "AgentStateStore Session ID")
+                    String sessionId,
             @ToolParam(
                             name = "lastN",
                             description = "Number of recent messages to return (default: 20)",

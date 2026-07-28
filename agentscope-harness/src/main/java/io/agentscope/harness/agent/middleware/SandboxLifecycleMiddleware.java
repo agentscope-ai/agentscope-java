@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,11 +56,24 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     private final SandboxBackedFilesystem filesystemProxy;
     private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
             new AtomicReference<>();
+    private volatile Consumer<RuntimeContext> beforeStartCallback;
 
     public SandboxLifecycleMiddleware(
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
         this.sandboxManager = sandboxManager;
         this.filesystemProxy = filesystemProxy;
+    }
+
+    /**
+     * Registers a callback that runs after the sandbox session is acquired but before
+     * {@link io.agentscope.harness.agent.sandbox.Sandbox#start()} applies workspace projection.
+     * This allows callers to materialise resources on the host workspace (e.g.
+     * {@code .skills-cache/}) so that projection picks them up in the same call.
+     *
+     * @param callback receives the per-call {@link RuntimeContext}; may be {@code null} to clear
+     */
+    public void setBeforeStartCallback(Consumer<RuntimeContext> callback) {
+        this.beforeStartCallback = callback;
     }
 
     /**
@@ -78,6 +92,18 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         try {
+            Consumer<RuntimeContext> cb = beforeStartCallback;
+            if (cb != null) {
+                try {
+                    cb.accept(ctx);
+                } catch (Exception e) {
+                    log.warn(
+                            "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
+                                    + " start: {}",
+                            e.getMessage(),
+                            e);
+                }
+            }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
             try {

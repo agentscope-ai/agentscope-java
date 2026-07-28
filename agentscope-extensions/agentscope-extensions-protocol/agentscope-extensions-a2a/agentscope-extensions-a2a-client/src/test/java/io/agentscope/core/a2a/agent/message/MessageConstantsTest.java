@@ -51,5 +51,6 @@ class MessageConstantsTest {
         assertNotNull(MessageConstants.TOOL_NAME_METADATA_KEY);
         assertNotNull(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         assertNotNull(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY);
+        assertEquals("_agentscope_msg_role", MessageConstants.MSG_ROLE_METADATA_KEY);
     }
 }

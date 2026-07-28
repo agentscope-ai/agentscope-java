@@ -21,10 +21,7 @@ package io.agentscope.core.skill;
  * <p>Records skill registration information including skill ID and activation state.
  * The activation state determines whether the skill's associated tools are available to the LLM.
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
-@Deprecated(since = "2.0.0")
 class RegisteredSkill {
     private final String skillId;
     private boolean active; // whether this skill is being used by llm, if using need activate the

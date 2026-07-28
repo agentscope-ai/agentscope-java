@@ -282,4 +282,25 @@ class OllamaOptionsTest {
         assertNotNull(options.getThinkOption());
         assertEquals(ThinkOption.ThinkBoolean.ENABLED, options.getThinkOption());
     }
+
+    @Test
+    @DisplayName("Should preserve executionConfig via fromOptions, toBuilder and copy")
+    void testExecutionConfigPreservedOnCopy() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).maxAttempts(3).build();
+        OllamaOptions original =
+                OllamaOptions.builder().temperature(0.7).executionConfig(executionConfig).build();
+
+        // copy() delegates to fromOptions(OllamaOptions)
+        OllamaOptions copy = original.copy();
+        assertEquals(executionConfig, copy.getExecutionConfig());
+
+        // fromOptions(OllamaOptions) directly
+        OllamaOptions fromOptions = OllamaOptions.fromOptions(original);
+        assertEquals(executionConfig, fromOptions.getExecutionConfig());
+
+        // toBuilder().build() round-trip
+        OllamaOptions rebuilt = original.toBuilder().build();
+        assertEquals(executionConfig, rebuilt.getExecutionConfig());
+    }
 }

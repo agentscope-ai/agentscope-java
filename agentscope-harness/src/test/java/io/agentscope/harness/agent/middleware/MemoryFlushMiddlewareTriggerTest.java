@@ -24,6 +24,9 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,6 +45,13 @@ class MemoryFlushMiddlewareTriggerTest {
             RuntimeContext.builder().userId("userA").sessionId("session1").build();
     private static final RuntimeContext RC_SESSION_2 =
             RuntimeContext.builder().userId("userA").sessionId("session2").build();
+
+    /** Clear the static shared throttle map between tests. */
+    @BeforeEach
+    void resetSharedTimerMap() {
+        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.clear();
+        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.clear();
+    }
 
     /** Creates a USER-scope (default) middleware for trigger-gate tests. */
     private static MemoryFlushMiddleware make(MemoryConfig.FlushTrigger trigger) {
@@ -207,5 +217,68 @@ class MemoryFlushMiddlewareTriggerTest {
         assertEquals("userB", mw.timerKeyFor(RC_USER_B));
         assertEquals("", mw.timerKeyFor(RC_ANON), "no userId → empty key");
         assertEquals("", mw.timerKeyFor(null), "null rc → empty key");
+    }
+
+    // ── Cross-instance throttle sharing (the core bug-fix scenario) ──────────
+
+    @Test
+    void throttledMode_crossInstanceSharesOneThrottleSlot() {
+        // Simulates the real-world scenario: HarnessAgent.Builder.build() creates a new
+        // MemoryFlushMiddleware per request. With the instance-level map the bug was that each
+        // new instance started with an empty map → Instant.EPOCH → throttle always bypassed.
+        // Now the static SHARED_LAST_FLUSH_AT persists across instances so the second instance
+        // correctly sees the flush timestamp from the first instance.
+        Duration gap = Duration.ofHours(1);
+        MemoryFlushMiddleware mw1 = make(MemoryConfig.FlushTrigger.throttled(gap));
+        MemoryFlushMiddleware mw2 = make(MemoryConfig.FlushTrigger.throttled(gap));
+
+        assertTrue(mw1.shouldFlushNow(RC_USER_A), "first instance, first call wins");
+        assertFalse(
+                mw2.shouldFlushNow(RC_USER_A),
+                "second instance must respect the throttle window set by the first instance");
+    }
+
+    @Test
+    void throttledMode_crossInstance_differentUsersAreIndependent() {
+        // Cross-instance but different users must not interfere — userB should still win
+        // their own slot even though userA already flushed via a different instance.
+        Duration gap = Duration.ofHours(1);
+        MemoryFlushMiddleware mw1 = make(MemoryConfig.FlushTrigger.throttled(gap));
+        MemoryFlushMiddleware mw2 = make(MemoryConfig.FlushTrigger.throttled(gap));
+
+        assertTrue(mw1.shouldFlushNow(RC_USER_A), "mw1: userA wins");
+        assertTrue(
+                mw2.shouldFlushNow(RC_USER_B),
+                "mw2: userB must still win their own independent slot");
+        assertFalse(mw1.shouldFlushNow(RC_USER_B), "mw1: userB now throttled in their own window");
+    }
+
+    // ── Stale entry eviction ──────────────────────────────────────────────────
+
+    @Test
+    void cleanupStaleEntries_removesOldEntries() {
+        // Seed the map with a stale entry (timestamp = EPOCH, which is way older than 60min)
+        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
+                "USER:staleUser", new AtomicReference<>(Instant.EPOCH));
+        assertEquals(1, MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.size());
+
+        MemoryFlushMiddleware.cleanupStaleEntries();
+
+        assertTrue(
+                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.isEmpty(),
+                "stale entry (EPOCH timestamp) should be removed");
+    }
+
+    @Test
+    void cleanupStaleEntries_preservesRecentEntries() {
+        // Seed with a recent entry (timestamp = now)
+        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
+                "USER:recentUser", new AtomicReference<>(Instant.now()));
+
+        MemoryFlushMiddleware.cleanupStaleEntries();
+
+        assertTrue(
+                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.containsKey("USER:recentUser"),
+                "recent entry should survive cleanup");
     }
 }

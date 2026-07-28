@@ -115,6 +115,24 @@ class WakeupDispatcherTest {
         assertEquals("sess-pre", target.wokenSessions.get(0));
     }
 
+    @Test
+    @DisplayName("Wakeup dispatch propagates the owning user id to the target")
+    void wakeupDispatch_propagatesUserId() throws Exception {
+        target.addKnown("sess-user");
+        dispatcher.start();
+
+        messageBus.enqueueWakeup("user-42", "sess-user", "agent-main").block();
+
+        assertTrue(
+                target.awaitWakeup(1, 6, TimeUnit.SECONDS),
+                "Expected runWakeup to be called within 6s");
+        assertEquals("sess-user", target.wokenSessions.get(0));
+        assertEquals(
+                "user-42",
+                target.wokenUsers.get(0),
+                "Dispatcher must forward the userId carried by the wakeup entry");
+    }
+
     // ------------------------------------------------------------------
     //  Test double
     // ------------------------------------------------------------------
@@ -122,6 +140,7 @@ class WakeupDispatcherTest {
     private static class StubTarget implements WakeupDispatcher.WakeupTarget {
 
         final CopyOnWriteArrayList<String> wokenSessions = new CopyOnWriteArrayList<>();
+        final CopyOnWriteArrayList<String> wokenUsers = new CopyOnWriteArrayList<>();
         private final Set<String> runningSessions = ConcurrentHashMap.newKeySet();
         private final Set<String> knownSessions = ConcurrentHashMap.newKeySet();
         private volatile CountDownLatch wakeupLatch = new CountDownLatch(1);
@@ -141,10 +160,16 @@ class WakeupDispatcherTest {
 
         @Override
         public Mono<Msg> runWakeup(String sessionId) {
+            return runWakeup(null, sessionId);
+        }
+
+        @Override
+        public Mono<Msg> runWakeup(String userId, String sessionId) {
             if (!knownSessions.contains(sessionId)) {
                 return Mono.empty();
             }
             wokenSessions.add(sessionId);
+            wokenUsers.add(userId);
             wakeupLatch.countDown();
             return Mono.just(Msg.builder().role(MsgRole.ASSISTANT).textContent("woken").build());
         }

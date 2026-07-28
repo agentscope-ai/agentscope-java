@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.dashscope.formatter;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -102,6 +103,12 @@ public class DashScopeToolsHelper {
                 getOption(options, defaultOptions, GenerateOptions::getParallelToolCalls);
         if (parallelToolCalls != null) {
             params.setParallelToolCalls(parallelToolCalls);
+        }
+
+        ResponseFormat responseFormat =
+                getOption(options, defaultOptions, GenerateOptions::getResponseFormat);
+        if (responseFormat != null) {
+            params.setResponseFormat(responseFormat);
         }
     }
 

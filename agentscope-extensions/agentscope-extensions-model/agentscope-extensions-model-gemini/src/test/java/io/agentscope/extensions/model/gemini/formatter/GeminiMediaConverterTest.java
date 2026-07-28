@@ -25,6 +25,7 @@ import com.google.genai.types.Blob;
 import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
@@ -165,5 +166,95 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         byte[] resultData = result.inlineData().get().data().get();
 
         assertArrayEquals(originalText.getBytes(), resultData);
+    }
+
+    @Test
+    void testConvertDataBlockWithBase64Source() {
+        Base64Source source =
+                Base64Source.builder()
+                        .data("ZmFrZSBpbWFnZSBjb250ZW50")
+                        .mediaType("image/png")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+
+        assertNotNull(result);
+        assertTrue(result.inlineData().isPresent());
+        Blob blob = result.inlineData().get();
+        assertArrayEquals("fake image content".getBytes(), blob.data().get());
+        assertEquals("image/png", blob.mimeType().get());
+    }
+
+    @Test
+    void testConvertDataBlockWithURLSourceAndExtension() {
+        URLSource source = URLSource.builder().url(tempImageFile.toString()).build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+
+        assertNotNull(result);
+        assertTrue(result.inlineData().isPresent());
+        assertEquals("image/png", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
+    void testConvertDataBlockWithURLSourceMimeTypeHint() {
+        // Extension-less URL with explicit mimeType hint
+        URLSource source =
+                URLSource.builder()
+                        .url(tempImageFile.toString().replaceAll("\\.png$", ""))
+                        .mimeType("image/png")
+                        .build();
+        // Rename the temp file to have no extension would be complex; instead use a URL-style path
+        // Just verify the hint takes precedence by using a URL with a different extension
+        URLSource sourceWithHint =
+                URLSource.builder().url(tempAudioFile.toString()).mimeType("image/png").build();
+        DataBlock block = DataBlock.builder().source(sourceWithHint).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+
+        assertNotNull(result);
+        // mimeType hint overrides extension-based inference
+        assertEquals("image/png", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
+    void testConvertDataBlockWithURLSourceNoExtensionNoHintThrows() {
+        URLSource source = URLSource.builder().url("https://cdn.example.com/media/abc123").build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        // Remote URL with no extension and no hint — should throw
+        assertThrows(RuntimeException.class, () -> converter.convertToInlineDataPart(block));
+    }
+
+    @Test
+    void testConvertDataBlockVideoBase64() {
+        Base64Source source =
+                Base64Source.builder()
+                        .data("ZmFrZSB2aWRlbyBjb250ZW50")
+                        .mediaType("video/mp4")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+
+        assertNotNull(result);
+        assertEquals("video/mp4", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
+    void testConvertDataBlockAudioBase64() {
+        Base64Source source =
+                Base64Source.builder()
+                        .data("ZmFrZSBhdWRpbyBjb250ZW50")
+                        .mediaType("audio/mp3")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+
+        assertNotNull(result);
+        assertEquals("audio/mp3", result.inlineData().get().mimeType().get());
     }
 }

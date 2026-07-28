@@ -386,3 +386,53 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 :::{tip}
 For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed.
 :::
+
+### Stop agent when all tools are denied
+
+When a user denies all tool calls from a reasoning step via HITL, the agent continues to the next reasoning iteration by default (backward compatible). To stop the agent in this scenario, write an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`:
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
+import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.function.Function;
+import reactor.core.publisher.Flux;
+
+public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Flux<AgentEvent> onActing(
+            Agent agent, RuntimeContext ctx, ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
+        return next.apply(input)
+                .flatMap(event -> {
+                    if (event instanceof AllToolsDeniedEvent) {
+                        return Flux.just(
+                                event,
+                                new RequestStopEvent(
+                                        "All tools denied by user",
+                                        GenerateReason.ALL_TOOLS_DENIED));
+                    }
+                    return Flux.just(event);
+                });
+    }
+}
+```
+
+Once wired up, the agent stops immediately when all tools are denied, returning `GenerateReason.ALL_TOOLS_DENIED`:
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("guarded")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .middlewares(List.of(new StopOnAllDeniedMiddleware()))
+                .build();
+```
