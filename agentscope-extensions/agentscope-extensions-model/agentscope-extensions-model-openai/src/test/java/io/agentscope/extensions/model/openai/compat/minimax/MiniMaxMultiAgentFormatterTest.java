@@ -25,6 +25,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
@@ -108,6 +109,33 @@ class MiniMaxMultiAgentFormatterTest {
 
         assertNull(request.getMaxTokens());
         assertEquals(1024, request.getMaxCompletionTokens());
+    }
+
+    @Test
+    @DisplayName("Should not send unsupported thinking_budget")
+    void shouldNotSendUnsupportedThinkingBudget() {
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("MiniMax-M3").messages(List.of()).build();
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(1024).build();
+
+        formatter.applyOptions(request, options, null);
+
+        assertNull(request.getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should not send unsupported tool_choice")
+    void shouldNotSendUnsupportedToolChoice() {
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("MiniMax-M3")
+                        .messages(List.of())
+                        .tools(List.of())
+                        .build();
+
+        formatter.applyToolChoice(request, new ToolChoice.Required());
+
+        assertNull(request.getToolChoice());
     }
 
     @Test

@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.compat.minimax;
 
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 
@@ -27,14 +28,13 @@ import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
  */
 public class MiniMaxFormatter extends OpenAIChatFormatter {
 
-    private static final String PARAM_REASONING_SPLIT = "reasoning_split";
-
     @Override
     public void applyOptions(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Apply before super so additionalBodyParam can override the MiniMax default.
         applyReasoningSplit(request);
         super.applyOptions(request, options, defaultOptions);
+        removeUnsupported(request);
     }
 
     @Override
@@ -47,10 +47,20 @@ public class MiniMaxFormatter extends OpenAIChatFormatter {
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens));
     }
 
+    @Override
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        request.setToolChoice(null);
+    }
+
+    @Override
+    protected boolean supportsStrict() {
+        return false;
+    }
+
     static void applyReasoningSplit(OpenAIRequest request) {
         // Split MiniMax thinking content into OpenAI-compatible reasoning fields so the shared
         // OpenAIResponseParser can convert it to ThinkingBlock.
-        request.addExtraParam(PARAM_REASONING_SPLIT, true);
+        request.addExtraParam("reasoning_split", true);
     }
 
     static void applyMiniMaxMaxTokens(
@@ -66,8 +76,13 @@ public class MiniMaxFormatter extends OpenAIChatFormatter {
         }
     }
 
-    @Override
-    protected boolean supportsStrict() {
-        return false;
+    static void removeUnsupported(OpenAIRequest request) {
+        request.setThinkingBudget(null);
+        request.setReasoningEffort(null);
+        request.setFrequencyPenalty(null);
+        request.setPresencePenalty(null);
+        request.setParallelToolCalls(null);
+        request.setResponseFormat(null);
+        request.setSeed(null);
     }
 }

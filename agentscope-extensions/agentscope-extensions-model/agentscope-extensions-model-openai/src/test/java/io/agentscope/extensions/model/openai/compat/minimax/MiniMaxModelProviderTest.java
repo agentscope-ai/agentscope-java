@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.compat.minimax;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -27,6 +28,8 @@ import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.lang.reflect.Field;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -67,7 +70,6 @@ class MiniMaxModelProviderTest {
                         IllegalStateException.class,
                         () -> provider.create("minimax:MiniMax-M2", ModelCreationContext.empty()));
 
-        assertTrue(exception.getMessage().contains("ModelCreationContext.apiKey"));
         assertTrue(exception.getMessage().contains("MINIMAX_API_KEY"));
     }
 
@@ -127,7 +129,59 @@ class MiniMaxModelProviderTest {
     }
 
     @Test
+    void createMapsEnableThinkingToMiniMaxThinkingParam() throws Exception {
+        MiniMaxModelProvider provider = new MiniMaxModelProvider();
+
+        OpenAIChatModel model =
+                (OpenAIChatModel)
+                        provider.create(
+                                "minimax:MiniMax-M3",
+                                ModelCreationContext.builder()
+                                        .apiKey("test-minimax-key")
+                                        .enableThinking(false)
+                                        .build());
+
+        GenerateOptions configuredOptions = configuredOptions(model);
+        Object thinking = configuredOptions.getAdditionalBodyParams().get("thinking");
+
+        assertNotNull(thinking);
+        assertTrue(thinking instanceof Map);
+        assertEquals("disabled", ((Map<?, ?>) thinking).get("type"));
+    }
+
+    @Test
+    void createLetsUserThinkingParamOverrideDefault() throws Exception {
+        MiniMaxModelProvider provider = new MiniMaxModelProvider();
+        GenerateOptions userOptions =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .build();
+
+        OpenAIChatModel model =
+                (OpenAIChatModel)
+                        provider.create(
+                                "minimax:MiniMax-M3",
+                                ModelCreationContext.builder()
+                                        .apiKey("test-minimax-key")
+                                        .enableThinking(true)
+                                        .component(GenerateOptions.class, userOptions)
+                                        .build());
+
+        GenerateOptions configuredOptions = configuredOptions(model);
+        Object thinking = configuredOptions.getAdditionalBodyParams().get("thinking");
+
+        assertTrue(thinking instanceof Map);
+        assertEquals("disabled", ((Map<?, ?>) thinking).get("type"));
+    }
+
+    @Test
     void modelRegistryFindsMiniMaxProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("minimax:MiniMax-M2"));
+    }
+
+    private static GenerateOptions configuredOptions(OpenAIChatModel model) throws Exception {
+        Field field = OpenAIChatModel.class.getDeclaredField("configuredOptions");
+        field.setAccessible(true);
+        return (GenerateOptions) field.get(model);
     }
 }

@@ -20,10 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -91,6 +94,77 @@ class MiniMaxFormatterTest {
 
         assertNull(request.getMaxTokens());
         assertEquals(2048, request.getMaxCompletionTokens());
+    }
+
+    @Test
+    @DisplayName("Should not send unsupported thinking_budget")
+    void shouldNotSendUnsupportedThinkingBudget() {
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("MiniMax-M3").messages(List.of()).build();
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(1024).build();
+
+        formatter.applyOptions(request, options, null);
+
+        assertNull(request.getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should remove unsupported OpenAI-only options")
+    void shouldRemoveUnsupportedOpenAIOnlyOptions() {
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("MiniMax-M3").messages(List.of()).build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .reasoningEffort("high")
+                        .frequencyPenalty(0.1)
+                        .presencePenalty(0.2)
+                        .parallelToolCalls(false)
+                        .responseFormat(ResponseFormat.jsonObject())
+                        .seed(42L)
+                        .build();
+
+        formatter.applyOptions(request, options, null);
+
+        assertNull(request.getReasoningEffort());
+        assertNull(request.getFrequencyPenalty());
+        assertNull(request.getPresencePenalty());
+        assertNull(request.getParallelToolCalls());
+        assertNull(request.getResponseFormat());
+        assertNull(request.getSeed());
+    }
+
+    @Test
+    @DisplayName("Should not send unsupported tool_choice")
+    void shouldNotSendUnsupportedToolChoice() {
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("MiniMax-M3")
+                        .messages(List.of())
+                        .tools(List.of())
+                        .build();
+
+        formatter.applyToolChoice(request, new ToolChoice.Required());
+
+        assertNull(request.getToolChoice());
+    }
+
+    @Test
+    @DisplayName("Should preserve MiniMax supported extra params")
+    void shouldPreserveMiniMaxSupportedExtraParams() {
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("MiniMax-M3").messages(List.of()).build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("reasoning_split", false)
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .additionalBodyParam("service_tier", "priority")
+                        .build();
+
+        formatter.applyOptions(request, options, null);
+
+        assertEquals(false, request.getExtraParams().get("reasoning_split"));
+        assertEquals(Map.of("type", "disabled"), request.getExtraParams().get("thinking"));
+        assertEquals("priority", request.getExtraParams().get("service_tier"));
     }
 
     @Test

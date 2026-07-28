@@ -17,6 +17,7 @@
 package io.agentscope.extensions.model.openai.compat.minimax;
 
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.formatter.OpenAIMultiAgentFormatter;
 
@@ -37,6 +38,7 @@ public class MiniMaxMultiAgentFormatter extends OpenAIMultiAgentFormatter {
         // Apply before super so additionalBodyParam can override the MiniMax default.
         MiniMaxFormatter.applyReasoningSplit(request);
         super.applyOptions(request, options, defaultOptions);
+        MiniMaxFormatter.removeUnsupported(request);
     }
 
     @Override
@@ -52,5 +54,10 @@ public class MiniMaxMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     @Override
     protected boolean supportsStrict() {
         return false;
+    }
+
+    @Override
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        request.setToolChoice(null);
     }
 }
