@@ -13,37 +13,44 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.model.openai.formatter;
+package io.agentscope.extensions.model.openai.compat.glm;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
+import io.agentscope.extensions.model.openai.formatter.OpenAIMultiAgentFormatter;
 import java.util.List;
 
 /**
- * Multi-agent formatter for Zhipu GLM models.
+ * Multi-agent formatter for Zhipu AI (Z.ai) GLM models.
  *
- * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with GLM-specific handling:
+ * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with the same GLM-specific
+ * handling as {@link GLMFormatter}:
  * <ul>
  *   <li>At least one user message is required (error 1214 otherwise)</li>
- *   <li>Only supports "auto" tool_choice</li>
- *   <li>Does NOT support strict parameter in tool definitions</li>
+ *   <li>Does NOT support the {@code name} parameter in messages</li>
+ *   <li>{@code tool_choice} only supports {@code "auto"}; forced choices are degraded, while
+ *       {@code none} removes tools to preserve the no-tool-call contract</li>
+ *   <li>Does NOT support the {@code strict} parameter in tool definitions</li>
+ *   <li>Unsupported sampling parameters are stripped, {@code max_completion_tokens} is mapped
+ *       to {@code max_tokens}, and {@code temperature} / {@code top_p} are clamped to the GLM
+ *       ranges (see {@link GLMFormatter} for details)</li>
  * </ul>
  *
  * <p>Usage:
  * <pre>{@code
  * OpenAIChatModel.builder()
  *     .formatter(new GLMMultiAgentFormatter())
- *     .modelName("glm-4")
+ *     .modelName("glm-5.2")
  *     .baseUrl("https://open.bigmodel.cn/api/paas/v4")
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
  *
- * @deprecated use {@link io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter}.
+ * @see GLMFormatter
  */
-@Deprecated
 public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     public GLMMultiAgentFormatter() {
@@ -61,8 +68,24 @@ public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
     }
 
     @Override
+    protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
+        OpenAIMessage message = super.convertMessage(msg, hasMedia);
+        if (message != null) {
+            message.setName(null);
+        }
+        return message;
+    }
+
+    @Override
     protected boolean supportsStrict() {
         return false;
+    }
+
+    @Override
+    public void applyOptions(
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        super.applyOptions(request, options, defaultOptions);
+        GLMFormatter.stripUnsupportedSamplingParams(request);
     }
 
     @Override

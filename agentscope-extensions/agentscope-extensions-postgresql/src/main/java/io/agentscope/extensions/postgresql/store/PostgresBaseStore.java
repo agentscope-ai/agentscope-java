@@ -84,7 +84,7 @@ public class PostgresBaseStore implements BaseStore {
     /** Default table name used when the builder is not customised. */
     public static final String DEFAULT_TABLE_NAME = "agentscope_store";
 
-    private static final Pattern VALID_TABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final Pattern VALID_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private static final String CREATE_TABLE_SQL =
             """
@@ -139,7 +139,9 @@ public class PostgresBaseStore implements BaseStore {
 
     private final DataSource dataSource;
     private final ObjectMapper objectMapper;
+    private final String schemaName;
     private final String tableName;
+    private final String qualifiedTableName;
 
     private final String selectSql;
     private final String upsertSql;
@@ -151,13 +153,15 @@ public class PostgresBaseStore implements BaseStore {
     private PostgresBaseStore(Builder b) {
         this.dataSource = b.dataSource;
         this.objectMapper = b.objectMapper != null ? b.objectMapper : new ObjectMapper();
+        this.schemaName = b.schemaName;
         this.tableName = b.tableName;
-        this.selectSql = String.format(SELECT_SQL, tableName);
-        this.upsertSql = String.format(UPSERT_SQL, tableName);
-        this.insertSql = String.format(INSERT_SQL, tableName);
-        this.casUpdateSql = String.format(CAS_UPDATE_SQL, tableName);
-        this.deleteSql = String.format(DELETE_SQL, tableName);
-        this.searchSql = String.format(SEARCH_SQL, tableName);
+        this.qualifiedTableName = getQualifiedTableName(schemaName, tableName);
+        this.selectSql = String.format(SELECT_SQL, qualifiedTableName);
+        this.upsertSql = String.format(UPSERT_SQL, qualifiedTableName);
+        this.insertSql = String.format(INSERT_SQL, qualifiedTableName);
+        this.casUpdateSql = String.format(CAS_UPDATE_SQL, qualifiedTableName);
+        this.deleteSql = String.format(DELETE_SQL, qualifiedTableName);
+        this.searchSql = String.format(SEARCH_SQL, qualifiedTableName);
         if (b.initializeSchema) {
             initializeSchema();
         }
@@ -169,14 +173,25 @@ public class PostgresBaseStore implements BaseStore {
     }
 
     private void initializeSchema() {
-        String ddl = String.format(CREATE_TABLE_SQL, tableName);
+        String ddl = String.format(CREATE_TABLE_SQL, qualifiedTableName);
         try (Connection c = dataSource.getConnection();
                 Statement st = c.createStatement()) {
+            if (schemaName != null) {
+                st.executeUpdate("CREATE SCHEMA IF NOT EXISTS \"" + schemaName + "\"");
+            }
             st.executeUpdate(ddl);
         } catch (SQLException e) {
             throw new IllegalStateException(
-                    "Failed to initialize PostgresBaseStore schema for table " + tableName, e);
+                    "Failed to initialize PostgresBaseStore schema for table " + qualifiedTableName,
+                    e);
         }
+    }
+
+    private static String getQualifiedTableName(String schemaName, String tableName) {
+        if (schemaName == null) {
+            return tableName;
+        }
+        return "\"" + schemaName + "\".\"" + tableName + "\"";
     }
 
     @Override
@@ -367,6 +382,7 @@ public class PostgresBaseStore implements BaseStore {
 
         private final DataSource dataSource;
         private ObjectMapper objectMapper;
+        private String schemaName;
         private String tableName = DEFAULT_TABLE_NAME;
         private boolean initializeSchema;
 
@@ -381,18 +397,25 @@ public class PostgresBaseStore implements BaseStore {
         }
 
         /**
-         * Overrides the table name. Must match the regex {@code [A-Za-z_][A-Za-z0-9_]*}; this is
-         * the only place a table identifier ever flows into the SQL string verbatim, so the
-         * validation here is the SQL-injection guard.
+         * Sets the PostgreSQL schema name to use. If not set, SQL uses the unqualified table name
+         * for backwards compatibility.
+         *
+         * <p>The provided schema name must be non-null, non-blank, and match {@code [A-Za-z_][A-Za-z0-9_]*}.
+         * The schema is created when {@link #initializeSchema(boolean)} is enabled.
+         */
+        public Builder schemaName(String schemaName) {
+            this.schemaName = validateIdentifier(schemaName, "schemaName");
+            return this;
+        }
+
+        /**
+         * Overrides the table name. Identifiers must match the regex {@code [A-Za-z_][A-Za-z0-9_]*}.
+         *
+         * <p>Schema and table identifiers are embedded into SQL (identifier quoting is used when a
+         * schema is configured), so validation here is the SQL-injection guard.
          */
         public Builder tableName(String tableName) {
-            if (tableName == null
-                    || tableName.isBlank()
-                    || !VALID_TABLE_NAME.matcher(tableName).matches()) {
-                throw new IllegalArgumentException(
-                        "tableName must match [A-Za-z_][A-Za-z0-9_]*, got: " + tableName);
-            }
-            this.tableName = tableName;
+            this.tableName = validateIdentifier(tableName, "tableName");
             return this;
         }
 
@@ -409,8 +432,18 @@ public class PostgresBaseStore implements BaseStore {
         /** Builds the {@link PostgresBaseStore}. */
         public PostgresBaseStore build() {
             PostgresBaseStore store = new PostgresBaseStore(this);
-            LOG.debug("PostgresBaseStore built: table={}", store.tableName);
+            LOG.debug("PostgresBaseStore built: table={}", store.qualifiedTableName);
             return store;
+        }
+
+        private static String validateIdentifier(String identifier, String identifierName) {
+            if (identifier == null
+                    || identifier.isBlank()
+                    || !VALID_IDENTIFIER.matcher(identifier).matches()) {
+                throw new IllegalArgumentException(
+                        identifierName + " must match [A-Za-z_][A-Za-z0-9_]*, got: " + identifier);
+            }
+            return identifier;
         }
     }
 }
