@@ -184,7 +184,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             flushMono = Mono.empty();
         }
 
-        String agentId = agent.getAgentId();
+        String agentId = agent.getName();
         String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
         Mono<Void> offloadMono =

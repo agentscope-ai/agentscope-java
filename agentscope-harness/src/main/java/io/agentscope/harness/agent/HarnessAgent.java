@@ -916,7 +916,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return Mono.error(
                     new RuntimeException("Context overflow: context is empty, cannot compact"));
         }
-        String agentId = getAgentId();
+        String agentId = getName();
         String sessionId =
                 effective != null && effective.getSessionId() != null
                         ? effective.getSessionId()

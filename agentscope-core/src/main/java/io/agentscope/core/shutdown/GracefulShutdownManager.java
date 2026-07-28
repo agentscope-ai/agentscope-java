@@ -128,7 +128,7 @@ public final class GracefulShutdownManager {
         if (agent == null) {
             return;
         }
-        stateSavers.remove(agent.getId());
+        stateSavers.remove(agent.getAgentId());
     }
 
     /**
