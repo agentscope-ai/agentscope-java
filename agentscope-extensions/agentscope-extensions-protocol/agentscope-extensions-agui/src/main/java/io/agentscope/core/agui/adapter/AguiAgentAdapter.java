@@ -32,14 +32,11 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -125,24 +122,27 @@ public class AguiAgentAdapter {
 
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
+                    // buildRuntimeContext constructs a per-call toolkit (if frontend tools are
+                    // present) and carries it via RuntimeContext; the agent's shared toolkit is
+                    // never mutated, so concurrent runs on the same agent do not pollute each
+                    // other.
                     RuntimeContext runtimeContext = buildRuntimeContext(input);
-                    ToolInjection toolInjection = ToolInjection.empty();
+
                     Flux<Event> agentEvents;
                     try {
-                        toolInjection = injectFrontendTools(input);
                         agentEvents = agent.stream(msgs, options, runtimeContext);
                         if (agentEvents == null) {
                             agentEvents = agent.stream(msgs, options);
                         }
                         agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
                     } catch (Throwable error) {
-                        toolInjection.close();
+                        // Synchronous failure from agent.stream() (before a Flux is returned):
+                        // surface it as AG-UI error events rather than propagating. Asynchronous
+                        // errors inside the stream are handled by onErrorResume below.
                         return Flux.concat(
-                                Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                Flux.just(new AguiEvent.RunStarted(threadId, runId, null, input)),
                                 errorEvents(threadId, runId, error));
                     }
-
-                    ToolInjection activeToolInjection = toolInjection;
 
                     return Flux.concat(
                                     // Emit RUN_STARTED
@@ -154,14 +154,15 @@ public class AguiAgentAdapter {
                                             event -> convertEvent(event, state)),
                                     // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> finishRun(state)))
-                            .doFinally(signalType -> activeToolInjection.close())
                             .onErrorResume(error -> errorEvents(threadId, runId, error));
                 });
     }
 
     private RuntimeContext buildRuntimeContext(RunAgentInput input) {
+        Toolkit perCallToolkit = buildPerCallToolkit(input);
         return RuntimeContext.builder()
                 .sessionId(input.getThreadId())
+                .toolkit(perCallToolkit)
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
@@ -173,9 +174,19 @@ public class AguiAgentAdapter {
                 .build();
     }
 
-    private ToolInjection injectFrontendTools(RunAgentInput input) {
+    /**
+     * Builds a per-call toolkit based on the frontend tools carried by {@code input}.
+     *
+     * <p>Operates on a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit, so the
+     * shared field is never mutated and concurrent runs on the same agent are isolated. The
+     * resulting toolkit is carried via {@link RuntimeContext#getToolkit()}.
+     *
+     * @return a per-call toolkit, or {@code null} when no override is needed (the execution engine
+     *     then falls back to the agent's shared toolkit)
+     */
+    private Toolkit buildPerCallToolkit(RunAgentInput input) {
         if (!input.hasTools()) {
-            return ToolInjection.empty();
+            return null;
         }
 
         ToolMergeMode mergeMode =
@@ -183,38 +194,28 @@ public class AguiAgentAdapter {
                         ? config.getToolMergeMode()
                         : ToolMergeMode.MERGE_FRONTEND_PRIORITY;
         if (mergeMode == ToolMergeMode.AGENT_ONLY) {
-            return ToolInjection.empty();
+            return null;
         }
 
-        Toolkit toolkit = agent.getToolkit();
-        if (toolkit == null) {
-            return ToolInjection.empty();
+        Toolkit source = agent.getToolkit();
+        if (source == null) {
+            return null;
         }
 
-        Map<String, AgentTool> previousTools = new LinkedHashMap<>();
+        // Deep copy: mutate only the copy, never the shared toolkit.
+        Toolkit perCallToolkit = source.copy();
+
         if (mergeMode == ToolMergeMode.FRONTEND_ONLY) {
-            for (String toolName : toolkit.getToolNames()) {
-                AgentTool previousTool = toolkit.getTool(toolName);
-                if (previousTool != null) {
-                    previousTools.put(toolName, previousTool);
-                    toolkit.removeTool(toolName);
-                }
+            for (String toolName : perCallToolkit.getToolNames()) {
+                perCallToolkit.removeTool(toolName);
             }
         }
 
-        List<SchemaOnlyTool> registeredTools = new ArrayList<>();
         for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
-            AgentTool previousTool = toolkit.getTool(schema.getName());
-            if (previousTool != null) {
-                previousTools.putIfAbsent(schema.getName(), previousTool);
-            }
-
-            SchemaOnlyTool frontendTool = new SchemaOnlyTool(schema);
-            toolkit.registerAgentTool(frontendTool);
-            registeredTools.add(frontendTool);
+            perCallToolkit.registerAgentTool(new SchemaOnlyTool(schema));
         }
 
-        return new ToolInjection(toolkit, registeredTools, previousTools);
+        return perCallToolkit;
     }
 
     private Flux<AguiEvent> errorEvents(String threadId, String runId, Throwable error) {
@@ -480,45 +481,6 @@ public class AguiAgentAdapter {
             return "INVALID_INPUT_ERROR";
         }
         return "INTERNAL_ERROR";
-    }
-
-    private static class ToolInjection {
-        private static final ToolInjection EMPTY =
-                new ToolInjection(null, Collections.emptyList(), Collections.emptyMap());
-
-        private final Toolkit toolkit;
-        private final List<SchemaOnlyTool> registeredTools;
-        private final Map<String, AgentTool> previousTools;
-
-        ToolInjection(
-                Toolkit toolkit,
-                List<SchemaOnlyTool> registeredTools,
-                Map<String, AgentTool> previousTools) {
-            this.toolkit = toolkit;
-            this.registeredTools = registeredTools;
-            this.previousTools = previousTools;
-        }
-
-        static ToolInjection empty() {
-            return EMPTY;
-        }
-
-        void close() {
-            if (toolkit == null) {
-                return;
-            }
-
-            for (int i = registeredTools.size() - 1; i >= 0; i--) {
-                SchemaOnlyTool tool = registeredTools.get(i);
-                toolkit.removeToolIfSame(tool.getName(), tool);
-            }
-
-            for (Map.Entry<String, AgentTool> entry : previousTools.entrySet()) {
-                if (toolkit.getTool(entry.getKey()) == null) {
-                    toolkit.registerAgentTool(entry.getValue());
-                }
-            }
-        }
     }
 
     /**

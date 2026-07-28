@@ -552,6 +552,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
         // per-subscription Reactor Context carried by streamEvents.
         scope.rc = ctx;
+        // Per-call toolkit: prefer the override carried on the RuntimeContext, fall back to the
+        // shared field. Resolved once here so the whole call (schema gen / permission / execution)
+        // observes a single, stable toolkit — concurrent calls on this agent never see each other's
+        // per-call toolkit.
+        Toolkit perCallToolkit = ctx.getToolkit();
+        scope.activeToolkit = perCallToolkit != null ? perCallToolkit : this.toolkit;
         scope.systemMsg = null;
         // Clear any stale interrupt signal for this session before the new call begins.
         scope.state.interruptControl().reset();
@@ -1470,6 +1476,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         RuntimeContext rc;
 
         /**
+         * Per-call resolved toolkit: prefers the {@code toolkit} carried on {@link #rc} (per-call
+         * override) and falls back to the enclosing agent's shared {@code toolkit} field. Resolved
+         * once in {@code beforeAgentExecution} and stable for the whole call, so concurrent calls
+         * on the same agent never observe each other's per-call overrides. All toolkit access in
+         * this scope reads {@code activeToolkit} rather than the shared field.
+         */
+        Toolkit activeToolkit;
+
+        /**
          * Per-call structured-output tool (the {@code generate_response} tool). Non-null only for
          * fallback structured-output calls (when the model does not support native structured
          * output). Lives on this scope rather than the shared toolkit so concurrent
@@ -1964,7 +1979,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         prependSystemMsg(
                                                 event.getInputMessages(), event.getSystemMessage());
                                 List<ToolSchema> tools =
-                                        toolkit.getToolSchemas(
+                                        activeToolkit.getToolSchemas(
                                                 state.getToolContext().getActivatedGroups());
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
@@ -2590,7 +2605,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Set<String> chunkedToolIds =
                                                         ConcurrentHashMap.newKeySet();
 
-                                                toolkit.setInternalChunkCallback(
+                                                activeToolkit.setInternalChunkCallback(
                                                         (toolUse, chunk) -> {
                                                             if (chunk.getOutput() != null
                                                                     && !chunk.getOutput()
@@ -2735,7 +2750,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (use.getState() == ToolCallState.ALLOWED) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
-            AgentTool tool = toolkit.getTool(use.getName());
+            AgentTool tool = activeToolkit.getTool(use.getName());
             if (!(tool instanceof ToolBase tb)) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
@@ -2928,7 +2943,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             && toolCalls.stream()
                                     .anyMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()));
             if (!hasStructured) {
-                return toolkit.callTools(
+                return activeToolkit.callTools(
                         toolCalls,
                         toolExecutionConfig,
                         ReActAgent.this,
@@ -2942,7 +2957,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Mono<Map<String, ToolResultBlock>> regularResults =
                     regular.isEmpty()
                             ? Mono.just(Map.of())
-                            : toolkit.callTools(
+                            : activeToolkit
+                                    .callTools(
                                             regular,
                                             toolExecutionConfig,
                                             ReActAgent.this,
