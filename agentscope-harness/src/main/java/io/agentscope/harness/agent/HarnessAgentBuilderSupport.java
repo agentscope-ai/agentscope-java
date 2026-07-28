@@ -44,7 +44,6 @@ import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
-import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -131,18 +130,11 @@ final class HarnessAgentBuilderSupport {
     // -----------------------------------------------------------------
 
     static AbstractFilesystem resolveFilesystem(
-            HarnessAgent.Builder b,
-            Path workspace,
-            String agentId,
-            WorkspaceIndex workspaceIndex,
-            NamespaceFactory nsFactory) {
+            HarnessAgent.Builder b, Path workspace, String agentId, NamespaceFactory nsFactory) {
         if (b.abstractFilesystem != null) {
             return b.abstractFilesystem;
         }
         if (b.remoteFilesystemSpec != null) {
-            if (workspaceIndex != null) {
-                b.remoteFilesystemSpec.workspaceIndex(workspaceIndex);
-            }
             return b.remoteFilesystemSpec.toFilesystem(workspace, agentId, nsFactory);
         }
         if (b.localFilesystemSpec != null) {
@@ -293,7 +285,8 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
-        final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
+        final boolean capturedDisableSessionPersistence =
+                b.disableSessionPersistence || b.remoteFilesystemSpec != null;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
         final boolean capturedDisableCompaction = b.disableCompaction;
@@ -383,7 +376,8 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
-        final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
+        final boolean capturedDisableSessionPersistence =
+                b.disableSessionPersistence || b.remoteFilesystemSpec != null;
         final GenerateOptions capturedGenOpts = b.generateOptions;
         // See buildGeneralPurposeFactory: propagate the parent's model/tool execution configs so
         // declared subagents honor the parent's timeouts. Without this they fall back to
