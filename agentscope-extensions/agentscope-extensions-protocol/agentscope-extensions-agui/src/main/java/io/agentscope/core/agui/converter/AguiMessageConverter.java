@@ -75,7 +75,11 @@ public class AguiMessageConverter {
             }
         }
 
-        return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
+        Msg.Builder builder = Msg.builder().id(aguiMessage.getId()).role(role).content(blocks);
+        if (aguiMessage.getMetadata() != null && !aguiMessage.getMetadata().isEmpty()) {
+            builder.metadata(aguiMessage.getMetadata());
+        }
+        return builder.build();
     }
 
     /**
@@ -117,7 +121,10 @@ public class AguiMessageConverter {
                 role,
                 content.length() > 0 ? content.toString() : null,
                 toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId);
+                toolCallId,
+                msg.getMetadata() != null && !msg.getMetadata().isEmpty()
+                        ? msg.getMetadata()
+                        : null);
     }
 
     /**
