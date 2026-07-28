@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -97,6 +98,18 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             String path = file.getKey();
             byte[] content = file.getValue();
 
+            if (active instanceof SandboxFileTransfer transfer
+                    && transfer.supportsFileTransfer(path)) {
+                try {
+                    transfer.uploadFile(path, content);
+                    results.add(FileUploadResponse.success(path));
+                } catch (Exception e) {
+                    log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
+                    results.add(FileUploadResponse.fail(path, e.getMessage()));
+                }
+                continue;
+            }
+
             try {
                 String base64Content = Base64.getEncoder().encodeToString(content);
                 String escapedPath = shellSingleQuote(path);
@@ -138,6 +151,17 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
+            if (active instanceof SandboxFileTransfer transfer
+                    && transfer.supportsFileTransfer(path)) {
+                try {
+                    results.add(FileDownloadResponse.success(path, transfer.downloadFile(path)));
+                } catch (Exception e) {
+                    log.warn("[sandbox-fs] native download failed for path: {}", path, e);
+                    results.add(FileDownloadResponse.fail(path, e.getMessage()));
+                }
+                continue;
+            }
+
             try {
                 String escapedPath = shellSingleQuote(path);
                 String cmd = "base64 " + escapedPath;

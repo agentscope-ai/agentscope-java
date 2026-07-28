@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,6 +36,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.legacy.ToolkitState;
+import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +79,63 @@ class ReActAgentPerSessionStateTest {
                 .model(new NoopModel())
                 .stateStore(store)
                 .build();
+    }
+
+    @Test
+    @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
+    void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "u1",
+                "persisted-empty",
+                "agent_state",
+                AgentState.builder().userId("u1").sessionId("persisted-empty").build());
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "fresh").getToolContext().getActivatedGroups());
+        assertTrue(
+                agent.getAgentState("u1", "persisted-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "An explicitly persisted empty group list must remain empty");
+    }
+
+    @Test
+    @DisplayName("legacy empty tool groups remain explicitly empty")
+    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertTrue(
+                agent.getAgentState("u1", "legacy-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
     }
 
     @Test
@@ -145,13 +205,24 @@ class ReActAgentPerSessionStateTest {
         assertEquals(
                 "I noticed that you have interrupted me. What can I do for you?",
                 reply.getTextContent());
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
 
         ReActAgent reborn = agent(store);
-        List<String> texts = allText(reborn.getAgentState("u1", "sessA"));
+        AgentState restoredState = reborn.getAgentState("u1", "sessA");
+        List<String> texts = allText(restoredState);
         assertTrue(texts.contains("hello"), "user input should remain in persisted session state");
         assertTrue(
                 texts.contains("I noticed that you have interrupted me. What can I do for you?"),
                 "interrupt recovery message should be persisted to the state store");
+        Msg restoredRecovery =
+                restoredState.getContext().stream()
+                        .filter(
+                                msg ->
+                                        "I noticed that you have interrupted me. What can I do for you?"
+                                                .equals(msg.getTextContent()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
     private static final class DelayedFirstChunkModel extends ChatModelBase {
