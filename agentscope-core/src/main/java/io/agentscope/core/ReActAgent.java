@@ -423,14 +423,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Persist the current {@link AgentState} via the configured {@link AgentStateStore}, or {@code
-     * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
-     * before writing.
+     * Mono.empty()} when no AgentStateStore was provided. Synchronises the call-scoped toolkit's
+     * active groups into the state before writing.
      */
     private Mono<Void> saveStateToSession(CallExecution scope) {
         if (stateStore == null) {
             return Mono.empty();
         }
-        syncToolkitToState(scope.state);
+        syncToolkitToState(scope);
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
@@ -494,9 +494,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
-        if (toolkit != null) {
-            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
-        }
         return scope;
     }
 
@@ -615,7 +612,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
-        syncToolkitToState(ce.state);
+        syncToolkitToState(ce);
     }
 
     @Override
@@ -1051,25 +1048,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
-        boolean useNative =
-                hasTools
-                        ? model.supportsNativeStructuredOutputWithTools()
-                        : model.supportsNativeStructuredOutput();
-        if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema)
-                    .onErrorResume(
-                            e -> {
-                                log.warn(
-                                        "Native structured output failed ({}) — falling back to"
-                                                + " synthetic tool path",
-                                        e.getMessage() != null
-                                                ? e.getMessage()
-                                                : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(msgs, jsonSchema);
-                            });
-        }
-        return doFallbackStructuredCall(msgs, jsonSchema);
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    boolean hasTools =
+                            !scope.toolkit
+                                    .getToolSchemas(
+                                            scope.state.getToolContext().getActivatedGroups())
+                                    .isEmpty();
+                    boolean useNative =
+                            hasTools
+                                    ? model.supportsNativeStructuredOutputWithTools()
+                                    : model.supportsNativeStructuredOutput();
+                    if (useNative) {
+                        return doNativeStructuredCall(msgs, jsonSchema)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Native structured output failed ({}) — falling"
+                                                            + " back to synthetic tool path",
+                                                    e.getMessage() != null
+                                                            ? e.getMessage()
+                                                            : e.getClass().getSimpleName());
+                                            return doFallbackStructuredCall(msgs, jsonSchema);
+                                        });
+                    }
+                    return doFallbackStructuredCall(msgs, jsonSchema);
+                });
     }
 
     /**
@@ -1437,6 +1442,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
+        final Toolkit toolkit;
 
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
@@ -1490,6 +1496,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             this.state = state;
             this.permissionEngine = permissionEngine;
             this.slotKey = slotKey;
+            this.toolkit = ReActAgent.this.toolkit.copy();
+            this.toolkit.setActiveGroups(state.getToolContext().getActivatedGroups());
         }
 
         /**
@@ -2417,7 +2425,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 buildSuspendedMsg(pendingPairs));
                                                     }
 
-                                                    syncToolkitToState(state);
+                                                    syncToolkitToState(CallExecution.this);
                                                     return executeIteration(iter + 1);
                                                 });
                             });
@@ -3772,9 +3780,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return defaultSessionId;
     }
 
-    private void syncToolkitToState(AgentState state) {
-        if (toolkit != null && state != null) {
-            state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
+    private void syncToolkitToState(CallExecution scope) {
+        if (scope != null && scope.state != null) {
+            scope.state.getToolContext().setActivatedGroups(scope.toolkit.getActiveGroups());
         }
     }
 
