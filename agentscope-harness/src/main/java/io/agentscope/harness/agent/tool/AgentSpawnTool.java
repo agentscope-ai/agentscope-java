@@ -277,6 +277,8 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                propagatePlanMode(
+                        parentState, currentUserId, existing.sessionId(), existing.agent());
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -304,11 +306,7 @@ public class AgentSpawnTool {
         persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
-        if (parentState != null
-                && parentState.getPlanModeContext().isPlanActive()
-                && agent instanceof HarnessAgent ha) {
-            ha.enterPlanMode(currentUserId, sessionId);
-        }
+        propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
         boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
@@ -510,6 +508,7 @@ public class AgentSpawnTool {
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
+        propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
         var declOpt = manager.getDeclaration(spawned.agentId());
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
@@ -606,6 +605,22 @@ public class AgentSpawnTool {
                         ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
                         : null;
         return scoped != null ? scoped : agentManager;
+    }
+
+    /**
+     * Activates plan mode on a local child immediately before it can be invoked.
+     *
+     * <p>This must run for both newly-created and reused children. In particular, a persistent
+     * child may have been created while its parent was in build mode and then reused after the
+     * parent entered plan mode.
+     */
+    private static void propagatePlanMode(
+            AgentState parentState, String userId, String sessionId, Agent child) {
+        if (parentState != null
+                && parentState.getPlanModeContext().isPlanActive()
+                && child instanceof HarnessAgent harnessChild) {
+            harnessChild.enterPlanMode(userId, sessionId);
+        }
     }
 
     /**
