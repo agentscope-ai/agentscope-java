@@ -30,7 +30,7 @@ build/
 ### VS Code ###
 .vscode/
 .claude/
-
+.codex
 ### Mac OS ###
 .DS_Store
 

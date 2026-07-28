@@ -323,7 +323,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.reactConfig = assembleReactConfig(builder);
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
-        if (this.stateStore != null) {
+        AgentStateStore store = this.stateStore;
+        if (store != null) {
             shutdownManager.bindStateSaver(
                     this,
                     // The saver receives the precise per-(userId, sessionId) AgentState bound to
@@ -331,7 +332,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // interrupted request, so persist that session directly rather than the
                     // instance "last-active" CallExecution (which is wrong under concurrency).
                     agentState ->
-                            stateStore.save(
+                            store.save(
                                     agentState.getUserId(),
                                     agentState.getSessionId(),
                                     "agent_state",
@@ -3841,8 +3842,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     public void close() {
-        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
-        // additional resources here.
+        // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
+        // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
+        shutdownManager.unbindStateSaver(this);
     }
 
     // ==================== Builder ====================
