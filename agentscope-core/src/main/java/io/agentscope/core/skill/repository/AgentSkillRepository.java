@@ -121,6 +121,57 @@ public interface AgentSkillRepository extends AutoCloseable {
     boolean isWriteable();
 
     /**
+     * Reads a single raw file under a skill directory.
+     *
+     * <p>For filesystem-backed repositories, this reads a file from the skill's
+     * directory on disk. For database-backed repositories, this may retrieve
+     * a skill resource stored as a BLOB or text column.
+     *
+     * <p>The default implementation returns {@code null} — callers should check
+     * the return value and handle unsupported operations gracefully.
+     *
+     * @param skillName The skill name (never null)
+     * @param relPath   The relative path within the skill directory (e.g. "SKILL.md",
+     *                  "references/api.md")
+     * @return The file content, or {@code null} if the file does not exist or the
+     *         operation is not supported by this repository implementation
+     */
+    default String readSkillFile(String skillName, String relPath) {
+        return null;
+    }
+
+    /**
+     * Writes a single raw file under a skill directory.
+     *
+     * <p>The default implementation returns {@code false} — callers should check
+     * the return value and handle unsupported operations gracefully.
+     *
+     * @param skillName The skill name
+     * @param relPath   The relative path within the skill directory
+     * @param content   The file content to write
+     * @return {@code true} if the write succeeded, {@code false} otherwise
+     */
+    default boolean writeSkillFile(String skillName, String relPath, String content) {
+        return false;
+    }
+
+    /**
+     * Deletes a single raw file under a skill directory.
+     *
+     * <p>Idempotent: implementations should return {@code true} for missing files.
+     * The default implementation returns {@code false} — callers should check
+     * the return value and handle unsupported operations gracefully.
+     *
+     * @param skillName The skill name
+     * @param relPath   The relative path within the skill directory
+     * @return {@code true} if the delete succeeded (or file was already missing),
+     *         {@code false} if the operation is not supported
+     */
+    default boolean deleteSkillFile(String skillName, String relPath) {
+        return false;
+    }
+
+    /**
      * Cleans up any resources used by this repository.
      *
      * <p>Implementations should override this method if they need to release resources
