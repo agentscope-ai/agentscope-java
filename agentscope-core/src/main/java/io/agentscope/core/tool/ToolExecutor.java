@@ -243,7 +243,7 @@ class ToolExecutor {
                     ToolExecutionContext.merge(
                             runtimeContext.asToolExecutionContext(), toolkitDefault);
             runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder()
+                    io.agentscope.core.agent.RuntimeContext.builder(runtimeContext)
                             .toolExecutionContext(merged)
                             .build();
         }
