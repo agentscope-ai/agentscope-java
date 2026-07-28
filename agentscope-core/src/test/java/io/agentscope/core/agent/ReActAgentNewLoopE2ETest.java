@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -50,6 +51,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -160,6 +162,39 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    private static final class ContextProbeTool extends ToolBase {
+        private final AtomicBoolean emitterPresent;
+
+        ContextProbeTool(String name, AtomicBoolean emitterPresent) {
+            super(
+                    name,
+                    "checks the Reactor Context",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+            this.emitterPresent = emitterPresent;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.deferContextual(
+                    ctx -> {
+                        emitterPresent.set(AgentEventEmitter.fromContext(ctx).isPresent());
+                        return Mono.just(ToolResultBlock.text("context checked"));
+                    });
+        }
+    }
+
     private static final class RecordingMiddleware implements MiddlewareBase {
         final List<String> trace = new ArrayList<>();
 
@@ -181,6 +216,18 @@ class ReActAgentNewLoopE2ETest {
                 Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add("acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add("acting:exit"));
+        }
+    }
+
+    private static final class RemoveAgentEventEmitterContextMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .contextWrite(context -> context.delete(AgentEventEmitter.CONTEXT_KEY));
         }
     }
 
@@ -291,5 +338,83 @@ class ReActAgentNewLoopE2ETest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(ToolResultState.ERROR, end.getState());
+    }
+
+    @Test
+    void streamEventsToolExecutionReceivesAgentEventEmitterFromEventSinkFallback() {
+        AtomicBoolean emitterPresent = new AtomicBoolean();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "probe", "event-sink")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ContextProbeTool("probe", emitterPresent));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(new RemoveAgentEventEmitterContextMiddleware())
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("check context")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertTrue(
+                emitterPresent.get(),
+                "tool execution should receive AgentEventEmitter from the event sink fallback");
+    }
+
+    @Test
+    void forwardedCallToolExecutionReceivesAgentEventEmitterFromExternalEmitterFallback() {
+        AtomicBoolean emitterPresent = new AtomicBoolean();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "probe", "forwarded")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ContextProbeTool("probe", emitterPresent));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(new RemoveAgentEventEmitterContextMiddleware())
+                        .build();
+        AgentEventEmitter forwardingEmitter = event -> {};
+
+        Msg result =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("check forwarded context")
+                                                .build()))
+                        .contextWrite(
+                                ctx ->
+                                        ctx.put(
+                                                AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                                forwardingEmitter))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(
+                emitterPresent.get(),
+                "tool execution should receive AgentEventEmitter from the external emitter"
+                        + " fallback");
     }
 }
