@@ -18,6 +18,9 @@ package io.agentscope.harness.agent.memory.session;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.io.BufferedReader;
@@ -36,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -452,12 +456,37 @@ public class SessionTree {
     // -------------------------------------------------------------------------
 
     /**
+     * Blocks until previously scheduled remote mirrors have finished (or the timeout elapses).
+     *
+     * <p>Call this before tearing down shared resources that mirrors may touch (e.g. closing a
+     * {@link WorkspaceIndex} or deleting a {@code @TempDir} workspace). Safe to call when no
+     * mirrors are pending.
+     */
+    public static void awaitPendingMirrors() {
+        try {
+            MIRROR_EXECUTOR.submit(() -> {}).get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Timed out or failed waiting for session-tree mirrors: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Schedules an asynchronous, best-effort mirror of both session files to the remote
      * filesystem. Uses a daemon single-thread executor to serialise uploads and avoid
      * blocking the caller on remote I/O.
+     *
+     * <p>When the write target is already a {@link LocalFilesystem} (directly or as an overlay
+     * upper layer), the local files written by {@link #appendToFile}/{@link #overwriteFile} are
+     * authoritative — re-uploading asynchronously is redundant and races with test {@code
+     * @TempDir} cleanup / {@link WorkspaceIndex#close()}. In that case only the workspace index
+     * is refreshed synchronously.
      */
     private void scheduleMirror() {
         if (filesystem == null || workspaceRoot == null) {
+            return;
+        }
+        if (isLocalWriteTarget(filesystem)) {
+            refreshIndexFromLocal();
             return;
         }
         MIRROR_EXECUTOR.execute(
@@ -465,6 +494,40 @@ public class SessionTree {
                     mirrorToFilesystem(contextFile, resolveRelativePath(contextFile));
                     mirrorToFilesystem(logFile, resolveRelativePath(logFile));
                 });
+    }
+
+    /**
+     * Returns true when filesystem writes land on local disk that SessionTree already updated
+     * via direct {@link Files} IO — so an async re-upload would be a no-op race.
+     */
+    private static boolean isLocalWriteTarget(AbstractFilesystem fs) {
+        if (fs == null) {
+            return true;
+        }
+        if (fs instanceof LocalFilesystem) {
+            return true;
+        }
+        if (fs instanceof OverlayFilesystem overlay) {
+            return isLocalWriteTarget(overlay.getUpper());
+        }
+        if (fs instanceof BakedContextFilesystem baked) {
+            return isLocalWriteTarget(baked.getDelegate());
+        }
+        return false;
+    }
+
+    private void refreshIndexFromLocal() {
+        if (index == null) {
+            return;
+        }
+        String contextRel = resolveRelativePath(contextFile);
+        String logRel = resolveRelativePath(logFile);
+        if (contextRel != null && !contextRel.isBlank()) {
+            index.upsertFromLocalFile(contextRel, contextFile);
+        }
+        if (logRel != null && !logRel.isBlank()) {
+            index.upsertFromLocalFile(logRel, logFile);
+        }
     }
 
     /**

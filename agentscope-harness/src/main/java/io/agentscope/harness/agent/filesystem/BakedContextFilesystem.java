@@ -48,6 +48,11 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
         this.bakedRc = bakedRc != null ? bakedRc : RuntimeContext.empty();
     }
 
+    /** Returns the wrapped filesystem. */
+    public AbstractFilesystem getDelegate() {
+        return delegate;
+    }
+
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         return delegate.ls(bakedRc, path);

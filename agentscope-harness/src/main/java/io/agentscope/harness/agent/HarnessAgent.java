@@ -59,6 +59,7 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.memory.session.SessionTree;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
@@ -378,11 +379,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
             shutdownTaskRepository();
         } finally {
             try {
-                if (ownedWorkspaceIndex != null) {
-                    ownedWorkspaceIndex.close();
-                }
+                // Drain SessionTree remote mirrors before closing the workspace index /
+                // releasing the workspace — otherwise async uploads can race with
+                // WorkspaceIndex.close() and @TempDir cleanup.
+                SessionTree.awaitPendingMirrors();
             } finally {
-                delegate.close();
+                try {
+                    if (ownedWorkspaceIndex != null) {
+                        ownedWorkspaceIndex.close();
+                    }
+                } finally {
+                    delegate.close();
+                }
             }
         }
     }
