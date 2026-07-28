@@ -425,13 +425,15 @@ public sealed interface AguiEvent
     /**
      * Event containing the result of a tool call.
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record ToolCallResult(
             String threadId,
             String runId,
             String toolCallId,
             String content,
             String role,
-            String messageId)
+            String messageId,
+            Map<String, Object> metadata)
             implements AguiEvent {
 
         @JsonCreator
@@ -441,13 +443,28 @@ public sealed interface AguiEvent
                 @JsonProperty("toolCallId") String toolCallId,
                 @JsonProperty("content") String content,
                 @JsonProperty("role") String role,
-                @JsonProperty("messageId") String messageId) {
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("metadata") Map<String, Object> metadata) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
             this.content = content;
             this.role = role;
             this.messageId = messageId;
+            this.metadata = metadata;
+        }
+
+        /**
+         * Backward-compatible constructor for callers that do not provide metadata.
+         */
+        public ToolCallResult(
+                String threadId,
+                String runId,
+                String toolCallId,
+                String content,
+                String role,
+                String messageId) {
+            this(threadId, runId, toolCallId, content, role, messageId, null);
         }
 
         @Override
@@ -471,6 +488,10 @@ public sealed interface AguiEvent
 
         public String getMessageId() {
             return messageId;
+        }
+
+        public Map<String, Object> getMetadata() {
+            return metadata;
         }
     }
 

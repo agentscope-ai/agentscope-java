@@ -151,6 +151,26 @@ class AguiEventEncoderTest {
     }
 
     @Test
+    void testEncodeToolCallResultEventWithMetadata() {
+        AguiEvent.ToolCallResult event =
+                new AguiEvent.ToolCallResult(
+                        "thread-1",
+                        "run-1",
+                        "tc-1",
+                        "Success",
+                        "tool",
+                        "msg-1",
+                        Map.of("source", "meta_tool"));
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_RESULT\""));
+        assertTrue(sse.contains("\"metadata\""));
+        assertTrue(sse.contains("\"source\":\"meta_tool\""));
+    }
+
+    @Test
     void testEncodeStateSnapshotEvent() {
         AguiEvent.StateSnapshot event =
                 new AguiEvent.StateSnapshot("thread-1", "run-1", Map.of("key", "value"));

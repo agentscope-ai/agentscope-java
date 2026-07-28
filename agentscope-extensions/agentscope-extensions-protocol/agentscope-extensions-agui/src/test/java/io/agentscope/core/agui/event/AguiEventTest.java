@@ -464,6 +464,45 @@ class AguiEventTest {
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallResult);
         }
+
+        @Test
+        void testWithMetadata() {
+            Map<String, Object> metadata = Map.of("source", "meta_tool", "cost", 1);
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Success", "tool", "msg-1", metadata);
+
+            assertEquals(metadata, event.metadata());
+            assertEquals(metadata, event.getMetadata());
+        }
+
+        @Test
+        void testJsonSerializationWithMetadata() throws JsonProcessingException {
+            Map<String, Object> metadata = Map.of("source", "meta_tool");
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Success", "tool", "msg-1", metadata);
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"metadata\""));
+            assertTrue(json.contains("\"source\":\"meta_tool\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.ToolCallResult);
+            AguiEvent.ToolCallResult result = (AguiEvent.ToolCallResult) deserialized;
+            assertEquals(metadata, result.metadata());
+        }
+
+        @Test
+        void testJsonSerializationOmitsNullMetadata() throws JsonProcessingException {
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Success", "tool", "msg-1");
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"type\":\"TOOL_CALL_RESULT\""));
+            assertTrue(!json.contains("\"metadata\""), "null metadata should be omitted");
+        }
     }
 
     @Nested
