@@ -30,6 +30,10 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -44,16 +48,21 @@ import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /** Per-(userId, sessionId) state access / persistence API on {@link ReActAgent}. */
@@ -256,6 +265,88 @@ class ReActAgentPerSessionStateTest {
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
+    @Test
+    @DisplayName("user interrupt drops a partial streaming tool call from persisted reasoning")
+    void userInterruptDropsPartialStreamingToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedStreamingToolModel model = new GatedStreamingToolModel();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("streaming").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterToolChunk.await(5, TimeUnit.SECONDS),
+                "partial tool call should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
+
+        StrictHistoryModel strictModel = new StrictHistoryModel();
+        ReActAgent restored =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(strictModel)
+                        .stateStore(store)
+                        .enablePendingToolRecovery(true)
+                        .build();
+        AgentState restoredState = restored.getAgentState("u1", "streaming");
+        assertFalse(hasToolUse(restoredState, "call-streaming"));
+        assertTrue(allText(restoredState).contains("partial response"));
+
+        Msg continued =
+                restored.call(List.of(userMsg("continue")), ctx).block(Duration.ofSeconds(5));
+        assertEquals("continued", continued.getTextContent());
+        assertTrue(strictModel.unresolvedIds.isEmpty());
+    }
+
+    @Test
+    @DisplayName(
+            "user interrupt before acting drops a completed tool call from persisted reasoning")
+    void userInterruptBeforeActingDropsCompletedToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GateReasoningCompletionMiddleware gate = new GateReasoningCompletionMiddleware();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("pre-acting").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new CompletedToolCallModel())
+                        .stateStore(store)
+                        .middleware(gate)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                gate.reasoningCompleted.await(5, TimeUnit.SECONDS),
+                "model reasoning should complete before interrupt");
+
+        first.interrupt(ctx);
+        gate.release.tryEmitEmpty();
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
+
+        AgentState restoredState = agent(store).getAgentState("u1", "pre-acting");
+        assertFalse(hasToolUse(restoredState, "call-complete"));
+        assertTrue(allText(restoredState).contains("completed response"));
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
@@ -287,12 +378,132 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
+    private static final class GatedStreamingToolModel extends ChatModelBase {
+        private final CountDownLatch afterToolChunk = new CountDownLatch(1);
+        private final Sinks.One<Void> release = Sinks.one();
+
+        @Override
+        public String getModelName() {
+            return "gated-streaming-tool";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            ToolUseBlock partialToolCall =
+                    ToolUseBlock.builder()
+                            .id("call-streaming")
+                            .name("echo")
+                            .content("{\"value\":")
+                            .build();
+            return Flux.concat(
+                    Flux.just(
+                            response(TextBlock.builder().text("partial response").build()),
+                            response(partialToolCall)),
+                    Flux.defer(
+                            () -> {
+                                afterToolChunk.countDown();
+                                return release.asMono()
+                                        .thenReturn(
+                                                response(
+                                                        TextBlock.builder()
+                                                                .text("not consumed")
+                                                                .build()));
+                            }));
+        }
+    }
+
+    private static final class CompletedToolCallModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "completed-tool-call";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id("call-complete")
+                            .name("echo")
+                            .input(Map.of("value", "done"))
+                            .build();
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(
+                                    List.of(
+                                            TextBlock.builder().text("completed response").build(),
+                                            toolCall))
+                            .build());
+        }
+    }
+
+    private static final class GateReasoningCompletionMiddleware implements MiddlewareBase {
+        private final CountDownLatch reasoningCompleted = new CountDownLatch(1);
+        private final Sinks.One<Void> release = Sinks.one();
+
+        @Override
+        public Flux<AgentEvent> onReasoning(
+                Agent agent,
+                RuntimeContext ctx,
+                ReasoningInput input,
+                Function<ReasoningInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatWith(
+                            Flux.defer(
+                                    () -> {
+                                        reasoningCompleted.countDown();
+                                        return release.asMono().thenMany(Flux.empty());
+                                    }));
+        }
+    }
+
+    private static final class StrictHistoryModel extends ChatModelBase {
+        private volatile Set<String> unresolvedIds = Set.of();
+
+        @Override
+        public String getModelName() {
+            return "strict-history";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            Set<String> toolUseIds = new HashSet<>();
+            Set<String> toolResultIds = new HashSet<>();
+            for (Msg message : messages) {
+                message.getContentBlocks(ToolUseBlock.class)
+                        .forEach(block -> toolUseIds.add(block.getId()));
+                message.getContentBlocks(ToolResultBlock.class)
+                        .forEach(block -> toolResultIds.add(block.getId()));
+            }
+            toolUseIds.removeAll(toolResultIds);
+            unresolvedIds = Set.copyOf(toolUseIds);
+            if (!unresolvedIds.isEmpty()) {
+                return Flux.error(
+                        new IllegalStateException(
+                                "Unresolved tool calls in model history: " + unresolvedIds));
+            }
+            return Flux.just(response(TextBlock.builder().text("continued").build()));
+        }
+    }
+
+    private static ChatResponse response(ContentBlock block) {
+        return ChatResponse.builder().content(List.of(block)).build();
+    }
+
     private static Msg userMsg(String text) {
         return Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static boolean hasToolUse(AgentState state, String id) {
+        return state.getContext().stream()
+                .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                .anyMatch(block -> id.equals(block.getId()));
     }
 
     private static List<String> allText(AgentState state) {
