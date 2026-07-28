@@ -49,6 +49,8 @@ description: "无状态 Agent 引擎、AgentState 生命周期、状态持久化
 
 一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——**只要状态存储是分布式的(例如 Redis),不同进程、不同物理机上的 agent 实例都能拿到完全一致的状态**。
 
+如果 `streamEvents()` 在 call-scope 建立后被下游取消——例如 SSE 客户端断连——框架会对该次调用的 live `AgentState` 发起一次 best-effort checkpoint。同一 `(userId, sessionId)` 的下一次调用会等到该 checkpoint 成功或失败后才通过 per-session gate,避免读到陈旧状态,也避免旧调用的延迟保存覆盖新状态;其他 session 不受影响。存储失败只记录日志,不会阻止生命周期清理;未配置 `AgentStateStore` 时取消保存是安全的 no-op。
+
 ### 自动持久化与恢复链路
 
 ```
@@ -75,7 +77,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 
 这套机制是 **`ReActAgent` 自带**的,`HarnessAgent` 直接继承,无需额外配置。Agent 实例不绑定固定 session——每次调用读写的是其 `RuntimeContext` 指定的槽位(缺省回退到 builder 上的 `defaultSessionId`)。
 
-> 单次 `call()` 期间的中间状态变更靠的是内存里的 `AgentState` 对象。**状态存储不在每条消息后落盘,而是在 call 结束 / shutdown 时整体写入**——所以对后端的吞吐压力很低。
+> 单次 `call()` 期间的中间状态变更靠的是内存里的 `AgentState` 对象。**状态存储不在每条消息后落盘,而是在 call 正常完成、下游取消或 shutdown 时整体写入**——所以对后端的吞吐压力很低。
 
 ### 内置与扩展实现
 

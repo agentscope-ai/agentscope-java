@@ -624,6 +624,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         unbindRuntimeContextFromHooks();
     }
 
+    @Override
+    protected Mono<Void> onAgentExecutionCancelled(Object callScope) {
+        if (!(callScope instanceof CallExecution scope)) {
+            return Mono.empty();
+        }
+        return saveStateToSession(scope)
+                .onErrorResume(
+                        error -> {
+                            log.warn(
+                                    "Failed to checkpoint AgentState after call cancellation",
+                                    error);
+                            return Mono.empty();
+                        });
+    }
+
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
         if (run == null) {
             if (toolExecutionContext != null) {

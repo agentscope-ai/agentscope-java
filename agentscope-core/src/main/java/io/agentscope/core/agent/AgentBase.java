@@ -36,12 +36,17 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
@@ -92,6 +97,8 @@ import reactor.core.scheduler.Schedulers;
 @SuppressWarnings("deprecation")
 public abstract class AgentBase implements Agent {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentBase.class);
+
     private final String agentId;
     private final String name;
     private final String description;
@@ -108,7 +115,7 @@ public abstract class AgentBase implements Agent {
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
-     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono)}.
+     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono, Supplier)}.
      */
     private final ConcurrentHashMap<Object, Mono<Void>> callGates = new ConcurrentHashMap<>();
 
@@ -272,15 +279,28 @@ public abstract class AgentBase implements Agent {
                                     // serialization gate (if any) admits this call:
                                     // beforeAgentExecution resolves/loads the session slot and must
                                     // not race a concurrent same-session call.
+                                    AtomicReference<Object> callScope = new AtomicReference<>();
                                     Mono<Msg> lifecycle =
                                             Mono.defer(
                                                     () ->
                                                             runLifecycleBody(
-                                                                    msgs, rc, doCallFn, requestId));
+                                                                    msgs, rc, doCallFn, requestId,
+                                                                    callScope));
+                                    Supplier<Mono<Void>> cancellationFinalizer =
+                                            () -> {
+                                                Object scope = callScope.get();
+                                                return scope == null
+                                                        ? Mono.empty()
+                                                        : onAgentExecutionCancelled(scope);
+                                            };
                                     Mono<Msg> gated =
                                             gateKey == null
-                                                    ? lifecycle
-                                                    : serializeOnKey(gateKey, lifecycle);
+                                                    ? finalizeCancellation(
+                                                            lifecycle, cancellationFinalizer)
+                                                    : serializeOnKey(
+                                                            gateKey,
+                                                            lifecycle,
+                                                            cancellationFinalizer);
                                     return gated.contextWrite(
                                                     c ->
                                                             requestId == null || requestId.isEmpty()
@@ -301,8 +321,10 @@ public abstract class AgentBase implements Agent {
             List<Msg> msgs,
             RuntimeContext rc,
             Function<List<Msg>, Mono<Msg>> doCallFn,
-            String requestId) {
+            String requestId,
+            AtomicReference<Object> callScope) {
         Object scope = beforeAgentExecution(msgs, rc);
+        callScope.set(scope);
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
@@ -339,10 +361,12 @@ public abstract class AgentBase implements Agent {
     /**
      * Serializes {@code action} against other actions sharing {@code key}: this call waits for the
      * previously-enqueued call with the same key to terminate before running, then becomes the tail
-     * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
-     * cancel) so a failed/cancelled call never blocks the queue.
+     * the next same-key call waits on. Complete and error release the slot immediately. Cancellation
+     * starts {@code cancellationFinalizer} and releases the slot when that publisher terminates, so
+     * a subsequent same-key call cannot overtake cancellation persistence.
      */
-    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+    private <T> Mono<T> serializeOnKey(
+            Object key, Mono<T> action, Supplier<Mono<Void>> cancellationFinalizer) {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
@@ -355,14 +379,67 @@ public abstract class AgentBase implements Agent {
                                 prev[0] = tail == null ? Mono.empty() : tail;
                                 return releaseMono;
                             });
+                    Runnable releaseGate =
+                            () -> {
+                                release.tryEmitEmpty();
+                                callGates.remove(key, releaseMono);
+                            };
                     return prev[0].onErrorComplete()
                             .then(action)
                             .doFinally(
                                     sig -> {
-                                        release.tryEmitEmpty();
-                                        callGates.remove(key, releaseMono);
+                                        if (sig == SignalType.CANCEL) {
+                                            runCancellationFinalizer(
+                                                    cancellationFinalizer, releaseGate);
+                                        } else {
+                                            releaseGate.run();
+                                        }
                                     });
                 });
+    }
+
+    private <T> Mono<T> finalizeCancellation(
+            Mono<T> action, Supplier<Mono<Void>> cancellationFinalizer) {
+        return action.doFinally(
+                sig -> {
+                    if (sig == SignalType.CANCEL) {
+                        runCancellationFinalizer(cancellationFinalizer, () -> {});
+                    }
+                });
+    }
+
+    private void runCancellationFinalizer(
+            Supplier<Mono<Void>> cancellationFinalizer, Runnable afterFinalizer) {
+        Mono<Void> finalizer;
+        try {
+            finalizer = cancellationFinalizer.get();
+        } catch (Throwable error) {
+            afterFinalizer.run();
+            Exceptions.throwIfFatal(error);
+            log.warn("Cancellation finalizer failed for agent {}", getName(), error);
+            return;
+        }
+        if (finalizer == null) {
+            afterFinalizer.run();
+            return;
+        }
+        try {
+            finalizer
+                    .onErrorResume(
+                            error -> {
+                                log.warn(
+                                        "Cancellation finalizer failed for agent {}",
+                                        getName(),
+                                        error);
+                                return Mono.empty();
+                            })
+                    .doFinally(ignored -> afterFinalizer.run())
+                    .subscribe();
+        } catch (Throwable error) {
+            afterFinalizer.run();
+            Exceptions.throwIfFatal(error);
+            log.warn("Cancellation finalizer failed for agent {}", getName(), error);
+        }
     }
 
     /**
@@ -594,6 +671,22 @@ public abstract class AgentBase implements Agent {
      * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
      */
     protected void afterAgentExecution() {}
+
+    /**
+     * Returns best-effort asynchronous finalization for a call cancelled after its per-call scope
+     * has been established.
+     *
+     * <p>For serialized calls, the next call sharing the same key is admitted only after the
+     * returned publisher terminates. Lifecycle cleanup itself is not delayed. Implementations must
+     * keep this publisher non-blocking on the caller thread; synchronous I/O should be scheduled on
+     * an appropriate worker.
+     *
+     * @param callScope the scope returned by {@link #beforeAgentExecution(List, RuntimeContext)}
+     * @return completion of the cancellation finalizer; empty by default
+     */
+    protected Mono<Void> onAgentExecutionCancelled(Object callScope) {
+        return Mono.empty();
+    }
 
     /**
      * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
