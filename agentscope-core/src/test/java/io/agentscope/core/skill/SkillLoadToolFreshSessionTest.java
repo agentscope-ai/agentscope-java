@@ -65,6 +65,18 @@ class SkillLoadToolFreshSessionTest {
     private static final String SKILL_ID = "demo_skill";
     private static final String SKILL_BODY = "# Demo Skill Body";
 
+    /** The skill under test, shared so its registered id can be derived rather than hard-coded. */
+    private static final AgentSkill DEMO_SKILL =
+            new AgentSkill(SKILL_ID, "Demo Skill", SKILL_BODY, new HashMap<>());
+
+    /**
+     * The id the load tool actually accepts. {@link AgentSkill#getSkillId()} composes it as
+     * {@code name + "_" + source}, and the 4-arg constructor above defaults {@code source} to
+     * {@code "custom"}, so this resolves to {@code demo_skill_custom} rather than the raw name.
+     * Derived here instead of written literally so the test follows any change to that rule.
+     */
+    private static final String REGISTERED_SKILL_ID = DEMO_SKILL.getSkillId();
+
     /**
      * First turn emits a {@code load_skill_through_path} call; on the second turn it records the
      * tool result exactly as the model would see it, then answers with plain text to end the
@@ -88,9 +100,9 @@ class SkillLoadToolFreshSessionTest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             if (turns.getAndIncrement() == 0) {
-                // Registered skill ids carry a "_custom" source suffix (see RegisteredSkill);
-                // the load tool's skillId enum only accepts the registered form.
-                String registeredSkillId = SKILL_ID + "_custom";
+                // The load tool's skillId enum only accepts the registered form (see
+                // REGISTERED_SKILL_ID above), not the raw skill name.
+                String registeredSkillId = REGISTERED_SKILL_ID;
                 Map<String, Object> input = new HashMap<>();
                 input.put("skillId", registeredSkillId);
                 input.put("path", "SKILL.md");
@@ -143,7 +155,7 @@ class SkillLoadToolFreshSessionTest {
     private static ReActAgent buildAgent(ScriptModel model) {
         Toolkit toolkit = new Toolkit();
         SkillBox skillBox = new SkillBox(toolkit);
-        skillBox.registerSkill(new AgentSkill(SKILL_ID, "Demo Skill", SKILL_BODY, new HashMap<>()));
+        skillBox.registerSkill(DEMO_SKILL);
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("You load skills when asked.")
