@@ -1,0 +1,59 @@
+package team
+
+import (
+	"context"
+
+	"github.com/spring-ai-alibaba/aistio/internal/store"
+)
+
+// TaskStore adapts store.TeamTaskRepository to the synchronous, context-free
+// API used by REST handlers, controllers, and CLI callers. All calls use
+// context.Background() since the underlying store operations are fast and
+// callers historically did not thread a context through this layer.
+type TaskStore struct {
+	Repo store.TeamTaskRepository
+}
+
+// NewTaskStore creates a TaskStore backed by the given repository.
+func NewTaskStore(repo store.TeamTaskRepository) *TaskStore {
+	return &TaskStore{Repo: repo}
+}
+
+func (s *TaskStore) Create(namespace, teamName, subject, description string, blockedBy []string) (*store.TeamTask, error) {
+	return s.Repo.Create(context.Background(), namespace, teamName, subject, description, blockedBy)
+}
+
+func (s *TaskStore) Get(namespace, teamName, taskID string) (*store.TeamTask, error) {
+	return s.Repo.Get(context.Background(), namespace, teamName, taskID)
+}
+
+func (s *TaskStore) List(namespace, teamName string) []*store.TeamTask {
+	tasks, _ := s.Repo.List(context.Background(), namespace, teamName)
+	return tasks
+}
+
+func (s *TaskStore) Claim(namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*store.TeamTask, error) {
+	return s.Repo.Claim(context.Background(), namespace, teamName, taskID, claimedBy, expectedVersion)
+}
+
+func (s *TaskStore) Complete(namespace, teamName, taskID, result string) (*store.TeamTask, error) {
+	return s.Repo.Complete(context.Background(), namespace, teamName, taskID, result)
+}
+
+func (s *TaskStore) Unclaim(namespace, teamName, taskID string) (*store.TeamTask, error) {
+	return s.Repo.Unclaim(context.Background(), namespace, teamName, taskID)
+}
+
+func (s *TaskStore) GetUnblockedPending(namespace, teamName string) []*store.TeamTask {
+	tasks, _ := s.Repo.GetUnblockedPending(context.Background(), namespace, teamName)
+	return tasks
+}
+
+func (s *TaskStore) GetSummary(namespace, teamName string) (total, pending, inProgress, completed int32) {
+	total, pending, inProgress, completed, _ = s.Repo.GetSummary(context.Background(), namespace, teamName)
+	return
+}
+
+func (s *TaskStore) DeleteTeam(namespace, teamName string) {
+	_ = s.Repo.DeleteByTeam(context.Background(), namespace, teamName)
+}

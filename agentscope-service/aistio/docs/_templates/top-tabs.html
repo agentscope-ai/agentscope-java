@@ -1,0 +1,43 @@
+{% if docs_top_tabs is defined and docs_top_tabs %}
+  {% set current_lang = "zh" if pagename.startswith("zh/") else "en" %}
+  <nav
+    class="docs-top-tabs"
+    aria-label="Documentation sections"
+    data-current-page="{{ pagename }}"
+    data-current-lang="{{ current_lang }}"
+  >
+    <div class="docs-top-tabs__list">
+      {% for tab in docs_top_tabs %}
+        {% set supported_languages = tab.get("languages", ["en", "zh"]) %}
+        {% if current_lang in supported_languages %}
+          {% set label = tab.get("label_zh") if current_lang == "zh" and tab.get("label_zh") else tab.get("label_en") %}
+          {% set href = tab.get("href_zh") if current_lang == "zh" and tab.get("href_zh") else tab.get("href_en") %}
+          {% set prefixes = tab.get("prefixes_zh") if current_lang == "zh" else tab.get("prefixes_en") %}
+          {% set active = namespace(value=false) %}
+          {% for prefix in prefixes %}
+            {% set clean_prefix = prefix.rstrip("/") %}
+            {% if pagename == clean_prefix or pagename.startswith(clean_prefix + "/") %}
+              {% set active.value = true %}
+            {% endif %}
+          {% endfor %}
+          {% if href %}
+            <a
+              class="docs-top-tabs__link{% if active.value %} is-active{% endif %}"
+              href="{{ pathto(href) }}"
+              {% if active.value %}aria-current="page"{% endif %}
+              data-tab-id="{{ tab.get('id') }}"
+              data-href-en="{{ tab.get('href_en', '') }}"
+              data-href-zh="{{ tab.get('href_zh', '') }}"
+              data-prefixes-en="{{ tab.get('prefixes_en', []) | join('|') }}"
+              data-prefixes-zh="{{ tab.get('prefixes_zh', []) | join('|') }}"
+              data-sections-en="{{ tab.get('sections_en', []) | join('|') }}"
+              data-sections-zh="{{ tab.get('sections_zh', []) | join('|') }}"
+            >
+              {{ label }}
+            </a>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  </nav>
+{% endif %}

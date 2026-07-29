@@ -1,0 +1,135 @@
+# Copyright The AgentScope Go Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+format: jb-book
+root: en/intro
+parts:
+  - caption: Quick Start
+    chapters:
+      - file: en/quickstart/installation
+        title: Installation
+      - file: en/quickstart/key-concepts
+        title: Key Concepts
+      - file: en/quickstart/agent
+        title: Build an Agent
+
+  - caption: Advanced Topics
+    chapters:
+      - file: en/task/model
+        title: Model Integration
+      - file: en/task/agent-config
+        title: Agent Configuration
+      - file: en/task/tool
+        title: Tool System
+      - file: en/task/mcp
+        title: Model Context Protocol
+      - file: en/task/hook
+        title: Hook System
+      - file: en/task/loop-engineering
+        title: Loop Engineering
+      - file: en/task/state
+        title: State Management
+      - file: en/task/workspace
+        title: Workspace
+      - file: en/task/message
+        title: Messages
+      - file: en/task/permission
+        title: Permission
+      - file: en/task/examples
+        title: Examples
+
+  - caption: FAQ
+    chapters:
+      - file: en/faq/index
+        title: FAQ
+
+  - caption: Integration
+    chapters:
+      - file: en/integration/index
+        title: Integration
+
+  - caption: Blogs
+    chapters:
+      - file: en/blogs/index
+        title: Blogs
+
+  - caption: Community
+    chapters:
+      - file: en/community/contributors
+        title: Contributors
+      - file: en/community/chat-groups
+        title: Chat Groups
+
+  - caption: 首页
+    chapters:
+      - file: zh/intro
+        title: 首页
+
+  - caption: 快速开始
+    chapters:
+      - file: zh/quickstart/feature-overview
+        title: 功能总览
+      - file: zh/quickstart/installation
+        title: 安装
+      - file: zh/quickstart/key-concepts
+        title: 核心概念
+      - file: zh/quickstart/agent
+        title: 构建智能体
+
+  - caption: 高级主题
+    chapters:
+      - file: zh/task/model
+        title: 模型集成
+      - file: zh/task/agent-config
+        title: 智能体配置
+      - file: zh/task/tool
+        title: 工具系统
+      - file: zh/task/mcp
+        title: 模型上下文协议
+      - file: zh/task/hook
+        title: Hook 系统
+      - file: zh/task/loop-engineering
+        title: Loop Engineering
+      - file: zh/task/state
+        title: 状态管理
+      - file: zh/task/workspace
+        title: Sandbox 沙箱
+      - file: zh/task/message
+        title: 消息
+      - file: zh/task/permission
+        title: 权限
+      - file: zh/task/examples
+        title: 示例
+
+  - caption: 常见问题 FAQ
+    chapters:
+      - file: zh/faq/index
+        title: FAQ
+
+  - caption: 集成
+    chapters:
+      - file: zh/integration/index
+        title: 集成
+
+  - caption: 博客
+    chapters:
+      - file: zh/blogs/index
+        title: 博客
+
+  - caption: 社区
+    chapters:
+      - file: zh/community/contributors
+        title: 贡献者
+      - file: zh/community/chat-groups
+        title: 交流群

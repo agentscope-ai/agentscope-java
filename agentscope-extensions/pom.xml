@@ -49,5 +49,6 @@
         <module>agentscope-extensions-training</module>
         <module>agentscope-extensions-channel</module>
         <module>agentscope-extensions-sandbox</module>
+        <module>agentscope-extensions-aistio</module>
     </modules>
 </project>

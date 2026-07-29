@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -eu
+
+export PRE_COMMIT_COLOR=always
+
+if [ -x ".venv/bin/pre-commit" ]; then
+  exec .venv/bin/pre-commit run --hook-stage pre-commit
+fi
+
+echo "pre-commit is not installed in .venv. Run: make setup"
+echo "See CONTRIBUTING.md for setup instructions."
+exit 1

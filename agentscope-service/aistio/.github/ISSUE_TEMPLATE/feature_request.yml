@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an improvement or new capability for Aistio
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        Please focus on the user problem first, then describe the solution you want.
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve, and why does it matter?
+      placeholder: Describe the current limitation, pain point, or motivation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the change you would like to see.
+      placeholder: Explain the desired behavior or interface.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives-considered
+    attributes:
+      label: Alternatives considered
+      description: What alternatives have you considered, and why are they not enough?
+      placeholder: List any workarounds, competing ideas, or tradeoffs. Write "None" if not applicable.
+    validations:
+      required: true
+  - type: dropdown
+    id: willingness-to-implement
+    attributes:
+      label: Willingness to implement
+      description: Let maintainers know whether you plan to work on this change.
+      options:
+        - I can work on this
+        - I can work on this with guidance
+        - I cannot work on this
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, prior art, or anything else that helps explain the request.

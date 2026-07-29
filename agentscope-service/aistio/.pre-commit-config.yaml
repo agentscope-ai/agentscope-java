@@ -1,0 +1,53 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+ci:
+  skip: [golangci-lint, go-mod-tidy]
+
+default_language_version:
+  golang: 1.26.4
+
+repos:
+  # ── General hygiene ───────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-merge-conflict
+
+  # ── Go linting & formatting ──────────────────────────────────────
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.11.4
+    hooks:
+      - id: golangci-lint
+        args:
+          - --fix=false
+          - --timeout=5m
+
+  # ── Spell checking ───────────────────────────────────────────────
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        args:
+          - --skip=.git,.idea,go.sum
+
+  # ── Secret / credential detection ────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ── Local hooks (require Go toolchain) ───────────────────────────
+  - repo: local
+    hooks:
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: go mod tidy -v
+        language: system
+        pass_filenames: false
+        files: (\.go|go\.mod|go\.sum)$

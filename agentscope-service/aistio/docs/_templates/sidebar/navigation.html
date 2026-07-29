@@ -1,0 +1,84 @@
+{% set current_lang = "zh" if pagename.startswith("zh/") else "en" %}
+{% set active_sections = namespace(value=[]) %}
+{% set all_sections = namespace(value=[]) %}
+{% if docs_top_tabs is defined and docs_top_tabs %}
+  {% for tab in docs_top_tabs %}
+    {% set tab_sections = tab.get("sections_zh") if current_lang == "zh" else tab.get("sections_en") %}
+    {% set all_sections.value = all_sections.value + tab.get("sections_en", []) + tab.get("sections_zh", []) %}
+    {% if tab.get("label_en") %}
+      {% set all_sections.value = all_sections.value + [tab.get("label_en")] %}
+    {% endif %}
+    {% if tab.get("label_zh") %}
+      {% set all_sections.value = all_sections.value + [tab.get("label_zh")] %}
+    {% endif %}
+    {% set prefixes = tab.get("prefixes_zh") if current_lang == "zh" else tab.get("prefixes_en") %}
+    {% for prefix in prefixes %}
+      {% set clean_prefix = prefix.rstrip("/") %}
+      {% if pagename == clean_prefix or pagename.startswith(clean_prefix + "/") %}
+        {% set active_sections.value = tab_sections %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+
+{% set nav_tree = namespace(html=furo_navigation_tree) %}
+{% for section in all_sections.value %}
+  {% if section not in active_sections.value %}
+    {% set caption = '<p class="caption" role="heading"><span class="caption-text">' ~ section ~ '</span></p>' %}
+    {% set hidden_caption = '<p class="caption docs-nav-group-hidden" role="heading" data-docs-nav-hidden="initial"><span class="caption-text">' ~ section ~ '</span></p>' %}
+    {% set nav_tree.html = nav_tree.html | replace(caption, hidden_caption) %}
+  {% endif %}
+{% endfor %}
+
+<div
+  class="sidebar-tree"
+  data-page-language="{{ current_lang }}"
+  data-active-sections="{{ active_sections.value | join('|') }}"
+>
+  {{ nav_tree.html | safe }}
+</div>
+<script>
+  (function () {
+    const HIDDEN_CLASS = 'docs-nav-group-hidden';
+    const script = document.currentScript;
+    const tree = script && script.previousElementSibling;
+    if (!tree) {
+      return;
+    }
+
+    function parseSections(value) {
+      return (value || '')
+        .split('|')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function setSectionVisibility(caption, visible) {
+      caption.classList.toggle(HIDDEN_CLASS, !visible);
+      caption.setAttribute('aria-hidden', visible ? 'false' : 'true');
+
+      let sibling = caption.nextElementSibling;
+      while (sibling && !sibling.classList.contains('caption')) {
+        sibling.classList.toggle(HIDDEN_CLASS, !visible);
+        sibling.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        sibling = sibling.nextElementSibling;
+      }
+    }
+
+    function filterSidebarSections() {
+      const sections = parseSections(tree.getAttribute('data-active-sections'));
+      const visibleSections = new Set(sections);
+
+      tree.querySelectorAll('.caption').forEach((caption) => {
+        const sectionName = caption.textContent.trim();
+        setSectionVisibility(caption, visibleSections.has(sectionName));
+      });
+    }
+
+    const lang = tree.getAttribute('data-page-language') || 'en';
+    if (window.filterSidebarLanguage) {
+      window.filterSidebarLanguage(lang, tree);
+    }
+    filterSidebarSections();
+  })();
+</script>

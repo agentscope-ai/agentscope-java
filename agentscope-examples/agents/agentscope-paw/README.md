@@ -17,7 +17,7 @@ browser tab.
 paw deliberately doesn't try to be more than that. There's no login, no
 multi-tenant isolation, no Docker sandbox, no horizontal scaling. If you need
 any of those — host paw-style agents for a team, or run untrusted code in
-isolation — the sister projects [agentscope-builder](../agentscope-builder/)
+isolation — the sister projects [agentscope-service](../../../agentscope-service/)
 and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
 
 ### At a glance

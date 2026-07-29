@@ -1,0 +1,8 @@
+{#- Custom sidebar brand: combined AgentScope Go logo -#}
+<a class="sidebar-brand centered" href="{{ pathto(master_doc) }}">
+  {% block brand_content %}
+  <div class="sidebar-logo-container combined-logo">
+    <img class="sidebar-logo logo-combined" src="{{ pathto('_static/logo.svg', 1) }}" alt="AgentScope Go"/>
+  </div>
+  {% endblock brand_content %}
+</a>

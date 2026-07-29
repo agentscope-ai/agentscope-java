@@ -1,0 +1,63 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -coverprofile cover.out
+
+      - name: Verify generated manifests & Helm sync are up to date
+        run: |
+          go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          make verify || {
+            echo "::error::Generated code/manifests/helm are out of date. Run 'make generate && make manifests && make sync-helm' and commit the result.";
+            exit 1;
+          }
+
+  helm:
+    name: Helm Lint & Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: helm lint helm/aistio
+      - name: helm template (default)
+        run: helm template aistio helm/aistio -n aistio-system >/dev/null
+      - name: helm template (experimental + webhook + auth)
+        run: |
+          helm template aistio helm/aistio -n aistio-system \
+            -f helm/aistio/profiles/experimental.yaml \
+            --set webhook.enabled=true --set api.authToken=ci-token >/dev/null
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t aistio:ci .

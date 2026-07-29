@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contribution guide
+    url: https://github.com/spring-ai-alibaba/aistio/blob/main/CONTRIBUTING.md
+    about: Review testing expectations, commit conventions, and pull request guidance before opening an issue or PR.

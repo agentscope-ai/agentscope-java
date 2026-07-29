@@ -1,0 +1,36 @@
+<div class="docs-site-header" role="banner">
+  <div class="docs-site-header__inner">
+    {% set docs_home = "zh/intro" if pagename.startswith("zh/") else "en/intro" %}
+    <div class="docs-site-header__start">
+      <a class="docs-site-header__brand" href="{{ pathto(docs_home) }}">
+        {%- if logo_url %}
+        <img class="docs-site-header__logo" src="{{ logo_url }}" alt="" width="36" height="36" />
+        {%- elif theme_light_logo and theme_dark_logo %}
+        <img class="docs-site-header__logo only-light" src="{{ pathto('_static/' + theme_light_logo, 1) }}" alt="" width="36" height="36" />
+        <img class="docs-site-header__logo only-dark" src="{{ pathto('_static/' + theme_dark_logo, 1) }}" alt="" width="36" height="36" />
+        {%- endif %}
+        <span class="docs-site-header__title">{{ project }}</span>
+      </a>
+      <div class="docs-site-header__nav-shell">
+        {% include "top-tabs.html" %}
+      </div>
+    </div>
+    <div class="docs-site-header__actions" aria-label="Site actions">
+      {%- if hasdoc('search') %}
+      <form class="docs-header-search" method="get" action="{{ pathto('search') }}" role="search">
+        <input class="docs-header-search__input" type="search" name="q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" autocomplete="off" />
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+        <button class="docs-header-search__submit" type="submit" aria-label="{{ _('Search') }}">
+          <svg class="docs-header-search__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </form>
+      <div id="searchbox" class="docs-header-searchbox"></div>
+      {%- endif %}
+      {% include "language-switch.html" %}
+    </div>
+  </div>
+</div>
