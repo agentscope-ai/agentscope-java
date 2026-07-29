@@ -16,9 +16,12 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -34,6 +37,9 @@ import java.util.Objects;
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
  * </ul>
+ *
+ * <p>Optional {@code metadata} carries AgentScope-specific extensions such as HITL
+ * confirmation results under {@code agentscope_confirm_results}.
  */
 public class AguiMessage {
 
@@ -42,6 +48,25 @@ public class AguiMessage {
     private final String content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
+    private final Map<String, Object> metadata;
+
+    /**
+     * Creates a new AguiMessage without metadata.
+     *
+     * @param id The unique message ID
+     * @param role The message role (user, assistant, system, tool)
+     * @param content The message content
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     */
+    public AguiMessage(
+            String id,
+            String role,
+            String content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId) {
+        this(id, role, content, toolCalls, toolCallId, null);
+    }
 
     /**
      * Creates a new AguiMessage.
@@ -51,6 +76,7 @@ public class AguiMessage {
      * @param content The message content
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
+     * @param metadata Optional message metadata (e.g. HITL confirm results)
      */
     @JsonCreator
     public AguiMessage(
@@ -58,7 +84,8 @@ public class AguiMessage {
             @JsonProperty("role") String role,
             @JsonProperty("content") String content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
-            @JsonProperty("toolCallId") String toolCallId) {
+            @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -67,6 +94,10 @@ public class AguiMessage {
                         ? Collections.unmodifiableList(toolCalls)
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
+        this.metadata =
+                metadata != null && !metadata.isEmpty()
+                        ? Collections.unmodifiableMap(new LinkedHashMap<>(metadata))
+                        : Collections.emptyMap();
     }
 
     /**
@@ -77,7 +108,7 @@ public class AguiMessage {
      * @return A new user message
      */
     public static AguiMessage userMessage(String id, String content) {
-        return new AguiMessage(id, "user", content, null, null);
+        return new AguiMessage(id, "user", content, null, null, null);
     }
 
     /**
@@ -88,7 +119,7 @@ public class AguiMessage {
      * @return A new assistant message
      */
     public static AguiMessage assistantMessage(String id, String content) {
-        return new AguiMessage(id, "assistant", content, null, null);
+        return new AguiMessage(id, "assistant", content, null, null, null);
     }
 
     /**
@@ -99,7 +130,7 @@ public class AguiMessage {
      * @return A new system message
      */
     public static AguiMessage systemMessage(String id, String content) {
-        return new AguiMessage(id, "system", content, null, null);
+        return new AguiMessage(id, "system", content, null, null, null);
     }
 
     /**
@@ -111,7 +142,7 @@ public class AguiMessage {
      * @return A new tool message
      */
     public static AguiMessage toolMessage(String id, String toolCallId, String content) {
-        return new AguiMessage(id, "tool", content, null, toolCallId);
+        return new AguiMessage(id, "tool", content, null, toolCallId, null);
     }
 
     /**
@@ -157,6 +188,16 @@ public class AguiMessage {
      */
     public String getToolCallId() {
         return toolCallId;
+    }
+
+    /**
+     * Get optional message metadata.
+     *
+     * @return immutable metadata map, never null (empty when absent)
+     */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, Object> getMetadata() {
+        return metadata;
     }
 
     /**
@@ -216,7 +257,9 @@ public class AguiMessage {
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId
-                + "'}";
+                + "', metadata="
+                + metadata
+                + "}";
     }
 
     @Override
@@ -228,11 +271,12 @@ public class AguiMessage {
                 && Objects.equals(role, that.role)
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(toolCallId, that.toolCallId);
+                && Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(metadata, that.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, metadata);
     }
 }

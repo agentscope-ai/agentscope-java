@@ -26,7 +26,6 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -204,7 +203,7 @@ class SessionTreeMirrorTest {
     //  Helper
     // -----------------------------------------------------------------------
 
-    private static void awaitMirror() throws InterruptedException {
-        TimeUnit.MILLISECONDS.sleep(300);
+    private static void awaitMirror() {
+        SessionTree.awaitPendingMirrors();
     }
 }

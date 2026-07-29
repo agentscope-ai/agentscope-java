@@ -370,4 +370,55 @@ class AguiMessageConverterTest {
         // Invalid JSON should result in empty map
         assertTrue(tub.getInput().isEmpty());
     }
+
+    @Test
+    void testConvertAguiMessageMetadataToMsg() {
+        Map<String, Object> confirm =
+                Map.of(
+                        "confirmed",
+                        true,
+                        "toolCall",
+                        Map.of("id", "call_xxx", "name", "dangerous_delete"));
+        Map<String, Object> metadata = Map.of(Msg.METADATA_CONFIRM_RESULTS, List.of(confirm));
+
+        AguiMessage aguiMsg =
+                new AguiMessage("msg-hitl", "user", "confirm delete", null, null, metadata);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertNotNull(msg.getMetadata());
+        assertTrue(msg.getMetadata().containsKey(Msg.METADATA_CONFIRM_RESULTS));
+        assertEquals(List.of(confirm), msg.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS));
+    }
+
+    @Test
+    void testConvertMsgMetadataToAguiMessage() {
+        Map<String, Object> metadata =
+                Map.of(Msg.METADATA_CONFIRM_RESULTS, List.of(Map.of("confirmed", false)));
+
+        Msg msg =
+                Msg.builder()
+                        .id("msg-hitl-out")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("deny").build())
+                        .metadata(metadata)
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertFalse(aguiMsg.getMetadata().isEmpty());
+        assertEquals(
+                metadata.get(Msg.METADATA_CONFIRM_RESULTS),
+                aguiMsg.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS));
+    }
+
+    @Test
+    void testAguiMessageWithoutMetadataKeepsEmptyMap() {
+        AguiMessage aguiMsg = AguiMessage.userMessage("msg-1", "hello");
+        assertNotNull(aguiMsg.getMetadata());
+        assertTrue(aguiMsg.getMetadata().isEmpty());
+
+        Msg msg = converter.toMsg(aguiMsg);
+        assertTrue(msg.getMetadata() == null || msg.getMetadata().isEmpty());
+    }
 }
