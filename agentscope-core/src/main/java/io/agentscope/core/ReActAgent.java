@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -203,7 +204,7 @@ import reactor.core.scheduler.Schedulers;
  * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends AgentBase implements AutoCloseable {
+public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =

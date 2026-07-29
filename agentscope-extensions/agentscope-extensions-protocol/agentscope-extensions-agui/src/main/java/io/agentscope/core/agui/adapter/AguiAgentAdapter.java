@@ -17,6 +17,7 @@ package io.agentscope.core.agui.adapter;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -25,8 +26,24 @@ import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -39,6 +56,7 @@ import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -80,6 +98,17 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
 
+    /**
+     * Key under {@link RunAgentInput#getForwardedProps()} where the client sends back
+     * human-in-the-loop confirmation results to resume a paused run. The value is a list of maps,
+     * each shaped like {@code {"toolCallId": "...", "confirmed": true, "toolName": "...",
+     * "input": {...}}}.
+     */
+    public static final String FORWARDED_PROPS_CONFIRM_RESULTS_KEY = "agentscope_confirm_results";
+
+    /** Reason string used on {@link AguiEvent.Interrupt}s emitted for HITL tool confirmation. */
+    static final String CONFIRM_INTERRUPT_REASON = "tool_confirmation";
+
     private final Agent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
@@ -116,25 +145,18 @@ public class AguiAgentAdapter {
                     // Convert AG-UI messages to AgentScope messages
                     List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-                    // Create stream options - use incremental mode for true streaming
-                    StreamOptions options =
-                            StreamOptions.builder()
-                                    .eventTypes(EventType.ALL)
-                                    .incremental(true)
-                                    .build();
+                    // HITL resume: if the client sent back confirmation results via forwardedProps,
+                    // attach them to the latest message so ReActAgent can apply them and continue.
+                    msgs = attachConfirmResults(msgs, input);
 
                     // Track state for event conversion
                     EventConversionState state = new EventConversionState(threadId, runId);
                     RuntimeContext runtimeContext = buildRuntimeContext(input);
                     ToolInjection toolInjection = ToolInjection.empty();
-                    Flux<Event> agentEvents;
+                    Flux<AguiEvent> convertedStream;
                     try {
                         toolInjection = injectFrontendTools(input);
-                        agentEvents = agent.stream(msgs, options, runtimeContext);
-                        if (agentEvents == null) {
-                            agentEvents = agent.stream(msgs, options);
-                        }
-                        agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+                        convertedStream = buildConvertedStream(msgs, runtimeContext, state);
                     } catch (Throwable error) {
                         toolInjection.close();
                         return Flux.concat(
@@ -148,15 +170,174 @@ public class AguiAgentAdapter {
                                     // Emit RUN_STARTED
                                     Flux.just(
                                             new AguiEvent.RunStarted(threadId, runId, null, input)),
-                                    // Stream agent events and convert to AG-UI events
-                                    // Use concatMapIterable to preserve strict event ordering
-                                    agentEvents.concatMapIterable(
-                                            event -> convertEvent(event, state)),
+                                    // Stream converted AG-UI events
+                                    convertedStream,
                                     // Emit any pending end events and RUN_FINISHED
                                     Flux.defer(() -> finishRun(state)))
                             .doFinally(signalType -> activeToolInjection.close())
                             .onErrorResume(error -> errorEvents(threadId, runId, error));
                 });
+    }
+
+    /**
+     * Build the stream of AG-UI events converted from the agent's event stream.
+     *
+     * <p>When the underlying agent is an {@link EventStreamingAgent} (such as {@code ReActAgent} or
+     * {@code HarnessAgent}), this consumes the fine-grained v2 {@link AgentEvent} stream via {@link
+     * EventStreamingAgent#streamEvents(List, RuntimeContext)}. For any other {@link Agent}
+     * implementation it falls back to the deprecated v1 {@link Event} stream so that custom agents
+     * (and existing integrations) keep working unchanged.
+     *
+     * @param msgs the converted input messages
+     * @param runtimeContext the per-run runtime context
+     * @param state the conversion state tracker
+     * @return a Flux of AG-UI events (without RUN_STARTED / RUN_FINISHED bookends)
+     */
+    private Flux<AguiEvent> buildConvertedStream(
+            List<Msg> msgs, RuntimeContext runtimeContext, EventConversionState state) {
+        if (agent instanceof EventStreamingAgent streamingAgent) {
+            Flux<AgentEvent> agentEvents = streamingAgent.streamEvents(msgs, runtimeContext);
+            agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+            return agentEvents.concatMapIterable(event -> convertAgentEvent(event, state));
+        }
+
+        // Fallback: deprecated v1 Event stream for agents that do not support event streaming.
+        StreamOptions options =
+                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+        Flux<Event> agentEvents = agent.stream(msgs, options, runtimeContext);
+        if (agentEvents == null) {
+            agentEvents = agent.stream(msgs, options);
+        }
+        agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+        return agentEvents.concatMapIterable(event -> convertEvent(event, state));
+    }
+
+    /**
+     * Translate human-in-the-loop confirmation results carried in {@link
+     * RunAgentInput#getForwardedProps()} into a {@code List<ConfirmResult>} attached to the last
+     * message under {@link Msg#METADATA_CONFIRM_RESULTS}, so a resumed {@link ReActAgent} can apply
+     * them to its ASKING tool calls and continue.
+     *
+     * <p>The expected {@code forwardedProps["agentscope_confirm_results"]} value is a {@code List}
+     * of maps, each shaped like {@code {"toolCallId": "...", "confirmed": true, "toolName": "...",
+     * "input": {...}}}. Entries missing a {@code toolCallId} are ignored. When no confirmation
+     * results are present the input messages are returned unchanged.
+     *
+     * @param msgs the converted input messages
+     * @param input the AG-UI run input
+     * @return the (possibly modified) message list to feed the agent
+     */
+    private List<Msg> attachConfirmResults(List<Msg> msgs, RunAgentInput input) {
+        List<ConfirmResult> confirmResults = parseConfirmResults(input.getForwardedProps());
+        if (confirmResults.isEmpty()) {
+            return msgs;
+        }
+
+        List<Msg> result = new ArrayList<>(msgs);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+
+        if (result.isEmpty()) {
+            // No carrier message from the client; synthesise a minimal user message.
+            result.add(
+                    Msg.builder()
+                            .name("user")
+                            .role(MsgRole.USER)
+                            .textContent("[confirm]")
+                            .metadata(metadata)
+                            .build());
+            return result;
+        }
+
+        // Merge the confirm-result metadata onto the last message, preserving its existing fields.
+        int lastIdx = result.size() - 1;
+        Msg last = result.get(lastIdx);
+        Map<String, Object> merged = new HashMap<>();
+        if (last.getMetadata() != null) {
+            merged.putAll(last.getMetadata());
+        }
+        merged.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+        result.set(
+                lastIdx,
+                Msg.builder()
+                        .id(last.getId())
+                        .name(last.getName())
+                        .role(last.getRole())
+                        .content(last.getContent())
+                        .metadata(merged)
+                        .build());
+        return result;
+    }
+
+    /**
+     * Parse the raw {@code forwardedProps} confirmation payload into {@link ConfirmResult}s.
+     *
+     * @param forwardedProps the AG-UI forwardedProps map (may be null/empty)
+     * @return the parsed confirmation results, never null
+     */
+    @SuppressWarnings("unchecked")
+    private List<ConfirmResult> parseConfirmResults(Map<String, Object> forwardedProps) {
+        if (forwardedProps == null || forwardedProps.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Object raw = forwardedProps.get(FORWARDED_PROPS_CONFIRM_RESULTS_KEY);
+        if (!(raw instanceof List<?> rawList) || rawList.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ConfirmResult> results = new ArrayList<>();
+        for (Object element : rawList) {
+            if (!(element instanceof Map<?, ?> entry)) {
+                continue;
+            }
+            Object toolCallId = entry.get("toolCallId");
+            if (toolCallId == null) {
+                toolCallId = entry.get("toolUseId");
+            }
+            if (toolCallId == null) {
+                continue;
+            }
+            boolean confirmed = toBoolean(entry.get("confirmed"), true);
+            Object toolName = entry.get("toolName");
+            Object inputObj = entry.get("input");
+            Map<String, Object> toolInput =
+                    inputObj instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+
+            // The tool executor validates a tool call against its raw-args JSON string
+            // (ToolUseBlock.getContent()), not its parsed input map, and applying a
+            // ConfirmResult fully replaces the stored ToolUseBlock. So we must also carry the
+            // args as a JSON string, otherwise the resumed tool call fails schema validation
+            // with a null "content". Prefer an explicit client-provided string, else serialize
+            // the input map.
+            Object rawContent = entry.get("content");
+            if (rawContent == null) {
+                rawContent = entry.get("argsJson");
+            }
+            String toolContent =
+                    rawContent instanceof String s && !s.isBlank()
+                            ? s
+                            : serializeToolArgs(toolInput);
+
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id(String.valueOf(toolCallId))
+                            .name(toolName != null ? String.valueOf(toolName) : "")
+                            .input(toolInput)
+                            .content(toolContent)
+                            .build();
+            results.add(new ConfirmResult(confirmed, toolCall, null));
+        }
+        return results;
+    }
+
+    private static boolean toBoolean(Object value, boolean defaultValue) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof String s) {
+            return Boolean.parseBoolean(s);
+        }
+        return defaultValue;
     }
 
     private RuntimeContext buildRuntimeContext(RunAgentInput input) {
@@ -392,7 +573,211 @@ public class AguiAgentAdapter {
     }
 
     /**
+     * Convert a fine-grained v2 {@link AgentEvent} to AG-UI events.
+     *
+     * <p>Maps the granular streaming events emitted by {@link ReActAgent#streamEvents} onto the
+     * AG-UI protocol:
+     * <ul>
+     *   <li>{@link TextBlockStartEvent}/{@link TextBlockDeltaEvent}/{@link TextBlockEndEvent}
+     *       → TEXT_MESSAGE_START / TEXT_MESSAGE_CONTENT / TEXT_MESSAGE_END</li>
+     *   <li>{@link ThinkingBlockStartEvent}/{@link ThinkingBlockDeltaEvent}/{@link
+     *       ThinkingBlockEndEvent} → REASONING_MESSAGE_* (only when reasoning is enabled)</li>
+     *   <li>{@link ToolCallStartEvent}/{@link ToolCallDeltaEvent}/{@link ToolCallEndEvent}
+     *       → TOOL_CALL_START / TOOL_CALL_ARGS / TOOL_CALL_END</li>
+     *   <li>{@link ToolResultTextDeltaEvent} accumulated and flushed at {@link ToolResultEndEvent}
+     *       → TOOL_CALL_RESULT</li>
+     * </ul>
+     *
+     * <p>Agent lifecycle events (AgentStart/Result/End, ModelCall*) are intentionally ignored here:
+     * the adapter emits RUN_STARTED / RUN_FINISHED around this stream itself.
+     *
+     * @param event the v2 agent event
+     * @param state the conversion state
+     * @return list of AG-UI events
+     */
+    private List<AguiEvent> convertAgentEvent(AgentEvent event, EventConversionState state) {
+        List<AguiEvent> events = new ArrayList<>();
+
+        if (event instanceof TextBlockStartEvent textStart) {
+            String messageId = textStart.getBlockId();
+            if (!state.hasStartedMessage(messageId)) {
+                events.add(
+                        new AguiEvent.TextMessageStart(
+                                state.threadId, state.runId, messageId, "assistant"));
+                state.startMessage(messageId);
+            }
+        } else if (event instanceof TextBlockDeltaEvent textDelta) {
+            String messageId = textDelta.getBlockId();
+            String delta = textDelta.getDelta();
+            if (delta != null && !delta.isEmpty()) {
+                if (!state.hasStartedMessage(messageId)) {
+                    events.add(
+                            new AguiEvent.TextMessageStart(
+                                    state.threadId, state.runId, messageId, "assistant"));
+                    state.startMessage(messageId);
+                }
+                events.add(
+                        new AguiEvent.TextMessageContent(
+                                state.threadId, state.runId, messageId, delta));
+            }
+        } else if (event instanceof TextBlockEndEvent textEnd) {
+            String messageId = textEnd.getBlockId();
+            if (state.hasStartedMessage(messageId) && !state.hasEndedMessage(messageId)) {
+                events.add(new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
+                state.endMessage(messageId);
+            }
+        } else if (event instanceof ThinkingBlockStartEvent thinkingStart) {
+            if (config.isEnableReasoning()) {
+                String messageId = thinkingStart.getBlockId();
+                if (!state.hasStartedReasoningMessage(messageId)) {
+                    events.add(
+                            new AguiEvent.ReasoningMessageStart(
+                                    state.threadId, state.runId, messageId, "reasoning"));
+                    state.startReasoningMessage(messageId);
+                }
+            }
+        } else if (event instanceof ThinkingBlockDeltaEvent thinkingDelta) {
+            if (config.isEnableReasoning()) {
+                String messageId = thinkingDelta.getBlockId();
+                String delta = thinkingDelta.getDelta();
+                if (delta != null && !delta.isEmpty()) {
+                    if (!state.hasStartedReasoningMessage(messageId)) {
+                        events.add(
+                                new AguiEvent.ReasoningMessageStart(
+                                        state.threadId, state.runId, messageId, "reasoning"));
+                        state.startReasoningMessage(messageId);
+                    }
+                    events.add(
+                            new AguiEvent.ReasoningMessageContent(
+                                    state.threadId, state.runId, messageId, delta));
+                }
+            }
+        } else if (event instanceof ThinkingBlockEndEvent thinkingEnd) {
+            if (config.isEnableReasoning()) {
+                String messageId = thinkingEnd.getBlockId();
+                if (state.hasStartedReasoningMessage(messageId)
+                        && !state.hasEndedReasoningMessage(messageId)) {
+                    events.add(
+                            new AguiEvent.ReasoningMessageEnd(
+                                    state.threadId, state.runId, messageId));
+                    state.endReasoningMessage(messageId);
+                }
+            }
+        } else if (event instanceof ToolCallStartEvent toolStart) {
+            // Close any active text / reasoning message before starting a tool call.
+            if (state.hasActiveTextMessage()) {
+                String activeMessageId = state.getCurrentTextMessageId();
+                events.add(
+                        new AguiEvent.TextMessageEnd(state.threadId, state.runId, activeMessageId));
+                state.endMessage(activeMessageId);
+            }
+            if (state.hasActiveReasoningMessage()) {
+                String activeReasoningMessageId = state.getCurrentReasoningMessageId();
+                events.add(
+                        new AguiEvent.ReasoningMessageEnd(
+                                state.threadId, state.runId, activeReasoningMessageId));
+                state.endReasoningMessage(activeReasoningMessageId);
+            }
+
+            String toolCallId = toolStart.getToolCallId();
+            if (toolCallId == null) {
+                toolCallId = UUID.randomUUID().toString();
+            }
+            if (!state.hasStartedToolCall(toolCallId)) {
+                events.add(
+                        new AguiEvent.ToolCallStart(
+                                state.threadId,
+                                state.runId,
+                                toolCallId,
+                                toolStart.getToolCallName()));
+                state.startToolCall(toolCallId);
+            }
+        } else if (event instanceof ToolCallDeltaEvent toolDelta) {
+            if (config.isEmitToolCallArgs()) {
+                String toolCallId = toolDelta.getToolCallId();
+                String delta = toolDelta.getDelta();
+                if (toolCallId != null && delta != null && !delta.isEmpty()) {
+                    events.add(
+                            new AguiEvent.ToolCallArgs(
+                                    state.threadId, state.runId, toolCallId, delta));
+                }
+            }
+        } else if (event instanceof ToolCallEndEvent toolEnd) {
+            String toolCallId = toolEnd.getToolCallId();
+            if (toolCallId != null && !state.hasEndedToolCall(toolCallId)) {
+                if (!state.hasStartedToolCall(toolCallId)) {
+                    events.add(
+                            new AguiEvent.ToolCallStart(
+                                    state.threadId,
+                                    state.runId,
+                                    toolCallId,
+                                    toolEnd.getToolCallName()));
+                    state.startToolCall(toolCallId);
+                }
+                events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                state.endToolCall(toolCallId);
+            }
+        } else if (event instanceof ToolResultStartEvent toolResultStart) {
+            state.beginToolResult(toolResultStart.getToolCallId());
+        } else if (event instanceof ToolResultTextDeltaEvent toolResultDelta) {
+            state.appendToolResultText(toolResultDelta.getToolCallId(), toolResultDelta.getDelta());
+        } else if (event instanceof ToolResultEndEvent toolResultEnd) {
+            String toolCallId = toolResultEnd.getToolCallId();
+            if (toolCallId != null) {
+                if (!state.hasStartedToolCall(toolCallId)) {
+                    String toolName = toolResultEnd.getToolCallName();
+                    if (toolName == null || toolName.isBlank()) {
+                        toolName = "unknown";
+                    }
+                    events.add(
+                            new AguiEvent.ToolCallStart(
+                                    state.threadId, state.runId, toolCallId, toolName));
+                    state.startToolCall(toolCallId);
+                }
+                if (!state.hasEndedToolCall(toolCallId)) {
+                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                    state.endToolCall(toolCallId);
+                }
+                String result = state.takeToolResultText(toolCallId);
+                events.add(
+                        new AguiEvent.ToolCallResult(
+                                state.threadId,
+                                state.runId,
+                                toolCallId,
+                                result,
+                                "tool",
+                                UUID.randomUUID().toString()));
+            }
+        } else if (event instanceof RequireUserConfirmEvent confirm) {
+            // HITL: the agent paused and is asking the user to confirm these tool calls. Close any
+            // dangling text/reasoning message, then record the pending tool calls so finishRun()
+            // surfaces them as a RUN_FINISHED interrupt outcome.
+            if (state.hasActiveTextMessage()) {
+                String activeMessageId = state.getCurrentTextMessageId();
+                events.add(
+                        new AguiEvent.TextMessageEnd(state.threadId, state.runId, activeMessageId));
+                state.endMessage(activeMessageId);
+            }
+            if (state.hasActiveReasoningMessage()) {
+                String activeReasoningMessageId = state.getCurrentReasoningMessageId();
+                events.add(
+                        new AguiEvent.ReasoningMessageEnd(
+                                state.threadId, state.runId, activeReasoningMessageId));
+                state.endReasoningMessage(activeReasoningMessageId);
+            }
+            state.markPausedForConfirmation(confirm.getToolCalls());
+        }
+
+        return events;
+    }
+
+    /**
      * Finish the run by emitting any pending end events and RUN_FINISHED.
+     *
+     * <p>When the run paused for human-in-the-loop confirmation (a {@link
+     * io.agentscope.core.event.RequireUserConfirmEvent} was observed), the RUN_FINISHED event
+     * carries a {@link AguiEvent.RunFinishedInterruptOutcome} describing the pending tool calls the
+     * client must confirm, instead of a bare completion.
      *
      * @param state The conversion state
      * @return Flux of final events
@@ -422,8 +807,33 @@ public class AguiAgentAdapter {
             }
         }
 
-        // Emit RUN_FINISHED
-        events.add(new AguiEvent.RunFinished(state.threadId, state.runId));
+        // Emit RUN_FINISHED - with an interrupt outcome if the run paused for HITL confirmation.
+        if (state.isPausedForConfirmation()) {
+            List<AguiEvent.Interrupt> interrupts = new ArrayList<>();
+            for (ToolUseBlock pending : state.getPendingConfirmations()) {
+                String toolCallId =
+                        pending.getId() != null ? pending.getId() : UUID.randomUUID().toString();
+                interrupts.add(
+                        new AguiEvent.Interrupt(
+                                toolCallId,
+                                CONFIRM_INTERRUPT_REASON,
+                                "Tool call '"
+                                        + pending.getName()
+                                        + "' requires confirmation before it can run.",
+                                toolCallId,
+                                null,
+                                null,
+                                null));
+            }
+            events.add(
+                    new AguiEvent.RunFinished(
+                            state.threadId,
+                            state.runId,
+                            null,
+                            new AguiEvent.RunFinishedInterruptOutcome(interrupts)));
+        } else {
+            events.add(new AguiEvent.RunFinished(state.threadId, state.runId));
+        }
 
         return Flux.fromIterable(events);
     }
@@ -536,6 +946,12 @@ public class AguiAgentAdapter {
         private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
         private String currentTextMessageId = null;
         private String currentReasoningMessageId = null;
+        // Accumulates streamed tool-result text (v2 ToolResultTextDeltaEvent) keyed by toolCallId,
+        // flushed into a single TOOL_CALL_RESULT at ToolResultEndEvent.
+        private final Map<String, StringBuilder> toolResultBuffers = new LinkedHashMap<>();
+        // Pending HITL tool calls captured from RequireUserConfirmEvent; when non-null the run
+        // finishes with a RunFinishedInterruptOutcome instead of a bare RUN_FINISHED.
+        private List<ToolUseBlock> pendingConfirmations = null;
 
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
@@ -625,6 +1041,49 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedReasoningMessages() {
             return startedReasoningMessages;
+        }
+
+        // ===== Tool-result text buffering (v2) =====
+
+        void beginToolResult(String toolCallId) {
+            if (toolCallId != null) {
+                toolResultBuffers.computeIfAbsent(toolCallId, k -> new StringBuilder());
+            }
+        }
+
+        void appendToolResultText(String toolCallId, String delta) {
+            if (toolCallId == null || delta == null || delta.isEmpty()) {
+                return;
+            }
+            toolResultBuffers.computeIfAbsent(toolCallId, k -> new StringBuilder()).append(delta);
+        }
+
+        /**
+         * Return the accumulated tool-result text for the given tool call and clear the buffer.
+         *
+         * @return the buffered text, or {@code null} if nothing was accumulated
+         */
+        String takeToolResultText(String toolCallId) {
+            StringBuilder sb = toolResultBuffers.remove(toolCallId);
+            if (sb == null || sb.length() == 0) {
+                return null;
+            }
+            return sb.toString();
+        }
+
+        // ===== HITL confirmation tracking =====
+
+        void markPausedForConfirmation(List<ToolUseBlock> toolCalls) {
+            this.pendingConfirmations =
+                    toolCalls != null ? List.copyOf(toolCalls) : Collections.emptyList();
+        }
+
+        boolean isPausedForConfirmation() {
+            return pendingConfirmations != null;
+        }
+
+        List<ToolUseBlock> getPendingConfirmations() {
+            return pendingConfirmations != null ? pendingConfirmations : Collections.emptyList();
         }
     }
 }

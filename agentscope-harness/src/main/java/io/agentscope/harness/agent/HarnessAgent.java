@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.config.ModelConfig;
@@ -149,7 +150,7 @@ import reactor.core.publisher.Mono;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
-public class HarnessAgent implements Agent, AutoCloseable {
+public class HarnessAgent implements Agent, EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
