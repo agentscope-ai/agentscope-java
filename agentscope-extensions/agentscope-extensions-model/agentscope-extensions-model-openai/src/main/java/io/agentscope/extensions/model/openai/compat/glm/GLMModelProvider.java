@@ -15,18 +15,18 @@
  */
 package io.agentscope.extensions.model.openai.compat.glm;
 
+import static io.agentscope.extensions.model.openai.ModelProviderSupport.applyAdvancedOptions;
+import static io.agentscope.extensions.model.openai.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.extensions.model.openai.ModelProviderSupport.trimToNull;
+
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
-import io.agentscope.core.model.transport.HttpTransport;
-import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
-import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
-import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
-import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -60,10 +60,6 @@ public final class GLMModelProvider implements ModelProvider {
     private static final String PREFIX = "glm:";
     private static final Pattern MODEL_ID = Pattern.compile("glm:.+");
     private static final String DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
-    private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
-    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
-    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
-            "nativeStructuredOutputWithTools";
 
     @Override
     public String providerId() {
@@ -72,9 +68,7 @@ public final class GLMModelProvider implements ModelProvider {
 
     @Override
     public boolean supports(String modelId) {
-        return modelId != null
-                && MODEL_ID.matcher(modelId).matches()
-                && trimToNull(modelId.substring(PREFIX.length())) != null;
+        return modelId != null && MODEL_ID.matcher(modelId).matches();
     }
 
     @Override
@@ -87,8 +81,7 @@ public final class GLMModelProvider implements ModelProvider {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported GLM model id: " + modelId);
         }
-        // supports() guarantees the suffix is non-blank
-        String modelName = trimToNull(modelId.substring(PREFIX.length()));
+
         String apiKey = resolveApiKey(context, System::getenv);
         if (apiKey == null) {
             throw new IllegalStateException(
@@ -96,67 +89,37 @@ public final class GLMModelProvider implements ModelProvider {
                             + " auto-create model: "
                             + modelId);
         }
+        String modelName = trimToNull(modelId.substring(PREFIX.length()));
+        String baseUrl = firstNonBlank(context.getBaseUrl(), DEFAULT_BASE_URL);
+        String endpointPath = trimToNull(context.getEndpointPath());
+        boolean stream = context.getStream() != null ? context.getStream() : true;
 
         OpenAIChatModel.Builder builder =
-                OpenAIChatModel.builder()
-                        .apiKey(apiKey)
-                        .modelName(modelName)
-                        .baseUrl(DEFAULT_BASE_URL)
+                OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
+                        .baseUrl(baseUrl)
+                        .endpointPath(endpointPath)
                         .formatter(new GLMFormatter())
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.GLM))
                         .nativeStructuredOutput(false)
-                        .nativeStructuredOutputWithTools(false)
-                        .stream(context.getStream() != null ? context.getStream() : true);
+                        .contextWindowSize(
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.GLM));
 
-        String baseUrl = trimToNull(context.getBaseUrl());
-        if (baseUrl != null) {
-            builder.baseUrl(baseUrl);
-        }
-        String endpointPath = trimToNull(context.getEndpointPath());
-        if (endpointPath != null) {
-            builder.endpointPath(endpointPath);
-        }
-        applyAdvancedOptions(builder, context);
+        GenerateOptions userOptions = context.component(GenerateOptions.class);
+        GenerateOptions glmDefaults = glmDefaultOptions(context);
+        applyAdvancedOptions(
+                builder, context, GenerateOptions.mergeOptions(userOptions, glmDefaults));
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
-    private static void applyAdvancedOptions(
-            OpenAIChatModel.Builder builder, ModelCreationContext context) {
-        GenerateOptions generateOptions = context.component(GenerateOptions.class);
-        if (generateOptions != null) {
-            builder.generateOptions(generateOptions);
+    private static GenerateOptions glmDefaultOptions(ModelCreationContext context) {
+        Boolean thinkingEnabled = context.getEnableThinking();
+        if (thinkingEnabled == null) {
+            return null;
         }
-        HttpTransport httpTransport = context.component(HttpTransport.class);
-        if (httpTransport != null) {
-            builder.httpTransport(httpTransport);
-        }
-        ProxyConfig proxyConfig = context.component(ProxyConfig.class);
-        if (proxyConfig != null) {
-            builder.proxy(proxyConfig);
-        }
-        Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter =
-                (Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest>)
-                        findAssignableComponent(context, Formatter.class);
-        if (formatter != null) {
-            builder.formatter(formatter);
-        }
-        Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
-        if (contextWindowSize != null) {
-            builder.contextWindowSize(contextWindowSize);
-        }
-        // GLM response_format only supports json_object, so native structured output is
-        // disabled by default; the option can explicitly re-enable it.
-        Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
-        if (nativeStructuredOutput != null) {
-            builder.nativeStructuredOutput(nativeStructuredOutput);
-        }
-        Boolean nativeStructuredOutputWithTools =
-                booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
-        if (nativeStructuredOutputWithTools != null) {
-            builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
-        }
+
+        return GenerateOptions.builder()
+                .additionalBodyParam(
+                        "thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"))
+                .build();
     }
 
     static String resolveApiKey(ModelCreationContext context, Function<String, String> env) {
@@ -165,57 +128,5 @@ public final class GLMModelProvider implements ModelProvider {
                 env.apply("ZAI_API_KEY"),
                 env.apply("GLM_API_KEY"),
                 env.apply("ZHIPUAI_API_KEY"));
-    }
-
-    private static String firstNonBlank(String... candidates) {
-        for (String candidate : candidates) {
-            String normalized = trimToNull(candidate);
-            if (normalized != null) {
-                return normalized;
-            }
-        }
-        return null;
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    private static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
     }
 }
