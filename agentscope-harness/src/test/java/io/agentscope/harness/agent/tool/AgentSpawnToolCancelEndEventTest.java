@@ -112,8 +112,12 @@ class AgentSpawnToolCancelEndEventTest {
 
         subscription.dispose();
 
-        // Give the cancel signal a moment to run the terminate/finally callbacks.
-        Thread.sleep(300);
+        // Bounded wait rather than a fixed sleep: returns as soon as the end event lands, and does
+        // not turn flaky if a slow CI machine delays the cancel callbacks.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (emitter.count(AgentEndEvent.class) == 0 && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+        }
 
         assertEquals(
                 1,
