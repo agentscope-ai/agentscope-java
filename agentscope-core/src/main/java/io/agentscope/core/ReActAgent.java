@@ -2803,14 +2803,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                 determineToolResultState(
                                                                                                         entry
                                                                                                                 .getValue());
-                                                                                sink.next(
-                                                                                        new ToolResultEndEvent(
-                                                                                                replyId,
-                                                                                                entry.getKey()
-                                                                                                        .getId(),
-                                                                                                entry.getKey()
-                                                                                                        .getName(),
-                                                                                                state));
+                                                                                ToolResultEndEvent
+                                                                                        endEvent =
+                                                                                                new ToolResultEndEvent(
+                                                                                                        replyId,
+                                                                                                        entry.getKey()
+                                                                                                                .getId(),
+                                                                                                        entry.getKey()
+                                                                                                                .getName(),
+                                                                                                        state);
+                                                                                endEvent
+                                                                                        .withMetadata(
+                                                                                                entry.getValue()
+                                                                                                        .getMetadata());
+                                                                                sink.next(endEvent);
                                                                             }
                                                                             sink.complete();
                                                                         },

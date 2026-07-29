@@ -398,13 +398,17 @@ final class AgentEventA2aEncoder {
                             end.getToolCallName(),
                             end.getSource());
         }
-        Map<String, Object> metadata =
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (end.getMetadata() != null) {
+            metadata.putAll(end.getMetadata());
+        }
+        metadata.putAll(
                 toolMetadata(
                         accumulator.replyId(),
                         accumulator.toolCallId(),
                         accumulator.toolCallName(),
                         accumulator.source(),
-                        MessageConstants.BlockContent.TYPE_TOOL_RESULT);
+                        MessageConstants.BlockContent.TYPE_TOOL_RESULT));
         if (end.getState() != null) {
             metadata.put(
                     MessageConstants.TOOL_RESULT_STATE_METADATA_KEY, end.getState().getValue());

@@ -127,8 +127,10 @@ class AgentEventA2aRoundTripContractTest {
                 sourced(new ToolResultStartEvent("reply-1", "call-1", "lookup"), "main/tools"));
         encoder.onNext(new ToolResultTextDeltaEvent("reply-1", "call-1", "lookup", "created"));
         encoder.onNext(new ToolResultDataDeltaEvent("reply-1", "call-1", "lookup", chart));
-        encoder.onNext(
-                new ToolResultEndEvent("reply-1", "call-1", "lookup", ToolResultState.SUCCESS));
+        ToolResultEndEvent resultEnd =
+                new ToolResultEndEvent("reply-1", "call-1", "lookup", ToolResultState.SUCCESS);
+        resultEnd.withMetadata(Map.of("result.postExecutionConfig", "{\"items\":[]}"));
+        encoder.onNext(resultEnd);
 
         Msg streamed = MessageConvertUtil.convertFromArtifact(wireArtifact.snapshot(), "agent");
 
@@ -159,6 +161,7 @@ class AgentEventA2aRoundTripContractTest {
         assertEquals(
                 "main/tools",
                 toolResult.getMetadata().get(MessageConstants.EVENT_SOURCE_METADATA_KEY));
+        assertEquals("{\"items\":[]}", toolResult.getMetadata().get("result.postExecutionConfig"));
 
         encoder.onNext(sourced(new AgentEndEvent(null), "main/round-trip-child"));
         encoder.onNext(new AgentResultEvent(assistant("reply-1", "final answer")));
@@ -171,6 +174,9 @@ class AgentEventA2aRoundTripContractTest {
                 assertInstanceOf(ToolResultBlock.class, completed.getContent().get(0));
         assertEquals("call-1", completedToolResult.getId());
         assertEquals(ToolResultState.SUCCESS, completedToolResult.getState());
+        assertEquals(
+                "{\"items\":[]}",
+                completedToolResult.getMetadata().get("result.postExecutionConfig"));
         assertEquals(
                 "final answer",
                 assertInstanceOf(TextBlock.class, completed.getContent().get(1)).getText());

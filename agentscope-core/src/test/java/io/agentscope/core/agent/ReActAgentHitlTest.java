@@ -164,7 +164,10 @@ class ReActAgentHitlTest {
         @Override
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
-            return Mono.just(ToolResultBlock.text("allowed:" + q));
+            return Mono.just(
+                    ToolResultBlock.of(
+                            TextBlock.builder().text("allowed:" + q).build(),
+                            Map.of("result-view", "available")));
         }
     }
 
@@ -396,5 +399,6 @@ class ReActAgentHitlTest {
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
+        assertEquals("available", end.getMetadata().get("result-view"));
     }
 }
