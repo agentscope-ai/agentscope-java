@@ -79,6 +79,7 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_CONTEXT_KEY = "agui.context";
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
+    public static final String FORWARDED_PROP_USER_ID_KEY = "userId";
 
     private final Agent agent;
     private final AguiAdapterConfig config;
@@ -160,8 +161,10 @@ public class AguiAgentAdapter {
     }
 
     private RuntimeContext buildRuntimeContext(RunAgentInput input) {
+        Object userId = input.getForwardedProp(FORWARDED_PROP_USER_ID_KEY);
         return RuntimeContext.builder()
                 .sessionId(input.getThreadId())
+                .userId(userId == null ? null : userId.toString())
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
