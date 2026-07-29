@@ -428,11 +428,15 @@ public class SkillBox {
          * tools to the same skill — every tool is bound into the skill's gated tool group
          * (previously each call overwrote the previous one, so only the last tool was bound).
          *
-         * @param agentTool The AgentTool instance
+         * <p>A {@code null} argument is ignored, mirroring {@code Toolkit.ToolRegistration}.
+         *
+         * @param agentTool The AgentTool instance; ignored when {@code null}
          * @return This builder for chaining
          */
         public SkillRegistration agentTool(AgentTool agentTool) {
-            this.agentTools.add(agentTool);
+            if (agentTool != null) {
+                this.agentTools.add(agentTool);
+            }
             return this;
         }
 
@@ -606,8 +610,28 @@ public class SkillBox {
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
-                // Toolkit.ToolRegistration 每次只能注册一个工具（exactly-one 校验），
-                // 多 tool 的 skill 必须逐个独立注册，否则只有最后一个生效
+                // A SkillRegistration still binds exactly one registration kind. Previously all
+                // four values were handed to a single Toolkit.ToolRegistration, whose exactly-one
+                // check rejected mixtures. Registering each agent tool separately (needed so that
+                // several tools can share one skill) bypasses that check, so the invariant is
+                // enforced here instead — with an error naming the kinds that were combined.
+                int registrationKinds =
+                        (agentTools.isEmpty() ? 0 : 1)
+                                + (toolObject != null ? 1 : 0)
+                                + (mcpClientWrapper != null ? 1 : 0)
+                                + (subAgentProvider != null ? 1 : 0);
+                if (registrationKinds > 1) {
+                    throw new IllegalStateException(
+                            "A skill registration must bind exactly one of agentTool(), tool(),"
+                                    + " mcpClient() or subAgent(), but got: "
+                                    + (agentTools.isEmpty() ? "" : "agentTool ")
+                                    + (toolObject != null ? "tool " : "")
+                                    + (mcpClientWrapper != null ? "mcpClient " : "")
+                                    + (subAgentProvider != null ? "subAgent" : "").trim());
+                }
+                // Toolkit.ToolRegistration binds a single tool per call (exactly-one check), so a
+                // skill carrying several agent tools must register them one at a time — otherwise
+                // only the last one takes effect.
                 for (AgentTool tool : agentTools) {
                     toolkit.registration()
                             .group(skillToolGroup)
