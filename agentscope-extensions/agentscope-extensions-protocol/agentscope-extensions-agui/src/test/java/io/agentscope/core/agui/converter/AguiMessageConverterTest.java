@@ -23,11 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Collections;
 import java.util.List;
@@ -265,6 +268,77 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertRunInputResumeToToolResultMsgUsingKnownInterruptMapping() {
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "int-abc",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("int-abc", "tool-call-1"));
+
+        assertEquals(1, msgs.size());
+        assertEquals(MsgRole.TOOL, msgs.get(0).getRole());
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tool-call-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals("int-abc", result.getMetadata().get("agui.interruptId"));
+        assertEquals(AguiResume.STATUS_RESOLVED, result.getMetadata().get("agui.resumeStatus"));
+        assertTrue(resultText(result).contains("\"approved\":true"));
+    }
+
+    @Test
+    void testConvertRunInputResumeInfersToolCallIdFromGeneratedInterruptId() {
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:tool-call-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                "done")))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input);
+
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tool-call-1", result.getId());
+        assertEquals("done", resultText(result));
+    }
+
+    @Test
+    void testConvertCancelledResumeToInterruptedToolResult() {
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:tool-call-1",
+                                                AguiResume.STATUS_CANCELLED,
+                                                null)))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input);
+
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals(ToolResultState.INTERRUPTED, result.getState());
+        assertEquals("Interrupt cancelled by user", resultText(result));
+    }
+
+    @Test
     void testConvertWithInvalidRoleDefaultsToUser() {
         AguiMessage aguiMsg = new AguiMessage("msg-1", "unknown_role", "Test", null, null);
 
@@ -369,5 +443,14 @@ class AguiMessageConverterTest {
         assertNotNull(tub);
         // Invalid JSON should result in empty map
         assertTrue(tub.getInput().isEmpty());
+    }
+
+    private static String resultText(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .findFirst()
+                .orElse("");
     }
 }
