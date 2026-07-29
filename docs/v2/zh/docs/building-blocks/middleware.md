@@ -59,6 +59,18 @@ ReActAgent agent =
 
 `middleware(...)`（单数）也可单独追加一个；`middlewares(...)` 接受 `List<? extends MiddlewareBase>`，未实现的位置自动跳过，不产生任何调用开销。
 
+:::{tip}
+**Spring Boot 自动装配。** 使用 `agentscope-spring-boot-starter` 时，声明 `@Bean MiddlewareBase` 即自动注入 agent builder，按 `@Order` 排序 —— 无需手动 `builder.middleware(...)`：
+
+```java
+@Bean
+@Order(100)
+public MiddlewareBase timingMiddleware() { return new TimingMiddleware(); }
+```
+
+此机制通过 `AgentBuilderCustomizer` 实现，与 `ChatModelBuilderCustomizer` 模式一致。同理，`@ToolBean` bean 自动注册到 `Toolkit`，`PermissionContextState` bean（如有）自动应用到 builder。
+:::
+
 ## 内置 Middleware
 
 ### OtelTracingMiddleware
