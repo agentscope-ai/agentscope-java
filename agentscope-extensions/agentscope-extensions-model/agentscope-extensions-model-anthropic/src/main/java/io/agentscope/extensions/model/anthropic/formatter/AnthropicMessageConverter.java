@@ -16,10 +16,12 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import com.anthropic.core.JsonValue;
+import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.MessageParam.Role;
+import com.anthropic.models.messages.ServerToolUseBlockParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
@@ -81,8 +83,7 @@ public class AnthropicMessageConverter {
             Msg msg = messages.get(i);
             boolean isFirstMessage = (i == 0);
 
-            if (msg.getRole() == MsgRole.ASSISTANT
-                    && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
+            if (msg.getRole() == MsgRole.ASSISTANT && clientToolUses(msg).size() > 1) {
                 SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
                 if (shouldSplitParallelToolCalls(msg, splitResults)) {
                     result.addAll(convertParallelToolCalls(msg, splitResults));
@@ -91,14 +92,16 @@ public class AnthropicMessageConverter {
                 }
             }
 
-            // Special handling for tool results - they create separate user messages
+            // Special handling for tool results - they create separate user messages.
+            // Server tool results (e.g. web_search_tool_result) stay inline in the
+            // assistant message instead.
             if (msg.hasContentBlocks(ToolResultBlock.class)) {
                 // Add non-tool-result content first (if any)
                 List<ContentBlock> nonToolBlocks = new ArrayList<>();
                 List<ToolResultBlock> toolResults = new ArrayList<>();
 
                 for (ContentBlock block : msg.getContent()) {
-                    if (block instanceof ToolResultBlock tr) {
+                    if (block instanceof ToolResultBlock tr && !tr.isServerTool()) {
                         toolResults.add(tr);
                     } else {
                         nonToolBlocks.add(block);
@@ -148,7 +151,7 @@ public class AnthropicMessageConverter {
             return false;
         }
 
-        List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
+        List<ToolUseBlock> toolUses = clientToolUses(msg);
         if (toolUses.size() <= 1) {
             return false;
         }
@@ -209,11 +212,13 @@ public class AnthropicMessageConverter {
     private List<MessageParam> convertParallelToolCalls(
             Msg assistantMsg, SplitToolResultSequence splitResults) {
         List<MessageParam> converted = new ArrayList<>();
+        // Server tool blocks (use + result) stay with the leading content; only client tool
+        // calls participate in the tool-use/tool-result alternation.
         List<ContentBlock> leadingBlocks =
                 assistantMsg.getContent().stream()
-                        .filter(block -> !(block instanceof ToolUseBlock))
+                        .filter(block -> !(block instanceof ToolUseBlock tub) || tub.isServerTool())
                         .toList();
-        List<ToolUseBlock> toolUses = assistantMsg.getContentBlocks(ToolUseBlock.class);
+        List<ToolUseBlock> toolUses = clientToolUses(assistantMsg);
 
         for (int i = 0; i < toolUses.size(); i++) {
             ToolUseBlock toolUse = toolUses.get(i);
@@ -238,6 +243,16 @@ public class AnthropicMessageConverter {
 
     private record SplitToolResultSequence(
             Map<String, ToolResultBlock> resultsById, int consumedMessages) {}
+
+    /**
+     * Tool calls that are executed by the local toolkit (i.e. excluding provider server tools
+     * such as Anthropic's web_search, which are executed on the server side).
+     */
+    private List<ToolUseBlock> clientToolUses(Msg msg) {
+        return msg.getContentBlocks(ToolUseBlock.class).stream()
+                .filter(toolUse -> !toolUse.isServerTool())
+                .toList();
+    }
 
     /**
      * Convert message content to MessageParam.
@@ -294,19 +309,31 @@ public class AnthropicMessageConverter {
                                             .build()));
                 }
             } else if (block instanceof ToolUseBlock tub) {
-                contentBlocks.add(
-                        ContentBlockParam.ofToolUse(
-                                ToolUseBlockParam.builder()
-                                        .id(tub.getId())
-                                        .name(tub.getName())
-                                        .input(
-                                                JsonValue.from(
-                                                        tub.getInput() != null
-                                                                ? tub.getInput()
-                                                                : Map.of()))
-                                        .build()));
+                if (tub.isServerTool()) {
+                    // Server tool calls are echoed back as server_tool_use blocks
+                    contentBlocks.add(
+                            ContentBlockParam.ofServerToolUse(convertServerToolUseParam(tub)));
+                } else {
+                    contentBlocks.add(
+                            ContentBlockParam.ofToolUse(
+                                    ToolUseBlockParam.builder()
+                                            .id(tub.getId())
+                                            .name(tub.getName())
+                                            .input(
+                                                    JsonValue.from(
+                                                            tub.getInput() != null
+                                                                    ? tub.getInput()
+                                                                    : Map.of()))
+                                            .build()));
+                }
+            } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                // Server tool results stay inline in the assistant message, echoed verbatim
+                ContentBlockParam param = serverToolResultParam(trb);
+                if (param != null) {
+                    contentBlocks.add(param);
+                }
             }
-            // ToolResultBlock is handled separately in convert() method
+            // Client ToolResultBlock is handled separately in convert() method
         }
 
         if (contentBlocks.isEmpty()) {
@@ -317,6 +344,49 @@ public class AnthropicMessageConverter {
                 .role(role)
                 .content(MessageParam.Content.ofBlockParams(contentBlocks))
                 .build();
+    }
+
+    /**
+     * Convert a server-marked ToolUseBlock back to an Anthropic server_tool_use param.
+     */
+    private ServerToolUseBlockParam convertServerToolUseParam(ToolUseBlock toolUse) {
+        ServerToolUseBlockParam.Input.Builder inputBuilder =
+                ServerToolUseBlockParam.Input.builder();
+        if (toolUse.getInput() != null) {
+            toolUse.getInput()
+                    .forEach(
+                            (key, value) ->
+                                    inputBuilder.putAdditionalProperty(key, JsonValue.from(value)));
+        }
+        return ServerToolUseBlockParam.builder()
+                .id(toolUse.getId())
+                .name(JsonValue.from(toolUse.getName()))
+                .input(inputBuilder.build())
+                .build();
+    }
+
+    /**
+     * Restore a server-marked ToolResultBlock to its original Anthropic result block param from
+     * the raw JSON captured by {@link AnthropicResponseParser}, or {@code null} if unavailable.
+     */
+    private ContentBlockParam serverToolResultParam(ToolResultBlock toolResult) {
+        Object raw =
+                toolResult.getMetadata().get(AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT);
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                return ObjectMappers.jsonMapper().readValue(json, ContentBlockParam.class);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to restore server tool result {}: {}",
+                        toolResult.getId(),
+                        e.getMessage());
+            }
+        } else {
+            log.warn(
+                    "Server tool result {} has no raw block JSON in metadata; skipping echo",
+                    toolResult.getId());
+        }
+        return null;
     }
 
     /**
