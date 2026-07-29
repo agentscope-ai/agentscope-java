@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Key Concepts" href="key-concepts.html"><link rel="prev" title="&lt;no title&gt;" href="../../intro.html">
+    <meta property="article:modified_time" content="2026-07-29T12:50:52+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Key Concepts" href="key-concepts.html"><link rel="prev" title="&lt;no title&gt;" href="../../intro.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/quickstart/installation.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -924,7 +924,7 @@
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
 <p>AgentScope Java supports multiple models, RAG stores, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:</p>
 <ul class="simple">
-<li><p><strong>All-in-one</strong>: Single dependency with DashScope SDK and MCP SDK included, get started quickly</p></li>
+<li><p><strong>All-in-one</strong>: Single dependency with common model extensions (OpenAI / Gemini / Anthropic / DashScope / Ollama) and MCP SDK included, get started quickly</p></li>
 <li><p><strong>Core + extensions</strong>: Minimal core package, add extension modules as needed, for strict dependency control</p></li>
 </ul>
 <p>For most cases, all-in-one is enough. Switch to core + extensions when you need fine-grained dependency control.</p>
@@ -942,7 +942,7 @@
 <tbody>
 <tr class="row-even"><td><p><strong>all-in-one</strong></p></td>
 <td><p>Quick start, most users</p></td>
-<td><p>Single dependency, includes DashScope SDK</p></td>
+<td><p>Single dependency, includes common model extensions and MCP SDK</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>core + extensions</strong></p></td>
 <td><p>Fine-grained control</p></td>
@@ -958,26 +958,30 @@
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 <p><strong>Gradle:</strong></p>
-<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:1.0.12&#39;
+<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:2.0.0&#39;
 </pre></div>
 </div>
 <section id="included-dependencies">
 <h3>Included Dependencies<a class="headerlink" href="#included-dependencies" title="Link to this heading">¶</a></h3>
-<p>The all-in-one package includes these dependencies by default:</p>
+<p>The all-in-one package (<code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope</span></code>) already bundles the common model extensions and their required third-party SDKs. <strong>You do not need to add model-provider SDKs separately:</strong></p>
 <ul class="simple">
-<li><p>DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)</p></li>
+<li><p>OpenAI model support (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code>, native HTTP — no <code class="docutils literal notranslate"><span class="pre">openai-java</span></code> required)</p></li>
+<li><p>Google Gemini model support (includes Google GenAI SDK)</p></li>
+<li><p>Anthropic model support (includes Anthropic Java SDK)</p></li>
+<li><p>DashScope model support (Qwen series)</p></li>
+<li><p>Ollama model support</p></li>
 <li><p>MCP SDK (Model Context Protocol)</p></li>
 <li><p>Reactor Core, Jackson, SLF4J (base frameworks)</p></li>
 </ul>
 </section>
 <section id="additional-dependencies">
 <h3>Additional Dependencies<a class="headerlink" href="#additional-dependencies" title="Link to this heading">¶</a></h3>
-<p>When using other models or features, add the corresponding dependencies:</p>
+<p>Add the following only when using <strong>core + extensions</strong>, or when you need runtime drivers / optional components that are not covered above. All-in-one users do <strong>not</strong> need to manually add OpenAI / Gemini / Anthropic / DashScope / Ollama SDKs for the models listed in the previous section.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -987,94 +991,72 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><strong>OpenAI Models</strong></p></td>
-<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.openai/openai-java">OpenAI Java SDK</a></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">com.openai:openai-java</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Google Gemini Models</strong></p></td>
-<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.google.genai/google-genai">Google GenAI SDK</a></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">com.google.genai:google-genai</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><strong>Anthropic Models</strong></p></td>
-<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.anthropic/anthropic-java">Anthropic Java SDK</a></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">com.anthropic:anthropic-java</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Mem0 Long-term Memory</strong></p></td>
+<tr class="row-even"><td><p><strong>Mem0 Long-term Memory</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>ReME Long-term Memory</strong></p></td>
+<tr class="row-odd"><td><p><strong>ReME Long-term Memory</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Bailian RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>Bailian RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.aliyun/bailian20231229">Bailian SDK</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.aliyun:bailian20231229</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>Qdrant RAG</strong></p></td>
+<tr class="row-odd"><td><p><strong>Qdrant RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.qdrant/client">Qdrant Client</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.qdrant:client</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>PgVector RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>PgVector RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.postgresql/postgresql">PostgreSQL Driver</a> + <a class="reference external" href="https://central.sonatype.com/artifact/com.pgvector/pgvector">pgvector</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.postgresql:postgresql</span></code> + <code class="docutils literal notranslate"><span class="pre">com.pgvector:pgvector</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>Dify RAG</strong></p></td>
+<tr class="row-odd"><td><p><strong>Dify RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>RAGFlow RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>RAGFlow RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>HayStack RAG</strong></p></td>
+<tr class="row-odd"><td><p><strong>HayStack RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Elasticsearch RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>Elasticsearch RAG</strong></p></td>
 <td><p><a class="reference external" href="https://www.elastic.co/docs/reference/elasticsearch/clients/java">Elasticsearch Java Client</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">co.elastic.clients:elasticsearch-java</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>MySQL Session</strong></p></td>
+<tr class="row-odd"><td><p><strong>MySQL Session</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.mysql/mysql-connector-j">MySQL Connector</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.mysql:mysql-connector-j</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Redis Session</strong></p></td>
+<tr class="row-even"><td><p><strong>Redis Session</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/redis.clients/jedis">Jedis</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">redis.clients:jedis</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>PDF Processing</strong></p></td>
+<tr class="row-odd"><td><p><strong>PDF Processing</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox">Apache PDFBox</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.pdfbox:pdfbox</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Word Processing</strong></p></td>
+<tr class="row-even"><td><p><strong>Word Processing</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml">Apache POI</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.poi:poi-ooxml</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>Document Processing</strong></p></td>
+<tr class="row-odd"><td><p><strong>Document Processing</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.tika/tika-core">Apache Tika Core</a> + <a class="reference external" href="https://central.sonatype.com/artifact/org.apache.tika/tika-parsers-standard-package">Apache Tika Parsers</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.tika:tika-core</span></code> + <code class="docutils literal notranslate"><span class="pre">org.apache.tika:tika-parsers-standard-package</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Nacos Registry</strong></p></td>
+<tr class="row-even"><td><p><strong>Nacos Registry</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client">Nacos Client</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.alibaba.nacos:nacos-client</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<section id="example-using-openai-models">
-<h4>Example: Using OpenAI Models<a class="headerlink" href="#example-using-openai-models" title="Link to this heading">¶</a></h4>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope --&gt;</span>
-<span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.openai<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>openai-java<span class="nt">&lt;/artifactId&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-</section>
 <section id="example-using-qdrant-rag-pdf-processing">
 <h4>Example: Using Qdrant RAG + PDF Processing<a class="headerlink" href="#example-using-qdrant-rag-pdf-processing" title="Link to this heading">¶</a></h4>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope --&gt;</span>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope when the runtime drivers are not already available --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.qdrant<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>client<span class="nt">&lt;/artifactId&gt;</span>
@@ -1149,12 +1131,12 @@
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 <p><strong>Gradle:</strong></p>
-<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.12&#39;
+<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:2.0.0&#39;
 </pre></div>
 </div>
 <section id="extension-modules">
@@ -1320,7 +1302,7 @@
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mem0<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
@@ -1334,7 +1316,7 @@
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
@@ -1373,7 +1355,7 @@
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-quarkus-extension<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
@@ -1383,7 +1365,7 @@
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-micronaut-extension<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.12<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>2.0.0<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
@@ -1444,7 +1426,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-07-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1484,7 +1466,6 @@
 <li><a class="reference internal" href="#all-in-one-recommended">All-in-One (Recommended)</a><ul>
 <li><a class="reference internal" href="#included-dependencies">Included Dependencies</a></li>
 <li><a class="reference internal" href="#additional-dependencies">Additional Dependencies</a><ul>
-<li><a class="reference internal" href="#example-using-openai-models">Example: Using OpenAI Models</a></li>
 <li><a class="reference internal" href="#example-using-qdrant-rag-pdf-processing">Example: Using Qdrant RAG + PDF Processing</a></li>
 </ul>
 </li>
