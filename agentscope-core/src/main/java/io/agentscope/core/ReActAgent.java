@@ -349,15 +349,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
     }
 
-    /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
-    private record SlotRef(String userId, String sessionId) {
-        static SlotRef parse(String slotKey) {
-            int slash = slotKey.lastIndexOf('/');
-            String u = slotKey.substring(0, slash);
-            String s = slotKey.substring(slash + 1);
-            return new SlotRef("__anon__".equals(u) ? null : u, s);
-        }
-    }
+
 
     /**
      * Initial agent-state load for a specific {@code (userId, sessionId)} slot. Tries (in order):
@@ -431,10 +423,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return Mono.empty();
         }
         syncToolkitToState(scope.state);
-        SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
-                        () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave))
+                        () -> stateStore.save(scope.userId, scope.sessionId, "agent_state", toSave))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -493,7 +484,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
-        CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
+        CallExecution scope = new CallExecution(loaded, loadedEngine, slot, uid, sid);
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
@@ -1438,6 +1429,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         PermissionEngine permissionEngine;
         String slotKey;
 
+        /** Original userId (null if anonymous), stored directly so saveStateToSession does not need to round-trip through the concatenated slot key. */
+        String userId;
+
+        /** Original sessionId, stored directly. */
+        String sessionId;
+
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
          * PreSummaryEvent. Owned by a single logical execution: seeded to {@code null} at call
@@ -1486,10 +1483,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
 
-        CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
+        CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey, String userId, String sessionId) {
             this.state = state;
             this.permissionEngine = permissionEngine;
             this.slotKey = slotKey;
+            this.userId = userId;
+            this.sessionId = sessionId;
         }
 
         /**
