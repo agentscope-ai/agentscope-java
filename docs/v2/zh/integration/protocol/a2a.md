@@ -142,6 +142,8 @@ server.postEndpointReady();
 ```java
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -163,10 +165,16 @@ final class MyRunner implements AgentRunner {
     public Flux<AgentEvent> streamEvents(
             List<Msg> requestMessages,
             AgentRequestOptions options) {
-        RuntimeContext context = RuntimeContext.builder()
+        RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
                 .sessionId(options.getSessionId())
-                .userId(options.getUserId())
-                .build();
+                .userId(options.getUserId());
+        if (options.getA2aPrincipal() != null) {
+            contextBuilder.put(A2aPrincipal.class, options.getA2aPrincipal());
+        }
+        if (options.getA2aIdentity() != null) {
+            contextBuilder.put(A2aIdentity.class, options.getA2aIdentity());
+        }
+        RuntimeContext context = contextBuilder.build();
         if (running.putIfAbsent(options.getTaskId(), context) != null) {
             return Flux.error(new IllegalStateException("duplicate taskId"));
         }
@@ -201,6 +209,40 @@ final class MyRunner implements AgentRunner {
 - `PushNotificationConfigStore` 和 `PushNotificationSender` 提供出站通知。
 - `AgentRegistry` 把 `AgentCard` 发布到 [Nacos](../infrastructure/nacos.md) 等注册中心。
 
+### 认证入站请求
+
+`A2aAuthResolver` 在 JSON-RPC 解析完成后、Task 或 Agent 分发前执行。因此认证拒绝是
+HTTP admission 错误，不会污染 A2A Task。默认 resolver 为匿名模式，既有应用保持兼容。
+
+```java
+import io.agentscope.core.a2a.server.auth.A2aAuthErrorCodes;
+import io.agentscope.core.a2a.server.auth.A2aAuthException;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
+import io.agentscope.core.a2a.server.auth.A2aAuthentication;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
+
+A2aAuthResolver authResolver = request -> {
+    String token = request.getBearerToken().orElseThrow(
+            () -> new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED));
+    VerifiedCaller caller = tokenVerifier.verify(token);
+    A2aPrincipal principal = A2aPrincipal.authenticated(
+            caller.subject(), caller.attributes());
+    return A2aAuthentication.authenticated(principal);
+};
+
+AgentScopeA2aServer server = AgentScopeA2aServer.builder(agentBuilder)
+        .authResolver(authResolver)
+        .deploymentProperties(8080)
+        .build();
+```
+
+只有服务端可信策略已经把认证调用方映射到实际业务用户时，才使用
+`A2aAuthentication.delegated(principal, userId)`。客户端 message/request metadata 不可信，
+无法构造 typed `A2aPrincipal` 或 `A2aIdentity`。内置 ReAct runner 会通过
+`RuntimeContext` 传递这两个类型；自定义 runner 应按上面的示例显式复制。
+
+该 API 只认证入站 HTTP 请求，不会增加任务内 `auth-required` resume 契约。
+
 ## Spring Boot Starter
 
 ```xml
@@ -223,6 +265,21 @@ agentscope:
 ```
 
 HITL 默认为 `false`。普通 A2A 不需要 HITL binding、Redis 依赖或特殊的 `AgentStateStore` 接线。其他服务端与 AgentCard 属性见[快速开始](../../docs/quickstart.md)。
+
+Starter 场景只需提供一个应用 bean 即可启用入站认证：
+
+```java
+@Bean
+A2aAuthResolver a2aAuthResolver(TokenVerifier tokenVerifier) {
+    return request -> {
+        String token = request.getBearerToken().orElseThrow(
+                () -> new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED));
+        VerifiedCaller caller = tokenVerifier.verify(token);
+        return A2aAuthentication.authenticated(
+                A2aPrincipal.authenticated(caller.subject(), caller.attributes()));
+    };
+}
+```
 
 ## 人在回路暂停与恢复
 

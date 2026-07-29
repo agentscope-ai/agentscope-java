@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
@@ -100,15 +101,19 @@ public class AgentScopeA2aServer {
 
     private final AgentRegistryService agentRegistry;
 
+    private final A2aAuthResolver authResolver;
+
     private AgentScopeA2aServer(
             Map<String, TransportWrapper> transportWrappers,
             Set<TransportProperties> transportProperties,
             AgentCard agentCard,
-            AgentRegistryService agentRegistry) {
+            AgentRegistryService agentRegistry,
+            A2aAuthResolver authResolver) {
         this.transportWrappers = transportWrappers;
         this.transportProperties = transportProperties;
         this.agentCard = agentCard;
         this.agentRegistry = agentRegistry;
+        this.authResolver = authResolver == null ? A2aAuthResolver.anonymous() : authResolver;
     }
 
     /**
@@ -158,6 +163,10 @@ public class AgentScopeA2aServer {
      */
     public AgentCard getAgentCard() {
         return agentCard;
+    }
+
+    public A2aAuthResolver getAuthResolver() {
+        return authResolver;
     }
 
     /**
@@ -222,6 +231,8 @@ public class AgentScopeA2aServer {
         private HitlServerProperties hitlServerProperties;
 
         private HitlSessionLease hitlSessionLease;
+
+        private A2aAuthResolver authResolver = A2aAuthResolver.anonymous();
 
         private Builder(AgentRunner agentRunner) {
             this.agentRunner = agentRunner;
@@ -379,6 +390,14 @@ public class AgentScopeA2aServer {
         }
 
         /**
+         * Sets the HTTP admission resolver. Anonymous admission is used by default.
+         */
+        public Builder authResolver(A2aAuthResolver authResolver) {
+            this.authResolver = authResolver == null ? A2aAuthResolver.anonymous() : authResolver;
+            return this;
+        }
+
+        /**
          * Build a new instance of {@link AgentScopeA2aServer}.
          *
          * <p> This Builder will build with follow steps:
@@ -480,7 +499,11 @@ public class AgentScopeA2aServer {
             }
             AgentRegistryService agentRegistryService = new AgentRegistryService(agentRegistries);
             return new AgentScopeA2aServer(
-                    transportWrappers, availableTransports, a2aAgentCard, agentRegistryService);
+                    transportWrappers,
+                    availableTransports,
+                    a2aAgentCard,
+                    agentRegistryService,
+                    authResolver);
         }
 
         private Map<String, TransportWrapperBuilder> loadTransportBuilders() {
@@ -533,7 +556,8 @@ public class AgentScopeA2aServer {
                         allBuilders.get(transportProperties.transportType());
                 try {
                     TransportWrapper transportWrapper =
-                            builder.build(a2aAgentCard, requestHandler, executor);
+                            builder.build(
+                                    a2aAgentCard, requestHandler, executor, null, authResolver);
                     result.put(transportProperties.transportType(), transportWrapper);
                 } catch (Exception e) {
                     log.warn(

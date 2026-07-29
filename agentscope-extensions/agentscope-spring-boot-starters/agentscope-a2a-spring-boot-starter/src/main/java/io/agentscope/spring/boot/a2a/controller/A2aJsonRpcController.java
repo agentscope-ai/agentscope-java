@@ -56,7 +56,8 @@ public class A2aJsonRpcController {
     @ResponseBody
     public Object handleRequest(
             @RequestBody String body, @RequestHeader Map<String, String> header) {
-        Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
+        JsonRpcTransportWrapper handler = getJsonRpcHandler();
+        Object result = handler.handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
             return fluxResult.map(this::convertToSse);
         } else {

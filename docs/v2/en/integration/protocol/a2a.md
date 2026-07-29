@@ -142,6 +142,8 @@ Use `AgentEvent`, not the deprecated `Event` stream surface:
 ```java
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -163,10 +165,16 @@ final class MyRunner implements AgentRunner {
     public Flux<AgentEvent> streamEvents(
             List<Msg> requestMessages,
             AgentRequestOptions options) {
-        RuntimeContext context = RuntimeContext.builder()
+        RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
                 .sessionId(options.getSessionId())
-                .userId(options.getUserId())
-                .build();
+                .userId(options.getUserId());
+        if (options.getA2aPrincipal() != null) {
+            contextBuilder.put(A2aPrincipal.class, options.getA2aPrincipal());
+        }
+        if (options.getA2aIdentity() != null) {
+            contextBuilder.put(A2aIdentity.class, options.getA2aIdentity());
+        }
+        RuntimeContext context = contextBuilder.build();
         if (running.putIfAbsent(options.getTaskId(), context) != null) {
             return Flux.error(new IllegalStateException("duplicate taskId"));
         }
@@ -201,6 +209,42 @@ A runner that supports durable HITL must also return `HitlDurabilityCapability.D
 - `PushNotificationConfigStore` and `PushNotificationSender` provide outbound notifications.
 - `AgentRegistry` publishes the `AgentCard` to a registry such as [Nacos](../infrastructure/nacos.md).
 
+### Authenticate inbound requests
+
+`A2aAuthResolver` runs after JSON-RPC parsing and before Task or Agent dispatch. Its rejection
+therefore remains an HTTP admission error instead of mutating an A2A Task. The default resolver is
+anonymous, so existing applications remain compatible.
+
+```java
+import io.agentscope.core.a2a.server.auth.A2aAuthErrorCodes;
+import io.agentscope.core.a2a.server.auth.A2aAuthException;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
+import io.agentscope.core.a2a.server.auth.A2aAuthentication;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
+
+A2aAuthResolver authResolver = request -> {
+    String token = request.getBearerToken().orElseThrow(
+            () -> new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED));
+    VerifiedCaller caller = tokenVerifier.verify(token);
+    A2aPrincipal principal = A2aPrincipal.authenticated(
+            caller.subject(), caller.attributes());
+    return A2aAuthentication.authenticated(principal);
+};
+
+AgentScopeA2aServer server = AgentScopeA2aServer.builder(agentBuilder)
+        .authResolver(authResolver)
+        .deploymentProperties(8080)
+        .build();
+```
+
+Use `A2aAuthentication.delegated(principal, userId)` only after a trusted server-side policy maps
+the authenticated caller to that effective business user. Client message or request metadata is
+untrusted and cannot create `A2aPrincipal` or `A2aIdentity`. Built-in ReAct runners propagate both
+typed values through `RuntimeContext`; custom runners should copy them as shown above.
+
+This API authenticates the inbound HTTP request. It does not add an in-task `auth-required` resume
+contract.
+
 ## Spring Boot starter
 
 ```xml
@@ -223,6 +267,21 @@ agentscope:
 ```
 
 HITL defaults to `false`. Ordinary A2A requires no HITL binding, Redis dependency, or special `AgentStateStore` wiring. See the [Quickstart](../../docs/quickstart.md) for the other server and AgentCard properties.
+
+To enable inbound authentication with the starter, provide one application bean:
+
+```java
+@Bean
+A2aAuthResolver a2aAuthResolver(TokenVerifier tokenVerifier) {
+    return request -> {
+        String token = request.getBearerToken().orElseThrow(
+                () -> new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED));
+        VerifiedCaller caller = tokenVerifier.verify(token);
+        return A2aAuthentication.authenticated(
+                A2aPrincipal.authenticated(caller.subject(), caller.attributes()));
+    };
+}
+```
 
 ## Human-in-the-loop pause and resume
 

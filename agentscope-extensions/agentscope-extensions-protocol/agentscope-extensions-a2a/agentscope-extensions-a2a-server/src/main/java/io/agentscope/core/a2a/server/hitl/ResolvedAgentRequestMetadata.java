@@ -17,6 +17,9 @@
 package io.agentscope.core.a2a.server.hitl;
 
 import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
+import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -157,11 +160,29 @@ public final class ResolvedAgentRequestMetadata {
         Message message = params.message();
         AgentRequestOptions options = new AgentRequestOptions();
         options.setTaskId(taskId);
+        A2aPrincipal principal = principal(callContext);
+        A2aIdentity identity = identity(callContext);
+        String effectiveUserId = effectiveUserId(callContext);
+        if (principal != null
+                && principal.isAuthenticated()
+                && (effectiveUserId == null || identity == null)) {
+            throw new IllegalStateException(
+                    "authenticated A2A context is missing trusted identity");
+        }
+        if (identity != null
+                && (identity.principal() != principal
+                        || !identity.userId().equals(effectiveUserId))) {
+            throw new IllegalStateException("authenticated A2A context has inconsistent identity");
+        }
         options.setUserId(
-                nullIfBlank(
-                        firstText(
-                                metadataValue(message.metadata(), "userId"),
-                                metadataValue(params.metadata(), "userId"))));
+                effectiveUserId != null
+                        ? effectiveUserId
+                        : nullIfBlank(
+                                firstText(
+                                        metadataValue(message.metadata(), "userId"),
+                                        metadataValue(params.metadata(), "userId"))));
+        options.setA2aPrincipal(principal);
+        options.setA2aIdentity(identity);
         options.setSessionId(sessionId);
         options.setAgentId(
                 firstText(
@@ -184,6 +205,33 @@ public final class ResolvedAgentRequestMetadata {
                 metadataValue(params.metadata(), MessageConstants.RESUME_TOKEN_METADATA_KEY),
                 metadataValue(params.metadata(), MessageConstants.NEXT_RESUME_TOKEN_METADATA_KEY),
                 freshTask);
+    }
+
+    private static A2aPrincipal principal(ServerCallContext callContext) {
+        Object value = contextValue(callContext, A2aServerConstants.ContextKeys.PRINCIPAL_KEY);
+        return value instanceof A2aPrincipal principal ? principal : null;
+    }
+
+    private static A2aIdentity identity(ServerCallContext callContext) {
+        Object value = contextValue(callContext, A2aServerConstants.ContextKeys.IDENTITY_KEY);
+        return value instanceof A2aIdentity identity ? identity : null;
+    }
+
+    private static String effectiveUserId(ServerCallContext callContext) {
+        return nullIfBlank(
+                String.valueOf(
+                        Objects.requireNonNullElse(
+                                contextValue(
+                                        callContext,
+                                        A2aServerConstants.ContextKeys.EFFECTIVE_USER_ID_KEY),
+                                "")));
+    }
+
+    private static Object contextValue(ServerCallContext callContext, String key) {
+        if (callContext == null || callContext.getState() == null) {
+            return null;
+        }
+        return callContext.getState().get(key);
     }
 
     private static boolean strictContextValidation(ServerCallContext callContext) {

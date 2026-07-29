@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server.transport;
 
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import java.util.concurrent.Executor;
 import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
 import org.a2aproject.sdk.spec.AgentCard;
@@ -60,4 +61,20 @@ public interface TransportWrapperBuilder<T extends TransportWrapper> {
             RequestHandler requestHandler,
             Executor executor,
             AgentCard extendedAgentCard);
+
+    /**
+     * Build a transport with an inbound authentication resolver.
+     *
+     * <p>The default keeps existing third-party builders binary/source compatible. Builders
+     * that support inbound authentication must override this method and pass the resolver to
+     * their transport wrapper.
+     */
+    default T build(
+            AgentCard agentCard,
+            RequestHandler requestHandler,
+            Executor executor,
+            AgentCard extendedAgentCard,
+            A2aAuthResolver authResolver) {
+        return build(agentCard, requestHandler, executor, extendedAgentCard);
+    }
 }

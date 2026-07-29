@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import java.util.concurrent.Executor;
 import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
@@ -40,9 +41,24 @@ public class JsonRpcTransportWrapperBuilder
             RequestHandler requestHandler,
             Executor executor,
             AgentCard extendedAgentCard) {
+        return build(
+                agentCard,
+                requestHandler,
+                executor,
+                extendedAgentCard,
+                A2aAuthResolver.anonymous());
+    }
+
+    @Override
+    public JsonRpcTransportWrapper build(
+            AgentCard agentCard,
+            RequestHandler requestHandler,
+            Executor executor,
+            AgentCard extendedAgentCard,
+            A2aAuthResolver authResolver) {
         // TODO: after support of extended agent card after support authenticated.
         JSONRPCHandler jsonrpcHandler =
                 new JSONRPCHandler(agentCard, null, requestHandler, executor);
-        return new JsonRpcTransportWrapper(jsonrpcHandler);
+        return new JsonRpcTransportWrapper(jsonrpcHandler, authResolver);
     }
 }

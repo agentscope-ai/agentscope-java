@@ -16,9 +16,18 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
+import io.agentscope.core.a2a.server.auth.A2aAuthErrorCodes;
+import io.agentscope.core.a2a.server.auth.A2aAuthException;
+import io.agentscope.core.a2a.server.auth.A2aAuthRequest;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
+import io.agentscope.core.a2a.server.auth.A2aAuthentication;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -92,9 +101,15 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
                     DEFAULT_STREAMING_BACKPRESSURE_BUFFER_SIZE);
 
     private final JSONRPCHandler jsonRpcHandler;
+    private final A2aAuthResolver authResolver;
 
     public JsonRpcTransportWrapper(JSONRPCHandler jsonrpcHandler) {
+        this(jsonrpcHandler, A2aAuthResolver.anonymous());
+    }
+
+    public JsonRpcTransportWrapper(JSONRPCHandler jsonrpcHandler, A2aAuthResolver authResolver) {
         this.jsonRpcHandler = jsonrpcHandler;
+        this.authResolver = authResolver == null ? A2aAuthResolver.anonymous() : authResolver;
     }
 
     @Override
@@ -105,10 +120,82 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
     @Override
     public Object handleRequest(
             String body, Map<String, String> headers, Map<String, Object> metadata) {
+        PreparedRequest prepared = prepareRequest(body, headers, metadata);
+        if (!prepared.isReady()) {
+            return prepared.getProtocolErrorResponse();
+        }
+        A2aAuthentication authentication = authResolver.resolve(prepared.toAuthRequest());
+        return handlePreparedRequest(prepared, authentication);
+    }
+
+    /**
+     * Parses a JSON-RPC request without authenticating or dispatching it.
+     *
+     * <p>Protocol errors remain HTTP 200 JSON-RPC responses. Authentication must happen only
+     * after this method returns a ready request.
+     */
+    public PreparedRequest prepareRequest(
+            String body, Map<String, String> headers, Map<String, Object> metadata) {
         try {
-            String tenant = stringValue(metadata.get(JSONRPCContextKeys.TENANT_KEY));
+            Map<String, String> safeHeaders = immutableStringMap(headers);
+            Map<String, Object> safeMetadata = immutableObjectMap(metadata);
+            String tenant = stringValue(safeMetadata.get(JSONRPCContextKeys.TENANT_KEY));
             A2ARequest<?> request = JSONRPCUtils.parseRequestBody(body, tenant);
-            ServerCallContext context = buildServerCallContext(headers, metadata);
+            return PreparedRequest.ready(
+                    request, safeHeaders, safeMetadata, extractRequestMetadata(request));
+        } catch (A2AError e) {
+            return PreparedRequest.failed(serializeResponse(new A2AErrorResponse(e)));
+        } catch (InvalidParamsJsonMappingException e) {
+            return PreparedRequest.failed(
+                    serializeResponse(
+                            new A2AErrorResponse(
+                                    e.getId(),
+                                    new InvalidParamsError(null, e.getMessage(), null))));
+        } catch (MethodNotFoundJsonMappingException e) {
+            return PreparedRequest.failed(
+                    serializeResponse(
+                            new A2AErrorResponse(
+                                    e.getId(),
+                                    new MethodNotFoundError(null, e.getMessage(), null))));
+        } catch (IdJsonMappingException e) {
+            return PreparedRequest.failed(
+                    serializeResponse(
+                            new A2AErrorResponse(
+                                    e.getId(),
+                                    new InvalidRequestError(null, e.getMessage(), null))));
+        } catch (JsonMappingException e) {
+            return PreparedRequest.failed(
+                    serializeResponse(
+                            new A2AErrorResponse(
+                                    new InvalidRequestError(null, e.getMessage(), null))));
+        } catch (JsonProcessingException | com.google.gson.JsonSyntaxException e) {
+            return PreparedRequest.failed(
+                    serializeResponse(new A2AErrorResponse(new JSONParseError(e.getMessage()))));
+        } catch (Throwable t) {
+            log.error("Prepare JSON-RPC request error:", t);
+            return PreparedRequest.failed(
+                    serializeResponse(new A2AErrorResponse(new InternalError(errorMessage(t)))));
+        }
+    }
+
+    /**
+     * Binds an already authenticated caller and dispatches a prepared request.
+     *
+     * <p>Authentication and user-binding failures happen before the business dispatch catch
+     * and before a streaming response is created.
+     */
+    public Object handlePreparedRequest(
+            PreparedRequest prepared, A2aAuthentication authentication) {
+        if (prepared == null || !prepared.isReady()) {
+            throw new IllegalArgumentException("prepared request is required");
+        }
+        BoundUser boundUser = bindUser(prepared, authentication);
+        ServerCallContext context = buildServerCallContext(prepared, boundUser);
+        return dispatch(prepared.request, context);
+    }
+
+    private Object dispatch(A2ARequest<?> request, ServerCallContext context) {
+        try {
             context.getState().put(JSONRPCContextKeys.METHOD_NAME_KEY, request.getMethod());
             if (request instanceof NonStreamingJSONRPCRequest<?> nonStreamingRequest) {
                 context.getState().put(A2aServerConstants.ContextKeys.IS_STREAM_KEY, Boolean.FALSE);
@@ -147,42 +234,71 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
                             });
         } catch (A2AError e) {
             return serializeResponse(new A2AErrorResponse(e));
-        } catch (InvalidParamsJsonMappingException e) {
-            return serializeResponse(
-                    new A2AErrorResponse(
-                            e.getId(), new InvalidParamsError(null, e.getMessage(), null)));
-        } catch (MethodNotFoundJsonMappingException e) {
-            return serializeResponse(
-                    new A2AErrorResponse(
-                            e.getId(), new MethodNotFoundError(null, e.getMessage(), null)));
-        } catch (IdJsonMappingException e) {
-            return serializeResponse(
-                    new A2AErrorResponse(
-                            e.getId(), new InvalidRequestError(null, e.getMessage(), null)));
-        } catch (JsonMappingException e) {
-            return serializeResponse(
-                    new A2AErrorResponse(new InvalidRequestError(null, e.getMessage(), null)));
-        } catch (JsonProcessingException | com.google.gson.JsonSyntaxException e) {
-            return serializeResponse(new A2AErrorResponse(new JSONParseError(e.getMessage())));
         } catch (Throwable t) {
-            log.error("Handle JSON-RPC request error:", t);
-            return serializeResponse(new A2AErrorResponse(new InternalError(t.getMessage())));
+            log.error("Dispatch JSON-RPC request error:", t);
+            return serializeResponse(new A2AErrorResponse(new InternalError(errorMessage(t))));
         }
     }
 
     private ServerCallContext buildServerCallContext(
-            Map<String, String> headers, Map<String, Object> metadata) {
+            PreparedRequest prepared, BoundUser boundUser) {
         Map<String, Object> state = new HashMap<>();
-        state.put(JSONRPCContextKeys.HEADERS_KEY, headers);
+        state.put(JSONRPCContextKeys.HEADERS_KEY, prepared.headers);
         state.put(
                 JSONRPCContextKeys.TENANT_KEY,
-                stringValue(metadata.get(JSONRPCContextKeys.TENANT_KEY)));
+                stringValue(prepared.transportMetadata.get(JSONRPCContextKeys.TENANT_KEY)));
         state.put(ServerCallContext.TRANSPORT_KEY, TransportProtocol.JSONRPC);
-        String requestedVersion = getHeader(headers, A2AHeaders.A2A_VERSION);
+        state.put(A2aServerConstants.ContextKeys.PRINCIPAL_KEY, boundUser.principal);
+        if (boundUser.effectiveUserId != null) {
+            state.put(
+                    A2aServerConstants.ContextKeys.EFFECTIVE_USER_ID_KEY,
+                    boundUser.effectiveUserId);
+        }
+        if (boundUser.identity != null) {
+            state.put(A2aServerConstants.ContextKeys.IDENTITY_KEY, boundUser.identity);
+        }
+        String requestedVersion = getHeader(prepared.headers, A2AHeaders.A2A_VERSION);
         Set<String> requestedExtensions =
                 A2AExtensions.getRequestedExtensions(
-                        List.of(stringValue(getHeader(headers, A2AHeaders.A2A_EXTENSIONS))));
-        return new ServerCallContext(null, state, requestedExtensions, requestedVersion);
+                        List.of(
+                                stringValue(
+                                        getHeader(prepared.headers, A2AHeaders.A2A_EXTENSIONS))));
+        return new ServerCallContext(
+                boundUser.principal, state, requestedExtensions, requestedVersion);
+    }
+
+    private BoundUser bindUser(PreparedRequest prepared, A2aAuthentication authentication) {
+        if (authentication == null) {
+            throw new A2aAuthException(503, A2aAuthErrorCodes.AUTH_UNAVAILABLE);
+        }
+        A2aPrincipal principal = authentication.getPrincipal();
+        String requestedUserId = trimToNull(prepared.requestMetadata.get("userId"));
+        A2aIdentity identity = authentication.toIdentity();
+        return identity == null
+                ? new BoundUser(principal, requestedUserId, null)
+                : new BoundUser(principal, identity.userId(), identity);
+    }
+
+    private Map<String, Object> extractRequestMetadata(A2ARequest<?> request) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (request instanceof SendMessageRequest req) {
+            mergeMessageMetadata(result, req.getParams().metadata(), req.getParams().message());
+        } else if (request instanceof SendStreamingMessageRequest req) {
+            mergeMessageMetadata(result, req.getParams().metadata(), req.getParams().message());
+        }
+        return immutableObjectMap(result);
+    }
+
+    private void mergeMessageMetadata(
+            Map<String, Object> target,
+            Map<String, Object> requestMetadata,
+            org.a2aproject.sdk.spec.Message message) {
+        if (requestMetadata != null) {
+            target.putAll(requestMetadata);
+        }
+        if (message != null && message.metadata() != null) {
+            target.putAll(message.metadata());
+        }
     }
 
     private A2AResponse<?> processNonStreamingRequest(
@@ -347,5 +463,85 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return throwable.getMessage();
         }
         return throwable.getClass().getName();
+    }
+
+    private Map<String, String> immutableStringMap(Map<String, String> source) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    }
+
+    private Map<String, Object> immutableObjectMap(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    }
+
+    private String trimToNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = String.valueOf(value).trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private record BoundUser(
+            A2aPrincipal principal, String effectiveUserId, A2aIdentity identity) {}
+
+    /** Parsed JSON-RPC request that is safe to authenticate before dispatch. */
+    public static final class PreparedRequest {
+
+        private final A2ARequest<?> request;
+        private final Map<String, String> headers;
+        private final Map<String, Object> transportMetadata;
+        private final Map<String, Object> requestMetadata;
+        private final String protocolErrorResponse;
+
+        private PreparedRequest(
+                A2ARequest<?> request,
+                Map<String, String> headers,
+                Map<String, Object> transportMetadata,
+                Map<String, Object> requestMetadata,
+                String protocolErrorResponse) {
+            this.request = request;
+            this.headers = headers;
+            this.transportMetadata = transportMetadata;
+            this.requestMetadata = requestMetadata;
+            this.protocolErrorResponse = protocolErrorResponse;
+        }
+
+        private static PreparedRequest ready(
+                A2ARequest<?> request,
+                Map<String, String> headers,
+                Map<String, Object> transportMetadata,
+                Map<String, Object> requestMetadata) {
+            return new PreparedRequest(request, headers, transportMetadata, requestMetadata, null);
+        }
+
+        private static PreparedRequest failed(String protocolErrorResponse) {
+            return new PreparedRequest(null, Map.of(), Map.of(), Map.of(), protocolErrorResponse);
+        }
+
+        public boolean isReady() {
+            return request != null;
+        }
+
+        public String getProtocolErrorResponse() {
+            return protocolErrorResponse;
+        }
+
+        public A2aAuthRequest toAuthRequest() {
+            if (!isReady()) {
+                throw new IllegalStateException("protocol-error request cannot be authenticated");
+            }
+            return new A2aAuthRequest(
+                    TransportProtocol.JSONRPC.asString(),
+                    request.getMethod(),
+                    headers,
+                    transportMetadata,
+                    requestMetadata);
+        }
     }
 }

@@ -13,25 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package io.agentscope.core.a2a.server.auth;
 
-package io.agentscope.core.a2a.server.constants;
+/** Resolves a caller identity before A2A business dispatch starts. */
+@FunctionalInterface
+public interface A2aAuthResolver {
 
-/**
- * Constants for A2A server.
- */
-public class A2aServerConstants {
+    A2aAuthentication resolve(A2aAuthRequest request);
 
-    public static class ContextKeys {
-
-        /**
-         * Context key for storing whether the request is streaming.
-         */
-        public static final String IS_STREAM_KEY = "isStream";
-
-        public static final String PRINCIPAL_KEY = "agentscope.a2a.principal";
-
-        public static final String EFFECTIVE_USER_ID_KEY = "agentscope.a2a.effectiveUserId";
-
-        public static final String IDENTITY_KEY = "agentscope.a2a.identity";
+    static A2aAuthResolver anonymous() {
+        return request -> A2aAuthentication.anonymous();
     }
 }

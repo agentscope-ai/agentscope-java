@@ -27,6 +27,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.auth.A2aAuthErrorCodes;
+import io.agentscope.core.a2a.server.auth.A2aAuthException;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -38,13 +41,19 @@ import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.util.Map;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.grpc.utils.JSONRPCUtils;
+import org.a2aproject.sdk.grpc.utils.ProtoUtils;
 import org.a2aproject.sdk.server.events.QueueManager;
 import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
 import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
 import org.a2aproject.sdk.server.tasks.PushNotificationSender;
 import org.a2aproject.sdk.server.tasks.TaskStore;
 import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.TextPart;
 import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -129,6 +138,50 @@ class AgentScopeA2aServerTest {
                             .build();
 
             assertNotNull(server);
+        }
+
+        @Test
+        @DisplayName("Should retain explicitly configured authentication resolver")
+        void testBuildServerWithAuthenticationResolver() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+            A2aAuthResolver resolver = request -> null;
+
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .authResolver(resolver)
+                            .build();
+
+            assertSame(resolver, server.getAuthResolver());
+        }
+
+        @Test
+        @DisplayName("Should wire authentication resolver into the standard JSON-RPC transport")
+        void testBuildServerWiresResolverIntoJsonRpcTransport() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+            A2aAuthException rejection = new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED);
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .authResolver(
+                                    request -> {
+                                        throw rejection;
+                                    })
+                            .build();
+            JsonRpcTransportWrapper wrapper =
+                    server.getTransportWrapper(
+                            TransportProtocol.JSONRPC.asString(), JsonRpcTransportWrapper.class);
+
+            A2aAuthException actual =
+                    assertThrows(
+                            A2aAuthException.class,
+                            () ->
+                                    wrapper.handleRequest(
+                                            sendMessageRequestBody(), Map.of(), Map.of()));
+
+            assertSame(rejection, actual);
         }
 
         @Test
@@ -483,5 +536,18 @@ class AgentScopeA2aServerTest {
                 AgentCard extendedAgentCard) {
             throw new RuntimeException("mock exception");
         }
+    }
+
+    private String sendMessageRequestBody() {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("Hello"))
+                        .messageId("message-1")
+                        .contextId("context-1")
+                        .build();
+        MessageSendParams params = MessageSendParams.builder().message(message).build();
+        return JSONRPCUtils.toJsonRPCRequest(
+                "1", "SendMessage", ProtoUtils.ToProto.sendMessageRequest(params));
     }
 }

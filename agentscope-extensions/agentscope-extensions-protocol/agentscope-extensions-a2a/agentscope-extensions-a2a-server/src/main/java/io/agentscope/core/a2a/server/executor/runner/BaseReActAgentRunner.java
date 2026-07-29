@@ -17,6 +17,8 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import io.agentscope.core.a2a.server.hitl.HitlDurabilityCapability;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -99,6 +101,12 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
         String userId = trimToNull(options.getUserId());
         if (userId != null) {
             builder.userId(userId);
+        }
+        if (options.getA2aPrincipal() != null) {
+            builder.put(A2aPrincipal.class, options.getA2aPrincipal());
+        }
+        if (options.getA2aIdentity() != null) {
+            builder.put(A2aIdentity.class, options.getA2aIdentity());
         }
         return builder.build();
     }

@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.a2a;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -32,6 +33,7 @@ import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.CustomTransportProperties;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
+import io.agentscope.spring.boot.a2a.controller.A2aAuthExceptionHandler;
 import io.agentscope.spring.boot.a2a.controller.A2aJsonRpcController;
 import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.hitl.HitlDurabilityValidator;
@@ -79,6 +81,12 @@ public class AgentscopeA2aAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public A2aAuthResolver a2aAuthResolver() {
+        return A2aAuthResolver.anonymous();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnBean(ReActAgent.class)
     public AgentRunner agentRunnerWithStarterRunner(ObjectProvider<ReActAgent> reActAgentProvider) {
         return ReActAgentWithStarterRunner.newInstance(reActAgentProvider);
@@ -99,6 +107,7 @@ public class AgentscopeA2aAutoConfiguration {
             ObjectProvider<HitlResumeCoordinator> coordinatorProvider,
             ObjectProvider<HitlSessionLease> leaseProvider,
             ObjectProvider<A2aHitlDurabilityBinding> bindingProvider,
+            A2aAuthResolver authResolver,
             A2aAgentCardProperties agentCardProperties,
             A2aCommonProperties commonProperties,
             Environment environment,
@@ -128,6 +137,7 @@ public class AgentscopeA2aAutoConfiguration {
         builder.hitlResumeCoordinator(hitl.resumeCoordinator());
         builder.hitlSessionLease(hitl.sessionLease());
         builder.hitlServerProperties(hitlProperties);
+        builder.authResolver(authResolver);
         transportProperties.stream()
                 .filter(CustomTransportProperties::isEnabled)
                 .forEach(
@@ -157,6 +167,12 @@ public class AgentscopeA2aAutoConfiguration {
     @ConditionalOnBean(AgentScopeA2aServer.class)
     public A2aJsonRpcController a2aJsonRpcController(AgentScopeA2aServer agentScopeA2aServer) {
         return new A2aJsonRpcController(agentScopeA2aServer);
+    }
+
+    @Bean
+    @ConditionalOnBean(AgentScopeA2aServer.class)
+    public A2aAuthExceptionHandler a2aAuthExceptionHandler() {
+        return new A2aAuthExceptionHandler();
     }
 
     @Bean

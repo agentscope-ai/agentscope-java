@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -34,6 +35,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import io.agentscope.core.a2a.server.hitl.HitlDurabilityCapability;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -263,6 +266,33 @@ class AgentRunnerTest {
         RuntimeContext runtimeContext = contextCaptor.getValue();
         assertEquals("session-1", runtimeContext.getSessionId());
         assertEquals("user-1", runtimeContext.getUserId());
+    }
+
+    @Test
+    @DisplayName("Should pass authenticated identity through typed RuntimeContext")
+    void testStreamUsesTypedAuthenticatedIdentity() {
+        String taskId = UUID.randomUUID().toString();
+        A2aPrincipal principal =
+                A2aPrincipal.authenticated("service-caller", Map.of("identity.type", "platform"));
+        A2aIdentity identity = new A2aIdentity(principal, "user-1", true);
+        requestOptions.setTaskId(taskId);
+        requestOptions.setUserId("user-1");
+        requestOptions.setA2aPrincipal(principal);
+        requestOptions.setA2aIdentity(identity);
+        List<Msg> messages = List.of(mock(Msg.class));
+
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
+        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+
+        runner.streamEvents(messages, requestOptions);
+
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(mockAgent).streamEvents(eq(messages), contextCaptor.capture());
+        RuntimeContext runtimeContext = contextCaptor.getValue();
+        assertSame(principal, runtimeContext.get(A2aPrincipal.class));
+        assertSame(identity, runtimeContext.get(A2aIdentity.class));
     }
 
     @Test

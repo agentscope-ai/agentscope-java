@@ -16,6 +16,8 @@
 
 package io.agentscope.core.a2a.server.executor.runner;
 
+import io.agentscope.core.a2a.server.auth.A2aIdentity;
+import io.agentscope.core.a2a.server.auth.A2aPrincipal;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,6 +54,10 @@ public class AgentRequestOptions {
      * Metadata merged from A2A request context and message. Message metadata wins on duplicated keys.
      */
     private Map<String, Object> metadata = Collections.emptyMap();
+
+    private A2aPrincipal a2aPrincipal;
+
+    private A2aIdentity a2aIdentity;
 
     public String getTaskId() {
         return taskId;
@@ -107,5 +113,21 @@ public class AgentRequestOptions {
             return;
         }
         this.metadata = Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+    }
+
+    public A2aPrincipal getA2aPrincipal() {
+        return a2aPrincipal;
+    }
+
+    public void setA2aPrincipal(A2aPrincipal a2aPrincipal) {
+        this.a2aPrincipal = a2aPrincipal;
+    }
+
+    public A2aIdentity getA2aIdentity() {
+        return a2aIdentity;
+    }
+
+    public void setA2aIdentity(A2aIdentity a2aIdentity) {
+        this.a2aIdentity = a2aIdentity;
     }
 }
