@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.properties;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
 /**
  * Root configuration properties for AgentScope Spring Boot starter.
@@ -26,13 +27,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   <li>{@link AgentProperties} under {@code agentscope.agent}</li>
  *   <li>{@link ModelProperties} under {@code agentscope.model}</li>
  * </ul>
+ *
+ * <p>{@link NestedConfigurationProperty} is required for the configuration metadata processor to
+ * expand these nested groups into {@code spring-configuration-metadata.json}; without it the
+ * metadata contains no {@code agentscope.agent.*} / {@code agentscope.model.*} entries.
  */
 @ConfigurationProperties(prefix = "agentscope")
 public class AgentscopeProperties {
 
-    private final AgentProperties agent = new AgentProperties();
+    @NestedConfigurationProperty private final AgentProperties agent = new AgentProperties();
 
-    private final ModelProperties model = new ModelProperties();
+    @NestedConfigurationProperty private final ModelProperties model = new ModelProperties();
 
     public AgentProperties getAgent() {
         return agent;
