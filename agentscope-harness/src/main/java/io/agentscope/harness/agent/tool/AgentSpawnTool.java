@@ -29,6 +29,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
@@ -43,6 +44,8 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -279,6 +282,12 @@ public class AgentSpawnTool {
             if (existing != null) {
                 propagatePlanMode(
                         parentState, currentUserId, existing.sessionId(), existing.agent());
+                propagateParentDenyRules(
+                        parentState,
+                        currentUserId,
+                        existing.sessionId(),
+                        existing.agent(),
+                        declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -309,10 +318,7 @@ public class AgentSpawnTool {
         propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -510,6 +516,8 @@ public class AgentSpawnTool {
         DefaultAgentManager manager = managerFor(runtimeContext);
         propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
         var declOpt = manager.getDeclaration(spawned.agentId());
+        propagateParentDenyRules(
+                parentState, currentUserId, spawned.sessionId(), spawned.agent(), declOpt);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -1233,25 +1241,86 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
+    private static void propagateParentDenyRules(
+            AgentState parentState,
+            String userId,
+            String childSessionId,
+            Agent childAgent,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return;
+        }
+
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return;
+        }
+
+        if (childAgent instanceof HarnessAgent harnessAgent) {
+            mergeParentDenyRulesIntoSlot(
+                    userId, childSessionId, harnessAgent.getDelegate(), parentPermissions);
+        } else if (childAgent instanceof ReActAgent reactAgent) {
+            mergeParentDenyRulesIntoSlot(userId, childSessionId, reactAgent, parentPermissions);
+        }
+    }
+
+    private static void mergeParentDenyRulesIntoSlot(
+            String userId,
+            String childSessionId,
+            ReActAgent child,
+            PermissionContextState parentPermissions) {
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState merged = mergeParentDenyRules(childPermissions, parentPermissions);
+        if (!merged.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, merged);
+        }
+    }
+
     /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
+     * Adds parent DENY rules without widening the child's configured permissions.
+     *
+     * <p>A trivial child uses the legacy lightweight permission path, where a tool-level
+     * {@code PASSTHROUGH} is allowed. Adding the first DENY rule makes the context non-trivial and
+     * activates the full engine; {@link PermissionMode#BYPASS} preserves that prior fallback while
+     * explicit DENY rules still take precedence.
      */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
-            return;
-        }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
-            return;
-        }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
-        }
+    private static PermissionContextState mergeParentDenyRules(
+            PermissionContextState child, PermissionContextState parent) {
+        PermissionContextState.Builder merged =
+                PermissionContextState.builder()
+                        .mode(child.isTrivial() ? PermissionMode.BYPASS : child.getMode());
+
+        child.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+        child.getAllowRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAllowRule(toolName, rule)));
+
+        Map<String, List<PermissionRule>> denyRules = new LinkedHashMap<>();
+        child.getDenyRules()
+                .forEach((toolName, rules) -> denyRules.put(toolName, new ArrayList<>(rules)));
+        parent.getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            List<PermissionRule> targetRules =
+                                    denyRules.computeIfAbsent(
+                                            toolName, ignored -> new ArrayList<>());
+                            for (PermissionRule rule : rules) {
+                                if (!targetRules.contains(rule)) {
+                                    targetRules.add(rule);
+                                }
+                            }
+                        });
+        denyRules.forEach(
+                (toolName, rules) -> rules.forEach(rule -> merged.addDenyRule(toolName, rule)));
+
+        child.getAskRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAskRule(toolName, rule)));
+        return merged.build();
     }
 }
