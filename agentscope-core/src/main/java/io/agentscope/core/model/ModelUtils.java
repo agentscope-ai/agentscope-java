@@ -111,11 +111,20 @@ public final class ModelUtils {
                     retryOn = error -> true; // retry all errors by default
                 }
 
+                // A retry re-subscribes the upstream. For a streaming response that has already
+                // delivered chunks downstream, re-subscribing makes the model regenerate the whole
+                // response, so downstream consumers (middlewares, memory, UI) observe the content
+                // twice. Only retry while nothing has been emitted yet — that still covers the
+                // valuable cases (connection setup failures, 429 before the first token).
+                java.util.concurrent.atomic.AtomicBoolean emitted =
+                        new java.util.concurrent.atomic.AtomicBoolean(false);
+                final Predicate<Throwable> retryableError = retryOn;
+
                 Retry retrySpec =
                         Retry.backoff(maxAttempts - 1, initialBackoff)
                                 .maxBackoff(maxBackoff)
                                 .jitter(0.5)
-                                .filter(retryOn)
+                                .filter(error -> !emitted.get() && retryableError.test(error))
                                 .doBeforeRetry(
                                         signal ->
                                                 LOG.warn(
@@ -126,7 +135,8 @@ public final class ModelUtils {
                                                         signal.failure().getMessage(),
                                                         signal.failure()));
 
-                responseFlux = responseFlux.retryWhen(retrySpec);
+                responseFlux =
+                        responseFlux.doOnNext(response -> emitted.set(true)).retryWhen(retrySpec);
                 LOG.debug(
                         "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
                         maxAttempts,
