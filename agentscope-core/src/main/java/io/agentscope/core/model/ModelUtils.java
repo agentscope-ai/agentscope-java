@@ -116,27 +116,48 @@ public final class ModelUtils {
                 // response, so downstream consumers (middlewares, memory, UI) observe the content
                 // twice. Only retry while nothing has been emitted yet — that still covers the
                 // valuable cases (connection setup failures, 429 before the first token).
-                java.util.concurrent.atomic.AtomicBoolean emitted =
-                        new java.util.concurrent.atomic.AtomicBoolean(false);
+                //
+                // The flag lives inside Flux.defer so it is per-subscription: a Flux may be
+                // subscribed more than once, and a flag shared across subscriptions would let a
+                // later subscriber inherit "already emitted" from an earlier one and skip retries
+                // it should have performed.
                 final Predicate<Throwable> retryableError = retryOn;
-
-                Retry retrySpec =
-                        Retry.backoff(maxAttempts - 1, initialBackoff)
-                                .maxBackoff(maxBackoff)
-                                .jitter(0.5)
-                                .filter(error -> !emitted.get() && retryableError.test(error))
-                                .doBeforeRetry(
-                                        signal ->
-                                                LOG.warn(
-                                                        "Retrying model request (attempt {}/{}) due"
-                                                                + " to: {}",
-                                                        signal.totalRetriesInARow() + 1,
-                                                        maxAttempts - 1,
-                                                        signal.failure().getMessage(),
-                                                        signal.failure()));
+                final Duration retryInitialBackoff = initialBackoff;
+                final Duration retryMaxBackoff = maxBackoff;
+                final int retryMaxAttempts = maxAttempts;
+                final Flux<ChatResponse> retrySource = responseFlux;
 
                 responseFlux =
-                        responseFlux.doOnNext(response -> emitted.set(true)).retryWhen(retrySpec);
+                        Flux.defer(
+                                () -> {
+                                    java.util.concurrent.atomic.AtomicBoolean emitted =
+                                            new java.util.concurrent.atomic.AtomicBoolean(false);
+                                    Retry retrySpec =
+                                            Retry.backoff(retryMaxAttempts - 1, retryInitialBackoff)
+                                                    .maxBackoff(retryMaxBackoff)
+                                                    .jitter(0.5)
+                                                    .filter(
+                                                            error ->
+                                                                    !emitted.get()
+                                                                            && retryableError.test(
+                                                                                    error))
+                                                    .doBeforeRetry(
+                                                            signal ->
+                                                                    LOG.warn(
+                                                                            "Retrying model request"
+                                                                                + " (attempt {}/{})"
+                                                                                + " due to: {}",
+                                                                            signal
+                                                                                            .totalRetriesInARow()
+                                                                                    + 1,
+                                                                            retryMaxAttempts - 1,
+                                                                            signal.failure()
+                                                                                    .getMessage(),
+                                                                            signal.failure()));
+                                    return retrySource
+                                            .doOnNext(response -> emitted.set(true))
+                                            .retryWhen(retrySpec);
+                                });
                 LOG.debug(
                         "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
                         maxAttempts,

@@ -180,4 +180,39 @@ class ModelUtilsStreamingRetryTest {
         assertEquals(List.of("a", "b", "c"), delivered);
         assertEquals(1, subscriptions.get());
     }
+
+    @Test
+    @DisplayName("emitted state is per-subscription, not shared across subscribers")
+    void emittedFlagIsPerSubscription() {
+        // Every subscription emits one chunk and then fails with a retryable error. The first
+        // subscription therefore ends with "something was emitted". If that state were shared
+        // across subscriptions (allocated once outside Flux.defer), the second subscriber would
+        // inherit it and behave differently from the first.
+        Flux<ChatResponse> upstream =
+                Flux.concat(
+                        Flux.just(chunk("chunk")),
+                        Flux.error(new IOException("connection reset by peer")));
+
+        GenerateOptions options = retryOptions();
+        Flux<ChatResponse> wrapped =
+                ModelUtils.applyTimeoutAndRetry(upstream, options, options, "test-model", "test");
+
+        List<String> first =
+                wrapped.map(ModelUtilsStreamingRetryTest::textOf)
+                        .onErrorResume(error -> Flux.empty())
+                        .collectList()
+                        .block(BLOCK_TIMEOUT);
+        List<String> second =
+                wrapped.map(ModelUtilsStreamingRetryTest::textOf)
+                        .onErrorResume(error -> Flux.empty())
+                        .collectList()
+                        .block(BLOCK_TIMEOUT);
+
+        assertEquals(List.of("chunk"), first, "first subscription should deliver one chunk");
+        assertEquals(
+                first,
+                second,
+                "a second subscription must behave identically — retry state leaking across"
+                        + " subscribers would make it diverge from the first");
+    }
 }
