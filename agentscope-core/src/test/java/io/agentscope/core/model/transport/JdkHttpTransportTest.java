@@ -36,6 +36,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -587,7 +588,8 @@ class JdkHttpTransportTest {
 
     @Test
     void testStreamConnectionError() throws Exception {
-        // Disconnect immediately to simulate connection error
+        // HTTP/2→HTTP/1.1 fallback retries once, so enqueue two responses
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
         mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
 
         HttpRequest request =
@@ -1062,5 +1064,288 @@ class JdkHttpTransportTest {
         assertEquals(HttpClient.Version.HTTP_1_1, config.getHttpVersion().toJdkHttpVersion());
         assertNotNull(jdkHttpTransport);
         assertNotNull(jdkHttpTransport2);
+    }
+
+    // ── HTTP/2 → HTTP/1.1 fallback tests ───────────────────────────────
+    //
+    // Decision tree tested:
+    //
+    //   Connection error (statusCode == null)?
+    //   ├─ Yes → HTTP_2 configured?
+    //   │        ├─ Yes → fallback to HTTP/1.1, retry once
+    //   │        │        ├─ Success → return response
+    //   │        │        └─ Failure → throw original error
+    //   │        └─ No (already HTTP_1_1) → throw (no lower protocol)
+    //   └─ No (has HTTP status code) → don't fallback (protocol is fine)
+    //
+    // Uses SocketPolicy.DISCONNECT_AT_START to simulate connection-level
+    // errors (no HTTP status code) which match the signature of real
+    // HTTP/2 GOAWAY / RST_STREAM failures.
+
+    @Test
+    @DisplayName("HTTP_2 + connection drop → fallback to HTTP/1.1 succeeds (execute)")
+    void testHttp2ConnectionDropFallbackExecute() {
+        // Enqueue 1: connection drops (simulates HTTP/2 GOAWAY)
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+        // Enqueue 2: HTTP/1.1 fallback success
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"result\": \"ok\"}"));
+
+        HttpTransportConfig http2Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http2Transport = new JdkHttpTransport(http2Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/test").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            // After fallback: first request fails (HTTP/2 connection drop),
+            // second request succeeds via HTTP/1.1.
+            HttpResponse response = http2Transport.execute(request);
+            assertEquals(200, response.getStatusCode());
+            assertEquals("{\"result\": \"ok\"}", response.getBody());
+        } finally {
+            http2Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_2 + stream connection drop → fallback to HTTP/1.1 succeeds (stream)")
+    void testHttp2ConnectionDropFallbackStream() {
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpTransportConfig http2Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http2Transport = new JdkHttpTransport(http2Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            // After fallback: first stream fails, second succeeds.
+            StepVerifier.create(http2Transport.stream(request))
+                    .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                    .verifyComplete();
+        } finally {
+            http2Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_1_1 + normal request → execute succeeds")
+    void testHttp11NormalExecute() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"result\": \"ok\"}"));
+
+        HttpTransportConfig http11Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http11Transport = new JdkHttpTransport(http11Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/test").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            HttpResponse response = http11Transport.execute(request);
+            assertEquals(200, response.getStatusCode());
+            assertEquals("{\"result\": \"ok\"}", response.getBody());
+        } finally {
+            http11Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_1_1 + normal request → stream succeeds")
+    void testHttp11NormalStream() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpTransportConfig http11Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http11Transport = new JdkHttpTransport(http11Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            StepVerifier.create(http11Transport.stream(request))
+                    .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                    .verifyComplete();
+        } finally {
+            http11Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_1_1 + connection drop → throw directly (already at lowest protocol)")
+    void testHttp11ConnectionDropNoFallback() {
+        // HTTP_1_1 already — nothing to fall back to.
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+        // Second response never reached because there's no fallback.
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        HttpTransportConfig http11Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http11Transport = new JdkHttpTransport(http11Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/test").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            assertThrows(HttpTransportException.class, () -> http11Transport.execute(request));
+        } finally {
+            http11Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_2 + HTTP 500 error → do NOT fallback (has status code, protocol is fine)")
+    void testHttp2NoFallbackForHttpError() throws Exception {
+        // Server returned HTTP status code → protocol connection succeeded.
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(500).setBody("{\"error\": \"server error\"}"));
+
+        HttpTransportConfig http2Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http2Transport = new JdkHttpTransport(http2Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/test").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            HttpResponse response = http2Transport.execute(request);
+            assertEquals(500, response.getStatusCode());
+        } finally {
+            http2Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_2 + two connection drops → fallback fails, throw original error")
+    void testHttp2FallbackFailsThrowsOriginalError() {
+        // First request: HTTP/2 connection drops.
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+        // Fallback: HTTP/1.1 also drops.
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+
+        HttpTransportConfig http2Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http2Transport = new JdkHttpTransport(http2Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/test").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            // Both attempts fail — must still throw, not silently eat the error.
+            assertThrows(HttpTransportException.class, () -> http2Transport.execute(request));
+        } finally {
+            http2Transport.close();
+        }
+    }
+
+    @Test
+    @DisplayName("HTTP_2 + mid-stream disconnect → error, no fallback retry")
+    void testHttp2MidStreamDisconnectNoFallback() {
+        // Only one response: starts sending SSE data, then disconnects mid-body.
+        // If the onErrorResume were placed after flatMapMany, the mid-stream
+        // error would be caught and trigger a fallback retry, causing duplicate
+        // chunks and a second request. The fix moves onErrorResume before
+        // flatMapMany so only connection-setup failures trigger fallback.
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"id\":\"1\"}\n\ndata: {\"id\":\"2\"}\n\n")
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY));
+
+        HttpTransportConfig http2Config =
+                HttpTransportConfig.builder()
+                        .httpVersion(HttpVersion.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .readTimeout(Duration.ofSeconds(10))
+                        .build();
+        JdkHttpTransport http2Transport = new JdkHttpTransport(http2Config);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-mid-disconnect").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            List<String> received = new ArrayList<>();
+            StepVerifier.create(http2Transport.stream(request))
+                    .recordWith(() -> received)
+                    .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                    .expectError()
+                    .verify(Duration.ofSeconds(5));
+
+            // Only 1 request was made — confirms no fallback retry happened.
+            assertEquals(1, mockServer.getRequestCount());
+        } finally {
+            http2Transport.close();
+        }
     }
 }
