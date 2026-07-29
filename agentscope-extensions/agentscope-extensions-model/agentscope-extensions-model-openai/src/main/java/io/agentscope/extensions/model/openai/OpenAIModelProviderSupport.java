@@ -15,6 +15,10 @@
  */
 package io.agentscope.extensions.model.openai;
 
+import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelCreationContext;
@@ -25,14 +29,14 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 
 /** Shared helper methods for OpenAI-compatible model providers. */
-public final class ModelProviderSupport {
+public final class OpenAIModelProviderSupport {
 
     private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
 
-    private ModelProviderSupport() {}
+    private OpenAIModelProviderSupport() {}
 
     public static void applyAdvancedOptions(
             OpenAIChatModel.Builder builder, ModelCreationContext context) {
@@ -73,60 +77,5 @@ public final class ModelProviderSupport {
         if (nativeStructuredOutputWithTools != null) {
             builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
         }
-    }
-
-    public static <T> T findAssignableComponent(
-            ModelCreationContext context, Class<T> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return componentType.cast(value);
-            }
-        }
-        return null;
-    }
-
-    public static String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
-        for (String value : values) {
-            String normalized = trimToNull(value);
-            if (normalized != null) {
-                return normalized;
-            }
-        }
-        return null;
-    }
-
-    public static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    public static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    public static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
     }
 }
