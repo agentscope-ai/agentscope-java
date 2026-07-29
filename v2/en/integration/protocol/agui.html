@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-20T12:18:53+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
+    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -927,19 +927,29 @@
         <article role="main" id="furo-main-content">
           <section id="ag-ui">
 <h1>AG-UI<a class="headerlink" href="#ag-ui" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> converts AgentScope event streams into <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> events so front-end UIs (Vercel AG-UI, custom chat UIs) can render the Agent’s runtime — text, tool calls, and reasoning (ThinkingBlock).</p>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> converts AgentScope v2 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> streams into <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.</p>
 <section id="when-to-use">
-<h2>When to use<a class="headerlink" href="#when-to-use" title="Link to this heading">¶</a></h2>
+<h2>When To Use<a class="headerlink" href="#when-to-use" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>You need to feed AG-UI-compatible front-end components.</p></li>
-<li><p>You want users to see tool calls and the model’s reasoning streaming in.</p></li>
+<li><p>You need to connect an AgentScope agent to an AG-UI-compatible front end or a custom chat UI.</p></li>
+<li><p>You need to stream <code class="docutils literal notranslate"><span class="pre">RUN_*</span></code>, <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code>, <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_*</span></code>, <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code>, and related AG-UI events over SSE.</p></li>
+<li><p>You need frontend tools, user-approval interrupts, runtime context propagation, or custom event-conversion extensions.</p></li>
 </ul>
 </section>
-<section id="add-the-dependency">
-<h2>Add the dependency<a class="headerlink" href="#add-the-dependency" title="Link to this heading">¶</a></h2>
+<section id="add-dependencies">
+<h2>Add Dependencies<a class="headerlink" href="#add-dependencies" title="Link to this heading">¶</a></h2>
+<p>For manual adapter usage, add:</p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-agui<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>Spring Boot applications can use the starter:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-agui-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
@@ -954,7 +964,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Flux</span><span class="p">;</span>
 
 <span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableReasoning</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">        </span><span class="c1">// emit ThinkingBlock as REASONING_* events</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReasoning</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitTokenUsage</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">runTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -964,76 +975,276 @@
 <span class="n">Flux</span><span class="o">&lt;</span><span class="n">AguiEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">runAgentInput</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>The front end provides <code class="docutils literal notranslate"><span class="pre">runAgentInput</span></code> (containing <code class="docutils literal notranslate"><span class="pre">threadId</span></code>, <code class="docutils literal notranslate"><span class="pre">runId</span></code>, <code class="docutils literal notranslate"><span class="pre">messages</span></code>, etc.). The adapter converts messages, calls the Agent’s streaming API, and maps the events to AG-UI.</p>
+<p>The front end provides <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code>, including <code class="docutils literal notranslate"><span class="pre">threadId</span></code>, <code class="docutils literal notranslate"><span class="pre">runId</span></code>, <code class="docutils literal notranslate"><span class="pre">messages</span></code>, <code class="docutils literal notranslate"><span class="pre">tools</span></code>, <code class="docutils literal notranslate"><span class="pre">state</span></code>等. The adapter converts AG-UI messages to AgentScope <code class="docutils literal notranslate"><span class="pre">Msg</span></code> objects, invokes v2 <code class="docutils literal notranslate"><span class="pre">streamEvents(...)</span></code>, and converts each <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> to AG-UI events.</p>
 </section>
 <section id="event-mapping">
-<h2>Event mapping<a class="headerlink" href="#event-mapping" title="Link to this heading">¶</a></h2>
+<h2>Event Mapping<a class="headerlink" href="#event-mapping" title="Link to this heading">¶</a></h2>
+<p>The v2 path consumes <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code>. Built-in converters handle semantic mapping, and unmapped events fall back to the official <code class="docutils literal notranslate"><span class="pre">RAW</span></code> event.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>AgentScope event / block</p></th>
+<tr class="row-odd"><th class="head"><p>AgentScope event / content</p></th>
 <th class="head"><p>AG-UI event</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.REASONING</span> <span class="pre">/</span> <span class="pre">SUMMARY</span></code> with <code class="docutils literal notranslate"><span class="pre">TextBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.REASONING</span> <span class="pre">/</span> <span class="pre">SUMMARY</span></code> with <code class="docutils literal notranslate"><span class="pre">ThinkingBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">REASONING_*</span></code> (when <code class="docutils literal notranslate"><span class="pre">enableReasoning=true</span></code>)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code></p></td>
+<tr class="row-even"><td><p>Text</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_START</span></code> / <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_CONTENT</span></code> / <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_END</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.TOOL_RESULT</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code></p></td>
+<tr class="row-odd"><td><p>Thinking (<code class="docutils literal notranslate"><span class="pre">enableReasoning=true</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_START</span></code> / <code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_CONTENT</span></code> / <code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_END</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Tool-call and argument deltas</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code> / <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_ARGS</span></code> / <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Tool result</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_RESULT</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">CustomEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>token usage (<code class="docutils literal notranslate"><span class="pre">emitTokenUsage=true</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code>, <code class="docutils literal notranslate"><span class="pre">name=token_usage</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Unmapped <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RAW</span></code>, with official <code class="docutils literal notranslate"><span class="pre">event</span></code> and <code class="docutils literal notranslate"><span class="pre">source</span></code> fields</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>Normal <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> and <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> events are driven by upstream <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> and <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>. If a normal stream completes without an upstream <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>, the adapter does not synthesize <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>. On errors, the adapter emits a <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> with a <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>, then emits a fallback <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>.</p>
 </section>
-<section id="spring-boot-integration">
-<h2>Spring Boot integration<a class="headerlink" href="#spring-boot-integration" title="Link to this heading">¶</a></h2>
-<p>The typical wire-up is a <code class="docutils literal notranslate"><span class="pre">&#64;PostMapping(&quot;/ag-ui&quot;)</span></code> returning the <code class="docutils literal notranslate"><span class="pre">Flux&lt;AguiEvent&gt;</span></code> as SSE. Alternatively, use <code class="docutils literal notranslate"><span class="pre">agentscope-agui-spring-boot-starter</span></code> to register the controller automatically.</p>
+<section id="ag-ui-base-event-properties">
+<h2>AG-UI Base Event Properties<a class="headerlink" href="#ag-ui-base-event-properties" title="Link to this heading">¶</a></h2>
+<p>Every <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> supports the official base event properties: optional <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> and <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>.</p>
+<p>The default config does not enable <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code>, so the framework does not add <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> to every event by default and does not expose internal <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> objects as <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code> by default. Enable the default enricher explicitly if you want timestamps filled:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseEventPropertiesEnricherEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> only fills a missing <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>; it preserves existing timestamps and does not write <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>. To expose <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>, register a custom <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code>.</p>
+<p>The Spring Boot starter does not implicitly enable the default base properties enricher. If you want that behavior, expose a <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> bean or your own <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> bean.</p>
 </section>
-<section id="common-configuration">
-<h2>Common configuration<a class="headerlink" href="#common-configuration" title="Link to this heading">¶</a></h2>
+<section id="custom-converters-and-enrichers">
+<h2>Custom Converters And Enrichers<a class="headerlink" href="#custom-converters-and-enrichers" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> extends or overrides semantic mapping. For the same <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> type, a user converter overrides the built-in converter.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AgentEventConverter</span><span class="w"> </span><span class="nf">customEventConverter</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentEventConverter</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nd">@Override</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Set</span><span class="o">&lt;</span><span class="n">Class</span><span class="o">&lt;?</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">AgentEvent</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">eventTypes</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">CustomEvent</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="nd">@Override</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">AgentEvent</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">AguiStreamContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CustomEvent</span><span class="w"> </span><span class="n">customEvent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">CustomEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">;</span>
+<span class="w">            </span><span class="n">context</span><span class="p">.</span><span class="na">emit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AguiEvent</span><span class="p">.</span><span class="na">Custom</span><span class="p">(</span>
+<span class="w">                </span><span class="n">context</span><span class="p">.</span><span class="na">getThreadId</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">context</span><span class="p">.</span><span class="na">getRunId</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">customEvent</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">customEvent</span><span class="p">.</span><span class="na">getValue</span><span class="p">()));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> runs after conversion. It is intended for cross-cutting concerns such as <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>, <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>, tracing fields, or other event decoration. It may modify, append, or filter converter output.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AguiEventEnricher</span><span class="w"> </span><span class="nf">timestampEnricher</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">source</span><span class="p">,</span><span class="w"> </span><span class="n">events</span><span class="p">,</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">events</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">AguiEvents</span><span class="p">.</span><span class="na">withBaseProperties</span><span class="p">(</span>
+<span class="w">            </span><span class="n">event</span><span class="p">,</span>
+<span class="w">            </span><span class="n">event</span><span class="p">.</span><span class="na">timestamp</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">timestamp</span><span class="p">()</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">event</span><span class="p">.</span><span class="na">rawEvent</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The Spring Boot starter automatically collects <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> and <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> beans and uses <code class="docutils literal notranslate"><span class="pre">orderedStream()</span></code> so <code class="docutils literal notranslate"><span class="pre">&#64;Order</span></code> / <code class="docutils literal notranslate"><span class="pre">Ordered</span></code> are honored.</p>
+</section>
+<section id="token-usage">
+<h2>Token Usage<a class="headerlink" href="#token-usage" title="Link to this heading">¶</a></h2>
+<p>Token usage is disabled by default. Manual config:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitTokenUsage</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Spring Boot config:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agui</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">emit-token-usage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<p>When enabled, every <code class="docutils literal notranslate"><span class="pre">ModelCallEndEvent</span></code> with usage emits a <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> event: <code class="docutils literal notranslate"><span class="pre">delta</span></code> is the current model-call usage. <code class="docutils literal notranslate"><span class="pre">cumulative</span></code> is the accumulated usage within the current AG-UI run.</p>
+</section>
+<section id="runtimecontext">
+<h2>RuntimeContext<a class="headerlink" href="#runtimecontext" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AguiAgentAdapter.run(input,</span> <span class="pre">runtimeContext)</span></code> accepts a caller-provided <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>. The adapter copies the caller context first, then applies AG-UI protocol metadata so the required defaults are not lost.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Field</p></th>
-<th class="head"><p>Default</p></th>
-<th class="head"><p>Notes</p></th>
+<tr class="row-odd"><th class="head"><p>RuntimeContext entry</p></th>
+<th class="head"><p>Source</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">toolMergeMode</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code></p></td>
-<td><p>How front-end-defined tools merge with Agent-side tools</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sessionId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.threadId</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">emitStateEvents</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-<td><p>Emit <code class="docutils literal notranslate"><span class="pre">STATE_*</span></code> events (e.g. thread state)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.class</span></code></p></td>
+<td><p>Full <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">emitToolCallArgs</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-<td><p>Stream tool-call arguments</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.threadId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.threadId</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enableReasoning</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
-<td><p>Emit ThinkingBlock as REASONING_* events</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.runId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.runId</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">runTimeout</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">10m</span></code></p></td>
-<td><p>Per-run timeout</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.messages</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.messages</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">defaultAgentId</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code></p></td>
-<td><p>Default <code class="docutils literal notranslate"><span class="pre">agentId</span></code> when none is provided</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.tools</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.tools</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.context</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.context</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.state</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.state</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.forwardedProps</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.forwardedProps</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.resume</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.resume</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>Because <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> always comes from <code class="docutils literal notranslate"><span class="pre">threadId</span></code>, the same agent instance remains isolated across AG-UI threads.</p>
+</section>
+<section id="spring-boot-integration">
+<h2>Spring Boot Integration<a class="headerlink" href="#spring-boot-integration" title="Link to this heading">¶</a></h2>
+<p>The starter registers MVC or WebFlux endpoints automatically. Common config:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agui</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">path-prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/agui</span>
+<span class="w">    </span><span class="nt">cors-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">run-timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10m</span>
+<span class="w">    </span><span class="nt">default-agent-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="nt">enable-path-routing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">agent-id-header</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Agent-Id</span>
+<span class="w">    </span><span class="nt">emit-state-events</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">emit-tool-call-args</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">emit-token-usage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">enable-reasoning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">server-side-memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</pre></div>
+</div>
+<p>You can extend the default chain with beans:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code>: custom event semantic mapping.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code>: cross-cutting event enrichment.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code>: request-scoped <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> injection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiAgentAdapterFactory</span></code>: replacement for default <code class="docutils literal notranslate"><span class="pre">AguiAgentAdapter</span></code> construction.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code> can read the transport, path agent id, header agent id, headers, query params, and native Web request.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AguiRuntimeContextResolver</span><span class="w"> </span><span class="nf">runtimeContextResolver</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;tenantId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Tenant-Id&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;traceId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Trace-Id&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">forwardedProps</span></code> comes from the client request body and is suitable for UI options or frontend context. Do not treat it as a trusted identity source; server-side user identity should come from authentication or a server-side resolver.</p>
+</section>
+<section id="frontend-tools-and-merge-mode">
+<h2>Frontend Tools And Merge Mode<a class="headerlink" href="#frontend-tools-and-merge-mode" title="Link to this heading">¶</a></h2>
+<p>An AG-UI front end can pass tool schemas through <code class="docutils literal notranslate"><span class="pre">RunAgentInput.tools</span></code>. The adapter injects those tools into the agent toolkit at the start of one run and cleans them up after the run completes or is cancelled.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">ToolMergeMode</span></code></p></th>
+<th class="head"><p>Behavior</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">FRONTEND_ONLY</span></code></p></td>
+<td><p>Use only frontend-provided tools and temporarily hide existing agent tools</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AGENT_ONLY</span></code></p></td>
+<td><p>Ignore frontend-provided tools and use only the agent toolkit</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code></p></td>
+<td><p>Merge both sides; frontend tools win on name conflicts</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The default is <code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code>. Injection is run scoped and does not permanently mutate the agent toolkit.</p>
+</section>
+<section id="hitl-interrupts">
+<h2>HITL Interrupts<a class="headerlink" href="#hitl-interrupts" title="Link to this heading">¶</a></h2>
+<p>When the model requests a tool and suspension is needed for user approval or external execution, the AG-UI adapter converts the suspended result into a <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> interrupt outcome:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RUN_FINISHED&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;interrupt&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;interrupts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Need approval before running this tool&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The front end can show an approval or external-execution UI. After the user acts, send the official <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> field on the next <code class="docutils literal notranslate"><span class="pre">runAgent</span></code> request for the same <code class="docutils literal notranslate"><span class="pre">threadId</span></code>:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;threadId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread-1&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run-2&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">&quot;resume&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;interruptId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resolved&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">status</span></code> supports the official <code class="docutils literal notranslate"><span class="pre">resolved</span></code> and <code class="docutils literal notranslate"><span class="pre">cancelled</span></code> values. For the common approval case where a user rejects a tool request, prefer <code class="docutils literal notranslate"><span class="pre">resolved</span></code> and express the business decision in <code class="docutils literal notranslate"><span class="pre">payload</span></code>, for example <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;approved&quot;:</span> <span class="pre">false</span> <span class="pre">}</span></code>; use <code class="docutils literal notranslate"><span class="pre">cancelled</span></code> when the interrupt itself is cancelled.</p>
+<p>AgentScope Java bridges tool-call <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> entries to the <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> messages required by core so the suspended tool call can continue. Through the Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> entry point, the processor records the latest <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code> and resolves the real <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code> by <code class="docutils literal notranslate"><span class="pre">interruptId</span></code>.</p>
+<p>The built-in resume path currently covers tool-call interrupts generated by the AG-UI adapter. Custom interrupts with different semantics usually need a custom <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> / <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> or request-processing layer to interpret their <code class="docutils literal notranslate"><span class="pre">payload</span></code>.</p>
+</section>
+<section id="example-project">
+<h2>Example Project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
+<p>See the complete example at <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui">agentscope-examples/agui</a>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>your-key
+<span class="nb">cd</span><span class="w"> </span>agentscope-examples/agui
+mvn<span class="w"> </span>spring-boot:run
+</pre></div>
+</div>
+<p>Visit http://localhost:8080 after startup. The example demonstrates multi-agent routing, custom converters, custom enrichers, token usage, and HITL interrupts.</p>
 </section>
 </section>
 
@@ -1090,7 +1301,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-20</div>
+              Last updated on 2026-07-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1126,12 +1337,18 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">AG-UI</a><ul>
-<li><a class="reference internal" href="#when-to-use">When to use</a></li>
-<li><a class="reference internal" href="#add-the-dependency">Add the dependency</a></li>
+<li><a class="reference internal" href="#when-to-use">When To Use</a></li>
+<li><a class="reference internal" href="#add-dependencies">Add Dependencies</a></li>
 <li><a class="reference internal" href="#quickstart">Quickstart</a></li>
-<li><a class="reference internal" href="#event-mapping">Event mapping</a></li>
-<li><a class="reference internal" href="#spring-boot-integration">Spring Boot integration</a></li>
-<li><a class="reference internal" href="#common-configuration">Common configuration</a></li>
+<li><a class="reference internal" href="#event-mapping">Event Mapping</a></li>
+<li><a class="reference internal" href="#ag-ui-base-event-properties">AG-UI Base Event Properties</a></li>
+<li><a class="reference internal" href="#custom-converters-and-enrichers">Custom Converters And Enrichers</a></li>
+<li><a class="reference internal" href="#token-usage">Token Usage</a></li>
+<li><a class="reference internal" href="#runtimecontext">RuntimeContext</a></li>
+<li><a class="reference internal" href="#spring-boot-integration">Spring Boot Integration</a></li>
+<li><a class="reference internal" href="#frontend-tools-and-merge-mode">Frontend Tools And Merge Mode</a></li>
+<li><a class="reference internal" href="#hitl-interrupts">HITL Interrupts</a></li>
+<li><a class="reference internal" href="#example-project">Example Project</a></li>
 </ul>
 </li>
 </ul>

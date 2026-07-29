@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-18T03:23:39+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
+    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -927,19 +927,29 @@
         <article role="main" id="furo-main-content">
           <section id="ag-ui">
 <h1>AG-UI<a class="headerlink" href="#ag-ui" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> 把 AgentScope 的事件流转成 <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> 事件，让前端 UI（Vercel AG-UI、自研 Chat UI 等）可以直接渲染 Agent 的运行过程，包括文本、工具调用、思考内容（ThinkingBlock）。</p>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> 把 AgentScope v2 的 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 流转换为 <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> 事件，让前端 UI 可以实时渲染 agent 的运行过程，包括文本、推理内容、工具调用、状态、自定义事件、token usage 和 HITL interrupt。</p>
 <section id="id1">
 <h2>何时使用<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>需要把 Agent 接入对接 AG-UI 协议的前端组件库。</p></li>
-<li><p>想让用户在 UI 上看到工具调用过程、模型思考过程的”打字机”流式展示。</p></li>
+<li><p>需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。</p></li>
+<li><p>需要以 SSE 流式输出 <code class="docutils literal notranslate"><span class="pre">RUN_*</span></code>、<code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code>、<code class="docutils literal notranslate"><span class="pre">TOOL_CALL_*</span></code>、<code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> 等 AG-UI 事件。</p></li>
+<li><p>需要前端工具、用户审批中断、运行上下文或自定义事件转换扩展。</p></li>
 </ul>
 </section>
 <section id="id2">
 <h2>添加依赖<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>手动使用协议适配器时添加：</p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-agui<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>Spring Boot 应用直接使用 starter：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-agui-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
@@ -954,7 +964,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Flux</span><span class="p">;</span>
 
 <span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableReasoning</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">        </span><span class="c1">// 输出 ThinkingBlock 为 REASONING_* 事件</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReasoning</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitTokenUsage</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">runTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -964,76 +975,276 @@
 <span class="n">Flux</span><span class="o">&lt;</span><span class="n">AguiEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">runAgentInput</span><span class="p">);</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">runAgentInput</span></code> 由前端传过来（含 <code class="docutils literal notranslate"><span class="pre">threadId</span></code>、<code class="docutils literal notranslate"><span class="pre">runId</span></code>、<code class="docutils literal notranslate"><span class="pre">messages</span></code> 等），适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。</p>
+<p><code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code> 由前端传入，包含 <code class="docutils literal notranslate"><span class="pre">threadId</span></code>、<code class="docutils literal notranslate"><span class="pre">runId</span></code>、<code class="docutils literal notranslate"><span class="pre">messages</span></code>、<code class="docutils literal notranslate"><span class="pre">tools</span></code>、<code class="docutils literal notranslate"><span class="pre">state</span></code>等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。</p>
 </section>
 <section id="id4">
 <h2>事件映射<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>v2 正常链路以 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 为输入，内置 converter 负责语义映射，未映射事件会回退为官方 <code class="docutils literal notranslate"><span class="pre">RAW</span></code> 事件。</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>AgentScope 事件 / 块</p></th>
+<tr class="row-odd"><th class="head"><p>AgentScope 事件 / 内容</p></th>
 <th class="head"><p>AG-UI 事件</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.REASONING</span> <span class="pre">/</span> <span class="pre">SUMMARY</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">TextBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.REASONING</span> <span class="pre">/</span> <span class="pre">SUMMARY</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">ThinkingBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">REASONING_*</span></code>（需 <code class="docutils literal notranslate"><span class="pre">enableReasoning=true</span></code>）</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code></p></td>
+<tr class="row-even"><td><p>文本</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_START</span></code> / <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_CONTENT</span></code> / <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_END</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EventType.TOOL_RESULT</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code></p></td>
+<tr class="row-odd"><td><p>推理（<code class="docutils literal notranslate"><span class="pre">enableReasoning=true</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_START</span></code> / <code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_CONTENT</span></code> / <code class="docutils literal notranslate"><span class="pre">REASONING_MESSAGE_END</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>工具调用与参数增量</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code> / <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_ARGS</span></code> / <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>工具结果</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALL_RESULT</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">CustomEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>token usage（<code class="docutils literal notranslate"><span class="pre">emitTokenUsage=true</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code>，<code class="docutils literal notranslate"><span class="pre">name=token_usage</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>未映射 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RAW</span></code>，包含官方 <code class="docutils literal notranslate"><span class="pre">event</span></code> 和 <code class="docutils literal notranslate"><span class="pre">source</span></code> 字段</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>正常运行的 <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 由上游 <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 决定。正常流结束但上游没有发 <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 时，adapter 不会额外补 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。异常路径会输出带 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 的 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>，并补发一个 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。</p>
 </section>
-<section id="spring-boot">
-<h2>与 Spring Boot 集成<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h2>
-<p>通常做法是写一个 <code class="docutils literal notranslate"><span class="pre">&#64;PostMapping(&quot;/ag-ui&quot;)</span></code> 把 <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code> 映射到 <code class="docutils literal notranslate"><span class="pre">Flux&lt;AguiEvent&gt;</span></code> 并以 SSE 响应。也可以使用 <code class="docutils literal notranslate"><span class="pre">agentscope-agui-spring-boot-starter</span></code> 自动注册控制器。</p>
+<section id="ag-ui-base-event-properties">
+<h2>AG-UI Base Event Properties<a class="headerlink" href="#ag-ui-base-event-properties" title="Link to this heading">¶</a></h2>
+<p>所有 <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> 都支持官方 base event properties：可选 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 和 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>。</p>
+<p>默认配置不会启用 <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code>，因此框架不会默认给所有事件补 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>，也不会默认暴露内部 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 作为 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>。如需给事件补时间戳，可以显式开启默认 enricher：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseEventPropertiesEnricherEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> 只会填充缺失的 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>，不写入 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>。如果要暴露 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>，请注册自定义 <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code>。</p>
+<p>Spring Boot starter 不会隐式启用默认 base properties enricher。需要该行为时，可以声明一个 <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> bean，或声明自己的 <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> bean。</p>
 </section>
-<section id="id5">
-<h2>常用配置<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="converter-enricher">
+<h2>自定义 Converter 与 Enricher<a class="headerlink" href="#converter-enricher" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> 用于扩展或覆盖语义映射。同一个 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 类型上，用户 converter 会覆盖内置 converter。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AgentEventConverter</span><span class="w"> </span><span class="nf">customEventConverter</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentEventConverter</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nd">@Override</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Set</span><span class="o">&lt;</span><span class="n">Class</span><span class="o">&lt;?</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">AgentEvent</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">eventTypes</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">CustomEvent</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="nd">@Override</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">AgentEvent</span><span class="w"> </span><span class="n">event</span><span class="p">,</span><span class="w"> </span><span class="n">AguiStreamContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CustomEvent</span><span class="w"> </span><span class="n">customEvent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">CustomEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">;</span>
+<span class="w">            </span><span class="n">context</span><span class="p">.</span><span class="na">emit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AguiEvent</span><span class="p">.</span><span class="na">Custom</span><span class="p">(</span>
+<span class="w">                </span><span class="n">context</span><span class="p">.</span><span class="na">getThreadId</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">context</span><span class="p">.</span><span class="na">getRunId</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">customEvent</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">customEvent</span><span class="p">.</span><span class="na">getValue</span><span class="p">()));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> 在 converter 之后执行，适合处理 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>、<code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>、追踪字段等横切属性，也可以修改、追加或过滤 converter 输出的事件。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AguiEventEnricher</span><span class="w"> </span><span class="nf">timestampEnricher</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">source</span><span class="p">,</span><span class="w"> </span><span class="n">events</span><span class="p">,</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">events</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">AguiEvents</span><span class="p">.</span><span class="na">withBaseProperties</span><span class="p">(</span>
+<span class="w">            </span><span class="n">event</span><span class="p">,</span>
+<span class="w">            </span><span class="n">event</span><span class="p">.</span><span class="na">timestamp</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">timestamp</span><span class="p">()</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">event</span><span class="p">.</span><span class="na">rawEvent</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Spring Boot starter 会自动收集 <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> 和 <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> bean，并使用 <code class="docutils literal notranslate"><span class="pre">orderedStream()</span></code> 保留 <code class="docutils literal notranslate"><span class="pre">&#64;Order</span></code> / <code class="docutils literal notranslate"><span class="pre">Ordered</span></code> 顺序。</p>
+</section>
+<section id="token-usage">
+<h2>Token Usage<a class="headerlink" href="#token-usage" title="Link to this heading">¶</a></h2>
+<p>Token usage 默认不发送。手动配置：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitTokenUsage</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Spring Boot 配置：</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agui</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">emit-token-usage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<p>开启后，每个携带 usage 的 <code class="docutils literal notranslate"><span class="pre">ModelCallEndEvent</span></code> 会输出一个 <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> 事件：<code class="docutils literal notranslate"><span class="pre">delta</span></code> 表示当前模型调用消耗，<code class="docutils literal notranslate"><span class="pre">cumulative</span></code> 表示本次 AG-UI run 内累计消耗。</p>
+</section>
+<section id="runtimecontext">
+<h2>RuntimeContext<a class="headerlink" href="#runtimecontext" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AguiAgentAdapter.run(input,</span> <span class="pre">runtimeContext)</span></code> 支持调用方传入自定义 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>。适配器会先复制调用方 context，再覆盖 AG-UI 协议元数据，确保默认元数据不会因为自定义 context 丢失。</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>字段</p></th>
-<th class="head"><p>默认</p></th>
-<th class="head"><p>说明</p></th>
+<tr class="row-odd"><th class="head"><p>RuntimeContext 内容</p></th>
+<th class="head"><p>来源</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">toolMergeMode</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code></p></td>
-<td><p>前端定义的 tool 与 Agent 内置 tool 的合并策略</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sessionId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.threadId</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">emitStateEvents</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-<td><p>是否输出 <code class="docutils literal notranslate"><span class="pre">STATE_*</span></code> 事件（如 thread 状态）</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.class</span></code></p></td>
+<td><p>完整 <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">emitToolCallArgs</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-<td><p>是否流式发送工具调用参数</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.threadId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.threadId</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enableReasoning</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
-<td><p>是否把 ThinkingBlock 输出为 REASONING_* 事件</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.runId</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.runId</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">runTimeout</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">10m</span></code></p></td>
-<td><p>单次运行超时时间</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.messages</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.messages</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">defaultAgentId</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code></p></td>
-<td><p>没有显式 <code class="docutils literal notranslate"><span class="pre">agentId</span></code> 时使用的默认值</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.tools</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.tools</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.context</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.context</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.state</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.state</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agui.forwardedProps</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.forwardedProps</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agui.resume</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RunAgentInput.resume</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>由于 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 始终来自 <code class="docutils literal notranslate"><span class="pre">threadId</span></code>，同一个 agent 实例在不同 AG-UI thread 之间保持会话隔离。</p>
+</section>
+<section id="spring-boot">
+<h2>Spring Boot 集成<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h2>
+<p>starter 会自动注册 MVC 或 WebFlux 入口。常用配置如下：</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agui</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">path-prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/agui</span>
+<span class="w">    </span><span class="nt">cors-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">run-timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10m</span>
+<span class="w">    </span><span class="nt">default-agent-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="nt">enable-path-routing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">agent-id-header</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Agent-Id</span>
+<span class="w">    </span><span class="nt">emit-state-events</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">emit-tool-call-args</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">emit-token-usage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">enable-reasoning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">server-side-memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</pre></div>
+</div>
+<p>可以通过 bean 扩展默认链路：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code>：注册自定义事件语义映射。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code>：注册事件横切增强。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code>：为每次 Web 请求注入自定义 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiAgentAdapterFactory</span></code>：替换默认 <code class="docutils literal notranslate"><span class="pre">AguiAgentAdapter</span></code> 构造逻辑。</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code> 可以读取 transport、path agentId、header agentId、headers、query params 和原生 Web request。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AguiRuntimeContextResolver</span><span class="w"> </span><span class="nf">runtimeContextResolver</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;tenantId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Tenant-Id&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;traceId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Trace-Id&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">forwardedProps</span></code> 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路或服务端 resolver 注入。</p>
+</section>
+<section id="frontend-tools">
+<h2>Frontend Tools 与合并模式<a class="headerlink" href="#frontend-tools" title="Link to this heading">¶</a></h2>
+<p>AG-UI 前端可以在 <code class="docutils literal notranslate"><span class="pre">RunAgentInput.tools</span></code> 中传入工具 schema。adapter 会在单次 run 开始时把这些工具注入 agent toolkit，并在 run 结束或取消后清理。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">ToolMergeMode</span></code></p></th>
+<th class="head"><p>行为</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">FRONTEND_ONLY</span></code></p></td>
+<td><p>只使用前端传入工具，临时隐藏 agent 原有工具</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AGENT_ONLY</span></code></p></td>
+<td><p>忽略前端传入工具，只使用 agent toolkit</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code></p></td>
+<td><p>合并两侧工具；同名时前端工具优先</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>默认值是 <code class="docutils literal notranslate"><span class="pre">MERGE_FRONTEND_PRIORITY</span></code>。注入是 run scoped，不会永久修改 agent toolkit。</p>
+</section>
+<section id="hitl-interrupt">
+<h2>HITL Interrupt<a class="headerlink" href="#hitl-interrupt" title="Link to this heading">¶</a></h2>
+<p>当模型请求工具但需要用户审批或外部执行挂起时，AG-UI adapter 会把挂起结果转换为 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 的 interrupt outcome：</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RUN_FINISHED&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;interrupt&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;interrupts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Need approval before running this tool&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>前端拿到 interrupt 后可以弹出审批或外部执行 UI。用户完成操作后，在同一个 <code class="docutils literal notranslate"><span class="pre">threadId</span></code> 的下一次 <code class="docutils literal notranslate"><span class="pre">runAgent</span></code> 请求中带回官方 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code>：</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;threadId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread-1&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run-2&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">&quot;resume&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;interruptId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resolved&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">status</span></code> 支持官方的 <code class="docutils literal notranslate"><span class="pre">resolved</span></code> 和 <code class="docutils literal notranslate"><span class="pre">cancelled</span></code>。对于用户拒绝某个工具请求的常见审批场景，建议仍使用 <code class="docutils literal notranslate"><span class="pre">resolved</span></code>，并在 <code class="docutils literal notranslate"><span class="pre">payload</span></code> 中表达业务决策，例如 <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;approved&quot;:</span> <span class="pre">false</span> <span class="pre">}</span></code>；<code class="docutils literal notranslate"><span class="pre">cancelled</span></code> 更适合表示该 interrupt 本身被取消。</p>
+<p>AgentScope Java 会把 tool-call interrupt 的 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> 桥接为 core 需要的 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>，从而恢复上一次挂起的工具调用。通过 Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> 入口时，processor 会记录最近一次 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code>，并按 <code class="docutils literal notranslate"><span class="pre">interruptId</span></code> 解析真实 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>。</p>
+<p>当前内置恢复只覆盖 AG-UI adapter 生成的 tool-call interrupt。自定义 interrupt 如果不是 tool-call 语义，通常需要自定义 <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> / <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> 或请求处理层来解释 <code class="docutils literal notranslate"><span class="pre">payload</span></code>。</p>
+</section>
+<section id="id5">
+<h2>示例项目<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>完整示例见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui">agentscope-examples/agui</a>：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>your-key
+<span class="nb">cd</span><span class="w"> </span>agentscope-examples/agui
+mvn<span class="w"> </span>spring-boot:run
+</pre></div>
+</div>
+<p>启动后访问 http://localhost:8080 查看默认前端示例。该示例展示了多 agent 路由、自定义 converter、自定义 enricher、token usage 和 HITL interrupt。</p>
 </section>
 </section>
 
@@ -1090,7 +1301,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-18</div>
+              Last updated on 2026-07-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1130,8 +1341,14 @@
 <li><a class="reference internal" href="#id2">添加依赖</a></li>
 <li><a class="reference internal" href="#id3">快速上手</a></li>
 <li><a class="reference internal" href="#id4">事件映射</a></li>
-<li><a class="reference internal" href="#spring-boot">与 Spring Boot 集成</a></li>
-<li><a class="reference internal" href="#id5">常用配置</a></li>
+<li><a class="reference internal" href="#ag-ui-base-event-properties">AG-UI Base Event Properties</a></li>
+<li><a class="reference internal" href="#converter-enricher">自定义 Converter 与 Enricher</a></li>
+<li><a class="reference internal" href="#token-usage">Token Usage</a></li>
+<li><a class="reference internal" href="#runtimecontext">RuntimeContext</a></li>
+<li><a class="reference internal" href="#spring-boot">Spring Boot 集成</a></li>
+<li><a class="reference internal" href="#frontend-tools">Frontend Tools 与合并模式</a></li>
+<li><a class="reference internal" href="#hitl-interrupt">HITL Interrupt</a></li>
+<li><a class="reference internal" href="#id5">示例项目</a></li>
 </ul>
 </li>
 </ul>

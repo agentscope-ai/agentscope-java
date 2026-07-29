@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-15T06:41:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
+    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/change-log.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -1308,6 +1308,17 @@
 <section id="id2">
 <h2>新增内容<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <p>下面列出的能力都是 2.0 的增量新增，对 1.x 代码 0 影响。事件系统、消息重构、middleware 机制已在上方迁移指南完整覆盖，此处不再重复。</p>
+<section id="ag-ui-v2">
+<h3>AG-UI v2<a class="headerlink" href="#ag-ui-v2" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>AG-UI 适配器迁移到 v2 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 链路，正常 <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> / <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 由 <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 转换生成，异常路径输出 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> 并补 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code></p></li>
+<li><p>新增 <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> 扩展点：converter 负责语义映射，enricher 负责 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> / <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code> 等横切属性；Spring Boot starter 会自动收集对应 bean</p></li>
+<li><p>所有 <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> 支持 AG-UI base event properties；默认不启用 <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code>，显式开启后只补缺失 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>，不默认填 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiAdapterConfig.emitTokenUsage</span></code> 可选输出 <code class="docutils literal notranslate"><span class="pre">CUSTOM</span> <span class="pre">token_usage</span></code> 事件，包含当前模型调用 delta 与本次 run cumulative token usage</p></li>
+<li><p>Spring Boot starter 支持 <code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code> 和自定义 <code class="docutils literal notranslate"><span class="pre">AguiAgentAdapterFactory</span></code>，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出</p></li>
+</ul>
+<p>详见 → <a class="reference internal" href="../integration/protocol/agui.html"><span class="std std-doc">AG-UI</span></a></p>
+</section>
 <section id="toolkit-permission">
 <h3>Toolkit &amp; Permission<a class="headerlink" href="#toolkit-permission" title="Link to this heading">¶</a></h3>
 <p>工具执行是 2.0 主要的扩展面，而权限系统直接挂在工具执行路径上，因此合并讲。</p>
@@ -1428,7 +1439,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-15</div>
+              Last updated on 2026-07-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1491,6 +1502,7 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#id2">新增内容</a><ul>
+<li><a class="reference internal" href="#ag-ui-v2">AG-UI v2</a></li>
 <li><a class="reference internal" href="#toolkit-permission">Toolkit &amp; Permission</a></li>
 <li><a class="reference internal" href="#id3">模型容错与凭据</a></li>
 <li><a class="reference internal" href="#workspace-harness">Workspace（Harness 模块）</a></li>

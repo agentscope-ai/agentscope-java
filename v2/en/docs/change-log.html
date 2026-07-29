@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-15T06:41:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
+    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/change-log.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -1308,6 +1308,17 @@
 <section id="what-s-new">
 <h2>What’s New<a class="headerlink" href="#what-s-new" title="Link to this heading">¶</a></h2>
 <p>The capabilities below are additive in 2.0 — none of them break 1.x code. The Migration Guide above already covers the event system, message refactor, and middleware mechanism, so they are not repeated here.</p>
+<section id="ag-ui-v2">
+<h3>AG-UI v2<a class="headerlink" href="#ag-ui-v2" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>The AG-UI adapter now uses the v2 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> path. Normal <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> / <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> events are converted from <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>; error paths emit <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> and a fallback <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>.</p></li>
+<li><p>New <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> and <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> extension points: converters handle semantic mapping, while enrichers handle cross-cutting properties such as <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> / <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>. The Spring Boot starter automatically collects both bean types.</p></li>
+<li><p>Every <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> supports AG-UI base event properties. <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> is disabled by default; when explicitly enabled, it only fills missing <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> values and does not default <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AguiAdapterConfig.emitTokenUsage</span></code> can emit <code class="docutils literal notranslate"><span class="pre">CUSTOM</span> <span class="pre">token_usage</span></code> events with model-call delta and run-level cumulative token usage.</p></li>
+<li><p>The Spring Boot starter supports <code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code>, custom <code class="docutils literal notranslate"><span class="pre">AguiAgentAdapterFactory</span></code>, frontend tool injection / merge mode, and HITL interrupt output.</p></li>
+</ul>
+<p>Detail → <a class="reference internal" href="../integration/protocol/agui.html"><span class="std std-doc">AG-UI</span></a></p>
+</section>
 <section id="toolkit-permission">
 <h3>Toolkit &amp; Permission<a class="headerlink" href="#toolkit-permission" title="Link to this heading">¶</a></h3>
 <p>Tool execution is the main extension surface in 2.0, and the permission system sits directly on its execution path — so we present them together.</p>
@@ -1428,7 +1439,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-15</div>
+              Last updated on 2026-07-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1491,6 +1502,7 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#what-s-new">What’s New</a><ul>
+<li><a class="reference internal" href="#ag-ui-v2">AG-UI v2</a></li>
 <li><a class="reference internal" href="#toolkit-permission">Toolkit &amp; Permission</a></li>
 <li><a class="reference internal" href="#model-fault-tolerance-and-credentials">Model fault tolerance and credentials</a></li>
 <li><a class="reference internal" href="#workspace-harness-module">Workspace (Harness module)</a></li>
