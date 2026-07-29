@@ -105,6 +105,18 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new SimpleTools());
 ```
 
+:::{tip}
+**Spring Boot auto-registration.** When using `agentscope-spring-boot-starter`, annotate your tool class with `@ToolBean` and it will be auto-registered into every `Toolkit` bean — no manual `registerTool(...)` call needed:
+
+```java
+@ToolBean
+public class MyTools {
+    @Tool(name = "search", description = "Search the web")
+    public String search(@ToolParam(name = "query") String query) { ... }
+}
+```
+:::
+
 Common `@Tool` attributes:
 
 | Attribute | Type | Description |
