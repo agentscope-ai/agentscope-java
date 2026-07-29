@@ -15,9 +15,9 @@
  */
 package io.agentscope.extensions.model.openai.compat.deepseek;
 
-import static io.agentscope.extensions.model.openai.ModelProviderSupport.applyAdvancedOptions;
-import static io.agentscope.extensions.model.openai.ModelProviderSupport.firstNonBlank;
-import static io.agentscope.extensions.model.openai.ModelProviderSupport.trimToNull;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.applyAdvancedOptions;
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
