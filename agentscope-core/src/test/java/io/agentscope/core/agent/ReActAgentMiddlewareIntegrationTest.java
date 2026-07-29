@@ -80,6 +80,26 @@ class ReActAgentMiddlewareIntegrationTest {
         }
     }
 
+    private static final class InterruptedAfterTextModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "interrupted-after-text";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.concat(
+                    Flux.just(
+                            ChatResponse.builder()
+                                    .content(
+                                            List.<ContentBlock>of(
+                                                    TextBlock.builder().text("raw").build()))
+                                    .build()),
+                    Flux.error(new InterruptedException("interrupted after text")));
+        }
+    }
+
     /** Records entry/exit at every middleware hook to a shared trace list. */
     private static final class RecordingMiddleware implements MiddlewareBase {
         private final String tag;
@@ -294,6 +314,42 @@ class ReActAgentMiddlewareIntegrationTest {
                         .findFirst()
                         .orElseThrow();
         assertNull(textDelta.getDelta());
+    }
+
+    @Test
+    void transformedTextIsUsedForPartialMessageWhenModelCallIsInterrupted() {
+        MiddlewareBase replacingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            return new TextBlockDeltaEvent(
+                                                    textDelta.getReplyId(),
+                                                    textDelta.getBlockId(),
+                                                    "transformed");
+                                        });
+                    }
+                };
+        ReActAgent agent =
+                buildAgent(new InterruptedAfterTextModel(), List.of(replacingMiddleware));
+
+        agent.streamEvents(List.of()).onErrorResume(error -> Flux.empty()).blockLast();
+
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "transformed".equals(message.getTextContent())));
+        assertFalse(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "raw".equals(message.getTextContent())));
     }
 
     /**

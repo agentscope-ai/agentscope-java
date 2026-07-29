@@ -2151,7 +2151,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     }
                                 }
                             })
-                    .doOnComplete(
+                    .doOnTerminate(
                             () -> {
                                 if (sawTransformedTextDelta.get()
                                         || !context.getAccumulatedText().isEmpty()) {
