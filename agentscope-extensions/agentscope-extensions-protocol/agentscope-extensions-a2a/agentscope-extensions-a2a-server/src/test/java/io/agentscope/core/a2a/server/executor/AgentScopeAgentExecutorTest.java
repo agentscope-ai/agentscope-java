@@ -1187,9 +1187,21 @@ class AgentScopeAgentExecutorTest {
                 assertEquals(taskId, artifactUpdateEvent.taskId());
                 assertEquals(contextId, artifactUpdateEvent.contextId());
                 Artifact artifact = artifactUpdateEvent.artifact();
-                assertEquals(1, artifact.parts().size());
-                assertInstanceOf(TextPart.class, artifact.parts().get(0));
-                assertEquals(expectedBlocks.get(i), ((TextPart) artifact.parts().get(0)).text());
+                boolean terminalResultWithToolEvidence =
+                        withToolResult && i == expectedBlocks.size() - 1;
+                assertEquals(terminalResultWithToolEvidence ? 2 : 1, artifact.parts().size());
+                int textPartIndex = 0;
+                if (terminalResultWithToolEvidence) {
+                    DataPart resultPart = assertInstanceOf(DataPart.class, artifact.parts().get(0));
+                    assertEquals(
+                            MessageConstants.BlockContent.TYPE_TOOL_RESULT,
+                            resultPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+                    textPartIndex = 1;
+                }
+                assertInstanceOf(TextPart.class, artifact.parts().get(textPartIndex));
+                assertEquals(
+                        expectedBlocks.get(i),
+                        ((TextPart) artifact.parts().get(textPartIndex)).text());
             }
             StreamingEventKind completedEvent =
                     streamingEventKinds.get(streamingEventKinds.size() - 1);

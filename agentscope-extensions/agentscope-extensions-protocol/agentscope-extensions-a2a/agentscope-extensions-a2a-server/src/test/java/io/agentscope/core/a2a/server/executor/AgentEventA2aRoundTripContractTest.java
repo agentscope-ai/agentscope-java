@@ -97,7 +97,7 @@ class AgentEventA2aRoundTripContractTest {
     }
 
     @Test
-    void roundTripsStreamingContractAndFinalResultAcrossServerAndClient() {
+    void roundTripsStreamingContractAndRetainsToolResultBeforeFinalText() {
         encoder.onNext(
                 sourced(new TextBlockDeltaEvent("reply-1", "text-1", "Hel"), "main/researcher"));
         encoder.onNext(
@@ -166,10 +166,14 @@ class AgentEventA2aRoundTripContractTest {
 
         Msg completed = MessageConvertUtil.convertFromArtifact(wireArtifact.snapshot(), "agent");
         assertTrue(wireArtifact.lastChunk);
-        assertEquals(1, completed.getContent().size());
+        assertEquals(2, completed.getContent().size());
+        ToolResultBlock completedToolResult =
+                assertInstanceOf(ToolResultBlock.class, completed.getContent().get(0));
+        assertEquals("call-1", completedToolResult.getId());
+        assertEquals(ToolResultState.SUCCESS, completedToolResult.getState());
         assertEquals(
                 "final answer",
-                assertInstanceOf(TextBlock.class, completed.getContent().get(0)).getText());
+                assertInstanceOf(TextBlock.class, completed.getContent().get(1)).getText());
         verify(emitter, times(1)).complete();
     }
 
@@ -183,6 +187,132 @@ class AgentEventA2aRoundTripContractTest {
         assertEquals(1, streamed.getContent().size());
         assertEquals(
                 "Hello", assertInstanceOf(TextBlock.class, streamed.getContent().get(0)).getText());
+    }
+
+    @Test
+    void terminalToolCallTurnRetainsTheCompletedToolResult() {
+        encoder.onNext(new ToolResultStartEvent("reply-1", "call-1", "prepareOperation"));
+        encoder.onNext(
+                new ToolResultTextDeltaEvent(
+                        "reply-1",
+                        "call-1",
+                        "prepareOperation",
+                        "{\"approvalId\":\"approval-1\",\"status\":\"SUCCEEDED\"}"));
+        encoder.onNext(
+                new ToolResultEndEvent(
+                        "reply-1", "call-1", "prepareOperation", ToolResultState.SUCCESS));
+
+        encoder.onNext(
+                new AgentResultEvent(
+                        Msg.builder()
+                                .id("reply-1")
+                                .name("agent")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ToolUseBlock.builder()
+                                                .id("call-1")
+                                                .name("prepareOperation")
+                                                .input(Map.of("key", "value"))
+                                                .build())
+                                .build()));
+        encoder.onComplete();
+
+        Msg completed = MessageConvertUtil.convertFromArtifact(wireArtifact.snapshot(), "agent");
+        List<ToolResultBlock> results = completed.getContentBlocks(ToolResultBlock.class);
+
+        assertEquals(1, results.size());
+        assertEquals("call-1", results.get(0).getId());
+        assertEquals("prepareOperation", results.get(0).getName());
+        assertEquals(ToolResultState.SUCCESS, results.get(0).getState());
+        assertEquals(
+                "{\"approvalId\":\"approval-1\",\"status\":\"SUCCEEDED\"}",
+                assertInstanceOf(TextBlock.class, results.get(0).getOutput().get(0)).getText());
+    }
+
+    @Test
+    void terminalResultDoesNotDuplicateAnAlreadyIncludedToolResult() {
+        ToolResultBlock result =
+                ToolResultBlock.text("completed")
+                        .withIdAndName("call-1", "prepareOperation")
+                        .withState(ToolResultState.SUCCESS);
+        encoder.onNext(new ToolResultStartEvent("reply-1", "call-1", "prepareOperation"));
+        encoder.onNext(
+                new ToolResultTextDeltaEvent("reply-1", "call-1", "prepareOperation", "completed"));
+        encoder.onNext(
+                new ToolResultEndEvent(
+                        "reply-1", "call-1", "prepareOperation", ToolResultState.SUCCESS));
+
+        encoder.onNext(
+                new AgentResultEvent(
+                        Msg.builder()
+                                .id("reply-1")
+                                .name("agent")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("call-1")
+                                                        .name("prepareOperation")
+                                                        .input(Map.of())
+                                                        .build(),
+                                                result))
+                                .build()));
+        encoder.onComplete();
+
+        Msg completed = MessageConvertUtil.convertFromArtifact(wireArtifact.snapshot(), "agent");
+
+        assertEquals(1, completed.getContentBlocks(ToolResultBlock.class).size());
+    }
+
+    @Test
+    void terminalToolCallTurnRetainsMultipleOrderedResultsIncludingFailureAndData() {
+        DataBlock payload =
+                DataBlock.builder()
+                        .id("data-1")
+                        .name("result.json")
+                        .source(
+                                new URLSource(
+                                        "https://example.test/result.json", "application/json"))
+                        .build();
+        encoder.onNext(new ToolResultStartEvent("reply-1", "call-1", "firstTool"));
+        encoder.onNext(new ToolResultDataDeltaEvent("reply-1", "call-1", "firstTool", payload));
+        encoder.onNext(
+                new ToolResultEndEvent("reply-1", "call-1", "firstTool", ToolResultState.SUCCESS));
+        encoder.onNext(new ToolResultStartEvent("reply-1", "call-2", "secondTool"));
+        encoder.onNext(
+                new ToolResultTextDeltaEvent("reply-1", "call-2", "secondTool", "failed safely"));
+        encoder.onNext(
+                new ToolResultEndEvent("reply-1", "call-2", "secondTool", ToolResultState.ERROR));
+
+        encoder.onNext(
+                new AgentResultEvent(
+                        Msg.builder()
+                                .id("reply-1")
+                                .name("agent")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("call-3")
+                                                        .name("nextTool")
+                                                        .input(Map.of())
+                                                        .build()))
+                                .build()));
+        encoder.onComplete();
+
+        Msg completed = MessageConvertUtil.convertFromArtifact(wireArtifact.snapshot(), "agent");
+        List<ToolResultBlock> results = completed.getContentBlocks(ToolResultBlock.class);
+
+        assertEquals(
+                List.of("call-1", "call-2"), results.stream().map(ToolResultBlock::getId).toList());
+        assertEquals(ToolResultState.SUCCESS, results.get(0).getState());
+        assertEquals(
+                "data-1",
+                assertInstanceOf(DataBlock.class, results.get(0).getOutput().get(0)).getId());
+        assertEquals(ToolResultState.ERROR, results.get(1).getState());
+        assertEquals(
+                "failed safely",
+                assertInstanceOf(TextBlock.class, results.get(1).getOutput().get(0)).getText());
     }
 
     private static <T extends AgentEvent> T sourced(T event, String source) {

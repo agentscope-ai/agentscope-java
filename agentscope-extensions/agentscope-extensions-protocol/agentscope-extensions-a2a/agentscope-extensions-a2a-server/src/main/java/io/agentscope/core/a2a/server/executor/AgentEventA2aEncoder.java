@@ -54,8 +54,10 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +131,7 @@ final class AgentEventA2aEncoder {
     private final Map<String, ToolCallAccumulator> toolCalls = new ConcurrentHashMap<>();
     private final Map<String, ToolResultAccumulator> toolResults = new ConcurrentHashMap<>();
     private final List<Part<?>> blockingParts = new ArrayList<>();
+    private final Map<String, Part<?>> completedToolResultParts = new LinkedHashMap<>();
 
     private AgentEventA2aEncoder(
             RequestContext context,
@@ -418,8 +421,11 @@ final class AgentEventA2aEncoder {
                         .toList();
         Map<String, Object> data =
                 Map.of(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY, wireOutput);
-        emitArtifact(
-                List.of(new DataPart(protobufSafeValue(data), protobufSafeMap(metadata))), false);
+        DataPart resultPart = new DataPart(protobufSafeValue(data), protobufSafeMap(metadata));
+        if (streaming) {
+            completedToolResultParts.put(accumulator.toolCallId(), resultPart);
+        }
+        emitArtifact(List.of(resultPart), false);
     }
 
     private void emitHint(HintBlockEvent hint) {
@@ -566,6 +572,21 @@ final class AgentEventA2aEncoder {
             return;
         }
         List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(result);
+        if (!completedToolResultParts.isEmpty()) {
+            Set<String> finalResultToolIds = new HashSet<>();
+            for (ToolResultBlock block : result.getContentBlocks(ToolResultBlock.class)) {
+                finalResultToolIds.add(block.getId());
+            }
+            List<Part<?>> terminalParts = new ArrayList<>();
+            completedToolResultParts.forEach(
+                    (toolCallId, part) -> {
+                        if (!finalResultToolIds.contains(toolCallId)) {
+                            terminalParts.add(part);
+                        }
+                    });
+            terminalParts.addAll(parts);
+            parts = terminalParts;
+        }
         if (!parts.isEmpty()) {
             Map<String, Object> metadata = protobufSafeMap(result.getMetadata());
             emitter.addArtifact(
