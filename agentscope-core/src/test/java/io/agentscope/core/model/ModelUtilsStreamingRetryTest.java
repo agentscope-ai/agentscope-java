@@ -164,6 +164,30 @@ class ModelUtilsStreamingRetryTest {
     }
 
     @Test
+    @DisplayName("non-retryable error before the first chunk: no retry")
+    void nonRetryableErrorBeforeFirstChunk_noRetry() {
+        AtomicInteger subscriptions = new AtomicInteger();
+
+        // Nothing emitted yet, so the "already emitted" guard does not short-circuit and the
+        // retryOn predicate is what has to reject this error. Completes the branch matrix of
+        // `!emitted.get() && retryableError.test(error)`.
+        Flux<ChatResponse> upstream =
+                Flux.defer(
+                        () -> {
+                            subscriptions.incrementAndGet();
+                            return Flux.error(new IllegalStateException("bad request shape"));
+                        });
+
+        List<String> delivered = collect(upstream, retryOptions());
+
+        assertEquals(List.of(), delivered, "a non-retryable failure yields nothing");
+        assertEquals(
+                1,
+                subscriptions.get(),
+                "a non-retryable error must not be retried even when nothing was emitted yet");
+    }
+
+    @Test
     @DisplayName("clean stream: retry config does not alter delivery")
     void cleanStream_unaffectedByRetryConfig() {
         AtomicInteger subscriptions = new AtomicInteger();
