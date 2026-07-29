@@ -679,8 +679,11 @@ public class AgentSpawnTool {
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                .doOnTerminate(
-                                        () ->
+                                // doFinally, not doOnTerminate: the latter skips cancel, so a
+                                // parent cancel would leave the AgentStartEvent above unmatched
+                                // and consumers would render this subagent as running forever.
+                                .doFinally(
+                                        signal ->
                                                 parentEmitter.emit(
                                                         new AgentEndEvent(null)
                                                                 .withSource(sourcePath)));
