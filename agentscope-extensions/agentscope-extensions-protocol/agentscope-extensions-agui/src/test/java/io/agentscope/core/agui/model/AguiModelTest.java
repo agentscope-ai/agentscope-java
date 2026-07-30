@@ -497,6 +497,9 @@ class AguiModelTest {
             AguiContext context = new AguiContext("User name", "Alice");
             Map<String, Object> state = Map.of("count", 10);
             Map<String, Object> forwardedProps = Map.of("custom", "value");
+            AguiResume resume =
+                    new AguiResume(
+                            "interrupt-1", AguiResume.STATUS_RESOLVED, Map.of("approved", true));
 
             RunAgentInput input =
                     RunAgentInput.builder()
@@ -507,13 +510,16 @@ class AguiModelTest {
                             .context(List.of(context))
                             .state(state)
                             .forwardedProps(forwardedProps)
+                            .resume(List.of(resume))
                             .build();
 
             assertTrue(input.hasMessages());
             assertTrue(input.hasTools());
             assertTrue(input.hasContext());
             assertTrue(input.hasState());
+            assertTrue(input.hasResume());
             assertEquals("value", input.getForwardedProp("custom"));
+            assertEquals(List.of(resume), input.getResume());
         }
 
         @Test
@@ -530,6 +536,8 @@ class AguiModelTest {
             assertTrue(input.getState().isEmpty());
             assertNotNull(input.getForwardedProps());
             assertTrue(input.getForwardedProps().isEmpty());
+            assertNotNull(input.getResume());
+            assertTrue(input.getResume().isEmpty());
         }
 
         @Test
@@ -548,6 +556,7 @@ class AguiModelTest {
             assertFalse(emptyInput.hasTools());
             assertFalse(emptyInput.hasContext());
             assertFalse(emptyInput.hasState());
+            assertFalse(emptyInput.hasResume());
         }
 
         @Test
@@ -591,6 +600,7 @@ class AguiModelTest {
             assertTrue(str.contains("thread-123"));
             assertTrue(str.contains("run-456"));
             assertTrue(str.contains("messages=1"));
+            assertTrue(str.contains("resume=0"));
         }
 
         @Test
@@ -601,16 +611,26 @@ class AguiModelTest {
                             .runId("r1")
                             .messages(List.of(AguiMessage.userMessage("m1", "Test")))
                             .state(Map.of("key", "value"))
+                            .resume(
+                                    List.of(
+                                            new AguiResume(
+                                                    "interrupt-1",
+                                                    AguiResume.STATUS_RESOLVED,
+                                                    Map.of("approved", true))))
                             .build();
 
             String json = JsonUtils.getJsonCodec().toJson(input);
             assertTrue(json.contains("\"threadId\":\"t1\""));
             assertTrue(json.contains("\"runId\":\"r1\""));
+            assertTrue(json.contains("\"resume\""));
+            assertTrue(json.contains("\"interruptId\":\"interrupt-1\""));
 
             RunAgentInput deserialized =
                     JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
             assertEquals(input.getThreadId(), deserialized.getThreadId());
             assertEquals(input.getMessages().size(), deserialized.getMessages().size());
+            assertEquals(input.getResume().size(), deserialized.getResume().size());
+            assertEquals("interrupt-1", deserialized.getResume().get(0).getInterruptId());
         }
 
         @Test
@@ -619,7 +639,9 @@ class AguiModelTest {
                     "{\"threadId\":\"t1\",\"runId\":\"r1\","
                         + "\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"Hello\"}],"
                         + "\"tools\":[],\"context\":[],\"state\":{\"key\":\"value\"},"
-                        + "\"forwardedProps\":{\"prop1\":123}}";
+                        + "\"forwardedProps\":{\"prop1\":123},"
+                        + "\"resume\":[{\"interruptId\":\"int-1\",\"status\":\"resolved\","
+                        + "\"payload\":{\"approved\":true}}]}";
 
             RunAgentInput input = JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
 
@@ -628,6 +650,43 @@ class AguiModelTest {
             assertEquals(1, input.getMessages().size());
             assertEquals("value", input.getState().get("key"));
             assertEquals(123, input.getForwardedProp("prop1"));
+            assertEquals(1, input.getResume().size());
+            assertEquals("int-1", input.getResume().get(0).getInterruptId());
+            assertEquals(AguiResume.STATUS_RESOLVED, input.getResume().get(0).getStatus());
+        }
+    }
+
+    @Nested
+    class AguiResumeTest {
+
+        @Test
+        void testCreation() {
+            AguiResume resume =
+                    new AguiResume(
+                            "interrupt-1", AguiResume.STATUS_RESOLVED, Map.of("approved", true));
+
+            assertEquals("interrupt-1", resume.getInterruptId());
+            assertEquals(AguiResume.STATUS_RESOLVED, resume.getStatus());
+            assertTrue(resume.isResolved());
+            assertFalse(resume.isCancelled());
+        }
+
+        @Test
+        void testCancelled() {
+            AguiResume resume = new AguiResume("interrupt-1", AguiResume.STATUS_CANCELLED, null);
+
+            assertTrue(resume.isCancelled());
+            assertFalse(resume.isResolved());
+            assertNull(resume.getPayload());
+        }
+
+        @Test
+        void testNullFieldsThrow() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiResume(null, AguiResume.STATUS_RESOLVED, null));
+            assertThrows(
+                    NullPointerException.class, () -> new AguiResume("interrupt-1", null, null));
         }
     }
 

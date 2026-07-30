@@ -489,7 +489,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 responses.add(FileUploadResponse.success(filePath));
             } catch (IOException e) {
                 responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
-            } catch (SecurityException e) {
+            } catch (SecurityException | IllegalArgumentException e) {
                 responses.add(FileUploadResponse.fail(filePath, "permission_denied"));
             }
         }
@@ -628,6 +628,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private Path resolveRooted(String effectiveKey) {
+        AbstractFilesystem.validatePath(effectiveKey);
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             Path normalized = target.normalize();
@@ -657,7 +658,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             return full;
         }
 
-        return cwd.resolve(target).normalize();
+        Path full = cwd.resolve(target).normalize();
+        if (!full.startsWith(cwd)) {
+            throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+        }
+        return full;
     }
 
     private SecurityException rootAccessDenied(Path normalized) {
