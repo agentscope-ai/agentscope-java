@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -32,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -285,8 +287,81 @@ class LocalFilesystemModeTest {
                 new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
 
         // Path traversal with leading "/" should be rejected
-        org.junit.jupiter.api.Assertions.assertThrows(
-                SecurityException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> fs.read(RuntimeContext.empty(), "/../etc/passwd", 0, 0));
+    }
+
+    @Test
+    void rooted_relativePathTraversalRejected(@TempDir Path base) throws IOException {
+        Path workspace = base.resolve("workspace");
+        Files.createDirectories(workspace);
+        Path outsideFile = base.resolve("secret.txt");
+        Files.writeString(outsideFile, "secret", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> fs.read(RuntimeContext.empty(), "../secret.txt", 0, 0));
+    }
+
+    @Test
+    void rooted_relativeUploadTraversalRejected(@TempDir Path base) throws IOException {
+        Path workspace = base.resolve("workspace");
+        Files.createDirectories(workspace);
+        Path escaped = base.resolve("escape.txt");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        var responses =
+                fs.uploadFiles(
+                        RuntimeContext.empty(),
+                        List.of(
+                                Map.entry(
+                                        "../escape.txt",
+                                        "escape".getBytes(StandardCharsets.UTF_8))));
+
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertEquals("permission_denied", responses.get(0).error());
+        assertFalse(Files.exists(escaped));
+    }
+
+    @Test
+    void rooted_relativeTraversalCannotEscapeUserNamespace(@TempDir Path workspace)
+            throws IOException {
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createDirectories(workspace.resolve("user-2"));
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        var responses =
+                fs.uploadFiles(
+                        rc,
+                        List.of(
+                                Map.entry(
+                                        "../user-2/escape.txt",
+                                        "escape".getBytes(StandardCharsets.UTF_8))));
+
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertFalse(Files.exists(workspace.resolve("user-2/escape.txt")));
+    }
+
+    @Test
+    void rooted_literalDoubleDotInRelativeSegmentAllowed(@TempDir Path workspace)
+            throws IOException {
+        Path file = workspace.resolve("some..dir/note.txt");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "literal name", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        ReadResult result = fs.read(RuntimeContext.empty(), "some..dir/note.txt", 0, 0);
+
+        assertTrue(result.isSuccess());
+        assertEquals("literal name", result.fileData().content());
     }
 }
