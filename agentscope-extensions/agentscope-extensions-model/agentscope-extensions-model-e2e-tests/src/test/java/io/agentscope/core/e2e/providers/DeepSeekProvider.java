@@ -18,8 +18,8 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
-import io.agentscope.extensions.model.openai.formatter.DeepSeekFormatter;
-import io.agentscope.extensions.model.openai.formatter.DeepSeekMultiAgentFormatter;
+import io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekFormatter;
+import io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekMultiAgentFormatter;
 import java.util.HashSet;
 import java.util.Set;
 

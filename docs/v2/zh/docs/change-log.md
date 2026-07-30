@@ -247,6 +247,16 @@ ReActAgent agent = ReActAgent.builder()
 
 下面列出的能力都是 2.0 的增量新增，对 1.x 代码 0 影响。事件系统、消息重构、middleware 机制已在上方迁移指南完整覆盖，此处不再重复。
 
+### AG-UI v2
+
+- AG-UI 适配器迁移到 v2 `streamEvents()` 链路，正常 `RUN_STARTED` / `RUN_FINISHED` 由 `AgentStartEvent` / `AgentEndEvent` 转换生成，异常路径输出 `RUN_ERROR` 并补 `RUN_FINISHED`
+- 新增 `AgentEventConverter` 与 `AguiEventEnricher` 扩展点：converter 负责语义映射，enricher 负责 `timestamp` / `rawEvent` 等横切属性；Spring Boot starter 会自动收集对应 bean
+- 所有 `AguiEvent` 支持 AG-UI base event properties；默认不启用 `BaseEventPropertiesEnricher`，显式开启后只补缺失 `timestamp`，不默认填 `rawEvent`
+- `AguiAdapterConfig.emitTokenUsage` 可选输出 `CUSTOM token_usage` 事件，包含当前模型调用 delta 与本次 run cumulative token usage
+- Spring Boot starter 支持 `AguiRuntimeContextResolver` 和自定义 `AguiAgentAdapterFactory`，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出
+
+详见 → [AG-UI](../integration/protocol/agui.md)
+
 ### Toolkit & Permission
 
 工具执行是 2.0 主要的扩展面，而权限系统直接挂在工具执行路径上，因此合并讲。

@@ -2,7 +2,7 @@
 
 AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不同的第三方 SDK。把所有依赖打包到一起会让项目变得臃肿，所以我们提供了两种引入方式：
 
-- **All-in-one**：一个依赖搞定，默认带 DashScope SDK 和 MCP SDK，快速上手
+- **All-in-one**：一个依赖搞定，默认带常用模型扩展（OpenAI / Gemini / Anthropic / DashScope / Ollama）和 MCP SDK，快速上手
 - **Core + 扩展**：最小化核心包，按需加扩展模块，适合对依赖有严格要求的场景
 
 大多数情况下用 all-in-one 就够了，需要精细控制依赖时再换成 core + 扩展。
@@ -13,7 +13,7 @@ AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不
 
 | 方式 | 适用场景 | 特点 |
 |-----|---------|------|
-| **all-in-one** | 快速开始、大多数用户 | 单一依赖，默认带 DashScope SDK |
+| **all-in-one** | 快速开始、大多数用户 | 单一依赖，默认带常用模型扩展与 MCP SDK |
 | **core + 扩展** | 精细控制依赖 | 按需引入，依赖最小化 |
 
 ---
@@ -25,32 +25,33 @@ AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.12'
+implementation 'io.agentscope:agentscope:2.0.0'
 ```
 
 ### 默认包含的依赖
 
-All-in-one 包默认带以下依赖，不用额外配置：
+All-in-one 包（`io.agentscope:agentscope`）已打包常用模型扩展及其所需第三方 SDK，**不必再额外引入模型厂商 SDK**：
 
-- DashScope 模型支持（通义千问系列模型，通过原生 HTTP 调用，无需额外 SDK）
+- OpenAI 模型支持（`agentscope-extensions-model-openai`，原生 HTTP，无需 `openai-java`）
+- Google Gemini 模型支持（含 Google GenAI SDK）
+- Anthropic 模型支持（含 Anthropic Java SDK）
+- DashScope 模型支持（通义千问系列）
+- Ollama 模型支持
 - MCP SDK（模型上下文协议）
 - Reactor Core、Jackson、SLF4J（基础框架）
 
 ### 额外功能的依赖
 
-用其他模型或功能时，需要手动加对应依赖：
+下列能力在使用 **core + 扩展** 时，或 all-in-one 未覆盖的运行时驱动 / 可选组件时，才需要按需补充。All-in-one 用户使用上方已列出的模型时，**无需**再手动添加 OpenAI / Gemini / Anthropic / DashScope / Ollama SDK。
 
 | 功能                   | 依赖                                                                                       | Maven 坐标                         |
 |----------------------|------------------------------------------------------------------------------------------|----------------------------------|
-| **OpenAI 模型**        | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
-| **Google Gemini 模型** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
-| **Anthropic 模型**     | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
 | **Mem0 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **ReME 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **百炼 RAG**           | [百炼 SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)               | `com.aliyun:bailian20231229`     |
@@ -67,20 +68,10 @@ All-in-one 包默认带以下依赖，不用额外配置：
 | **文档 处理** | [Apache Tika Core](https://central.sonatype.com/artifact/org.apache.tika/tika-core) + [Apache Tika Parsers](https://central.sonatype.com/artifact/org.apache.tika/tika-parsers-standard-package) | `org.apache.tika:tika-core` + `org.apache.tika:tika-parsers-standard-package` |
 | **Nacos注册中心**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
-#### 示例：用 OpenAI 模型
-
-```xml
-<!-- 在 agentscope 基础上加 -->
-<dependency>
-    <groupId>com.openai</groupId>
-    <artifactId>openai-java</artifactId>
-</dependency>
-```
-
 #### 示例：用 Qdrant RAG + PDF 处理
 
 ```xml
-<!-- 在 agentscope 基础上加 -->
+<!-- 在 agentscope 基础上加（仅当对应传递依赖未满足运行时需要时） -->
 <dependency>
     <groupId>io.qdrant</groupId>
     <artifactId>client</artifactId>
@@ -140,13 +131,13 @@ All-in-one 包默认带以下依赖，不用额外配置：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.12'
+implementation 'io.agentscope:agentscope-core:2.0.0'
 ```
 
 ### 扩展模块
@@ -206,7 +197,7 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -218,7 +209,7 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -237,7 +228,7 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -247,6 +238,6 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
