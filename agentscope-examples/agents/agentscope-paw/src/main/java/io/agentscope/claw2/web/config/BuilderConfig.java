@@ -21,6 +21,7 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
+import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
@@ -105,7 +106,10 @@ public class BuilderConfig {
     // -----------------------------------------------------------------
 
     @Bean
-    public ClawBootstrap builderBootstrap(Optional<Model> modelOpt, ToolEventBus toolEventBus)
+    public ClawBootstrap builderBootstrap(
+            Optional<Model> modelOpt,
+            ToolEventBus toolEventBus,
+            Optional<AgentScopeAdapter> aistioAdapter)
             throws IOException {
         Path home = resolveClawHome();
         ensureAgentscopeConfig(home);
@@ -130,6 +134,11 @@ public class BuilderConfig {
         }
 
         builder.configureAllAgents(b -> b.middleware(new ToolNotificationMiddleware(toolEventBus)));
+
+        // A ReActAgent's middleware list is fixed at build time, so aistio has to be wired in here
+        // rather than when the bridge attaches — without it there is no session to observe.
+        aistioAdapter.ifPresent(
+                adapter -> builder.configureAllAgents(b -> b.middleware(adapter.middleware())));
 
         ClawBootstrap bootstrap = builder.build();
 

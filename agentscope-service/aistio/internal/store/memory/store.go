@@ -17,17 +17,19 @@ func init() {
 
 // Store is an in-memory store.Store used for local/dev and unit tests.
 type Store struct {
-	mu        sync.RWMutex
-	sessions  map[uuid.UUID]*store.Session
-	sessKey   map[string]uuid.UUID // agent/ns/sessionID -> uuid
-	snapshots []store.SessionSnapshot
-	events    []store.SessionEvent
-	contexts  []store.ContextSnapshot
-	tokens    []store.TokenUsageMetric
-	agents    []store.AgentMetric
-	messages  []store.TeamMessage
-	tasks     []store.TeamTask
-	history   []store.TeamTaskHistory
+	mu           sync.RWMutex
+	sessionLocks *keyedMutex
+	sessions     map[uuid.UUID]*store.Session
+	sessKey      map[string]uuid.UUID // agent/ns/sessionID -> uuid
+	snapshots    []store.SessionSnapshot
+	events       []store.SessionEvent
+	contexts     []store.ContextSnapshot
+	tokens       []store.TokenUsageMetric
+	agents       []store.AgentMetric
+	messages     []store.TeamMessage
+	tasks        []store.TeamTask
+	history      []store.TeamTaskHistory
+	commands     []store.SessionCommand
 
 	nextSnapID int64
 	nextEvtID  int64
@@ -44,9 +46,10 @@ type Store struct {
 // Open creates a memory store.
 func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 	s := &Store{
-		sessions:  make(map[uuid.UUID]*store.Session),
-		sessKey:   make(map[string]uuid.UUID),
-		retention: cfg.Retention,
+		sessions:     make(map[uuid.UUID]*store.Session),
+		sessKey:      make(map[string]uuid.UUID),
+		sessionLocks: newKeyedMutex(),
+		retention:    cfg.Retention,
 	}
 	return s, nil
 }
@@ -57,10 +60,24 @@ func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return &con
 func (s *Store) Metrics() store.MetricsRepository                  { return &metricsRepo{s} }
 func (s *Store) TeamMessages() store.TeamMessageRepository         { return &messageRepo{s} }
 func (s *Store) TeamTasks() store.TeamTaskRepository               { return &taskRepo{s} }
+func (s *Store) Commands() store.SessionCommandRepository          { return &commandRepo{s} }
 
 func (s *Store) Migrate(context.Context) error { return nil }
 func (s *Store) Ping(context.Context) error    { return nil }
 func (s *Store) Close() error                  { return nil }
+
+// WithSessionLock serializes fn per sessionKey within this process.
+func (s *Store) WithSessionLock(ctx context.Context, sessionKey string, fn func(context.Context) error) error {
+	if fn == nil {
+		return nil
+	}
+	if s.sessionLocks == nil {
+		s.sessionLocks = newKeyedMutex()
+	}
+	unlock := s.sessionLocks.Lock(sessionKey)
+	defer unlock()
+	return fn(ctx)
+}
 
 func (s *Store) PurgeOlderThan(_ context.Context, r store.RetentionConfig) (int64, error) {
 	s.mu.Lock()
@@ -135,6 +152,10 @@ func cloneSession(s *store.Session) *store.Session {
 	c := *s
 	if s.TeamContext != nil {
 		c.TeamContext = append([]byte(nil), s.TeamContext...)
+	}
+	if s.Busy != nil {
+		b := *s.Busy
+		c.Busy = &b
 	}
 	return &c
 }

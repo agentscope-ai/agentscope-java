@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   Memory,
   MemoryStore,
+  archiveMemoryStore,
   createMemoryStore,
   deleteMemory,
   deleteMemoryStore,
   listMemories,
   listMemoryStores,
   putMemory,
+  redactMemory,
 } from '../api/memoryStores';
 
 const S: Record<string, React.CSSProperties> = {
@@ -112,6 +114,20 @@ export default function MemoryStoresPage() {
     }
   }
 
+  async function handleArchiveStore(id: string) {
+    if (!confirm('Archive this memory store? It will no longer mount on new sessions.')) return;
+    setBusyId(id);
+    try {
+      await archiveMemoryStore(id);
+      if (selected?.id === id) { setSelected(null); setMemories([]); }
+      await refreshStores();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Archive failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDeleteStore(id: string) {
     if (!confirm('Delete this memory store and all memories?')) return;
     setBusyId(id);
@@ -121,6 +137,20 @@ export default function MemoryStoresPage() {
       await refreshStores();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRedactMemory(path: string) {
+    if (!selected) return;
+    if (!confirm(`Redact "${path}" permanently? Version history will be cleared.`)) return;
+    setBusyId(path);
+    try {
+      await redactMemory(selected.id, path);
+      await loadMemories(selected);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Redact failed');
     } finally {
       setBusyId(null);
     }
@@ -182,13 +212,22 @@ export default function MemoryStoresPage() {
               <div style={{ fontWeight: 600 }}>{s.name}</div>
               {s.description && <div style={{ fontSize: '0.88rem', color: '#64748b' }}>{s.description}</div>}
               <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontFamily: 'monospace' }}>{s.id}</div>
-              <button
-                type="button"
-                style={{ ...S.rowBtn, ...S.danger, marginTop: 8 }}
-                onClick={e => { e.stopPropagation(); void handleDeleteStore(s.id); }}
-              >
-                Delete
-              </button>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={S.rowBtn}
+                  onClick={e => { e.stopPropagation(); void handleArchiveStore(s.id); }}
+                >
+                  Archive
+                </button>
+                <button
+                  type="button"
+                  style={{ ...S.rowBtn, ...S.danger }}
+                  onClick={e => { e.stopPropagation(); void handleDeleteStore(s.id); }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
           {!loading && stores.length === 0 && (
@@ -224,6 +263,8 @@ export default function MemoryStoresPage() {
                       <td style={S.td}>v{m.headVersion}</td>
                       <td style={S.td}>
                         <button type="button" style={S.rowBtn} onClick={() => setEditing({ path: m.path, content: m.content })}>Edit</button>
+                        {' '}
+                        <button type="button" style={S.rowBtn} onClick={() => handleRedactMemory(m.path)}>Redact</button>
                         {' '}
                         <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteMemory(m.path)}>Delete</button>
                       </td>

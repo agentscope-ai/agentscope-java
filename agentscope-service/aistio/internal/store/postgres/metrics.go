@@ -124,29 +124,7 @@ func (r *metricsRepo) LatestSnapshots(ctx context.Context, sessionFKs []uuid.UUI
 }
 
 func (r *metricsRepo) QueryTokenUsage(ctx context.Context, f store.TokenFilter) ([]*store.TokenUsageMetric, error) {
-	var (
-		conds []string
-		args  []any
-	)
-	add := func(cond string, v any) {
-		args = append(args, v)
-		conds = append(conds, fmt.Sprintf(cond, len(args)))
-	}
-	if f.AgentName != "" {
-		add("agent_name=$%d", f.AgentName)
-	}
-	if f.Namespace != "" {
-		add("namespace=$%d", f.Namespace)
-	}
-	if f.Model != "" {
-		add("model=$%d", f.Model)
-	}
-	if f.Since != nil {
-		add("recorded_at>=$%d", *f.Since)
-	}
-	if f.Until != nil {
-		add("recorded_at<=$%d", *f.Until)
-	}
+	conds, args := tokenFilterConds(f)
 	q := `SELECT id, session_fk, agent_name, namespace, model, provider,
 		prompt_tokens, completion_tokens, total_tokens, recorded_at FROM token_usage_metrics`
 	if len(conds) > 0 {
@@ -177,4 +155,214 @@ func (r *metricsRepo) QueryTokenUsage(ctx context.Context, f store.TokenFilter) 
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+func (r *metricsRepo) QueryAgentMetrics(ctx context.Context, f store.AgentMetricFilter) ([]*store.AgentMetric, error) {
+	var (
+		conds []string
+		args  []any
+	)
+	add := func(cond string, v any) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.AgentName != "" {
+		add("agent_name=$%d", f.AgentName)
+	}
+	if f.Namespace != "" {
+		add("namespace=$%d", f.Namespace)
+	}
+	if f.Since != nil {
+		add("recorded_at>=$%d", *f.Since)
+	}
+	if f.Until != nil {
+		add("recorded_at<=$%d", *f.Until)
+	}
+	q := `SELECT id, agent_name, namespace, recorded_at, active_sessions, total_messages,
+		total_tokens, avg_context_pressure, error_count, uptime_seconds FROM agent_metrics`
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += " ORDER BY recorded_at DESC"
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		q += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.AgentMetric
+	for rows.Next() {
+		m := &store.AgentMetric{}
+		if err := rows.Scan(
+			&m.ID, &m.AgentName, &m.Namespace, &m.RecordedAt, &m.ActiveSessions, &m.TotalMessages,
+			&m.TotalTokens, &m.AvgContextPressure, &m.ErrorCount, &m.UptimeSeconds,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (r *metricsRepo) AggregateTokens(ctx context.Context, f store.TokenFilter, bucket time.Duration) ([]store.TokenBucket, error) {
+	if bucket <= 0 {
+		bucket = time.Hour
+	}
+	trunc := "hour"
+	switch {
+	case bucket >= 24*time.Hour:
+		trunc = "day"
+	case bucket >= time.Hour:
+		trunc = "hour"
+	default:
+		trunc = "minute"
+	}
+	conds, args := tokenFilterConds(f)
+	q := fmt.Sprintf(`
+		SELECT date_trunc('%s', recorded_at) AS bucket_start,
+			COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0),
+			COALESCE(SUM(total_tokens),0), COUNT(*)
+		FROM token_usage_metrics`, trunc)
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += " GROUP BY bucket_start ORDER BY bucket_start ASC"
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.TokenBucket
+	for rows.Next() {
+		var b store.TokenBucket
+		if err := rows.Scan(&b.BucketStart, &b.PromptTokens, &b.CompletionTokens, &b.TotalTokens, &b.SampleCount); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (r *metricsRepo) TopAgents(ctx context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT t.agent_name, t.namespace, t.total_tokens,
+			COALESCE(a.active_sessions, 0), COALESCE(a.avg_pressure, 0), COALESCE(a.error_count, 0)
+		FROM (
+			SELECT agent_name, namespace, SUM(total_tokens)::bigint AS total_tokens
+			FROM token_usage_metrics
+			WHERE recorded_at >= $1
+			GROUP BY agent_name, namespace
+		) t
+		LEFT JOIN LATERAL (
+			SELECT active_sessions, avg_context_pressure AS avg_pressure, error_count
+			FROM agent_metrics am
+			WHERE am.agent_name = t.agent_name AND am.namespace = t.namespace
+			ORDER BY recorded_at DESC
+			LIMIT 1
+		) a ON true
+		ORDER BY t.total_tokens DESC
+		LIMIT $2`, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.AgentUsage
+	for rows.Next() {
+		var u store.AgentUsage
+		if err := rows.Scan(&u.AgentName, &u.Namespace, &u.TotalTokens, &u.ActiveSessions, &u.AvgPressure, &u.ErrorCount); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (r *metricsRepo) PressureStats(ctx context.Context, f store.SessionFilter) (avg, p95 float64, err error) {
+	conds, args := sessionFilterCondsPrefixed(f, "s")
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+	q := `
+		SELECT COALESCE(AVG(snap.context_pressure), 0),
+			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY snap.context_pressure), 0)
+		FROM sessions s
+		INNER JOIN LATERAL (
+			SELECT context_pressure FROM session_snapshots ss
+			WHERE ss.session_fk = s.id
+			ORDER BY ss.captured_at DESC
+			LIMIT 1
+		) snap ON true` + where
+	err = r.pool.QueryRow(ctx, q, args...).Scan(&avg, &p95)
+	return avg, p95, err
+}
+
+func (r *metricsRepo) SumTokenUsage(ctx context.Context, f store.TokenFilter) (int64, error) {
+	conds, args := tokenFilterConds(f)
+	q := `SELECT COALESCE(SUM(total_tokens), 0) FROM token_usage_metrics`
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	var total int64
+	err := r.pool.QueryRow(ctx, q, args...).Scan(&total)
+	return total, err
+}
+
+func (r *metricsRepo) SumErrorCount(ctx context.Context, f store.AgentMetricFilter) (int32, error) {
+	var (
+		conds []string
+		args  []any
+	)
+	add := func(cond string, v any) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.AgentName != "" {
+		add("agent_name=$%d", f.AgentName)
+	}
+	if f.Namespace != "" {
+		add("namespace=$%d", f.Namespace)
+	}
+	if f.Since != nil {
+		add("recorded_at>=$%d", *f.Since)
+	}
+	if f.Until != nil {
+		add("recorded_at<=$%d", *f.Until)
+	}
+	q := `SELECT COALESCE(SUM(error_count), 0) FROM agent_metrics`
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	var total int32
+	err := r.pool.QueryRow(ctx, q, args...).Scan(&total)
+	return total, err
+}
+
+func tokenFilterConds(f store.TokenFilter) (conds []string, args []any) {
+	add := func(cond string, v any) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.AgentName != "" {
+		add("agent_name=$%d", f.AgentName)
+	}
+	if f.Namespace != "" {
+		add("namespace=$%d", f.Namespace)
+	}
+	if f.Model != "" {
+		add("model=$%d", f.Model)
+	}
+	if f.Since != nil {
+		add("recorded_at>=$%d", *f.Since)
+	}
+	if f.Until != nil {
+		add("recorded_at<=$%d", *f.Until)
+	}
+	return conds, args
 }

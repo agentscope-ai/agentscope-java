@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dev-up.sh — start the AgentScope Service stack locally.
+# dev-up.sh - start the AgentScope Service stack locally.
 #
 #   Gateway    :8080
 #   aistiod    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
@@ -31,7 +31,8 @@ SCHED_PORT="${BUILDER_SCHEDULER_PORT:-8083}"
 PG_PORT="${BUILDER_PG_PORT:-5432}"
 PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
 
-export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-dev-internal-token}"
+# jdbc profile requires >=32 chars and rejects known short defaults (see InternalTokenStartupValidator)
+export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
 export BUILDER_JWT_SECRET="${BUILDER_JWT_SECRET:-builder-default-dev-secret-change-in-production-32chars}"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
@@ -48,24 +49,40 @@ wait_health() {
     local name="$1" port="$2" timeout="${3:-90}" path="${4:-/actuator/health}" i
     for i in $(seq 1 "$timeout"); do
         if curl -sf -m 2 "http://localhost:${port}${path}" >/dev/null 2>&1; then
-            echo "  ✔ ${name} healthy on :${port}"
+            echo "  OK ${name} healthy on :${port}"
             return 0
         fi
         sleep 1
     done
-    echo "  ✘ ${name} did not become healthy within ${timeout}s — see ${LOG_DIR}/${name}.log" >&2
+    echo "  FAIL ${name} did not become healthy within ${timeout}s - see ${LOG_DIR}/${name}.log" >&2
     return 1
 }
 
 start() {
     local name="$1" pidfile="$2"; shift 2
+    mkdir -p "$LOG_DIR" "$PID_DIR"
     if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
-        echo "  • ${name} already running (pid $(cat "$pidfile"))"
+        echo "  * ${name} already running (pid $(cat "$pidfile"))"
         return 0
     fi
-    "$@" >"$LOG_DIR/${name}.log" 2>&1 &
+    # Detach into a new session so planes survive after this script (and Cursor/CI
+    # wrappers) exit. macOS has no setsid(1); python3 is available on the supported
+    # local toolchain.
+    python3 - "$LOG_DIR/${name}.log" "$@" <<'PY' &
+import os, sys
+log_path = sys.argv[1]
+argv = sys.argv[2:]
+os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+os.setsid()
+log = open(log_path, "wb")
+os.dup2(log.fileno(), 1)
+os.dup2(log.fileno(), 2)
+devnull = open(os.devnull, "rb")
+os.dup2(devnull.fileno(), 0)
+os.execvpe(argv[0], argv, os.environ)
+PY
     echo $! >"$pidfile"
-    echo "  • ${name} started (pid $!)"
+    echo "  * ${name} started (pid $!)"
 }
 
 # ---------------------------------------------------------------- build Java
@@ -106,7 +123,7 @@ fi
 echo "==> Waiting for Postgres"
 for i in $(seq 1 60); do
     if docker exec "$PG_CONTAINER" pg_isready -U builder -d builder >/dev/null 2>&1; then
-        echo "  ✔ Postgres ready"
+        echo "  OK Postgres ready"
         break
     fi
     sleep 1
@@ -121,6 +138,25 @@ docker exec "$PG_CONTAINER" psql -U builder -d builder -c \
     "CREATE SCHEMA IF NOT EXISTS cp; CREATE SCHEMA IF NOT EXISTS rt; CREATE SCHEMA IF NOT EXISTS dp;" >/dev/null
 
 # ---------------------------------------------------------------- planes
+mkdir -p "$LOG_DIR" "$PID_DIR"
+
+# Free ports held by orphaned planes from earlier runs (missing/stale pidfiles).
+free_port() {
+    local port="$1" pids
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    [ -n "$pids" ] || return 0
+    echo "  * freeing :${port} (pid ${pids})"
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 1
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+}
+free_port "$GATEWAY_PORT"
+free_port "$CONTROL_PORT"
+free_port "$DATA_PORT"
+free_port "$SCHED_PORT"
+
 echo "==> Starting planes (Postgres: ${DB_URL})"
 
 start control "$PID_DIR/control.pid" \

@@ -157,6 +157,8 @@ class AgentScopeAdapter(FrameworkAdapter):
         self._emit: Optional[Callable[[SessionEvent], None]] = None
         self._registered: List[str] = []
         self._started_sessions: set = set()
+        #: Sessions currently inside a reply turn (pre_reply … post_reply).
+        self._busy_sessions: set = set()
         #: 最近一次解析出的 session_id —— HTTP 合约按 session 查询时用于兜底
         #: 校验（AgentScope 的 session 归属由调用方决定，Agent 自身不持有）。
         self._last_session_id = ""
@@ -220,6 +222,7 @@ class AgentScopeAdapter(FrameworkAdapter):
                     pass
         self._registered = []
         self._started_sessions = set()
+        self._busy_sessions = set()
         self._agent = None
         self._emit = None
 
@@ -269,6 +272,7 @@ class AgentScopeAdapter(FrameworkAdapter):
     def _on_pre_reply(self, agent: Any, kwargs: Dict[str, Any]) -> None:
         session_id = self._resolve_session(agent, kwargs)
         self._last_session_id = session_id
+        self._busy_sessions.add(session_id)
         self._mark_started(session_id)
         for msg in _iter_msgs(kwargs.get("msg")):
             text = _text(msg)
@@ -287,6 +291,7 @@ class AgentScopeAdapter(FrameworkAdapter):
 
     def _on_post_reply(self, agent: Any, kwargs: Dict[str, Any], output: Any) -> None:
         session_id = self._resolve_session(agent, kwargs)
+        self._busy_sessions.discard(session_id)
         text = _text(output)
         if text:
             tokens_in, tokens_out = _usage(output)
@@ -489,12 +494,7 @@ class AgentScopeAdapter(FrameworkAdapter):
     ) -> None:
         agent = self._agent
         if command == COMMAND_TERMINATE:
-            interrupt = getattr(agent, "interrupt", None) if agent is not None else None
-            if not callable(interrupt):
-                raise NotImplementedError("agentscope: agent does not expose interrupt()")
-            result = interrupt()
-            if inspect.isawaitable(result):
-                await result
+            await self._interrupt(agent)
             return
         if command == COMMAND_COMPRESS:
             # AgentScope 的压缩由 CompressionConfig 阈值驱动，没有公开的按需入口；
@@ -511,6 +511,139 @@ class AgentScopeAdapter(FrameworkAdapter):
                 "agentscope: on-demand compression requires ReActAgent.CompressionConfig"
             )
         raise ValueError(f"unsupported command: {command!r}")
+
+    async def abort(self, session_id: str) -> None:
+        """Abort the in-flight turn via Agent.interrupt() without ending the session."""
+        await self._interrupt(self._agent)
+        self._busy_sessions.discard(session_id)
+
+    async def _interrupt(self, agent: Any) -> None:
+        interrupt = getattr(agent, "interrupt", None) if agent is not None else None
+        if not callable(interrupt):
+            raise NotImplementedError("agentscope: agent does not expose interrupt()")
+        result = interrupt()
+        if inspect.isawaitable(result):
+            await result
+
+    async def list_tasks(self, session_id: str) -> List[dict]:
+        """Map AgentScope ``plan_notebook.current_plan`` subtasks → contract tasks."""
+        notebook = get_field(self._agent, "plan_notebook")
+        if notebook is None:
+            return []
+        plan = get_field(notebook, "current_plan")
+        if plan is None and callable(getattr(notebook, "get_current_plan", None)):
+            try:
+                plan = notebook.get_current_plan()
+                if inspect.isawaitable(plan):
+                    plan = await plan
+            except Exception:
+                plan = None
+        if plan is None:
+            return []
+        subtasks = (
+            get_field(plan, "subtasks")
+            or get_field(plan, "sub_tasks")
+            or get_field(plan, "todos")
+            or []
+        )
+        if not isinstance(subtasks, (list, tuple)):
+            return []
+        tasks: List[dict] = []
+        for idx, item in enumerate(subtasks):
+            task_id = str(
+                get_field(item, "id", "")
+                or get_field(item, "name", "")
+                or f"{session_id or 'plan'}-{idx}"
+            )
+            subject = str(
+                get_field(item, "name", "")
+                or get_field(item, "subject", "")
+                or get_field(item, "description", "")
+                or task_id
+            )
+            state = _normalize_task_state(
+                get_field(item, "state", "") or get_field(item, "status", "")
+            )
+            entry: dict = {"id": task_id, "subject": subject, "state": state, "owner": "main"}
+            blocked = get_field(item, "blocked_by") or get_field(item, "blockedBy")
+            if blocked:
+                entry["blockedBy"] = str(blocked)
+            tasks.append(entry)
+        return tasks
+
+    def session_fields(self, session_id: str) -> dict:
+        """Frozen contract overlays: turn-level busy, model, context window."""
+        out: dict = {"busy": session_id in self._busy_sessions}
+        # Also treat phase-less "last session mid-flight" when id omitted queries use last.
+        if not session_id and self._last_session_id:
+            out["busy"] = self._last_session_id in self._busy_sessions
+        model = self._model_name()
+        if model:
+            out["model"] = model
+        max_tokens = self._context_window()
+        if max_tokens > 0:
+            out["maxTokens"] = max_tokens
+        return out
+
+    def _model_name(self) -> str:
+        model = get_field(self._agent, "model")
+        if model is None:
+            return ""
+        if isinstance(model, str):
+            return model
+        for key in ("model_name", "model", "name", "model_id"):
+            value = get_field(model, key)
+            if value:
+                return str(value)
+        return ""
+
+    def _context_window(self) -> int:
+        model = get_field(self._agent, "model")
+        if model is None:
+            return 0
+        for key in ("context_window_size", "context_window", "max_tokens", "maxTokens"):
+            value = get_field(model, key)
+            if callable(value):
+                try:
+                    value = value()
+                except Exception:
+                    continue
+            try:
+                n = int(value or 0)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                return n
+        # Some ChatModel wrappers nest config under generate_kwargs / config.
+        for nest in ("generate_kwargs", "config", "options"):
+            nested = get_field(model, nest)
+            for key in ("max_tokens", "maxTokens", "context_window"):
+                try:
+                    n = int(get_field(nested, key) or 0)
+                except (TypeError, ValueError):
+                    n = 0
+                if n > 0:
+                    return n
+        return 0
+
+
+def _normalize_task_state(raw: Any) -> str:
+    s = str(raw or "").strip().lower().replace("-", "_")
+    mapping = {
+        "todo": "pending",
+        "pending": "pending",
+        "in_progress": "in_progress",
+        "inprogress": "in_progress",
+        "doing": "in_progress",
+        "done": "completed",
+        "finished": "completed",
+        "completed": "completed",
+        "abandoned": "cancelled",
+        "cancelled": "cancelled",
+        "canceled": "cancelled",
+        "blocked": "blocked",
+    }
+    return mapping.get(s, s or "pending")
 
 
 def _iter_msgs(value: Any) -> List[Any]:

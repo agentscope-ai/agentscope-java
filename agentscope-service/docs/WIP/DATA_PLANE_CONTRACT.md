@@ -201,6 +201,24 @@ queued → starting → active → stopping → stopped
 
 实现：`@ControllerAdvice` + 将 `ResponseStatusException` / 业务异常映射到上述结构；逐步去掉裸字符串 body。
 
+### 5.1.1 控制面（aistiod product）简化错误体
+
+Console / 控制面 `/api/agents|environments|sessions|…` 当前统一为：
+
+```json
+{ "error": "human readable message" }
+```
+
+| HTTP | 典型文案 |
+|---|---|
+| 400 | `invalid body` / `unsupported override key: tools` / `file too large` |
+| 401 | `missing bearer token` / `invalid token` |
+| 404 | `… not found`（不区分无权限与不存在） |
+| 409 | `session is archived` / `environment is archived` |
+| 500 | 内部错误字符串 |
+
+前端通过 `api/http.ts` 的 `readApiError` 优先解析 `error`，兼容遗留 `message` 字段。
+
 ### 5.2 `session.error` 事件
 
 ```jsonc

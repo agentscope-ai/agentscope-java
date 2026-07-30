@@ -1,4 +1,5 @@
 import { getToken } from './auth';
+import { authHeaders, readApiError } from './http';
 
 export interface ManagedSession {
   id: string;
@@ -34,6 +35,12 @@ export interface CreateManagedSessionRequest {
   environmentId: string;
   memoryStoreIds?: string[];
   vaultIds?: string[];
+  resources?: Array<{ type: string; fileId?: string; filename?: string; content?: string }>;
+  agentOverrides?: Record<string, unknown>;
+}
+
+export interface UpdateManagedSessionRequest {
+  agentOverrides: Record<string, unknown>;
 }
 
 export interface InboundEvent {
@@ -41,13 +48,6 @@ export interface InboundEvent {
   payload?: Record<string, unknown>;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export async function createManagedSession(req: CreateManagedSessionRequest): Promise<ManagedSession> {
   const res = await fetch('/api/sessions', {
@@ -55,23 +55,33 @@ export async function createManagedSession(req: CreateManagedSessionRequest): Pr
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to create session: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to create session');
   return res.json();
 }
 
 export async function listManagedSessions(agentId?: string): Promise<ManagedSession[]> {
   const qs = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
   const res = await fetch(`/api/sessions${qs}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
   return res.json();
 }
 
 export async function getManagedSession(id: string): Promise<ManagedSession> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to load session: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load session');
+  return res.json();
+}
+
+export async function updateManagedSession(
+  id: string,
+  req: UpdateManagedSessionRequest,
+): Promise<ManagedSession> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to update session');
   return res.json();
 }
 
@@ -80,7 +90,7 @@ export async function archiveManagedSession(id: string): Promise<ManagedSession>
     method: 'POST',
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to archive session: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to archive session');
   return res.json();
 }
 
@@ -89,7 +99,7 @@ export async function deleteManagedSession(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete session: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete session');
 }
 
 export async function postEvents(sessionId: string, events: InboundEvent[]): Promise<SessionEvent[]> {
@@ -98,10 +108,7 @@ export async function postEvents(sessionId: string, events: InboundEvent[]): Pro
     headers: authHeaders(),
     body: JSON.stringify({ events }),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to post events: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to post events');
   return res.json();
 }
 
@@ -111,7 +118,7 @@ export async function listEvents(sessionId: string, after?: number): Promise<Ses
     `/api/sessions/${encodeURIComponent(sessionId)}/events${qs}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to list events: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list events');
   return res.json();
 }
 

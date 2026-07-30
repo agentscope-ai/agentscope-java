@@ -20,6 +20,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionops"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/team"
 	"github.com/spring-ai-alibaba/aistio/internal/version"
@@ -89,6 +90,7 @@ type Server struct {
 	staticDir     string
 	registry      *dataplane.Registry
 	internalToken string
+	sessionOps    *sessionops.Router
 
 	// Experimental team coordination state (only initialized when experimental
 	// features are enabled). Store-backed and HA-safe across replicas.
@@ -127,6 +129,10 @@ func NewServer(opts ServerOptions) *Server {
 		},
 	}
 
+	if opts.Store != nil && opts.Registry != nil {
+		s.sessionOps = sessionops.NewRouter(opts.Registry, opts.Store, opts.Prober, opts.ASDPCommands)
+	}
+
 	if opts.KubeClient == nil {
 		ctrl.Log.WithName("httpapi").Info("authorization disabled: no kube client configured (static token mode does not support authorization)")
 	}
@@ -138,6 +144,12 @@ func NewServer(opts ServerOptions) *Server {
 
 	s.registerRoutes()
 	return s
+}
+
+// SessionOps returns the session command router, or nil when store/registry
+// are unavailable.
+func (s *Server) SessionOps() *sessionops.Router {
+	return s.sessionOps
 }
 
 func (s *Server) registerRoutes() {
@@ -162,7 +174,9 @@ func (s *Server) registerRoutes() {
 		// Fleet overview + token metrics (store-backed).
 		if s.store != nil {
 			v1.GET("/overview", s.fleetOverview)
+			v1.GET("/overview/timeseries", s.overviewTimeseries)
 			v1.GET("/metrics/tokens", s.queryTokenMetrics)
+			v1.GET("/metrics/agents", s.queryAgentMetrics)
 		}
 
 		// Data-plane self-registration (internal token). Listed for console
@@ -192,6 +206,8 @@ func (s *Server) registerRoutes() {
 			{
 				agents.GET("", s.listAgentsFromRegistry)
 				agents.GET("/:name", s.getAgentFromRegistry)
+				agents.GET("/:name/subagents", s.listAgentSubagents)
+				agents.GET("/:name/workspaces", s.listAgentWorkspaces)
 			}
 		}
 
@@ -204,10 +220,17 @@ func (s *Server) registerRoutes() {
 				sessions.GET("/:sessionId/context", s.getSessionContext)
 				sessions.GET("/:sessionId/events", s.getSessionEvents)
 				sessions.GET("/:sessionId/messages", s.getSessionMessages)
+				sessions.GET("/:sessionId/tasks", s.getSessionTasks)
+				sessions.GET("/:sessionId/subagent-tasks", s.getSessionSubagentTasks)
+				sessions.DELETE("/:sessionId/subagent-tasks/:taskId", s.cancelSessionSubagentTask)
+				sessions.POST("/:sessionId/plan-mode", s.postSessionPlanMode)
+				sessions.GET("/:sessionId/commands", s.listSessionCommands)
 				sessions.POST("/:sessionId/compress", s.compressSession)
 				sessions.POST("/:sessionId/terminate", s.terminateSession)
+				sessions.POST("/:sessionId/abort", s.abortSession)
 				sessions.DELETE("/:sessionId", s.deleteSession)
 			}
+			v1.GET("/commands", s.listRecentCommands)
 		}
 
 		// ModelConfig

@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from .adapters.base import COMMAND_COMPRESS, COMMAND_TERMINATE, FrameworkAdapter
+from .adapters.base import COMMAND_ABORT, COMMAND_COMPRESS, COMMAND_TERMINATE, FrameworkAdapter
 from .context import ContextSnapshot, ContextTracker
 from .events import (
     EVENT_COMPACTION,
@@ -368,6 +368,13 @@ class SessionBridge:
     ) -> None:
         if self._adapter is None:
             raise NotImplementedError("no framework adapter attached")
+        if command == COMMAND_ABORT:
+            if not self._adapter.supports("abort"):
+                raise NotImplementedError(
+                    f"{self._adapter.framework_name()} adapter does not support abort"
+                )
+            self._run_async(self._adapter.abort(session_id))
+            return
         if not self._adapter.supports("handle_command"):
             raise NotImplementedError(
                 f"{self._adapter.framework_name()} adapter does not support session commands"
@@ -379,6 +386,33 @@ class SessionBridge:
     def _run_async(self, coro: Any, timeout: float = ASYNC_CALL_TIMEOUT) -> Any:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result(timeout)
+
+    def _session_overlay(self, session_id: str) -> dict:
+        """Merge optional frozen fields from adapter (busy / model / maxTokens)."""
+        if self._adapter is None or not self._adapter.supports("session_fields"):
+            return {}
+        try:
+            overlay = self._adapter.session_fields(session_id) or {}
+            return dict(overlay) if isinstance(overlay, dict) else {}
+        except Exception:
+            return {}
+
+    def _apply_overlay(self, snap: dict, overlay: dict, tracker: Any) -> None:
+        """Mutate ``snap`` with overlay + tracker.max_tokens (omit unknowns)."""
+        if "busy" in overlay and overlay["busy"] is not None:
+            snap["busy"] = bool(overlay["busy"])
+        model = overlay.get("model")
+        if model:
+            snap["model"] = str(model)
+        max_tokens = tracker.max_tokens
+        overlay_max = overlay.get("maxTokens")
+        if isinstance(overlay_max, (int, float)) and int(overlay_max) > 0:
+            max_tokens = int(overlay_max)
+            if tracker.max_tokens <= 0:
+                tracker.max_tokens = max_tokens
+        token_usage = snap.get("tokenUsage")
+        if isinstance(token_usage, dict) and max_tokens > 0:
+            token_usage["maxTokens"] = max_tokens
 
     # ─── HTTP 合约 provider（同步接口，供 ContractHTTPServer 调用）───
 
@@ -416,40 +450,69 @@ class SessionBridge:
         for session_id, tracker in items:
             max_tokens = tracker.max_tokens
             total_tokens = tracker.tokens_in + tracker.tokens_out
-            result.append(
-                {
-                    "id": session_id,
-                    "phase": phases.get(session_id, "running"),
-                    "messageCount": tracker.message_count,
-                    "tokenUsage": {
-                        "promptTokens": tracker.tokens_in,
-                        "completionTokens": tracker.tokens_out,
-                    },
-                    "contextPressure": (total_tokens / max_tokens) if max_tokens > 0 else 0.0,
-                    "framework": framework,
-                    "frameworkVersion": version or None,
-                    "contextHash": tracker.context_hash,
-                    "isCompacted": tracker.is_compacted or None,
-                    "effectiveMessageCount": tracker.effective_message_count,
-                }
-            )
+            token_usage: dict = {
+                "promptTokens": tracker.tokens_in,
+                "completionTokens": tracker.tokens_out,
+            }
+            if max_tokens > 0:
+                token_usage["maxTokens"] = max_tokens
+            snap = {
+                "id": session_id,
+                "phase": phases.get(session_id, "running"),
+                "messageCount": tracker.message_count,
+                "tokenUsage": token_usage,
+                "contextPressure": (total_tokens / max_tokens) if max_tokens > 0 else 0.0,
+                "framework": framework,
+                "frameworkVersion": version or None,
+                "contextHash": tracker.context_hash,
+                "isCompacted": tracker.is_compacted or None,
+                "effectiveMessageCount": tracker.effective_message_count,
+            }
+            self._apply_overlay(snap, self._session_overlay(session_id), tracker)
+            result.append(snap)
         return result
 
     def session_state(self, session_id: str) -> dict:
         with self._lock:
             tracker = self._trackers.get(session_id)
+            phase = self._phases.get(session_id, "running")
         if tracker is None:
             raise ContractNotFoundError(f"session not found: {session_id}")
         total_tokens = tracker.tokens_in + tracker.tokens_out
         max_tokens = tracker.max_tokens
-        return {
-            "sessionId": session_id,
-            "contextPressure": {
-                "usedTokens": total_tokens,
-                "maxTokens": max_tokens,
-                "ratio": (total_tokens / max_tokens) if max_tokens > 0 else 0.0,
-            },
+        pressure: dict = {
+            "usedTokens": total_tokens,
+            "ratio": (total_tokens / max_tokens) if max_tokens > 0 else 0.0,
         }
+        if max_tokens > 0:
+            pressure["maxTokens"] = max_tokens
+        token_usage: dict = {
+            "promptTokens": tracker.tokens_in,
+            "completionTokens": tracker.tokens_out,
+            "totalTokens": total_tokens,
+        }
+        if max_tokens > 0:
+            token_usage["maxTokens"] = max_tokens
+        framework = self._adapter.framework_name() if self._adapter else ""
+        out: dict = {
+            "sessionId": session_id,
+            "id": session_id,
+            "phase": phase,
+            "messageCount": tracker.message_count,
+            "tokenUsage": token_usage,
+            "contextPressure": pressure,
+            "framework": framework or None,
+        }
+        if tracker.is_compacted:
+            out["isCompacted"] = True
+        self._apply_overlay(out, self._session_overlay(session_id), tracker)
+        # overlay may have updated tracker.max_tokens — refresh pressure/tokenUsage
+        if tracker.max_tokens > 0:
+            out["tokenUsage"]["maxTokens"] = tracker.max_tokens
+            if isinstance(out["contextPressure"], dict):
+                out["contextPressure"]["maxTokens"] = tracker.max_tokens
+                out["contextPressure"]["ratio"] = total_tokens / tracker.max_tokens
+        return out
 
     def context(self, session_id: str) -> dict:
         """Level 4 实时查询：优先适配器权威提取，回退 tracker 视图。"""
@@ -500,3 +563,12 @@ class SessionBridge:
 
     def terminate(self, session_id: str) -> None:
         self._dispatch_command(session_id, COMMAND_TERMINATE)
+
+    def abort(self, session_id: str) -> None:
+        self._dispatch_command(session_id, COMMAND_ABORT)
+
+    def tasks(self, session_id: str) -> List[dict]:
+        if self._adapter is None or not self._adapter.supports("list_tasks"):
+            raise NotImplementedError("task-query not supported")
+        items = self._run_async(self._adapter.list_tasks(session_id)) or []
+        return list(items)

@@ -14,18 +14,19 @@ const (
 
 // Entry is one registered data-plane instance.
 type Entry struct {
-	AgentName      string    `json:"agentName"`
-	Namespace      string    `json:"namespace"`
-	InstanceID     string    `json:"instanceId"`
-	BaseURL        string    `json:"baseUrl"`
-	Runtime        string    `json:"runtime,omitempty"`
-	Framework      string    `json:"framework,omitempty"`
-	ContractLevel  int32     `json:"contractLevel"`
-	Capabilities   []string  `json:"capabilities,omitempty"`
-	Healthy        bool      `json:"healthy"`
-	LastSeenAt     time.Time `json:"lastSeenAt"`
-	Source         string    `json:"source"`
-	RegisteredAt   time.Time `json:"registeredAt"`
+	AgentName     string                 `json:"agentName"`
+	Namespace     string                 `json:"namespace"`
+	InstanceID    string                 `json:"instanceId"`
+	BaseURL       string                 `json:"baseUrl"`
+	Runtime       string                 `json:"runtime,omitempty"`
+	Framework     string                 `json:"framework,omitempty"`
+	ContractLevel int32                  `json:"contractLevel"`
+	Capabilities  []string               `json:"capabilities,omitempty"`
+	AgentConfig   map[string]interface{} `json:"agentConfig,omitempty"`
+	Healthy       bool                   `json:"healthy"`
+	LastSeenAt    time.Time              `json:"lastSeenAt"`
+	Source        string                 `json:"source"`
+	RegisteredAt  time.Time              `json:"registeredAt"`
 }
 
 // Registry is an in-process data-plane instance registry used when
@@ -213,5 +214,11 @@ func itoa(n int) string {
 func clone(e *Entry) *Entry {
 	cp := *e
 	cp.Capabilities = append([]string(nil), e.Capabilities...)
+	if e.AgentConfig != nil {
+		cp.AgentConfig = make(map[string]interface{}, len(e.AgentConfig))
+		for k, v := range e.AgentConfig {
+			cp.AgentConfig[k] = v
+		}
+	}
 	return &cp
 }

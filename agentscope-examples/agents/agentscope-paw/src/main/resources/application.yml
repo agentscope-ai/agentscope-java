@@ -1,5 +1,6 @@
 server:
-  port: ${CLAW_PORT:8080}
+  # Default 8090 so paw coexists with agentscope-service gateway (:8080).
+  port: ${CLAW_PORT:8090}
 
 spring:
   application:
@@ -25,6 +26,19 @@ spring:
 # --------------------------------------------------------------------------
 claw:
   home: ${CLAW_HOME:#{systemProperties['user.home']}/.agentscope/claw}
+
+  # ---- aistio BYO (standalone HTTP self-register; no Kubernetes) ----
+  # Flip enabled to true when running beside agentscope-service (scripts/dev-up.sh)
+  # so Operate can discover this agent. Defaults match local-dev stack:
+  #   control :8081, shared internal token, contract HTTP :18090.
+  aistio:
+    enabled: ${CLAW_AISTIO_ENABLED:false}
+    control-http: ${AISTIO_CONTROL_HTTP:http://localhost:8081}
+    internal-token: ${BUILDER_INTERNAL_TOKEN:local-dev-internal-token-at-least-32chars}
+    agent-name: ${CLAW_AISTIO_AGENT_NAME:agentscope-paw}
+    namespace: default
+    contract-port: ${CLAW_AISTIO_CONTRACT_PORT:18090}
+    enable-events: false
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

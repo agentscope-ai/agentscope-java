@@ -11,6 +11,7 @@ func (s *Server) registerEnvironments(r gin.IRouter) {
 	r.GET("/api/environments", s.listEnvironments)
 	r.POST("/api/environments", s.createEnvironment)
 	r.GET("/api/environments/:id", s.getEnvironment)
+	r.PATCH("/api/environments/:id", s.updateEnvironment)
 	r.DELETE("/api/environments/:id", s.deleteEnvironment)
 	r.POST("/api/environments/:id/archive", s.archiveEnvironment)
 	r.POST("/api/environments/:id/rotate-key", s.rotateEnvironmentKey)
@@ -20,6 +21,11 @@ type envCreateReq struct {
 	Name   string `json:"name"`
 	Type   string `json:"type"`
 	Config any    `json:"config"`
+}
+
+type envUpdateReq struct {
+	Name   *string `json:"name"`
+	Config any     `json:"config"`
 }
 
 type envRow struct {
@@ -57,8 +63,22 @@ func (s *Server) loadEnv(ctx context.Context, id string) (envRow, error) {
 
 func (s *Server) listEnvironments(c *gin.Context) {
 	owner := currentUserID(c)
-	rows, err := s.db.Pool.Query(c.Request.Context(),
-		envSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`, owner)
+	limit, offset, ok := pageParams(c)
+	if !ok {
+		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
+		return
+	}
+	var total int64
+	if err := s.db.Pool.QueryRow(c.Request.Context(),
+		`SELECT COUNT(*) FROM environments WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTotalCount(c, total)
+	q := envSelect + ` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner}
+	q, args = appendPage(q, limit, offset, args)
+	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
@@ -116,6 +136,48 @@ func (s *Server) getEnvironment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, e.toJSON())
+}
+
+// updateEnvironment changes the mutable parts of an environment. The type is
+// immutable because running sessions resolve their sandbox from it.
+func (s *Server) updateEnvironment(c *gin.Context) {
+	owner := currentUserID(c)
+	id := c.Param("id")
+	e, err := s.loadEnv(c.Request.Context(), id)
+	if err != nil || e.OwnerID != owner {
+		writeErr(c, http.StatusNotFound, "environment not found")
+		return
+	}
+	if e.ArchivedAt != nil {
+		writeErr(c, http.StatusConflict, "environment is archived")
+		return
+	}
+	var req envUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeErr(c, http.StatusBadRequest, "invalid body")
+		return
+	}
+	name := e.Name
+	if req.Name != nil {
+		if *req.Name == "" {
+			writeErr(c, http.StatusBadRequest, "name cannot be empty")
+			return
+		}
+		name = *req.Name
+	}
+	configJSON := deref(e.ConfigJSON)
+	if req.Config != nil {
+		configJSON = mustJSON(req.Config)
+	}
+	now := nowMillis()
+	if _, err := s.db.Pool.Exec(c.Request.Context(),
+		`UPDATE environments SET name=$1, config_json=$2, updated_at=$3
+		 WHERE environment_id=$4 AND owner_id=$5`, name, configJSON, now, id, owner); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out, _ := s.loadEnv(c.Request.Context(), id)
+	c.JSON(http.StatusOK, out.toJSON())
 }
 
 func (s *Server) deleteEnvironment(c *gin.Context) {

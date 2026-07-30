@@ -20,6 +20,9 @@ func (s *Server) registerDeployments(r gin.IRouter) {
 	r.DELETE("/api/deployments/:id", s.deleteDeployment)
 	r.POST("/api/deployments/:id/archive", s.archiveDeployment)
 	r.POST("/api/deployments/:id/run", s.runDeployment)
+	r.POST("/api/deployments/:id/pause", s.pauseDeployment)
+	r.POST("/api/deployments/:id/unpause", s.unpauseDeployment)
+	r.POST("/api/deployments/webhook/:token", s.triggerDeploymentWebhook)
 }
 
 type createDeployReq struct {
@@ -105,8 +108,22 @@ func (s *Server) loadDeploy(ctx context.Context, id string) (deployRow, error) {
 
 func (s *Server) listDeployments(c *gin.Context) {
 	owner := currentUserID(c)
-	rows, err := s.db.Pool.Query(c.Request.Context(),
-		deploySelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`, owner)
+	limit, offset, ok := pageParams(c)
+	if !ok {
+		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
+		return
+	}
+	var total int64
+	if err := s.db.Pool.QueryRow(c.Request.Context(),
+		`SELECT COUNT(*) FROM deployments WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTotalCount(c, total)
+	q := deploySelect + ` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner}
+	q, args = appendPage(q, limit, offset, args)
+	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
@@ -266,6 +283,63 @@ func (s *Server) runDeployment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out.toJSON())
+}
+
+func (s *Server) pauseDeployment(c *gin.Context)   { s.setDeploymentEnabled(c, false) }
+func (s *Server) unpauseDeployment(c *gin.Context) { s.setDeploymentEnabled(c, true) }
+
+// setDeploymentEnabled flips the enabled flag; archived deployments stay paused.
+func (s *Server) setDeploymentEnabled(c *gin.Context, enabled bool) {
+	owner := currentUserID(c)
+	now := nowMillis()
+	tag, err := s.db.Pool.Exec(c.Request.Context(),
+		`UPDATE deployments SET enabled=$1, updated_at=$2
+		 WHERE deployment_id=$3 AND owner_id=$4 AND archived_at IS NULL`,
+		enabled, now, c.Param("id"), owner)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeErr(c, http.StatusNotFound, "deployment not found")
+		return
+	}
+	d, _ := s.loadDeploy(c.Request.Context(), c.Param("id"))
+	c.JSON(http.StatusOK, d.toJSON())
+}
+
+// triggerDeploymentWebhook fires a deployment from an unauthenticated caller
+// that presents a valid webhook token. Disabled or archived deployments are
+// indistinguishable from unknown tokens on purpose.
+func (s *Server) triggerDeploymentWebhook(c *gin.Context) {
+	token := c.Param("token")
+	if token == "" {
+		writeErr(c, http.StatusNotFound, "deployment not found")
+		return
+	}
+	d, err := s.scanDeploy(s.db.Pool.QueryRow(c.Request.Context(),
+		deploySelect+` WHERE webhook_token=$1 AND trigger_type='webhook'
+		   AND enabled=TRUE AND archived_at IS NULL`, token))
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "deployment not found")
+		return
+	}
+	var body struct {
+		Text string `json:"text"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	out, err := s.fireDeployment(c.Request.Context(), d, body.Text)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Deliberately narrow: the full row would leak webhook_token back out.
+	c.JSON(http.StatusOK, gin.H{
+		"deploymentId": out.DeploymentID,
+		"sessionId":    nullStrPtr(out.LastSessionID),
+		"status":       nullStrPtr(out.LastStatus),
+		"lastRunAt":    nullMillis(out.LastRunAt),
+	})
 }
 
 func (s *Server) fireDeployment(ctx context.Context, d deployRow, message string) (deployRow, error) {

@@ -31,6 +31,9 @@ type Session struct {
 	Framework        string          `json:"framework"`
 	FrameworkVersion string          `json:"frameworkVersion,omitempty"`
 	Phase            string          `json:"phase"`
+	// Busy is true when a turn/inference is in progress. nil means the data
+	// plane did not report busy (unknown). Independent of Phase.
+	Busy             *bool           `json:"busy,omitempty"`
 	InstanceRef      string          `json:"instanceRef,omitempty"`
 	InstanceIP       string          `json:"instanceIP,omitempty"`
 	TeamID           string          `json:"teamId,omitempty"`
@@ -41,6 +44,61 @@ type Session struct {
 	TerminatedAt     *time.Time      `json:"terminatedAt,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
 	UpdatedAt        time.Time       `json:"updatedAt"`
+}
+
+// SessionWithSnapshot pairs a session with its latest Level-1 snapshot.
+type SessionWithSnapshot struct {
+	Session  *Session         `json:"session"`
+	Snapshot *SessionSnapshot `json:"snapshot,omitempty"`
+}
+
+// TokenBucket is a time-bucketed token usage aggregate.
+type TokenBucket struct {
+	BucketStart      time.Time `json:"bucketStart"`
+	PromptTokens     int64     `json:"promptTokens"`
+	CompletionTokens int64     `json:"completionTokens"`
+	TotalTokens      int64     `json:"totalTokens"`
+	SampleCount      int64     `json:"sampleCount"`
+}
+
+// AgentUsage is a per-agent usage aggregate for TopAgents.
+type AgentUsage struct {
+	AgentName      string  `json:"agentName"`
+	Namespace      string  `json:"namespace"`
+	TotalTokens    int64   `json:"totalTokens"`
+	ActiveSessions int32   `json:"activeSessions"`
+	AvgPressure    float64 `json:"avgPressure,omitempty"`
+	ErrorCount     int32   `json:"errorCount,omitempty"`
+}
+
+// SessionCommandStatus values for the session_commands audit table.
+const (
+	CommandStatusAccepted  = "accepted"
+	CommandStatusQueued    = "queued"
+	CommandStatusSucceeded = "succeeded"
+	CommandStatusFailed    = "failed"
+	CommandStatusRejected  = "rejected"
+)
+
+// SessionCommand is an audit row for a control-plane session operation.
+type SessionCommand struct {
+	ID           uuid.UUID  `json:"id"`
+	SessionFK    *uuid.UUID `json:"sessionFk,omitempty"`
+	AgentName    string     `json:"agentName"`
+	Namespace    string     `json:"namespace"`
+	SessionID    string     `json:"sessionId"`
+	Command      string     `json:"command"`
+	Operator     string     `json:"operator,omitempty"`
+	Source       string     `json:"source,omitempty"`
+	InstanceRef  string     `json:"instanceRef,omitempty"`
+	Status       string     `json:"status"`
+	Code         string     `json:"code,omitempty"`
+	Error        string     `json:"error,omitempty"`
+	Forced       bool       `json:"forced,omitempty"`
+	CommandID    string     `json:"commandId,omitempty"`
+	RequestedAt  time.Time  `json:"requestedAt"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	DurationMs   int64      `json:"durationMs,omitempty"`
 }
 
 // SessionSnapshot is a Level-1 summary captured on each poll / report.

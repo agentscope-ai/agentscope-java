@@ -124,8 +124,22 @@ const agentSelect = `SELECT owner_id, agent_id, workspace_path, name, descriptio
 
 func (s *Server) listAgents(c *gin.Context) {
 	owner := currentUserID(c)
-	rows, err := s.db.Pool.Query(c.Request.Context(),
-		agentSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`, owner)
+	limit, offset, ok := pageParams(c)
+	if !ok {
+		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
+		return
+	}
+	var total int64
+	if err := s.db.Pool.QueryRow(c.Request.Context(),
+		`SELECT COUNT(*) FROM agents WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTotalCount(c, total)
+	q := agentSelect + ` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner}
+	q, args = appendPage(q, limit, offset, args)
+	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return

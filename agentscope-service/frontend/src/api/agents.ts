@@ -1,4 +1,5 @@
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export type ShareTier = 'CLONE' | 'RUN' | 'EDIT';
 export type GranteeType = 'USER' | 'WORKSPACE';
@@ -112,13 +113,13 @@ function authHeaders() {
 
 export async function listAgents(): Promise<AgentDefinition[]> {
   const res = await fetch('/api/agents', { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list agents: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list agents');
   return res.json();
 }
 
 export async function getAgent(id: string): Promise<AgentDefinition> {
   const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to load agent: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load agent');
   return res.json();
 }
 
@@ -128,10 +129,7 @@ export async function createAgent(req: AgentCreateRequest): Promise<AgentDefinit
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(`Failed to create agent: ${msg}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to create agent');
   return res.json();
 }
 
@@ -144,10 +142,7 @@ export async function updateAgent(
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(`Failed to update agent: ${msg}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to update agent');
   return res.json();
 }
 
@@ -156,9 +151,7 @@ export async function deleteAgent(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) {
-    throw new Error(`Failed to delete agent: ${res.status}`);
-  }
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete agent');
 }
 
 export async function archiveAgent(id: string): Promise<AgentDefinition> {
@@ -166,13 +159,13 @@ export async function archiveAgent(id: string): Promise<AgentDefinition> {
     method: 'POST',
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to archive agent: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to archive agent');
   return res.json();
 }
 
 export async function listVersions(id: string): Promise<AgentVersionEntry[]> {
   const res = await fetch(`/api/agents/${encodeURIComponent(id)}/versions`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list versions: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list versions');
   return res.json();
 }
 
@@ -181,7 +174,7 @@ export async function getVersion(id: string, version: number): Promise<AgentVers
     `/api/agents/${encodeURIComponent(id)}/versions/${version}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to load version: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load version');
   return res.json();
 }
 

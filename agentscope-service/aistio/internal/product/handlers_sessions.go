@@ -3,17 +3,33 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+)
+
+var (
+	errNotFound   = errors.New("not found")
+	errConflict   = errors.New("conflict")
+	errBadRequest = errors.New("bad request")
 )
 
 func (s *Server) registerSessions(r gin.IRouter) {
 	r.POST("/api/sessions", s.createSession)
 	r.GET("/api/sessions", s.listSessions)
 	r.GET("/api/sessions/:id", s.getSession)
+	r.PATCH("/api/sessions/:id", s.updateSession)
 	r.POST("/api/sessions/:id/archive", s.archiveSession)
 	r.DELETE("/api/sessions/:id", s.deleteSession)
+}
+
+// sessionOverrideKeys is the closed set of session-scoped overrides the harness
+// currently applies (see HarnessAgentBuildService). Tools and MCP overrides are
+// intentionally rejected until the data plane consumes them.
+var sessionOverrideKeys = map[string]bool{
+	"system": true, "model": true, "maxIters": true,
+	"name": true, "description": true,
 }
 
 type createSessionReq struct {
@@ -200,14 +216,28 @@ func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner s
 
 func (s *Server) listSessions(c *gin.Context) {
 	owner := currentUserID(c)
+	limit, offset, ok := pageParams(c)
+	if !ok {
+		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
+		return
+	}
 	agentID := c.Query("agentId")
+	countQ := `SELECT COUNT(*) FROM sessions WHERE owner_id=$1 AND archived_at IS NULL`
 	q := sessionSelect + ` WHERE owner_id=$1 AND archived_at IS NULL`
 	args := []any{owner}
 	if agentID != "" {
+		countQ += ` AND agent_id=$2`
 		q += ` AND agent_id=$2`
 		args = append(args, agentID)
 	}
+	var total int64
+	if err := s.db.Pool.QueryRow(c.Request.Context(), countQ, args...).Scan(&total); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTotalCount(c, total)
 	q += ` ORDER BY updated_at DESC`
+	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
@@ -233,6 +263,78 @@ func (s *Server) getSession(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, r.toJSON())
+}
+
+func (s *Server) updateSession(c *gin.Context) {
+	owner := currentUserID(c)
+	out, err := s.applySessionOverrides(c, c.Param("id"), owner, true)
+	if err != nil {
+		return
+	}
+	c.JSON(http.StatusOK, out.toJSON())
+}
+
+// applySessionOverrides merges agentOverrides into the session row.
+// requireOwner enforces owner match; when false (internal path), owner may be empty.
+func (s *Server) applySessionOverrides(c *gin.Context, sessionID, owner string, requireOwner bool) (sessionRow, error) {
+	sess, err := s.loadSession(c.Request.Context(), sessionID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "session not found")
+		return sessionRow{}, errNotFound
+	}
+	if requireOwner && sess.OwnerID != owner {
+		writeErr(c, http.StatusNotFound, "session not found")
+		return sessionRow{}, errNotFound
+	}
+	if !requireOwner && owner != "" && sess.OwnerID != owner {
+		writeErr(c, http.StatusNotFound, "session not found")
+		return sessionRow{}, errNotFound
+	}
+	if sess.ArchivedAt != nil {
+		writeErr(c, http.StatusConflict, "session is archived")
+		return sessionRow{}, errConflict
+	}
+	var req struct {
+		AgentOverrides map[string]any `json:"agentOverrides"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeErr(c, http.StatusBadRequest, "invalid body")
+		return sessionRow{}, errBadRequest
+	}
+	if req.AgentOverrides == nil {
+		writeErr(c, http.StatusBadRequest, "agentOverrides required")
+		return sessionRow{}, errBadRequest
+	}
+	for k := range req.AgentOverrides {
+		if !sessionOverrideKeys[k] {
+			writeErr(c, http.StatusBadRequest, "unsupported override key: "+k)
+			return sessionRow{}, errBadRequest
+		}
+	}
+	merged := map[string]any{}
+	if raw := parseJSONRaw(deref(sess.AgentOverridesJSON)); raw != nil {
+		if m, ok := raw.(map[string]any); ok {
+			for k, v := range m {
+				merged[k] = v
+			}
+		}
+	}
+	for k, v := range req.AgentOverrides {
+		if v == nil {
+			delete(merged, k)
+			continue
+		}
+		merged[k] = v
+	}
+	now := nowMillis()
+	overridesJSON := mustJSON(merged)
+	if _, err := s.db.Pool.Exec(c.Request.Context(),
+		`UPDATE sessions SET agent_overrides_json=$1, version=version+1, updated_at=$2
+		 WHERE session_id=$3`, overridesJSON, now, sessionID); err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return sessionRow{}, err
+	}
+	return s.loadSession(c.Request.Context(), sessionID)
 }
 
 func (s *Server) archiveSession(c *gin.Context) {

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/EmptyState';
+import { Page, PageHeader } from '@/components/Page';
 import { PressureGauge } from '@/components/PressureGauge';
 import { fetchRuntimeSessions } from './api';
 
@@ -14,42 +15,42 @@ export default function OperateSessionsPage() {
   const list = sessions.data?.sessions || [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-semibold">Sessions</h1>
-        <p className="text-sm text-muted-foreground">Runtime sessions across all managed data planes.</p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Sessions"
+        description="Runtime sessions across all managed data planes."
+      />
 
       {list.length === 0 ? (
         <EmptyState title="No sessions" description="Waiting for data planes to report sessions." />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-white">
+        <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
+            <thead className="border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 font-medium">Agent</th>
-                <th className="px-4 py-3 font-medium">Session</th>
-                <th className="px-4 py-3 font-medium">Phase</th>
-                <th className="px-4 py-3 font-medium">Pressure</th>
-                <th className="px-4 py-3 font-medium">Messages</th>
+                <th className="px-5 py-3.5 font-medium">Agent</th>
+                <th className="px-5 py-3.5 font-medium">Session</th>
+                <th className="px-5 py-3.5 font-medium">Phase</th>
+                <th className="px-5 py-3.5 font-medium">Pressure</th>
+                <th className="px-5 py-3.5 font-medium">Messages</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {list.map((s) => (
                 <tr key={s.id} className="hover:bg-muted/40">
-                  <td className="px-4 py-3 font-medium">{s.agentName}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-3.5 font-medium">{s.agentName}</td>
+                  <td className="px-5 py-3.5">
                     <Link className="text-primary hover:underline" to={`/operate/sessions/${encodeURIComponent(s.sessionId)}`}>
                       {s.sessionId}
                     </Link>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-3.5">
                     <Badge>{s.phase}</Badge>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-3.5">
                     <PressureGauge value={s.snapshot?.contextPressure} />
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  <td className="px-5 py-3.5 font-mono tabular-nums text-muted-foreground">
                     {s.snapshot?.effectiveMessageCount ?? s.snapshot?.messageCount ?? '—'}
                   </td>
                 </tr>
@@ -58,6 +59,6 @@ export default function OperateSessionsPage() {
           </table>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
@@ -58,15 +59,22 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		return
 	}
 	keep := make([]string, 0, len(snaps))
+	var activeCount int32
+	var totalTokens int64
+	var pressureSum float64
+	var pressureN int
 	for _, snap := range snaps {
 		keep = append(keep, snap.ID)
+		phase := strings.ToLower(firstNonEmpty(snap.Phase, store.SessionPhaseActive))
+		busy := deriveBusy(snap.Busy, phase)
 		sess := &store.Session{
 			SessionID:        snap.ID,
 			AgentName:        e.AgentName,
 			Namespace:        e.Namespace,
 			Framework:        firstNonEmpty(snap.Framework, e.Framework),
 			FrameworkVersion: snap.FrameworkVersion,
-			Phase:            firstNonEmpty(snap.Phase, store.SessionPhaseActive),
+			Phase:            phase,
+			Busy:             busy,
 			InstanceRef:      e.InstanceID,
 		}
 		if snap.StartedAt != "" {
@@ -84,10 +92,18 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			log.Printf("dataplane poller: upsert session %s: %v", snap.ID, err)
 			continue
 		}
+		if phase == store.SessionPhaseActive {
+			activeCount++
+		}
 		var prompt, completion int64
 		if snap.TokenUsage != nil {
 			prompt = snap.TokenUsage.PromptTokens
 			completion = snap.TokenUsage.CompletionTokens
+		}
+		totalTokens += prompt + completion
+		if snap.ContextPressure > 0 {
+			pressureSum += snap.ContextPressure
+			pressureN++
 		}
 		var taskSummary json.RawMessage
 		if snap.TaskSummary != nil {
@@ -106,7 +122,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			ContextHash:           snap.ContextHash,
 			TaskSummary:           taskSummary,
 		})
-		_ = p.Store.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
+		tok := &store.TokenUsageMetric{
 			SessionFK:        &stored.ID,
 			AgentName:        e.AgentName,
 			Namespace:        e.Namespace,
@@ -114,7 +130,11 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			CompletionTokens: completion,
 			TotalTokens:      prompt + completion,
 			RecordedAt:       time.Now().UTC(),
-		})
+		}
+		if snap.Model != "" {
+			tok.Model = snap.Model
+		}
+		_ = p.Store.Metrics().RecordTokenUsage(ctx, tok)
 
 		if snap.ContextHash != "" && hasCap(e.Capabilities, "context-query") {
 			prev, err := p.Store.ContextSnapshots().Latest(ctx, stored.ID)
@@ -127,7 +147,35 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			}
 		}
 	}
+	avgPressure := 0.0
+	if pressureN > 0 {
+		avgPressure = pressureSum / float64(pressureN)
+	}
+	_ = p.Store.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
+		AgentName:          e.AgentName,
+		Namespace:          e.Namespace,
+		RecordedAt:         time.Now().UTC(),
+		ActiveSessions:     activeCount,
+		TotalTokens:        totalTokens,
+		AvgContextPressure: avgPressure,
+	})
 	_, _ = p.Store.Sessions().TerminateMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+}
+
+// deriveBusy implements the busy/phase resolution chain:
+// 1. DP reported busy → use it
+// 2. else derive from phase == active
+// 3. else nil (unknown)
+func deriveBusy(reported *bool, phase string) *bool {
+	if reported != nil {
+		return reported
+	}
+	lower := strings.ToLower(phase)
+	if lower == "" {
+		return nil
+	}
+	b := lower == store.SessionPhaseActive || lower == "active"
+	return &b
 }
 
 func hasCap(caps []string, want string) bool {

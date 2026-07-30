@@ -2,6 +2,8 @@ package store
 
 import (
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // SessionFilter selects sessions for List.
@@ -25,6 +27,25 @@ type TokenFilter struct {
 	Model     string
 	Since     *time.Time
 	Until     *time.Time
+	Limit     int
+}
+
+// AgentMetricFilter selects agent_metrics rows for QueryAgentMetrics.
+type AgentMetricFilter struct {
+	AgentName string
+	Namespace string
+	Since     *time.Time
+	Until     *time.Time
+	Limit     int
+}
+
+// SessionCommandFilter selects session_commands audit rows.
+type SessionCommandFilter struct {
+	SessionFK uuid.UUID
+	AgentName string
+	Namespace string
+	Status    string
+	Since     *time.Time
 	Limit     int
 }
 

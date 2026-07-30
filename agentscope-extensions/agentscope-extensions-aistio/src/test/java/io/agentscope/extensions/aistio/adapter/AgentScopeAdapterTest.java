@@ -71,12 +71,15 @@ class AgentScopeAdapterTest {
     }
 
     @Test
-    void advertisesContextMessageAndCommandCapabilities() {
+    void advertisesContextMessageCommandAbortAndTaskCapabilities() {
         assertEquals(
                 java.util.Set.of(
                         FrameworkAdapter.CAP_CONTEXT_QUERY,
                         FrameworkAdapter.CAP_MESSAGE_QUERY,
-                        FrameworkAdapter.CAP_SESSION_COMMAND),
+                        FrameworkAdapter.CAP_SESSION_COMMAND,
+                        FrameworkAdapter.CAP_SESSION_ABORT,
+                        FrameworkAdapter.CAP_TASK_QUERY,
+                        FrameworkAdapter.CAP_PLAN_MODE),
                 new AgentScopeAdapter().capabilities());
     }
 
@@ -212,6 +215,65 @@ class AgentScopeAdapterTest {
         adapter.handleCommand(SESSION, FrameworkAdapter.COMMAND_TERMINATE, null).block();
 
         assertEquals(1, agent.interruptCount());
+    }
+
+    @Test
+    void abortInterruptsTheAgentLikeTerminate() {
+        StubAgent agent = agentWith(List.of());
+        AgentScopeAdapter adapter = new AgentScopeAdapter();
+        adapter.attach(agent, event -> {});
+
+        adapter.handleCommand(SESSION, FrameworkAdapter.COMMAND_ABORT, null).block();
+
+        assertEquals(1, agent.interruptCount());
+    }
+
+    @Test
+    void listTasksMapsAgentStateTasks() {
+        io.agentscope.core.state.Task task =
+                io.agentscope.core.state.Task.builder()
+                        .id("task-1")
+                        .subject("look up order")
+                        .description("fetch order details")
+                        .state(io.agentscope.core.state.Task.State.IN_PROGRESS)
+                        .owner("main")
+                        .blockedBy(List.of())
+                        .metadata(Map.of("node", "lookup"))
+                        .createdAt("2026-06-26T10:35:00Z")
+                        .build();
+        AgentState state =
+                AgentState.builder()
+                        .sessionId(SESSION)
+                        .userId("u-1")
+                        .context(List.of())
+                        .tasksContext(new io.agentscope.core.state.TaskContextState(List.of(task)))
+                        .build();
+        AgentScopeAdapter adapter = new AgentScopeAdapter();
+        adapter.attach(new StubAgent("agent-1", state), event -> {});
+
+        List<Map<String, Object>> tasks = adapter.listTasks(SESSION).block();
+
+        assertNotNull(tasks);
+        assertEquals(1, tasks.size());
+        assertEquals("task-1", tasks.get(0).get("id"));
+        assertEquals("look up order", tasks.get(0).get("subject"));
+        assertEquals("in_progress", tasks.get(0).get("state"));
+        assertEquals("main", tasks.get(0).get("owner"));
+        assertEquals(List.of(), tasks.get(0).get("blockedBy"));
+        assertEquals("fetch order details", tasks.get(0).get("description"));
+        assertEquals("2026-06-26T10:35:00Z", tasks.get(0).get("updatedAt"));
+        assertEquals(Map.of("node", "lookup"), tasks.get(0).get("frameworkMeta"));
+    }
+
+    @Test
+    void listTasksIsEmptyWhenStateHasNoTasks() {
+        AgentScopeAdapter adapter = new AgentScopeAdapter();
+        adapter.attach(agentWith(List.of()), event -> {});
+
+        List<Map<String, Object>> tasks = adapter.listTasks(SESSION).block();
+
+        assertNotNull(tasks);
+        assertTrue(tasks.isEmpty());
     }
 
     @Test

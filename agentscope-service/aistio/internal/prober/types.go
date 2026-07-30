@@ -18,17 +18,53 @@ type DataPlaneInfo struct {
 }
 
 // ProbeAgentConfig holds agent configuration reported by the data plane.
+// Tools may be a string array (legacy) or [{name,description},...] — see ToolNames().
 type ProbeAgentConfig struct {
-	ModelProvider string   `json:"modelProvider,omitempty"`
-	Model         string   `json:"model,omitempty"`
-	Tools         []string `json:"tools,omitempty"`
-	MaxTurns      int32    `json:"maxTurns,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	Description   string          `json:"description,omitempty"`
+	SystemPrompt  string          `json:"systemPrompt,omitempty"`
+	ModelProvider string          `json:"modelProvider,omitempty"`
+	Model         string          `json:"model,omitempty"`
+	Tools         json.RawMessage `json:"tools,omitempty"`
+	MaxTurns      int32           `json:"maxTurns,omitempty"`
+	MaxIters      int32           `json:"maxIters,omitempty"`
+	Sources       []string        `json:"sources,omitempty"`
+	Skills        json.RawMessage `json:"skills,omitempty"`
+	Subagents     json.RawMessage `json:"subagents,omitempty"`
+	Workspace     json.RawMessage `json:"workspace,omitempty"`
+	ToolsPolicy   json.RawMessage `json:"toolsPolicy,omitempty"`
+}
+
+// ToolNames extracts tool name strings from Tools whether encoded as []string or [{name}].
+func (c *ProbeAgentConfig) ToolNames() []string {
+	if c == nil || len(c.Tools) == 0 {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal(c.Tools, &names); err == nil {
+		return names
+	}
+	var objs []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(c.Tools, &objs); err == nil {
+		out := make([]string, 0, len(objs))
+		for _, o := range objs {
+			if o.Name != "" {
+				out = append(out, o.Name)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // SessionSnapshot represents a session as reported by the data plane.
 type SessionSnapshot struct {
 	ID              string       `json:"id"`
 	Phase           string       `json:"phase"`
+	Busy            *bool        `json:"busy,omitempty"`
+	Model           string       `json:"model,omitempty"`
 	StartedAt       string       `json:"startedAt,omitempty"`
 	LastActiveAt    string       `json:"lastActiveAt,omitempty"`
 	MessageCount    int32        `json:"messageCount,omitempty"`
@@ -48,6 +84,8 @@ type SessionSnapshot struct {
 type TokenUsage struct {
 	PromptTokens     int64 `json:"promptTokens"`
 	CompletionTokens int64 `json:"completionTokens"`
+	TotalTokens      int64 `json:"totalTokens,omitempty"`
+	MaxTokens        int64 `json:"maxTokens,omitempty"`
 }
 
 // TaskSummary holds aggregate task counts.
@@ -61,6 +99,10 @@ type TaskSummary struct {
 // SessionState holds detailed session state returned by GET /agentscope/sessions/{id}/state.
 type SessionState struct {
 	SessionID       string               `json:"sessionId"`
+	ID              string               `json:"id,omitempty"` // frozen schema alias for sessionId
+	Phase           string               `json:"phase,omitempty"`
+	Busy            *bool                `json:"busy,omitempty"`
+	Model           string               `json:"model,omitempty"`
 	Summary         string               `json:"summary,omitempty"`
 	CurrentIter     int32                `json:"currentIter,omitempty"`
 	ContextPressure *ContextPressureInfo `json:"contextPressure,omitempty"`
@@ -74,11 +116,28 @@ type ContextPressureInfo struct {
 	Ratio      float64 `json:"ratio"`
 }
 
-// TaskInfo represents a task within a session state response.
+// TaskInfo represents a task within a session (todolist or state summary).
 type TaskInfo struct {
-	ID      string `json:"id"`
-	Subject string `json:"subject"`
-	State   string `json:"state"`
+	ID            string          `json:"id"`
+	Subject       string          `json:"subject"`
+	State         string          `json:"state"`
+	Description   string          `json:"description,omitempty"`
+	Owner         string          `json:"owner,omitempty"`
+	BlockedBy     json.RawMessage `json:"blockedBy,omitempty"`
+	UpdatedAt     string          `json:"updatedAt,omitempty"`
+	FrameworkMeta json.RawMessage `json:"frameworkMeta,omitempty"`
+}
+
+// SubagentTaskInfo is a background subagent task (not todolist).
+type SubagentTaskInfo struct {
+	ID            string `json:"id,omitempty"`
+	TaskID        string `json:"taskId,omitempty"`
+	SubagentID    string `json:"subagentId,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Subject       string `json:"subject,omitempty"`
+	CreatedAt     string `json:"createdAt,omitempty"`
+	LastCheckedAt string `json:"lastCheckedAt,omitempty"`
+	Completed     bool   `json:"completed,omitempty"`
 }
 
 // ═══════════ Level 3 / Level 4 contract types (sdk-design.md §4) ═══════════
@@ -114,6 +173,7 @@ type ContextSnapshot struct {
 	TotalTokens          int32           `json:"totalTokens,omitempty"`
 	MaxTokens            int32           `json:"maxTokens,omitempty"`
 	Framework            string          `json:"framework,omitempty"`
+	Model                string          `json:"model,omitempty"`
 	FrameworkState       json.RawMessage `json:"frameworkState,omitempty"`
 }
 

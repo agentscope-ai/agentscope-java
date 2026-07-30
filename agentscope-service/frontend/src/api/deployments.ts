@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { authHeaders, readApiError } from './http';
 
 export type TriggerType = 'cron' | 'webhook' | 'manual';
 
@@ -39,23 +39,16 @@ export interface UpdateDeploymentRequest {
   agentVersion?: number;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export async function listDeployments(): Promise<Deployment[]> {
   const res = await fetch('/api/deployments', { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list deployments: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list deployments');
   return res.json();
 }
 
 export async function getDeployment(id: string): Promise<Deployment> {
   const res = await fetch(`/api/deployments/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to load deployment: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load deployment');
   return res.json();
 }
 
@@ -65,10 +58,7 @@ export async function createDeployment(req: CreateDeploymentRequest): Promise<De
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to create deployment: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to create deployment');
   return res.json();
 }
 
@@ -78,10 +68,7 @@ export async function updateDeployment(id: string, req: UpdateDeploymentRequest)
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to update deployment: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to update deployment');
   return res.json();
 }
 
@@ -90,7 +77,7 @@ export async function archiveDeployment(id: string): Promise<Deployment> {
     method: 'POST',
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to archive deployment: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to archive deployment');
   return res.json();
 }
 
@@ -99,7 +86,7 @@ export async function deleteDeployment(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete deployment: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete deployment');
 }
 
 export async function runDeployment(id: string, message?: string): Promise<Deployment> {
@@ -108,9 +95,24 @@ export async function runDeployment(id: string, message?: string): Promise<Deplo
     headers: authHeaders(),
     body: JSON.stringify(message ? { text: message } : {}),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to run deployment: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to run deployment');
+  return res.json();
+}
+
+export async function pauseDeployment(id: string): Promise<Deployment> {
+  const res = await fetch(`/api/deployments/${encodeURIComponent(id)}/pause`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to pause deployment');
+  return res.json();
+}
+
+export async function unpauseDeployment(id: string): Promise<Deployment> {
+  const res = await fetch(`/api/deployments/${encodeURIComponent(id)}/unpause`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to unpause deployment');
   return res.json();
 }

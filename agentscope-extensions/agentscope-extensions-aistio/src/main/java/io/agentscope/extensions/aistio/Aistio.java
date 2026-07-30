@@ -34,10 +34,11 @@ import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
  *
  * SessionBridge bridge = Aistio.instrument(agent,
  *         AistioConfig.builder("my-agentscope-agent")
- *                 .controlPlane("aistiod.aistio-system:9090")
+ *                 .controlPlaneHttp("http://localhost:8081")
+ *                 .internalToken(System.getenv("BUILDER_INTERNAL_TOKEN"))
  *                 .namespace("default")
  *                 .enableEvents(true)
- *                 .contractHttpPort(8080)
+ *                 .contractHttpPort(18090)
  *                 .build(),
  *         adapter);
  * }</pre>

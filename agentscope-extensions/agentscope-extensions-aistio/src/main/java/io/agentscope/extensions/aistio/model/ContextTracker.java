@@ -40,6 +40,7 @@ public final class ContextTracker {
     private final List<ContextMessage> messages = new ArrayList<>();
 
     private String systemPrompt = "";
+    private String effectiveSystemPrompt = "";
     private List<ToolInfo> tools = List.of();
     private int maxTokens;
 
@@ -49,8 +50,13 @@ public final class ContextTracker {
     private long compactedAt;
     private int tokensIn;
     private int tokensOut;
+
+    /** Tokens currently occupying the effective context window (for pressure). */
+    private int contextUsedTokens;
+
     private int messageCount;
     private String lastHash;
+    private String model = "";
 
     public ContextTracker(String sessionId, String framework) {
         this.sessionId = sessionId;
@@ -82,6 +88,15 @@ public final class ContextTracker {
         return tokensOut;
     }
 
+    public int getContextUsedTokens() {
+        return contextUsedTokens;
+    }
+
+    /** Tokens in the live effective context; used for pressure = used / maxTokens. */
+    public void setContextUsedTokens(int contextUsedTokens) {
+        this.contextUsedTokens = Math.max(0, contextUsedTokens);
+    }
+
     public boolean isCompacted() {
         return compacted;
     }
@@ -95,8 +110,34 @@ public final class ContextTracker {
         this.maxTokens = Math.max(0, maxTokens);
     }
 
+    public String getModel() {
+        return model;
+    }
+
+    /** Model name from agent config, when known. */
+    public void setModel(String model) {
+        this.model = model == null ? "" : model;
+    }
+
     public void setSystemPrompt(String systemPrompt) {
         this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
+    }
+
+    /**
+     * Last middleware-composed system prompt observed for this session (may differ from the builder
+     * base prompt). Empty until the first turn completes {@code onSystemPrompt}.
+     */
+    public void setEffectiveSystemPrompt(String effectiveSystemPrompt) {
+        this.effectiveSystemPrompt = effectiveSystemPrompt == null ? "" : effectiveSystemPrompt;
+    }
+
+    public String getEffectiveSystemPrompt() {
+        return effectiveSystemPrompt;
+    }
+
+    /** Prefer the last effective prompt; fall back to the builder base. */
+    public String resolveSystemPrompt() {
+        return effectiveSystemPrompt.isEmpty() ? systemPrompt : effectiveSystemPrompt;
     }
 
     public void setTools(List<ToolInfo> tools) {
@@ -158,7 +199,7 @@ public final class ContextTracker {
     public ContextSnapshot snapshot() {
         return ContextSnapshot.builder(sessionId)
                 .contextHash(lastHash)
-                .systemPrompt(systemPrompt)
+                .systemPrompt(resolveSystemPrompt())
                 .messages(List.copyOf(messages))
                 .tools(tools)
                 .compacted(compacted)
@@ -168,6 +209,7 @@ public final class ContextTracker {
                 .totalTokens(tokensIn + tokensOut)
                 .maxTokens(maxTokens)
                 .framework(framework)
+                .model(model)
                 .build();
     }
 }

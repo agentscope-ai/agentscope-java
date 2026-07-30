@@ -4,11 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 )
 
 func TestMockDataPlane(t *testing.T) {
 	mock := NewMockDataPlane(3)
+	mock.SetCapabilities([]string{v1alpha1.CapabilitySessionCommand})
 	mock.AddSession(prober.SessionSnapshot{
 		ID: "sess-1", Phase: "Active", MessageCount: 10,
 	})

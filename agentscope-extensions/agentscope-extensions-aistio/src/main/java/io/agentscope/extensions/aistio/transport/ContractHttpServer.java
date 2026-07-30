@@ -22,8 +22,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -41,10 +43,12 @@ import java.util.logging.Logger;
  *   GET  /agentscope/sessions/{id}/state
  *   GET  /agentscope/sessions/{id}/context
  *   GET  /agentscope/sessions/{id}/messages?offset=&amp;limit=
+ *   GET  /agentscope/sessions/{id}/tasks
  *   GET  /agentscope/subagents
  *   GET  /agentscope/workspaces
  *   POST /agentscope/sessions/{id}/compress
  *   POST /agentscope/sessions/{id}/terminate
+ *   POST /agentscope/sessions/{id}/abort
  * </pre>
  *
  * <p>Built on the JDK's {@code com.sun.net.httpserver} so that instrumenting an agent never drags
@@ -94,12 +98,17 @@ public final class ContractHttpServer implements AutoCloseable {
         try {
             route(exchange);
         } catch (ContractProvider.NotFoundException e) {
-            error(exchange, 404, message(e, "not found"));
+            error(exchange, 404, message(e, "not found"), "not_found", null);
         } catch (UnsupportedOperationException e) {
-            error(exchange, 501, message(e, "data plane does not support this operation"));
+            error(
+                    exchange,
+                    501,
+                    message(e, "data plane does not support this operation"),
+                    "unsupported",
+                    null);
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "aistio: contract request failed", e);
-            error(exchange, 500, message(e, "internal error"));
+            error(exchange, 500, message(e, "internal error"), "failed", null);
         } finally {
             exchange.close();
         }
@@ -109,7 +118,7 @@ public final class ContractHttpServer implements AutoCloseable {
         String method = exchange.getRequestMethod();
         List<String> parts = splitPath(exchange.getRequestURI().getPath());
         if (parts.isEmpty() || !"agentscope".equals(parts.get(0))) {
-            error(exchange, 404, "not found");
+            error(exchange, 404, "not found", "not_found", null);
             return;
         }
 
@@ -161,6 +170,14 @@ public final class ContractHttpServer implements AutoCloseable {
                         json(exchange, 200, provider.messages(sessionId, offset, limit));
                         return;
                     }
+                    case "tasks" -> {
+                        json(exchange, 200, provider.tasks(sessionId));
+                        return;
+                    }
+                    case "subagent-tasks" -> {
+                        json(exchange, 200, provider.subagentTasks(sessionId));
+                        return;
+                    }
                     default -> {
                         // Falls through to the 404 below.
                     }
@@ -168,22 +185,57 @@ public final class ContractHttpServer implements AutoCloseable {
             } else if ("POST".equals(method)) {
                 if ("compress".equals(action)) {
                     provider.compress(sessionId);
-                    json(exchange, 200, commandAccepted(sessionId, "compress"));
+                    json(exchange, 200, commandAccepted(exchange, sessionId));
                     return;
                 }
                 if ("terminate".equals(action)) {
                     provider.terminate(sessionId);
-                    json(exchange, 200, commandAccepted(sessionId, "terminate"));
+                    json(exchange, 200, commandAccepted(exchange, sessionId));
                     return;
                 }
+                if ("abort".equals(action)) {
+                    provider.abort(sessionId);
+                    json(exchange, 200, commandAccepted(exchange, sessionId));
+                    return;
+                }
+                if ("plan-mode".equals(action)) {
+                    byte[] body = exchange.getRequestBody().readAllBytes();
+                    provider.planMode(sessionId, body);
+                    json(exchange, 200, commandAccepted(exchange, sessionId));
+                    return;
+                }
+            } else if ("DELETE".equals(method) && "subagent-tasks".equals(action)) {
+                error(exchange, 400, "taskId path segment required", "invalid_argument", null);
+                return;
             }
         }
 
-        error(exchange, 404, "not found");
+        if (parts.size() == 5
+                && "sessions".equals(parts.get(1))
+                && "subagent-tasks".equals(parts.get(3))) {
+            String sessionId = parts.get(2);
+            String taskId = parts.get(4);
+            if ("DELETE".equals(method)) {
+                provider.cancelSubagentTask(sessionId, taskId);
+                json(exchange, 200, commandAccepted(exchange, sessionId));
+                return;
+            }
+        }
+
+        error(exchange, 404, "not found", "not_found", null);
     }
 
-    private static Map<String, Object> commandAccepted(String sessionId, String command) {
-        return Map.of("sessionId", sessionId, "command", command, "status", "initiated");
+    private Map<String, Object> commandAccepted(HttpExchange exchange, String sessionId) {
+        String commandId = exchange.getRequestHeaders().getFirst("X-Command-Id");
+        if (commandId == null || commandId.isBlank()) {
+            commandId = "cmd-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("accepted", true);
+        out.put("commandId", commandId);
+        out.put("phase", provider.sessionPhase(sessionId));
+        out.put("result", Map.of());
+        return out;
     }
 
     private static List<Map<String, Object>> orEmpty(List<Map<String, Object>> value) {
@@ -209,7 +261,7 @@ public final class ContractHttpServer implements AutoCloseable {
         if (query == null || query.isEmpty()) {
             return Map.of();
         }
-        Map<String, String> out = new java.util.LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>();
         for (String pair : query.split("&")) {
             int eq = pair.indexOf('=');
             if (eq > 0) {
@@ -241,8 +293,17 @@ public final class ContractHttpServer implements AutoCloseable {
         }
     }
 
-    private static void error(HttpExchange exchange, int status, String message)
+    private static void error(
+            HttpExchange exchange, int status, String message, String code, String hint)
             throws IOException {
-        json(exchange, status, Map.of("error", message));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", message);
+        if (code != null && !code.isEmpty()) {
+            body.put("code", code);
+        }
+        if (hint != null && !hint.isEmpty()) {
+            body.put("hint", hint);
+        }
+        json(exchange, status, body);
     }
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 )
 
@@ -19,10 +20,17 @@ type MockDataPlane struct {
 	SessionStates  map[string]*prober.SessionState
 	Contexts       map[string]*prober.ContextSnapshot
 	MessagePages   map[string]*prober.MessagePage
+	Tasks          map[string][]prober.TaskInfo
 	Subagents      []prober.SubagentInfo
 	Workspaces     []prober.WorkspaceInfo
 	CompressCalls  []string
 	TerminateCalls []string
+	AbortCalls     []string
+
+	// Fault injection.
+	fault501       map[string]bool // capability name -> return 501 on related endpoints
+	fault409Compress bool
+	stale          bool // health returns 503 (simulates no heartbeat)
 
 	mu sync.Mutex
 }
@@ -34,6 +42,8 @@ func NewMockDataPlane(contractLevel int32) *MockDataPlane {
 		SessionStates: make(map[string]*prober.SessionState),
 		Contexts:      make(map[string]*prober.ContextSnapshot),
 		MessagePages:  make(map[string]*prober.MessagePage),
+		Tasks:         make(map[string][]prober.TaskInfo),
+		fault501:      make(map[string]bool),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agentscope/info", m.handleInfo)
@@ -44,6 +54,48 @@ func NewMockDataPlane(contractLevel int32) *MockDataPlane {
 	mux.HandleFunc("/agentscope/workspaces", m.handleWorkspaces)
 	m.Server = httptest.NewServer(mux)
 	return m
+}
+
+// SetContractLevel updates the advertised contract level.
+func (m *MockDataPlane) SetContractLevel(level int32) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ContractLevel = level
+}
+
+// SetCapabilities sets the advertised capability list returned by /agentscope/info.
+func (m *MockDataPlane) SetCapabilities(caps []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Capabilities = append([]string(nil), caps...)
+}
+
+// InjectFault501 makes endpoints for the given capability return 501 Not Implemented.
+func (m *MockDataPlane) InjectFault501(capability string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fault501[capability] = true
+}
+
+// InjectFault409Compress makes POST .../compress return 409 Conflict with wait_idle.
+func (m *MockDataPlane) InjectFault409Compress() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fault409Compress = true
+}
+
+// MarkStale makes /agentscope/health return 503 (simulates missed heartbeats).
+func (m *MockDataPlane) MarkStale() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stale = true
+}
+
+// ClearStale restores healthy health responses.
+func (m *MockDataPlane) ClearStale() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stale = false
 }
 
 // AddSession adds a session to the mock's session list.
@@ -74,6 +126,13 @@ func (m *MockDataPlane) SetMessages(sessionID string, page *prober.MessagePage) 
 	m.MessagePages[sessionID] = page
 }
 
+// SetTasks sets the task list for GET .../tasks on a session.
+func (m *MockDataPlane) SetTasks(sessionID string, tasks []prober.TaskInfo) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Tasks[sessionID] = tasks
+}
+
 // CompressCalledFor returns true if compress was called for the given session ID.
 func (m *MockDataPlane) CompressCalledFor(sessionID string) bool {
 	m.mu.Lock()
@@ -98,6 +157,18 @@ func (m *MockDataPlane) TerminateCalledFor(sessionID string) bool {
 	return false
 }
 
+// AbortCalledFor returns true if abort was called for the given session ID.
+func (m *MockDataPlane) AbortCalledFor(sessionID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range m.AbortCalls {
+		if id == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
 // Endpoint returns the server URL suitable for passing to prober methods.
 func (m *MockDataPlane) Endpoint() string {
 	return m.Server.URL
@@ -106,6 +177,34 @@ func (m *MockDataPlane) Endpoint() string {
 // Close shuts down the test server.
 func (m *MockDataPlane) Close() {
 	m.Server.Close()
+}
+
+func (m *MockDataPlane) hasCapability(want string) bool {
+	for _, c := range m.Capabilities {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *MockDataPlane) writeUnsupported(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": msg,
+		"code":  "unsupported",
+	})
+}
+
+func (m *MockDataPlane) writeBusy(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": msg,
+		"code":  "busy",
+		"hint":  "wait_idle",
+	})
 }
 
 func (m *MockDataPlane) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +217,7 @@ func (m *MockDataPlane) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Name:          "mock-agent",
 		Runtime:       "mock",
 		ContractLevel: m.ContractLevel,
-		Capabilities:  m.Capabilities,
+		Capabilities:  append([]string(nil), m.Capabilities...),
 		Port:          8080,
 	}
 	m.mu.Unlock()
@@ -130,6 +229,13 @@ func (m *MockDataPlane) handleInfo(w http.ResponseWriter, r *http.Request) {
 func (m *MockDataPlane) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	m.mu.Lock()
+	stale := m.stale
+	m.mu.Unlock()
+	if stale {
+		http.Error(w, "stale", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -154,8 +260,29 @@ func (m *MockDataPlane) handleSessions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func capabilityForAction(action string) string {
+	switch action {
+	case "compress", "terminate":
+		return v1alpha1.CapabilitySessionCommand
+	case "abort":
+		return v1alpha1.CapabilitySessionAbort
+	case "context":
+		return v1alpha1.CapabilityContextQuery
+	case "messages":
+		return v1alpha1.CapabilityMessageQuery
+	case "tasks":
+		return v1alpha1.CapabilityTaskQuery
+	case "undo":
+		return v1alpha1.CapabilitySessionUndo
+	case "redo":
+		return v1alpha1.CapabilitySessionRedo
+	default:
+		return ""
+	}
+}
+
 func (m *MockDataPlane) handleSessionAction(w http.ResponseWriter, r *http.Request) {
-	// Parse: /agentscope/sessions/{id}/state or /agentscope/sessions/{id}/compress or /agentscope/sessions/{id}/terminate
+	// Parse: /agentscope/sessions/{id}/{action}
 	path := strings.TrimPrefix(r.URL.Path, "/agentscope/sessions/")
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) < 2 {
@@ -165,6 +292,20 @@ func (m *MockDataPlane) handleSessionAction(w http.ResponseWriter, r *http.Reque
 
 	sessionID := parts[0]
 	action := parts[1]
+
+	// Capability-gated endpoints: undeclared or fault-injected → 501.
+	if capName := capabilityForAction(action); capName != "" {
+		m.mu.Lock()
+		fault := m.fault501[capName]
+		declared := m.hasCapability(capName)
+		// state is Level-2 baseline; always available when sessions exist.
+		skipGate := action == "state"
+		m.mu.Unlock()
+		if !skipGate && (fault || !declared) {
+			m.writeUnsupported(w, "capability not available: "+capName)
+			return
+		}
+	}
 
 	switch action {
 	case "state":
@@ -212,15 +353,42 @@ func (m *MockDataPlane) handleSessionAction(w http.ResponseWriter, r *http.Reque
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(page)
 
+	case "tasks":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		m.mu.Lock()
+		tasks, ok := m.Tasks[sessionID]
+		m.mu.Unlock()
+		if !ok {
+			tasks = []prober.TaskInfo{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
+
 	case "compress":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		m.mu.Lock()
+		busy := m.fault409Compress
+		m.mu.Unlock()
+		if busy {
+			m.writeBusy(w, "session busy on data plane")
+			return
+		}
+		m.mu.Lock()
 		m.CompressCalls = append(m.CompressCalls, sessionID)
 		m.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"accepted":  true,
+			"commandId": "cmd-mock-compress",
+			"phase":     "compressing",
+			"result":    map[string]any{},
+		})
 
 	case "terminate":
 		if r.Method != http.MethodPost {
@@ -230,7 +398,29 @@ func (m *MockDataPlane) handleSessionAction(w http.ResponseWriter, r *http.Reque
 		m.mu.Lock()
 		m.TerminateCalls = append(m.TerminateCalls, sessionID)
 		m.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"accepted":  true,
+			"commandId": "cmd-mock-terminate",
+			"phase":     "terminated",
+			"result":    map[string]any{},
+		})
+
+	case "abort":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		m.mu.Lock()
+		m.AbortCalls = append(m.AbortCalls, sessionID)
+		m.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"accepted":  true,
+			"commandId": "cmd-mock-abort",
+			"phase":     "idle",
+			"result":    map[string]any{},
+		})
 
 	default:
 		http.Error(w, "unknown action", http.StatusNotFound)
@@ -243,8 +433,14 @@ func (m *MockDataPlane) handleSubagents(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	m.mu.Lock()
+	fault := m.fault501[v1alpha1.CapabilitySubagentInventory]
+	declared := m.hasCapability(v1alpha1.CapabilitySubagentInventory)
 	subs := m.Subagents
 	m.mu.Unlock()
+	if fault || !declared {
+		m.writeUnsupported(w, "capability not available: "+v1alpha1.CapabilitySubagentInventory)
+		return
+	}
 	if subs == nil {
 		subs = []prober.SubagentInfo{}
 	}
@@ -258,8 +454,14 @@ func (m *MockDataPlane) handleWorkspaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	m.mu.Lock()
+	fault := m.fault501[v1alpha1.CapabilityWorkspaceInventory]
+	declared := m.hasCapability(v1alpha1.CapabilityWorkspaceInventory)
 	workspaces := m.Workspaces
 	m.mu.Unlock()
+	if fault || !declared {
+		m.writeUnsupported(w, "capability not available: "+v1alpha1.CapabilityWorkspaceInventory)
+		return
+	}
 	if workspaces == nil {
 		workspaces = []prober.WorkspaceInfo{}
 	}

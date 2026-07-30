@@ -17,7 +17,11 @@ const S: Record<string, React.CSSProperties> = {
   time: { fontSize: '0.8rem', color: '#94a3b8', flexShrink: 0 },
   statusTag: {
     fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
-    color: '#4338ca', background: '#eef2ff', padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+    padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+  },
+  stopReason: {
+    fontSize: '0.78rem', color: '#64748b', marginTop: 4,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   cardFooter: {
     display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
@@ -35,6 +39,38 @@ function relTime(ms: number): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
   return `${Math.floor(diff / 86_400_000)}d`;
+}
+
+function statusStyle(status: string): React.CSSProperties {
+  const base = { ...S.statusTag };
+  switch (status) {
+    case 'running':
+      return { ...base, color: '#0369a1', background: '#e0f2fe' };
+    case 'idle':
+    case 'active':
+      return { ...base, color: '#15803d', background: '#dcfce7' };
+    case 'requires_action':
+      return { ...base, color: '#c2410c', background: '#ffedd5' };
+    case 'terminated':
+    case 'archived':
+      return { ...base, color: '#64748b', background: '#f1f5f9' };
+    case 'rescheduled':
+      return { ...base, color: '#a16207', background: '#fef9c3' };
+    default:
+      return { ...base, color: '#4338ca', background: '#eef2ff' };
+  }
+}
+
+function stopReasonSummary(stopReason: Record<string, unknown> | null | undefined): string | null {
+  if (!stopReason || typeof stopReason !== 'object') return null;
+  const type = stopReason.type;
+  if (typeof type === 'string' && type) return type;
+  try {
+    const raw = JSON.stringify(stopReason);
+    return raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -69,41 +105,45 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
       {!err && managedEntries.length === 0 && (
         <div style={S.empty}>No managed sessions yet — try chatting first.</div>
       )}
-      {managedEntries.map(s => (
-        <div
-          key={s.id}
-          style={S.card}
-          onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/chat?managed=${encodeURIComponent(s.id)}`)}
-          title="Resume this managed session in Chat"
-          onMouseEnter={ev => {
-            ev.currentTarget.style.borderColor = '#c7d2fe';
-            ev.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.06)';
-          }}
-          onMouseLeave={ev => {
-            ev.currentTarget.style.borderColor = '#e2e8f0';
-            ev.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,0.04)';
-          }}
-        >
-          <div style={S.cardHeader}>
-            <span style={S.label}>{s.id}</span>
-            <span style={S.statusTag}>{s.status}</span>
-            <span style={S.time}>{relTime(s.updatedAt)}</span>
+      {managedEntries.map(s => {
+        const reason = stopReasonSummary(s.stopReason);
+        return (
+          <div
+            key={s.id}
+            style={S.card}
+            onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/chat?managed=${encodeURIComponent(s.id)}`)}
+            title="Resume this managed session in Chat"
+            onMouseEnter={ev => {
+              ev.currentTarget.style.borderColor = '#c7d2fe';
+              ev.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.06)';
+            }}
+            onMouseLeave={ev => {
+              ev.currentTarget.style.borderColor = '#e2e8f0';
+              ev.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,0.04)';
+            }}
+          >
+            <div style={S.cardHeader}>
+              <span style={S.label}>{s.id}</span>
+              <span style={statusStyle(s.status)}>{s.status}</span>
+              <span style={S.time}>{relTime(s.updatedAt)}</span>
+            </div>
+            {reason && <div style={S.stopReason}>stop: {reason}</div>}
+            <div style={S.cardFooter}>
+              <span>Click to resume in Chat</span>
+              <span style={{ flex: 1 }} />
+              <span
+                style={S.transcriptLink}
+                onClick={ev => {
+                  ev.stopPropagation();
+                  navigate(`/agents/${encodeURIComponent(aid)}/sessions/_managed?managed=${encodeURIComponent(s.id)}`);
+                }}
+              >
+                View transcript →
+              </span>
+            </div>
           </div>
-          <div style={S.cardFooter}>
-            <span>Click to resume in Chat</span>
-            <span style={{ flex: 1 }} />
-            <span
-              style={S.transcriptLink}
-              onClick={ev => {
-                ev.stopPropagation();
-                navigate(`/agents/${encodeURIComponent(aid)}/sessions/_managed?managed=${encodeURIComponent(s.id)}`);
-              }}
-            >
-              View transcript →
-            </span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

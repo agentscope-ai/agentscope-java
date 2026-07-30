@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { authHeaders, readApiError } from './http';
 
 export interface Vault {
   id: string;
@@ -29,23 +29,16 @@ export interface AddCredentialRequest {
   secret: string;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export async function listVaults(): Promise<Vault[]> {
   const res = await fetch('/api/vaults', { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list vaults: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list vaults');
   return res.json();
 }
 
 export async function getVault(id: string): Promise<Vault> {
   const res = await fetch(`/api/vaults/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to load vault: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load vault');
   return res.json();
 }
 
@@ -55,10 +48,29 @@ export async function createVault(req: CreateVaultRequest): Promise<Vault> {
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to create vault: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to create vault');
+  return res.json();
+}
+
+export async function updateVault(
+  id: string,
+  req: { displayName?: string; metadata?: Record<string, unknown> },
+): Promise<Vault> {
+  const res = await fetch(`/api/vaults/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to update vault');
+  return res.json();
+}
+
+export async function archiveVault(id: string): Promise<{ id: string; archivedAt: number }> {
+  const res = await fetch(`/api/vaults/${encodeURIComponent(id)}/archive`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to archive vault');
   return res.json();
 }
 
@@ -67,7 +79,7 @@ export async function deleteVault(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete vault: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete vault');
 }
 
 export async function listCredentials(vaultId: string): Promise<VaultCredential[]> {
@@ -75,7 +87,7 @@ export async function listCredentials(vaultId: string): Promise<VaultCredential[
     `/api/vaults/${encodeURIComponent(vaultId)}/credentials`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to list credentials: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list credentials');
   return res.json();
 }
 
@@ -84,10 +96,38 @@ export async function addCredential(vaultId: string, req: AddCredentialRequest):
     `/api/vaults/${encodeURIComponent(vaultId)}/credentials`,
     { method: 'POST', headers: authHeaders(), body: JSON.stringify(req) },
   );
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to add credential: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to add credential');
+  return res.json();
+}
+
+export async function updateCredential(
+  vaultId: string,
+  credentialId: string,
+  req: { label?: string; target?: string; secret?: string },
+): Promise<VaultCredential> {
+  const res = await fetch(
+    `/api/vaults/${encodeURIComponent(vaultId)}/credentials/${encodeURIComponent(credentialId)}`,
+    { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(req) },
+  );
+  if (!res.ok) throw await readApiError(res, 'Failed to update credential');
+  return res.json();
+}
+
+export interface CredentialValidateResult {
+  ok: boolean;
+  checks: Record<string, string>;
+  checkedAt: number;
+}
+
+export async function validateCredential(
+  vaultId: string,
+  credentialId: string,
+): Promise<CredentialValidateResult> {
+  const res = await fetch(
+    `/api/vaults/${encodeURIComponent(vaultId)}/credentials/${encodeURIComponent(credentialId)}/validate`,
+    { method: 'POST', headers: authHeaders() },
+  );
+  if (!res.ok) throw await readApiError(res, 'Failed to validate credential');
   return res.json();
 }
 
@@ -96,5 +136,5 @@ export async function deleteCredential(vaultId: string, credentialId: string): P
     `/api/vaults/${encodeURIComponent(vaultId)}/credentials/${encodeURIComponent(credentialId)}`,
     { method: 'DELETE', headers: authHeaders() },
   );
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete credential: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete credential');
 }

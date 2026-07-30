@@ -3,11 +3,15 @@ import {
   Vault,
   VaultCredential,
   addCredential,
+  archiveVault,
   createVault,
   deleteCredential,
   deleteVault,
   listCredentials,
   listVaults,
+  updateCredential,
+  updateVault,
+  validateCredential,
 } from '../api/vaults';
 
 const S: Record<string, React.CSSProperties> = {
@@ -113,6 +117,37 @@ export default function VaultsPage() {
     }
   }
 
+  async function handleRenameVault(v: Vault) {
+    const next = window.prompt('Rename vault', v.displayName);
+    if (next == null || !next.trim() || next.trim() === v.displayName) return;
+    setBusyId(v.id);
+    try {
+      await updateVault(v.id, { displayName: next.trim() });
+      await refreshVaults();
+      if (selected?.id === v.id) {
+        setSelected({ ...v, displayName: next.trim() });
+      }
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Rename failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleArchiveVault(id: string) {
+    if (!confirm('Archive this vault? It will no longer inject credentials into sessions.')) return;
+    setBusyId(id);
+    try {
+      await archiveVault(id);
+      if (selected?.id === id) { setSelected(null); setCredentials([]); }
+      await refreshVaults();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Archive failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDeleteVault(id: string) {
     if (!confirm('Delete this vault and all credentials?')) return;
     setBusyId(id);
@@ -122,6 +157,35 @@ export default function VaultsPage() {
       await refreshVaults();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleValidateCredential(credentialId: string) {
+    if (!selected) return;
+    setBusyId(credentialId);
+    try {
+      const result = await validateCredential(selected.id, credentialId);
+      const detail = Object.entries(result.checks).map(([k, v]) => `${k}=${v}`).join(', ');
+      window.alert(result.ok ? `Valid (${detail})` : `Invalid (${detail})`);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Validate failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRotateSecret(credentialId: string) {
+    if (!selected) return;
+    const secret = window.prompt('Enter new secret (write-only; never shown again)');
+    if (secret == null || !secret) return;
+    setBusyId(credentialId);
+    try {
+      await updateCredential(selected.id, credentialId, { secret });
+      await loadCredentials(selected);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Update failed');
     } finally {
       setBusyId(null);
     }
@@ -191,13 +255,29 @@ export default function VaultsPage() {
             >
               <div style={{ fontWeight: 600 }}>{v.displayName}</div>
               <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontFamily: 'monospace' }}>{v.id}</div>
-              <button
-                type="button"
-                style={{ ...S.rowBtn, ...S.danger, marginTop: 8 }}
-                onClick={e => { e.stopPropagation(); void handleDeleteVault(v.id); }}
-              >
-                Delete
-              </button>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={S.rowBtn}
+                  onClick={e => { e.stopPropagation(); void handleRenameVault(v); }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  style={S.rowBtn}
+                  onClick={e => { e.stopPropagation(); void handleArchiveVault(v.id); }}
+                >
+                  Archive
+                </button>
+                <button
+                  type="button"
+                  style={{ ...S.rowBtn, ...S.danger }}
+                  onClick={e => { e.stopPropagation(); void handleDeleteVault(v.id); }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
           {!loading && vaults.length === 0 && (
@@ -228,6 +308,10 @@ export default function VaultsPage() {
                       <td style={S.td}><code>{c.type}</code></td>
                       <td style={S.td}>{c.target || '—'}</td>
                       <td style={S.td}>
+                        <button type="button" style={S.rowBtn} onClick={() => handleValidateCredential(c.id)}>Validate</button>
+                        {' '}
+                        <button type="button" style={S.rowBtn} onClick={() => handleRotateSecret(c.id)}>Rotate</button>
+                        {' '}
                         <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteCredential(c.id)}>Delete</button>
                       </td>
                     </tr>

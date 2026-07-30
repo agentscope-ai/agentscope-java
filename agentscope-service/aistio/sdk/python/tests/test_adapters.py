@@ -159,6 +159,40 @@ def test_claude_capabilities():
     caps = ClaudeAgentSDKAdapter().capabilities()
     assert "context-query" in caps and "message-query" in caps and "session-command" in caps
     assert "subagent-inventory" not in caps
+    assert "session-abort" not in caps and "task-query" not in caps
+
+
+def test_base_adapter_abort_and_list_tasks_unsupported():
+    class Minimal(FrameworkAdapter):
+        def framework_name(self):
+            return "min"
+
+        def can_handle(self, target):
+            return False
+
+        def attach(self, target, emit):
+            pass
+
+        def detach(self):
+            pass
+
+        async def extract_context(self, session_id):
+            raise NotImplementedError
+
+    adapter = Minimal()
+    assert not adapter.supports("abort") and not adapter.supports("list_tasks")
+    try:
+        run(adapter.abort("s1"))
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError("abort should be unsupported by default")
+    try:
+        run(adapter.list_tasks("s1"))
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError("list_tasks should be unsupported by default")
 
 
 # ─── fake LangChain ───
@@ -450,6 +484,12 @@ class FakeAgentScopeAgent:
         self.toolkit = FakeToolkit()
         self.hooks = {}
         self.interrupted = 0
+        self.model = type(
+            "M",
+            (),
+            {"model_name": "qwen-max", "context_window_size": 128000},
+        )()
+        self.plan_notebook = None
 
     def register_instance_hook(self, hook_type, hook_name, hook):
         if hook_type not in self.supported_hook_types:
@@ -611,7 +651,48 @@ def test_agentscope_session_id_from_message_metadata():
 def test_agentscope_capabilities():
     caps = AgentScopeAdapter().capabilities()
     assert "context-query" in caps and "message-query" in caps and "session-command" in caps
+    assert "session-abort" in caps and "task-query" in caps
     assert "subagent-inventory" not in caps
+
+
+def test_agentscope_busy_model_and_abort_tasks():
+    agent = FakeAgentScopeAgent()
+    agent.plan_notebook = type(
+        "PN",
+        (),
+        {
+            "current_plan": type(
+                "Plan",
+                (),
+                {
+                    "subtasks": [
+                        {"id": "t1", "name": "search docs", "state": "in_progress"},
+                        {"id": "t2", "name": "write summary", "state": "todo"},
+                    ]
+                },
+            )()
+        },
+    )()
+    adapter = AgentScopeAdapter()
+    adapter.attach(agent, lambda e: None)
+
+    fields = adapter.session_fields("agent-42")
+    assert fields["busy"] is False
+    assert fields["model"] == "qwen-max"
+    assert fields["maxTokens"] == 128000
+
+    agent.fire("pre_reply", {"msg": FakeMsg("user", "q")})
+    assert adapter.session_fields("agent-42")["busy"] is True
+
+    agent.fire("post_reply", {"msg": FakeMsg("user", "q")}, FakeMsg("assistant", "a"))
+    assert adapter.session_fields("agent-42")["busy"] is False
+
+    run(adapter.abort("agent-42"))
+    assert agent.interrupted == 1
+
+    tasks = run(adapter.list_tasks("agent-42"))
+    assert [t["id"] for t in tasks] == ["t1", "t2"]
+    assert tasks[0]["state"] == "in_progress" and tasks[1]["state"] == "pending"
 
 
 # ─── registry ───

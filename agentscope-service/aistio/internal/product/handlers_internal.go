@@ -10,9 +10,11 @@ import (
 )
 
 func (s *Server) registerInternal(r gin.IRouter) {
+	r.GET("/api/internal/sessions", s.internalListSessions)
 	r.GET("/api/internal/sessions/:id/resolve", s.internalResolveSession)
 	r.POST("/api/internal/sessions/find-or-create", s.internalFindOrCreateSession)
 	r.PATCH("/api/internal/sessions/:id/runtime", s.internalPatchSessionRuntime)
+	r.PATCH("/api/internal/sessions/:id/overrides", s.internalPatchSessionOverrides)
 	r.GET("/api/internal/environments/:id", s.internalGetEnvironment)
 	r.POST("/api/internal/environments/:id/verify-key", s.internalVerifyEnvironmentKey)
 	r.GET("/api/internal/agents/:ownerId/:agentId/versions/:version", s.internalGetAgentVersion)
@@ -20,6 +22,46 @@ func (s *Server) registerInternal(r gin.IRouter) {
 	r.GET("/api/internal/memory-stores/:id/mount", s.internalMemoryMount)
 	r.POST("/api/internal/deployments/:id/fire", s.internalFireDeployment)
 	r.GET("/api/internal/channels/config", s.internalChannelsConfig)
+}
+
+func (s *Server) internalListSessions(c *gin.Context) {
+	limit := 500
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	rows, err := s.db.Pool.Query(c.Request.Context(),
+		`SELECT session_id, status, agent_id, owner_id, created_at, updated_at, archived_at
+		 FROM sessions ORDER BY updated_at DESC LIMIT $1`, limit)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+	list := []gin.H{}
+	for rows.Next() {
+		var id, status, agentID, ownerID string
+		var createdAt, updatedAt int64
+		var archivedAt *int64
+		if err := rows.Scan(&id, &status, &agentID, &ownerID, &createdAt, &updatedAt, &archivedAt); err != nil {
+			writeErr(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		list = append(list, gin.H{
+			"id":         id,
+			"status":     status,
+			"agentId":    agentID,
+			"ownerId":    ownerID,
+			"createdAt":  createdAt,
+			"updatedAt":  updatedAt,
+			"archivedAt": nullMillis(archivedAt),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": list})
 }
 
 func (s *Server) internalResolveSession(c *gin.Context) {
@@ -93,8 +135,9 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 			"environmentId":      sess.EnvironmentID,
 			"memoryStoreIds":     memIDs,
 			"vaultIds":           vaultIDs,
-			"resources":          parseJSONRaw(deref(sess.ResourcesJSON)),
-			"status":             sess.Status,
+			"resources": s.expandFileResources(c.Request.Context(), sess.OwnerID,
+				parseJSONRaw(deref(sess.ResourcesJSON))),
+			"status": sess.Status,
 		},
 		"agentSnapshot":    snap,
 		"workspacePath":    workspace,
@@ -180,6 +223,15 @@ func (s *Server) internalPatchSessionRuntime(c *gin.Context) {
 	c.JSON(http.StatusOK, out.toJSON())
 }
 
+func (s *Server) internalPatchSessionOverrides(c *gin.Context) {
+	owner := currentUserID(c) // may be empty when internal token has no user header
+	out, err := s.applySessionOverrides(c, c.Param("id"), owner, false)
+	if err != nil {
+		return
+	}
+	c.JSON(http.StatusOK, out.toJSON())
+}
+
 func (s *Server) internalGetEnvironment(c *gin.Context) {
 	e, err := s.loadEnv(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -248,7 +300,8 @@ func (s *Server) internalResolveVaults(c *gin.Context) {
 
 func (s *Server) buildMemoryMount(ctx context.Context, storeID string) (gin.H, error) {
 	var n int
-	if err := s.db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM memory_stores WHERE store_id=$1`, storeID).Scan(&n); err != nil || n == 0 {
+	if err := s.db.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM memory_stores WHERE store_id=$1 AND archived_at IS NULL`, storeID).Scan(&n); err != nil || n == 0 {
 		return nil, err
 	}
 	rows, err := s.db.Pool.Query(ctx,
@@ -303,14 +356,17 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-	channels := []gin.H{}
+	// Scheduler expects a map keyed by channelId (agentscope.json shape), not {channels:[...]}.
+	out := gin.H{}
 	for rows.Next() {
 		ch, err := s.scanChannel(rows)
 		if err != nil {
 			writeErr(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-		channels = append(channels, ch.fullConfigJSON())
+		cfg := ch.fullConfigJSON()
+		delete(cfg, "channelId")
+		out[ch.ChannelID] = cfg
 	}
-	c.JSON(http.StatusOK, gin.H{"channels": channels})
+	c.JSON(http.StatusOK, out)
 }

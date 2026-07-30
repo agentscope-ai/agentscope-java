@@ -216,9 +216,23 @@ message ConfigPush {
   string nonce           = 4;
 }
 
+// SessionCommand is a control-plane → data-plane session instruction.
+// `command` is a string (not an enum) so new verbs can be added without
+// breaking wire compatibility. Known values and HTTP parity
+// (see docs/zh/controlplane/contract.md):
+//
+//   compress   ↔ POST /agentscope/sessions/{id}/compress   (capability: session-command)
+//   terminate  ↔ POST /agentscope/sessions/{id}/terminate  (capability: session-command)
+//   abort      ↔ POST /agentscope/sessions/{id}/abort      (capability: session-abort)
+//   undo       ↔ POST /agentscope/sessions/{id}/undo       (capability: session-undo, optional)
+//   redo       ↔ POST /agentscope/sessions/{id}/redo       (capability: session-redo, optional)
+//
+// Success / error semantics match the HTTP Command contract
+// (accepted/commandId/phase/result；501 unsupported, 409 busy/wait_idle,
+// 404 not_found, 503 unreachable on CP, 500 failed).
 message SessionCommand {
   string session_id = 1;
-  string command    = 2;
+  string command    = 2;  // compress | terminate | abort | undo | redo | ...
   bytes  params     = 3;
 }
 

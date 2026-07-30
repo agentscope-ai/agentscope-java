@@ -13,10 +13,13 @@ sdk-design §4）。零依赖：标准库 ``http.server``，后台线程服务�
     GET  /agentscope/workspaces
     POST /agentscope/sessions/{id}/compress
     POST /agentscope/sessions/{id}/terminate
+    POST /agentscope/sessions/{id}/abort
+    GET  /agentscope/sessions/{id}/tasks
 
 provider 协议（由 ``SessionBridge`` 实现）：``info()`` / ``sessions()`` /
 ``session_state(id)`` / ``context(id)`` / ``messages(id, offset, limit)`` /
-``subagents()`` / ``workspaces()`` / ``compress(id)`` / ``terminate(id)``，
+``subagents()`` / ``workspaces()`` / ``compress(id)`` / ``terminate(id)`` /
+``abort(id)`` / ``tasks(id)``，
 返回 JSON 可序列化 dict/list；抛 ``ContractNotFoundError`` → 404，
 ``NotImplementedError`` → 501，其余异常 → 500。
 """
@@ -160,6 +163,18 @@ def _make_handler(provider: Any) -> type:
                                 "status": "initiated",
                             },
                         )
+                    if action == "abort" and method == "POST":
+                        provider.abort(session_id)
+                        return self._json(
+                            200,
+                            {
+                                "sessionId": session_id,
+                                "command": "abort",
+                                "status": "initiated",
+                            },
+                        )
+                    if action == "tasks" and method == "GET":
+                        return self._json(200, {"tasks": provider.tasks(session_id) or []})
                 return self._error(404, "not found")
             except ContractNotFoundError as exc:
                 return self._error(404, str(exc) or "not found")

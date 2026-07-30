@@ -4,12 +4,14 @@ import {
   BuiltinToolInfo,
   McpCatalogEntry,
   McpServerConfig,
+  ToolPermissionType,
   computeEnabledBuiltins,
+  computeToolPolicies,
   fetchBuiltinCatalog,
   fetchMcpCatalog,
   installMcpServer,
   listInstalledMcpNames,
-  saveBuiltinEnabled,
+  saveBuiltinToolConfig,
 } from '../api/tools';
 
 interface Props {
@@ -121,6 +123,7 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
+  const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -131,6 +134,12 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
         if (cancelled) return;
         setCatalog(cat);
         setEnabled(computeEnabledBuiltins(cat, agent.tools));
+        const loaded = computeToolPolicies(agent.tools);
+        const next = new Map<string, ToolPermissionType>();
+        for (const b of cat) {
+          next.set(b.id, loaded.get(b.id) ?? 'always_allow');
+        }
+        setPolicies(next);
         setDirty(false);
       })
       .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
@@ -148,10 +157,19 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
     setDirty(true);
   }
 
+  function setPolicy(id: string, type: ToolPermissionType) {
+    setPolicies(prev => {
+      const next = new Map(prev);
+      next.set(id, type);
+      return next;
+    });
+    setDirty(true);
+  }
+
   async function save() {
     setSaving(true); setErr(null);
     try {
-      await saveBuiltinEnabled(agentId, catalog, enabled);
+      await saveBuiltinToolConfig(agentId, catalog, enabled, policies);
       setDirty(false);
       onSaved();
     } catch (e: unknown) {
@@ -170,6 +188,16 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
     }
     return out;
   }, [catalog]);
+
+  const policySelectStyle: React.CSSProperties = {
+    fontSize: '0.74rem',
+    border: '1px solid #cbd5e1',
+    borderRadius: 6,
+    padding: '4px 8px',
+    color: '#475569',
+    background: '#ffffff',
+    flexShrink: 0,
+  };
 
   return (
     <>
@@ -191,6 +219,17 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
                   <div style={S.rowName}>{b.id}</div>
                   {b.description && <div style={S.rowDesc}>{b.description}</div>}
                 </div>
+                <select
+                  style={policySelectStyle}
+                  value={policies.get(b.id) ?? 'always_allow'}
+                  disabled={!enabled.has(b.id)}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setPolicy(b.id, e.target.value as ToolPermissionType)}
+                  title="Auto runs without asking; Ask pauses for confirmation"
+                >
+                  <option value="always_allow">Auto</option>
+                  <option value="always_ask">Ask</option>
+                </select>
               </label>
             ))}
           </div>

@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +13,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
+	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/endpoints"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionops"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -169,49 +173,349 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"events": events})
 }
 
-// compressSession handles POST /api/v1/sessions/:sessionId/compress by
-// dispatching a live compress command to the session's data-plane instance.
+// compressSession handles POST /api/v1/sessions/:sessionId/compress.
 func (s *Server) compressSession(c *gin.Context) {
-	sess, ok := s.resolveSession(c)
-	if !ok {
-		return
-	}
-
-	if !s.dispatchSessionCommand(c, sess, "compress") {
-		return
-	}
-
-	if err := s.store.Sessions().UpdatePhase(c.Request.Context(), sess.ID, store.SessionPhaseCompressing); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"sessionId": sess.SessionID, "command": "compress", "status": "initiated"})
+	s.executeSessionCommand(c, sessionops.CommandCompress)
 }
 
-// terminateSession handles POST /api/v1/sessions/:sessionId/terminate by
-// dispatching a live terminate command to the session's data-plane instance.
+// terminateSession handles POST /api/v1/sessions/:sessionId/terminate.
 func (s *Server) terminateSession(c *gin.Context) {
+	s.executeSessionCommand(c, sessionops.CommandTerminate)
+}
+
+// abortSession handles POST /api/v1/sessions/:sessionId/abort.
+func (s *Server) abortSession(c *gin.Context) {
+	s.executeSessionCommand(c, sessionops.CommandAbort)
+}
+
+// executeSessionCommand runs a destructive session op through the Session
+// Command Router (capability + busy gate + audit).
+func (s *Server) executeSessionCommand(c *gin.Context, command string) {
+	if !s.requireOperateWrite(c) {
+		return
+	}
 	sess, ok := s.resolveSession(c)
 	if !ok {
 		return
 	}
-
-	if !s.dispatchSessionCommand(c, sess, "terminate") {
+	if s.sessionOps == nil {
+		// Standalone without registry: keep legacy ASDP/HTTP dispatch.
+		if !s.dispatchSessionCommand(c, sess, command) {
+			return
+		}
+		phase := sess.Phase
+		switch command {
+		case sessionops.CommandCompress:
+			phase = store.SessionPhaseCompressing
+		case sessionops.CommandTerminate:
+			phase = store.SessionPhaseTerminated
+		}
+		if phase != sess.Phase {
+			if err := s.store.Sessions().UpdatePhase(c.Request.Context(), sess.ID, phase); err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+				return
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"accepted":  true,
+			"commandId": c.GetHeader("X-Command-Id"),
+			"phase":     phase,
+			"result":    gin.H{},
+		})
 		return
 	}
 
-	if err := s.store.Sessions().UpdatePhase(c.Request.Context(), sess.ID, store.SessionPhaseTerminated); err != nil {
+	force := c.Query("force") == "true" || c.Query("force") == "1"
+	queueSet := false
+	queue := true
+	if q := c.Query("queue"); q == "false" || q == "0" {
+		queue = false
+		queueSet = true
+	} else if q == "true" || q == "1" {
+		queue = true
+		queueSet = true
+	}
+	var body struct {
+		Force bool  `json:"force"`
+		Queue *bool `json:"queue"`
+	}
+	if c.Request.ContentLength != 0 {
+		_ = c.ShouldBindJSON(&body)
+		if body.Force {
+			force = true
+		}
+		if body.Queue != nil {
+			queue = *body.Queue
+			queueSet = true
+		}
+	}
+
+	req := sessionops.Request{
+		Command:   command,
+		Operator:  s.operatorFromContext(c),
+		Source:    "http",
+		Force:     force,
+		CommandID: c.GetHeader("X-Command-Id"),
+	}
+	if queueSet {
+		req.Queue = &queue
+	}
+
+	result, err := s.sessionOps.Execute(c.Request.Context(), sess, req)
+	if err != nil {
+		s.writeSessionOpsError(c, err)
+		return
+	}
+	status := http.StatusOK
+	if result.Queued {
+		status = http.StatusAccepted
+	}
+	c.JSON(status, gin.H{
+		"accepted":  result.Accepted,
+		"commandId": result.CommandID,
+		"phase":     result.Phase,
+		"result":    result.Result,
+		"forced":    result.Forced,
+		"cached":    result.Cached,
+		"queued":    result.Queued,
+	})
+}
+
+// getSessionTasks proxies GET /api/v1/sessions/:sessionId/tasks to the DP
+// when the instance advertises task-query.
+func (s *Server) getSessionTasks(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	if s.registry == nil || sess.InstanceRef == "" {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "task-query requires a registered instanceRef",
+			Code:  sessionops.CodeUnsupported,
+		})
+		return
+	}
+	dp := s.registry.Get(sess.InstanceRef)
+	if dp == nil || !dp.Healthy {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
+			Error: "instance unreachable",
+			Code:  sessionops.CodeUnreachable,
+		})
+		return
+	}
+	hasTaskQuery := false
+	for _, capName := range dp.Capabilities {
+		if capName == v1alpha1.CapabilityTaskQuery {
+			hasTaskQuery = true
+			break
+		}
+	}
+	if !hasTaskQuery {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "data plane does not advertise the task-query capability",
+			Code:  sessionops.CodeUnsupported,
+		})
+		return
+	}
+	tasks, err := s.prober.FetchTasks(c.Request.Context(), dp.BaseURL, sess.SessionID)
+	if err != nil {
+		if err == prober.ErrNotFoundOnDataPlane {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found on data plane", Code: sessionops.CodeNotFound})
+			return
+		}
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch tasks: " + err.Error(), Code: sessionops.CodeFailed})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+}
+
+func (s *Server) getSessionSubagentTasks(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	dp, ok := s.requireSessionDP(c, sess, v1alpha1.CapabilitySubagentTaskQuery)
+	if !ok {
+		return
+	}
+	tasks, err := s.prober.FetchSubagentTasks(c.Request.Context(), dp.BaseURL, sess.SessionID)
+	if err != nil {
+		if err == prober.ErrNotFoundOnDataPlane {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found on data plane", Code: sessionops.CodeNotFound})
+			return
+		}
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch subagent tasks: " + err.Error(), Code: sessionops.CodeFailed})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+}
+
+func (s *Server) cancelSessionSubagentTask(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	taskID := c.Param("taskId")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "taskId required"})
+		return
+	}
+	dp, ok := s.requireSessionDP(c, sess, v1alpha1.CapabilitySubagentTaskCommand)
+	if !ok {
+		return
+	}
+	if err := s.prober.CancelSubagentTask(c.Request.Context(), dp.BaseURL, sess.SessionID, taskID); err != nil {
+		if err == prober.ErrNotFoundOnDataPlane {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "task not found on data plane", Code: sessionops.CodeNotFound})
+			return
+		}
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to cancel subagent task: " + err.Error(), Code: sessionops.CodeFailed})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"accepted": true, "taskId": taskID})
+}
+
+func (s *Server) postSessionPlanMode(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	dp, ok := s.requireSessionDP(c, sess, v1alpha1.CapabilityPlanMode)
+	if !ok {
+		return
+	}
+	var body struct {
+		Active *bool  `json:"active"`
+		Mode   string `json:"mode"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	active := true
+	if body.Active != nil {
+		active = *body.Active
+	} else if body.Mode != "" {
+		m := strings.ToLower(body.Mode)
+		active = m != "exit" && m != "off" && m != "false"
+	}
+	if err := s.prober.SendPlanMode(c.Request.Context(), dp.BaseURL, sess.SessionID, active); err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to set plan mode: " + err.Error(), Code: sessionops.CodeFailed})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"accepted": true, "active": active, "phase": sess.Phase})
+}
+
+// requireSessionDP returns a healthy registry entry that advertises capability.
+func (s *Server) requireSessionDP(c *gin.Context, sess *store.Session, capability string) (*dataplane.Entry, bool) {
+	if s.registry == nil || sess.InstanceRef == "" {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: capability + " requires a registered instanceRef",
+			Code:  sessionops.CodeUnsupported,
+		})
+		return nil, false
+	}
+	dp := s.registry.Get(sess.InstanceRef)
+	if dp == nil || !dp.Healthy {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
+			Error: "instance unreachable",
+			Code:  sessionops.CodeUnreachable,
+		})
+		return nil, false
+	}
+	has := false
+	for _, capName := range dp.Capabilities {
+		if capName == capability {
+			has = true
+			break
+		}
+	}
+	if !has {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "data plane does not advertise the " + capability + " capability",
+			Code:  sessionops.CodeUnsupported,
+		})
+		return nil, false
+	}
+	return dp, true
+}
+
+// listSessionCommands returns the audit history for one session.
+func (s *Server) listSessionCommands(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	list, err := s.store.Commands().List(c.Request.Context(), store.SessionCommandFilter{
+		SessionFK: sess.ID,
+		Limit:     parseLimit(c, 50),
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"commands": list})
+}
 
-	c.JSON(http.StatusOK, gin.H{"sessionId": sess.SessionID, "command": "terminate", "status": "initiated"})
+// listRecentCommands returns recent ops across sessions (Overview "Recent ops").
+func (s *Server) listRecentCommands(c *gin.Context) {
+	filter := store.SessionCommandFilter{
+		AgentName: c.Query("agent"),
+		Namespace: c.Query("namespace"),
+		Limit:     parseLimit(c, 50),
+	}
+	if since := c.Query("since"); since != "" {
+		if t, err := time.Parse(time.RFC3339, since); err == nil {
+			filter.Since = &t
+		} else {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid since (RFC3339)"})
+			return
+		}
+	}
+	list, err := s.store.Commands().List(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"commands": list})
+}
+
+// requireOperateWrite enforces AISTIO_OPERATE_WRITE_ENABLED for destructive
+// session commands. If the env is explicitly "false", reject with 403.
+// If unset or "true", allow (dev-friendly default for local/tests).
+func (s *Server) requireOperateWrite(c *gin.Context) bool {
+	v := strings.TrimSpace(os.Getenv("AISTIO_OPERATE_WRITE_ENABLED"))
+	if strings.EqualFold(v, "false") {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error: "operate write disabled (AISTIO_OPERATE_WRITE_ENABLED=false)",
+			Code:  "forbidden",
+		})
+		return false
+	}
+	return true
+}
+
+func (s *Server) operatorFromContext(c *gin.Context) string {
+	if u, ok := c.Get("username"); ok {
+		if name, ok := u.(string); ok && name != "" {
+			return name
+		}
+	}
+	return "token:static"
+}
+
+func (s *Server) writeSessionOpsError(c *gin.Context, err error) {
+	if opErr, ok := sessionops.AsError(err); ok {
+		c.JSON(opErr.Status, ErrorResponse{
+			Error: opErr.Msg,
+			Code:  opErr.Code,
+			Hint:  opErr.Hint,
+		})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error(), Code: sessionops.CodeFailed})
 }
 
 // dispatchSessionCommand delivers a session command, preferring a live ASDP
 // stream (session's instanceRef) and falling back to the HTTP data-plane
-// contract. It writes the error response and returns false on failure.
+// contract. Used only when sessionOps is unavailable (no registry).
 func (s *Server) dispatchSessionCommand(c *gin.Context, sess *store.Session, command string) bool {
 	// 1) ASDP fast path: the instance holds a live gRPC stream.
 	if s.asdpCommands != nil && sess.InstanceRef != "" {
@@ -227,10 +531,17 @@ func (s *Server) dispatchSessionCommand(c *gin.Context, sess *store.Session, com
 	}
 	var err error
 	switch command {
-	case "compress":
+	case sessionops.CommandCompress:
 		err = s.prober.SendCompress(c.Request.Context(), endpoint, sess.SessionID)
-	default:
+	case sessionops.CommandTerminate:
 		err = s.prober.SendTerminate(c.Request.Context(), endpoint, sess.SessionID)
+	default:
+		// abort/undo/redo not on legacy prober helpers — reject.
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "command requires sessionops router + registry: " + command,
+			Code:  sessionops.CodeUnsupported,
+		})
+		return false
 	}
 	if err != nil {
 		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to dispatch " + command + " command: " + err.Error()})

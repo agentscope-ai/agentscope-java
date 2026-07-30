@@ -15,6 +15,8 @@
  */
 package io.agentscope.extensions.aistio.adapter;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ContentBlock;
@@ -25,13 +27,20 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.PlanModeContextState;
+import io.agentscope.core.state.Task;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.aistio.FrameworkAdapter;
 import io.agentscope.extensions.aistio.SessionBridge;
 import io.agentscope.extensions.aistio.model.ContextSnapshot;
+import io.agentscope.extensions.aistio.model.Inventory;
 import io.agentscope.extensions.aistio.model.MessagePage;
 import io.agentscope.extensions.aistio.model.SessionEvent;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +81,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
     public static final String FRAMEWORK = "agentscope-java";
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     /**
      * Name that {@code ConversationCompactor} gives the summary message it injects. Matched by
      * value rather than by importing {@code agentscope-harness}, which is optional here.
@@ -80,6 +91,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
     private final SessionCompactor compactor;
     private final AistioObserverMiddleware middleware;
+    private volatile SessionHistorySource historySource;
+    private volatile AgentRuntimeSource runtimeSource;
 
     /** Sessions seen so far, mapped to the user slot their state lives in. */
     private final Map<String, String> sessionUsers = new ConcurrentHashMap<>();
@@ -105,6 +118,21 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         return middleware;
     }
 
+    /**
+     * Optional full-history reader (e.g. harness {@code .log.jsonl}). Safe to set after the adapter
+     * bean is created, once the {@code HarnessAgent} exists.
+     */
+    public void setHistorySource(SessionHistorySource historySource) {
+        this.historySource = historySource;
+    }
+
+    /**
+     * Optional harness-/app hooks for inventory, plan files, subagent tasks and Definition enrich.
+     */
+    public void setRuntimeSource(AgentRuntimeSource runtimeSource) {
+        this.runtimeSource = runtimeSource;
+    }
+
     // ─── identity ───
 
     @Override
@@ -128,8 +156,16 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         Set<String> caps = new java.util.TreeSet<>();
         caps.add(CAP_CONTEXT_QUERY);
         caps.add(CAP_MESSAGE_QUERY);
-        // terminate() always works via Agent.interrupt(); compress() depends on the compactor.
         caps.add(CAP_SESSION_COMMAND);
+        caps.add(CAP_SESSION_ABORT);
+        caps.add(CAP_TASK_QUERY);
+        caps.add(CAP_PLAN_MODE);
+        if (runtimeSource != null) {
+            caps.add(CAP_SUBAGENT_INVENTORY);
+            caps.add(CAP_WORKSPACE_INVENTORY);
+            caps.add(CAP_SUBAGENT_TASK_QUERY);
+            caps.add(CAP_SUBAGENT_TASK_COMMAND);
+        }
         return caps;
     }
 
@@ -174,8 +210,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     }
 
     /**
-     * Records the session and seeds the tracker with the prompt, tools and context window, none of
-     * which the event stream itself carries.
+     * Records the session and seeds the tracker with the prompt, tools, context window and model,
+     * none of which the event stream itself carries.
      */
     void rememberSession(String sessionId, String userId, Agent observed) {
         sessionUsers.put(sessionId, userId == null ? "" : userId);
@@ -183,16 +219,73 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         if (target == null) {
             return;
         }
-        String systemPrompt = observed instanceof ReActAgent react ? react.getSysPrompt() : null;
-        int contextWindow = 0;
-        if (observed instanceof ReActAgent react && react.getModel() != null) {
+        String systemPrompt = sysPromptOf(observed);
+        int contextWindow = contextWindowOf(observed);
+        String modelName = null;
+        ReActAgent react = reactOf(observed);
+        if (react != null && react.getModel() != null) {
             try {
-                contextWindow = react.getModel().getContextWindowSize();
+                modelName = react.getModel().getModelName();
             } catch (RuntimeException e) {
-                contextWindow = 0;
+                modelName = null;
             }
         }
-        target.describeSession(sessionId, systemPrompt, toolsOf(observed), contextWindow);
+        target.describeSession(
+                sessionId, systemPrompt, toolsOf(observed), contextWindow, modelName);
+    }
+
+    /**
+     * Marks whether a turn is in progress for {@code sessionId}. Called by the observer middleware
+     * around each {@code call()} so session list/state can report {@code busy}. When a turn ends,
+     * refreshes context-used tokens so pressure reflects the live window, not lifetime cumulative
+     * usage.
+     */
+    void markBusy(String sessionId, boolean busy) {
+        SessionBridge target = bridge;
+        if (target != null) {
+            target.setBusy(sessionId, busy);
+        }
+        if (!busy) {
+            refreshContextPressure(sessionId);
+        }
+    }
+
+    /** Stores the last middleware-composed system prompt for session Context. */
+    void recordEffectiveSystemPrompt(String sessionId, String prompt) {
+        SessionBridge target = bridge;
+        if (target != null) {
+            target.setEffectiveSystemPrompt(sessionId, prompt);
+        }
+    }
+
+    private void refreshContextPressure(String sessionId) {
+        SessionBridge target = bridge;
+        if (target == null) {
+            return;
+        }
+        try {
+            Agent agent = this.agent;
+            if (agent == null) {
+                return;
+            }
+            AgentState state = resolveState(agent, sessionId);
+            if (state == null) {
+                return;
+            }
+            int used = 0;
+            for (Msg msg : state.getContext()) {
+                ChatUsage usage = msg.getChatUsage();
+                if (usage == null) {
+                    usage = msg.getUsage();
+                }
+                if (usage != null) {
+                    used += usage.getTotalTokens();
+                }
+            }
+            target.setContextUsedTokens(sessionId, used);
+        } catch (RuntimeException e) {
+            LOG.log(Level.FINE, "aistio: context pressure refresh failed for " + sessionId, e);
+        }
     }
 
     boolean isKnownSession(String sessionId) {
@@ -223,24 +316,107 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
                     int totalTokens = 0;
                     for (Msg msg : context) {
-                        ChatUsage usage = msg.getUsage();
+                        ChatUsage usage = msg.getChatUsage();
+                        if (usage == null) {
+                            usage = msg.getUsage();
+                        }
                         if (usage != null) {
                             totalTokens += usage.getTotalTokens();
                         }
                     }
 
+                    String basePrompt = sysPromptOf(target);
+                    String effectivePrompt = basePrompt;
+                    SessionBridge b = bridge;
+                    if (b != null) {
+                        String sampled = b.effectiveSystemPrompt(sessionId);
+                        if (sampled != null && !sampled.isEmpty()) {
+                            effectivePrompt = sampled;
+                        }
+                    }
+
+                    List<String> activatedGroups = List.of();
+                    if (state != null && state.getToolContext() != null) {
+                        List<String> groups = state.getToolContext().getActivatedGroups();
+                        if (groups != null) {
+                            activatedGroups = groups;
+                        }
+                    }
+
+                    Map<String, Object> frameworkState =
+                            buildFrameworkState(
+                                    target, sessionId, state, basePrompt, activatedGroups);
+
                     return ContextSnapshot.builder(sessionId)
-                            .systemPrompt(
-                                    target instanceof ReActAgent react ? react.getSysPrompt() : "")
+                            .systemPrompt(effectivePrompt)
                             .messages(messages)
-                            .tools(toolsOf(target))
+                            .tools(toolsOf(target, activatedGroups))
                             .compacted(!compactionSummary.isEmpty())
                             .compactionSummary(compactionSummary)
                             .totalTokens(totalTokens)
                             .maxTokens(contextWindowOf(target))
                             .framework(FRAMEWORK)
+                            .model(modelNameOf(target))
+                            .frameworkState(toJsonBytes(frameworkState))
                             .build();
                 });
+    }
+
+    private Map<String, Object> buildFrameworkState(
+            Agent target,
+            String sessionId,
+            AgentState state,
+            String basePrompt,
+            List<String> activatedGroups) {
+        Map<String, Object> fs = new LinkedHashMap<>();
+        fs.put("baseSystemPrompt", basePrompt == null ? "" : basePrompt);
+        fs.put("activatedGroups", activatedGroups);
+        SessionBridge b = bridge;
+        boolean hasEffective = b != null && !b.effectiveSystemPrompt(sessionId).isEmpty();
+        fs.put("systemPromptSource", hasEffective ? "effective" : "base");
+
+        PlanModeContextState plan = state == null ? null : state.getPlanModeContext();
+        boolean planActive = plan != null && plan.isPlanActive();
+        fs.put("planActive", planActive);
+        String planFile = plan == null ? null : plan.getCurrentPlanFile();
+        if (planFile != null && !planFile.isEmpty()) {
+            fs.put("currentPlanFile", planFile);
+            AgentRuntimeSource src = runtimeSource;
+            if (src != null) {
+                src.readPlanExcerpt(target, sessionId, sessionUsers.get(sessionId), planFile)
+                        .ifPresent(excerpt -> fs.put("planExcerpt", excerpt));
+            }
+        }
+
+        if (state != null && state.getToolContext() != null) {
+            Map<String, ToolContextState.SpawnEntry> spawns =
+                    state.getToolContext().getSpawnRegistry();
+            if (spawns != null && !spawns.isEmpty()) {
+                List<Map<String, Object>> spawnList = new ArrayList<>();
+                for (Map.Entry<String, ToolContextState.SpawnEntry> e : spawns.entrySet()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("key", e.getKey());
+                    ToolContextState.SpawnEntry entry = e.getValue();
+                    if (entry != null) {
+                        row.put("agentId", entry.agentId());
+                        row.put("label", entry.label());
+                        row.put("sessionId", entry.sessionId());
+                        row.put("depth", entry.depth());
+                    }
+                    spawnList.add(row);
+                }
+                fs.put("spawns", spawnList);
+            }
+        }
+        return fs;
+    }
+
+    private static byte[] toJsonBytes(Map<String, Object> value) {
+        try {
+            return JSON.writeValueAsBytes(value);
+        } catch (JsonProcessingException e) {
+            return "{}".getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     // ─── Level 3: full history ───
@@ -249,6 +425,14 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     public Mono<MessagePage> listMessages(String sessionId, int offset, int limit) {
         return Mono.fromCallable(
                 () -> {
+                    SessionHistorySource history = historySource;
+                    if (history != null) {
+                        String userId = sessionUsers.getOrDefault(sessionId, "");
+                        var fromLog = history.loadMessages(sessionId, userId);
+                        if (fromLog.isPresent()) {
+                            return MessagePage.of(sessionId, fromLog.get(), offset, limit);
+                        }
+                    }
                     AgentState state = resolveState(requireAgent(), sessionId);
                     List<Msg> context = state == null ? List.<Msg>of() : state.getContext();
                     List<MessagePage.MessageItem> items = new ArrayList<>(context.size());
@@ -257,6 +441,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                         seq++;
                         ToolUseBlock use = firstBlock(msg, ToolUseBlock.class);
                         ToolResultBlock result = firstBlock(msg, ToolResultBlock.class);
+                        long occurred = parseMsgTimestamp(msg.getTimestamp());
                         items.add(
                                 new MessagePage.MessageItem(
                                         seq,
@@ -267,7 +452,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                                                 : (result != null ? result.getName() : ""),
                                         use != null ? use.getInput() : null,
                                         result != null ? blocksText(result.getOutput()) : "",
-                                        0L));
+                                        occurred));
                     }
                     return MessagePage.of(sessionId, items, offset, limit);
                 });
@@ -277,8 +462,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
     @Override
     public Mono<Void> handleCommand(String sessionId, String command, byte[] params) {
-        if (COMMAND_TERMINATE.equals(command)) {
-            return Mono.fromRunnable(() -> requireAgent().interrupt());
+        if (COMMAND_TERMINATE.equals(command) || COMMAND_ABORT.equals(command)) {
+            return Mono.fromRunnable(() -> interruptSession(sessionId));
         }
         if (COMMAND_COMPRESS.equals(command)) {
             if (compactor == null) {
@@ -309,6 +494,231 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         return Mono.error(new IllegalArgumentException("unsupported command: " + command));
     }
 
+    // ─── tasks ───
+
+    @Override
+    public Mono<List<Map<String, Object>>> listTasks(String sessionId) {
+        return Mono.fromCallable(
+                () -> {
+                    AgentState state = resolveState(requireAgent(), sessionId);
+                    if (state == null || state.getTasksContext() == null) {
+                        return List.of();
+                    }
+                    List<Task> tasks = state.getTasksContext().getTasks();
+                    List<Map<String, Object>> out = new ArrayList<>(tasks.size());
+                    for (Task task : tasks) {
+                        out.add(toTaskJson(task));
+                    }
+                    return out;
+                });
+    }
+
+    private static Map<String, Object> toTaskJson(Task task) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", task.getId());
+        out.put("subject", task.getSubject());
+        if (task.getDescription() != null && !task.getDescription().isEmpty()) {
+            out.put("description", task.getDescription());
+        }
+        out.put(
+                "state",
+                task.getState() == null ? Task.State.PENDING.getWire() : task.getState().getWire());
+        if (task.getOwner() != null && !task.getOwner().isEmpty()) {
+            out.put("owner", task.getOwner());
+        }
+        List<String> blockedBy = task.getBlockedBy();
+        if (blockedBy != null && !blockedBy.isEmpty()) {
+            out.put("blockedBy", List.copyOf(blockedBy));
+        } else {
+            out.put("blockedBy", List.of());
+        }
+        if (task.getCreatedAt() != null && !task.getCreatedAt().isEmpty()) {
+            out.put("updatedAt", task.getCreatedAt());
+        }
+        out.put(
+                "frameworkMeta",
+                task.getMetadata() == null || task.getMetadata().isEmpty()
+                        ? Map.of()
+                        : task.getMetadata());
+        return out;
+    }
+
+    // ─── inventory / definition / plan / subagent-tasks ───
+
+    @Override
+    public Mono<List<Inventory.SubagentInfo>> listSubagents() {
+        return Mono.fromCallable(
+                () -> {
+                    AgentRuntimeSource src = runtimeSource;
+                    if (src == null) {
+                        throw new UnsupportedOperationException(
+                                "subagent-inventory is not supported by this adapter");
+                    }
+                    return src.listSubagents(requireAgent());
+                });
+    }
+
+    @Override
+    public Mono<List<Inventory.WorkspaceInfo>> listWorkspaces() {
+        return Mono.fromCallable(
+                () -> {
+                    AgentRuntimeSource src = runtimeSource;
+                    if (src == null) {
+                        throw new UnsupportedOperationException(
+                                "workspace-inventory is not supported by this adapter");
+                    }
+                    return src.listWorkspaces(requireAgent());
+                });
+    }
+
+    @Override
+    public Mono<List<Map<String, Object>>> listSubagentTasks(String sessionId) {
+        return Mono.fromCallable(
+                () -> {
+                    AgentRuntimeSource src = runtimeSource;
+                    if (src == null) {
+                        throw new UnsupportedOperationException(
+                                "subagent-task-query is not supported by this adapter");
+                    }
+                    return src.listSubagentTasks(
+                            requireAgent(), sessionId, sessionUsers.get(sessionId));
+                });
+    }
+
+    @Override
+    public Mono<Void> cancelSubagentTask(String sessionId, String taskId) {
+        return Mono.fromCallable(
+                        () -> {
+                            AgentRuntimeSource src = runtimeSource;
+                            if (src == null) {
+                                throw new UnsupportedOperationException(
+                                        "subagent-task-command is not supported by this adapter");
+                            }
+                            boolean ok =
+                                    src.cancelSubagentTask(
+                                            requireAgent(),
+                                            sessionId,
+                                            sessionUsers.get(sessionId),
+                                            taskId);
+                            if (!ok) {
+                                throw new IllegalStateException(
+                                        "subagent task not found or cancel failed: " + taskId);
+                            }
+                            return null;
+                        })
+                .then();
+    }
+
+    @Override
+    public Mono<Void> setPlanMode(String sessionId, byte[] params) {
+        return Mono.fromCallable(
+                        () -> {
+                            boolean active = parsePlanActive(params);
+                            Agent target = requireAgent();
+                            AgentRuntimeSource src = runtimeSource;
+                            String userId = sessionUsers.get(sessionId);
+                            if (src != null && src.setPlanMode(target, sessionId, userId, active)) {
+                                return null;
+                            }
+                            AgentState state = resolveState(target, sessionId);
+                            if (state == null) {
+                                throw new IllegalStateException(
+                                        "agentscope-java: no state for session " + sessionId);
+                            }
+                            state.getPlanModeContext().setPlanActive(active);
+                            saveState(target, userId, sessionId);
+                            return null;
+                        })
+                .then();
+    }
+
+    private static boolean parsePlanActive(byte[] params) {
+        if (params == null || params.length == 0) {
+            return true;
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = JSON.readValue(params, Map.class);
+            Object active = map.get("active");
+            if (active instanceof Boolean b) {
+                return b;
+            }
+            if (active != null) {
+                return Boolean.parseBoolean(active.toString());
+            }
+            Object mode = map.get("mode");
+            if (mode != null) {
+                String m = mode.toString().toLowerCase();
+                return !"exit".equals(m) && !"off".equals(m) && !"false".equals(m);
+            }
+        } catch (Exception e) {
+            // treat as enter
+        }
+        return true;
+    }
+
+    private static void saveState(Agent target, String userId, String sessionId) {
+        ReActAgent react = reactOf(target);
+        if (react == null) {
+            return;
+        }
+        try {
+            react.saveAgentState(userId, sessionId);
+        } catch (RuntimeException e) {
+            LOG.log(Level.FINE, "aistio: saveAgentState failed", e);
+        }
+    }
+
+    @Override
+    public Map<String, Object> buildAgentConfig() {
+        Agent target = agent;
+        if (target == null) {
+            return Map.of();
+        }
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("name", target.getName() == null ? "" : target.getName());
+        String description = target.getDescription();
+        if (description != null && !description.isEmpty()) {
+            cfg.put("description", description);
+        }
+        String sysPrompt = sysPromptOf(target);
+        if (!sysPrompt.isEmpty()) {
+            cfg.put(
+                    "systemPrompt",
+                    sysPrompt.length() > 8000 ? sysPrompt.substring(0, 8000) + "…" : sysPrompt);
+        }
+        String model = modelNameOf(target);
+        if (!model.isEmpty()) {
+            cfg.put("model", model);
+        }
+        String provider = modelProviderOf(target);
+        if (!provider.isEmpty()) {
+            cfg.put("modelProvider", provider);
+        }
+        ReActAgent react = reactOf(target);
+        if (react != null) {
+            cfg.put("maxIters", react.getMaxIters());
+            cfg.put("maxTurns", react.getMaxIters());
+        }
+        List<ContextSnapshot.ToolInfo> tools = toolsOf(target);
+        List<Map<String, Object>> toolRows = new ArrayList<>(tools.size());
+        for (ContextSnapshot.ToolInfo t : tools) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", t.name());
+            if (t.description() != null && !t.description().isEmpty()) {
+                row.put("description", t.description());
+            }
+            toolRows.add(row);
+        }
+        cfg.put("tools", toolRows);
+        cfg.put("sources", List.of("builder"));
+        AgentRuntimeSource src = runtimeSource;
+        if (src != null) {
+            src.enrichAgentConfig(target, cfg);
+        }
+        return cfg;
+    }
+
     // ─── state resolution ───
 
     private Agent requireAgent() {
@@ -325,11 +735,89 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
      * reach the right slot under concurrency.
      */
     private AgentState resolveState(Agent target, String sessionId) {
-        if (target instanceof ReActAgent react) {
+        ReActAgent react = reactOf(target);
+        if (react != null) {
             String userId = sessionUsers.get(sessionId);
             return react.getAgentState(userId, sessionId);
         }
         return target.getAgentState();
+    }
+
+    /**
+     * Returns the {@code ReActAgent} holding the per-session state, unwrapping one level of
+     * delegation. The harness agent wraps an inner {@code ReActAgent} and exposes it as {@code
+     * getDelegate()}; that is resolved reflectively so this module stays independent of
+     * agentscope-harness. Without the unwrap a wrapped agent falls back to the single default state
+     * slot, which reads the wrong session as soon as there is more than one.
+     */
+    private static ReActAgent reactOf(Agent target) {
+        if (target instanceof ReActAgent react) {
+            return react;
+        }
+        if (target == null) {
+            return null;
+        }
+        try {
+            Object delegate = target.getClass().getMethod("getDelegate").invoke(target);
+            return delegate instanceof ReActAgent react ? react : null;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOG.log(Level.FINE, "aistio: no ReActAgent delegate on " + target.getClass(), e);
+            return null;
+        }
+    }
+
+    private static String sysPromptOf(Agent target) {
+        ReActAgent react = reactOf(target);
+        return react == null ? "" : react.getSysPrompt();
+    }
+
+    private static String modelNameOf(Agent target) {
+        ReActAgent react = reactOf(target);
+        if (react != null && react.getModel() != null) {
+            try {
+                String name = react.getModel().getModelName();
+                return name == null ? "" : name;
+            } catch (RuntimeException e) {
+                return "";
+            }
+        }
+        return "";
+    }
+
+    private static String modelProviderOf(Agent target) {
+        ReActAgent react = reactOf(target);
+        if (react == null || react.getModel() == null) {
+            return "";
+        }
+        try {
+            Object model = react.getModel();
+            try {
+                Object provider = model.getClass().getMethod("getModelProvider").invoke(model);
+                if (provider != null && !provider.toString().isBlank()) {
+                    return provider.toString();
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // fall through
+            }
+            return model.getClass().getSimpleName();
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * Interrupts only the turn running in {@code sessionId}. {@code Agent.interrupt()} triggers the
+     * default state slot, which would abort an unrelated session whenever the agent serves more
+     * than one.
+     */
+    private void interruptSession(String sessionId) {
+        Agent target = requireAgent();
+        ReActAgent react = reactOf(target);
+        if (react == null) {
+            target.interrupt();
+            return;
+        }
+        react.interrupt(sessionUsers.get(sessionId), sessionId);
     }
 
     private String summaryOf(AgentState state) {
@@ -343,7 +831,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     }
 
     private static int contextWindowOf(Agent target) {
-        if (target instanceof ReActAgent react && react.getModel() != null) {
+        ReActAgent react = reactOf(target);
+        if (react != null && react.getModel() != null) {
             try {
                 return react.getModel().getContextWindowSize();
             } catch (RuntimeException e) {
@@ -354,13 +843,21 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     }
 
     static List<ContextSnapshot.ToolInfo> toolsOf(Agent target) {
+        return toolsOf(target, null);
+    }
+
+    static List<ContextSnapshot.ToolInfo> toolsOf(Agent target, List<String> activatedGroups) {
         Toolkit toolkit = target == null ? null : target.getToolkit();
         if (toolkit == null) {
             return List.of();
         }
         List<ToolSchema> schemas;
         try {
-            schemas = toolkit.getToolSchemas();
+            if (activatedGroups == null || activatedGroups.isEmpty()) {
+                schemas = toolkit.getToolSchemas();
+            } else {
+                schemas = toolkit.getToolSchemas(activatedGroups);
+            }
         } catch (RuntimeException e) {
             return List.of();
         }
@@ -415,6 +912,18 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
             }
         }
         return sb.toString();
+    }
+
+    private static long parseMsgTimestamp(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) {
+            return 0L;
+        }
+        try {
+            return Instant.parse(timestamp).toEpochMilli();
+        } catch (RuntimeException ignored) {
+            // Msg uses "yyyy-MM-dd HH:mm:ss.SSS" in some paths — leave unset rather than fail.
+            return 0L;
+        }
     }
 
     static <T extends ContentBlock> T firstBlock(Msg msg, Class<T> type) {

@@ -60,6 +60,7 @@ public final class ContextSnapshot {
     private final int totalTokens;
     private final int maxTokens;
     private final String framework;
+    private final String model;
     private final byte[] frameworkState;
     private final long capturedAt;
 
@@ -77,6 +78,7 @@ public final class ContextSnapshot {
         this.totalTokens = builder.totalTokens;
         this.maxTokens = builder.maxTokens;
         this.framework = builder.framework == null ? "" : builder.framework;
+        this.model = builder.model == null ? "" : builder.model;
         this.frameworkState = builder.frameworkState;
         this.capturedAt = builder.capturedAt > 0 ? builder.capturedAt : System.currentTimeMillis();
         this.contextHash = builder.contextHash == null ? "" : builder.contextHash;
@@ -120,6 +122,14 @@ public final class ContextSnapshot {
 
     public String getFramework() {
         return framework;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public byte[] getFrameworkState() {
+        return frameworkState;
     }
 
     public long getCapturedAt() {
@@ -222,6 +232,16 @@ public final class ContextSnapshot {
         if (!framework.isEmpty()) {
             out.put("framework", framework);
         }
+        if (!model.isEmpty()) {
+            out.put("model", model);
+        }
+        if (frameworkState != null && frameworkState.length > 0) {
+            try {
+                out.put("frameworkState", CANONICAL_MAPPER.readValue(frameworkState, Object.class));
+            } catch (Exception e) {
+                out.put("frameworkState", new String(frameworkState, StandardCharsets.UTF_8));
+            }
+        }
         return out;
     }
 
@@ -310,6 +330,7 @@ public final class ContextSnapshot {
         private int totalTokens;
         private int maxTokens;
         private String framework;
+        private String model;
         private byte[] frameworkState;
         private long capturedAt;
         private String contextHash;
@@ -366,6 +387,11 @@ public final class ContextSnapshot {
 
         public Builder framework(String framework) {
             this.framework = framework;
+            return this;
+        }
+
+        public Builder model(String model) {
+            this.model = model;
             return this;
         }
 

@@ -107,6 +107,20 @@ const (
 	CapabilityMessageQuery = "message-query"
 	// CapabilitySessionCommand: compress/terminate commands.
 	CapabilitySessionCommand = "session-command"
+	// CapabilitySessionAbort: abort current turn without terminating the session.
+	CapabilitySessionAbort = "session-abort"
+	// CapabilitySessionUndo: optional undo of the last step.
+	CapabilitySessionUndo = "session-undo"
+	// CapabilitySessionRedo: optional redo of the last undone step.
+	CapabilitySessionRedo = "session-redo"
+	// CapabilityPlanMode: optional plan-mode enter/exit.
+	CapabilityPlanMode = "plan-mode"
+	// CapabilityTaskQuery: session task list query.
+	CapabilityTaskQuery = "task-query"
+	// CapabilitySubagentTaskQuery: background subagent task list.
+	CapabilitySubagentTaskQuery = "subagent-task-query"
+	// CapabilitySubagentTaskCommand: cancel background subagent tasks.
+	CapabilitySubagentTaskCommand = "subagent-task-command"
 	// CapabilitySubagentInventory: subagent inventory report/query.
 	CapabilitySubagentInventory = "subagent-inventory"
 	// CapabilityWorkspaceInventory: workspace inventory report/query.

@@ -18,8 +18,9 @@ from ..inventory import SubagentInfo, WorkspaceInfo
 # ─── 命令词汇（与控制面 SessionCommand.command / HTTP 合约对齐）───
 COMMAND_COMPRESS = "compress"
 COMMAND_TERMINATE = "terminate"
+COMMAND_ABORT = "abort"
 
-KNOWN_COMMANDS = frozenset({COMMAND_COMPRESS, COMMAND_TERMINATE})
+KNOWN_COMMANDS = frozenset({COMMAND_COMPRESS, COMMAND_TERMINATE, COMMAND_ABORT})
 
 
 def get_field(obj: Any, name: str, default: Any = None) -> Any:
@@ -88,6 +89,26 @@ class FrameworkAdapter(ABC):
         """执行控制命令：``compress`` | ``terminate``（及未来扩展）。"""
         raise NotImplementedError
 
+    async def abort(self, session_id: str) -> None:
+        """中止当前 turn（不 terminate 会话）。Capability：``session-abort``。"""
+        raise NotImplementedError
+
+    async def list_tasks(self, session_id: str) -> List[dict]:
+        """会话任务明细。Capability：``task-query``。
+
+        每项建议字段：``id`` / ``subject`` / ``state`` / ``owner`` /
+        ``blockedBy`` / ``updatedAt`` / ``frameworkMeta``（未知则省略）。
+        """
+        raise NotImplementedError
+
+    def session_fields(self, session_id: str) -> dict:
+        """可选冻结字段，供 session list / state 快照合并。
+
+        可含：``busy`` (bool)、``model`` (str)、``maxTokens`` (int)。
+        未知键必须省略（禁止用 ``false`` / ``0`` / ``""`` 填补）。
+        """
+        return {}
+
     # ─── capability 探测 ───
 
     def supports(self, method_name: str) -> bool:
@@ -111,4 +132,8 @@ class FrameworkAdapter(ABC):
             caps.append("workspace-inventory")
         if self.supports("handle_command"):
             caps.append("session-command")
+        if self.supports("abort"):
+            caps.append("session-abort")
+        if self.supports("list_tasks"):
+            caps.append("task-query")
         return caps

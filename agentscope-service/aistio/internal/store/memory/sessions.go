@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,12 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		existing.Phase = in.Phase
 		if in.Phase == "" {
 			existing.Phase = store.SessionPhaseActive
+		}
+		if in.Busy != nil {
+			b := *in.Busy
+			existing.Busy = &b
+		} else {
+			existing.Busy = nil
 		}
 		if in.InstanceRef != "" {
 			existing.InstanceRef = in.InstanceRef
@@ -58,6 +65,11 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 	if phase == "" {
 		phase = store.SessionPhaseActive
 	}
+	var busy *bool
+	if in.Busy != nil {
+		b := *in.Busy
+		busy = &b
+	}
 	s := &store.Session{
 		ID:               id,
 		SessionID:        in.SessionID,
@@ -66,6 +78,7 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		Framework:        in.Framework,
 		FrameworkVersion: in.FrameworkVersion,
 		Phase:            phase,
+		Busy:             busy,
 		InstanceRef:      in.InstanceRef,
 		InstanceIP:       in.InstanceIP,
 		TeamID:           in.TeamID,
@@ -207,6 +220,91 @@ func (r *sessionRepo) CountActive(_ context.Context, agentName, namespace string
 		}
 	}
 	return n, nil
+}
+
+func (r *sessionRepo) CountByPhase(_ context.Context, f store.SessionFilter) (map[string]int, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	out := map[string]int{}
+	for _, s := range r.s.sessions {
+		if !sessionMatchesFilter(s, f) {
+			continue
+		}
+		out[strings.ToLower(s.Phase)]++
+	}
+	return out, nil
+}
+
+func (r *sessionRepo) ListByPressure(_ context.Context, f store.SessionFilter, minPressure float64, limit int) ([]*store.SessionWithSnapshot, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+
+	latest := map[uuid.UUID]*store.SessionSnapshot{}
+	for i := range r.s.snapshots {
+		snap := &r.s.snapshots[i]
+		if prev, ok := latest[snap.SessionFK]; ok && !snap.CapturedAt.After(prev.CapturedAt) {
+			continue
+		}
+		cp := *snap
+		if snap.TaskSummary != nil {
+			cp.TaskSummary = append([]byte(nil), snap.TaskSummary...)
+		}
+		latest[snap.SessionFK] = &cp
+	}
+
+	var out []*store.SessionWithSnapshot
+	for _, s := range r.s.sessions {
+		if !sessionMatchesFilter(s, f) {
+			continue
+		}
+		snap, ok := latest[s.ID]
+		if !ok || snap.ContextPressure < minPressure {
+			continue
+		}
+		out = append(out, &store.SessionWithSnapshot{
+			Session:  cloneSession(s),
+			Snapshot: snap,
+		})
+	}
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].Snapshot.ContextPressure > out[i].Snapshot.ContextPressure {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func sessionMatchesFilter(s *store.Session, f store.SessionFilter) bool {
+	if f.AgentName != "" && s.AgentName != f.AgentName {
+		return false
+	}
+	if f.Namespace != "" && s.Namespace != f.Namespace {
+		return false
+	}
+	if f.SessionID != "" && s.SessionID != f.SessionID {
+		return false
+	}
+	if f.Phase != "" && s.Phase != f.Phase {
+		return false
+	}
+	if f.Framework != "" && s.Framework != f.Framework {
+		return false
+	}
+	if f.TeamID != "" && s.TeamID != f.TeamID {
+		return false
+	}
+	if f.TeamRole != "" && s.TeamRole != f.TeamRole {
+		return false
+	}
+	return true
 }
 
 func (r *sessionRepo) DeleteByAgent(_ context.Context, agentName, namespace string) error {

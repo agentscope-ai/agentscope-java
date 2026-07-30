@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -100,7 +101,7 @@ func TestToDataPlaneInfo(t *testing.T) {
 		AgentConfig: &prober.ProbeAgentConfig{
 			Model:         "qwen-max",
 			ModelProvider: "DashScope",
-			Tools:         []string{"search"},
+			Tools:         json.RawMessage(`["search"]`),
 		},
 	}
 

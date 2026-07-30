@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS deployments (
     created_at       BIGINT NOT NULL,
     updated_at       BIGINT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_deployments_webhook ON deployments (webhook_token);
 
 CREATE TABLE IF NOT EXISTS resource_shares (
     row_id          BIGSERIAL PRIMARY KEY,
@@ -173,6 +174,33 @@ CREATE TABLE IF NOT EXISTS resource_shares (
     created_by      TEXT,
     UNIQUE (resource_type, resource_id, grantee_user_id)
 );
+
+CREATE TABLE IF NOT EXISTS channels (
+    channel_id       TEXT PRIMARY KEY,
+    owner_id         TEXT NOT NULL,
+    type             TEXT NOT NULL,
+    dm_scope         TEXT,
+    default_agent_id TEXT,
+    disabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    properties_json  TEXT,
+    bindings_json    TEXT,
+    created_at       BIGINT NOT NULL,
+    updated_at       BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_channels_owner ON channels (owner_id);
+
+CREATE TABLE IF NOT EXISTS files (
+    row_id       BIGSERIAL PRIMARY KEY,
+    file_id      TEXT NOT NULL UNIQUE,
+    owner_id     TEXT NOT NULL,
+    filename     TEXT NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'text/plain',
+    size_bytes   BIGINT NOT NULL DEFAULT 0,
+    content      TEXT NOT NULL DEFAULT '',
+    created_at   BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_files_owner ON files (owner_id);
 `
 
 func migrate(ctx context.Context, db *DB) error {

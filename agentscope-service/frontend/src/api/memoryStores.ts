@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { authHeaders, readApiError } from './http';
 
 export interface MemoryStore {
   id: string;
@@ -35,23 +35,16 @@ export interface PutMemoryRequest {
   content: string;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export async function listMemoryStores(): Promise<MemoryStore[]> {
   const res = await fetch('/api/memory-stores', { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to list memory stores: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list memory stores');
   return res.json();
 }
 
 export async function getMemoryStore(id: string): Promise<MemoryStore> {
   const res = await fetch(`/api/memory-stores/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to load memory store: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load memory store');
   return res.json();
 }
 
@@ -61,10 +54,30 @@ export async function createMemoryStore(req: CreateMemoryStoreRequest): Promise<
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Failed to create memory store: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res, 'Failed to create memory store');
+  return res.json();
+}
+
+export async function archiveMemoryStore(id: string): Promise<{ id: string; archivedAt: number }> {
+  const res = await fetch(`/api/memory-stores/${encodeURIComponent(id)}/archive`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to archive memory store');
+  return res.json();
+}
+
+export async function redactMemory(
+  storeId: string,
+  path: string,
+  replacement?: string,
+): Promise<Memory> {
+  const res = await fetch(`/api/memory-stores/${encodeURIComponent(storeId)}/redact`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ path, replacement }),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to redact memory');
   return res.json();
 }
 
@@ -73,7 +86,7 @@ export async function deleteMemoryStore(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete memory store: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete memory store');
 }
 
 export async function listMemories(storeId: string): Promise<Memory[]> {
@@ -81,7 +94,7 @@ export async function listMemories(storeId: string): Promise<Memory[]> {
     `/api/memory-stores/${encodeURIComponent(storeId)}/memories`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to list memories: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list memories');
   return res.json();
 }
 
@@ -90,7 +103,7 @@ export async function getMemory(storeId: string, path: string): Promise<Memory> 
     `/api/memory-stores/${encodeURIComponent(storeId)}/memories/${encodePath(path)}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to load memory: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to load memory');
   return res.json();
 }
 
@@ -99,7 +112,7 @@ export async function putMemory(storeId: string, path: string, req: PutMemoryReq
     `/api/memory-stores/${encodeURIComponent(storeId)}/memories/${encodePath(path)}`,
     { method: 'PUT', headers: authHeaders(), body: JSON.stringify(req) },
   );
-  if (!res.ok) throw new Error(`Failed to save memory: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to save memory');
   return res.json();
 }
 
@@ -108,7 +121,7 @@ export async function deleteMemory(storeId: string, path: string): Promise<void>
     `/api/memory-stores/${encodeURIComponent(storeId)}/memories/${encodePath(path)}`,
     { method: 'DELETE', headers: authHeaders() },
   );
-  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete memory: ${res.status}`);
+  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete memory');
 }
 
 export async function listMemoryVersions(storeId: string, path: string): Promise<MemoryVersion[]> {
@@ -116,7 +129,7 @@ export async function listMemoryVersions(storeId: string, path: string): Promise
     `/api/memory-stores/${encodeURIComponent(storeId)}/memories/versions/${encodePath(path)}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to list memory versions: ${res.status}`);
+  if (!res.ok) throw await readApiError(res, 'Failed to list memory versions');
   return res.json();
 }
 

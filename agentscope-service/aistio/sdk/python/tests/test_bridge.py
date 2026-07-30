@@ -373,6 +373,38 @@ def test_http_compress_and_terminate_commands(fake_cp, claude, fast_periods):
         bridge.stop()
 
 
+def test_http_abort_and_tasks_501_without_adapter_support(fake_cp, claude, fast_periods):
+    bridge = _make_bridge(fake_cp, claude)
+    try:
+        port = bridge.http_port
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _http(port, "/agentscope/sessions/s1/abort", method="POST")
+        assert exc.value.code == 501
+
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _http(port, "/agentscope/sessions/s1/tasks")
+        assert exc.value.code == 501
+    finally:
+        bridge.stop()
+
+
+def test_http_session_state_includes_frozen_fields(fake_cp, claude, fast_periods):
+    bridge = _make_bridge(fake_cp, claude)
+    try:
+        _append(claude, "s1", [{"type": "user", "content": "hello"}])
+        # Seed context window without fabricating busy/model (claude has no overlay).
+        with bridge._lock:
+            bridge._trackers["s1"].max_tokens = 32000
+        state = _http(bridge.http_port, "/agentscope/sessions/s1/state")
+        assert state["id"] == "s1" and state["phase"] == "running"
+        assert state["tokenUsage"]["maxTokens"] == 32000
+        assert "busy" not in state  # unknown → omit
+        sessions = _http(bridge.http_port, "/agentscope/sessions")["sessions"]
+        assert sessions[0]["tokenUsage"]["maxTokens"] == 32000
+    finally:
+        bridge.stop()
+
+
 # ─── 降级语义 ───
 
 

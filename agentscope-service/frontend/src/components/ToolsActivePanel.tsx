@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getAgent } from '../api/agents';
 import {
   ActiveTool,
   ActiveToolsResponse,
+  BuiltinToolInfo,
+  ToolPermissionType,
+  computeToolPolicies,
   disableConfiguredTool,
+  fetchBuiltinCatalog,
   fetchConfiguredActive,
+  saveBuiltinToolConfig,
 } from '../api/tools';
 
 interface Props {
@@ -59,10 +65,24 @@ const S: Record<string, React.CSSProperties> = {
     background: '#ecfeff', color: '#0e7490', border: '1px solid #a5f3fc',
     textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0,
   },
+  askBadge: {
+    fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+    background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa',
+    textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0,
+  },
+  policySelect: {
+    fontSize: '0.74rem',
+    border: '1px solid #cbd5e1',
+    borderRadius: 6,
+    padding: '4px 8px',
+    color: '#475569',
+    background: '#ffffff',
+    flexShrink: 0,
+  },
   disableBtn: {
     background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c',
     borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-    fontSize: '0.74rem', fontWeight: 500, marginLeft: 'auto', flexShrink: 0,
+    fontSize: '0.74rem', fontWeight: 500, flexShrink: 0,
   },
   empty: { padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' },
   err: { color: '#dc2626', fontSize: '0.85rem' },
@@ -70,6 +90,8 @@ const S: Record<string, React.CSSProperties> = {
 
 export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequestBrowse }: Props) {
   const [data, setData] = useState<ActiveToolsResponse | null>(null);
+  const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
+  const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
@@ -77,8 +99,17 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null);
-    fetchConfiguredActive(agentId)
-      .then(d => { if (!cancelled) setData(d); })
+    Promise.all([
+      fetchConfiguredActive(agentId),
+      fetchBuiltinCatalog(agentId),
+      getAgent(agentId),
+    ])
+      .then(([active, cat, agent]) => {
+        if (cancelled) return;
+        setData(active);
+        setCatalog(cat);
+        setPolicies(computeToolPolicies(agent.tools));
+      })
       .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -101,6 +132,25 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
       onChange();
     } catch (e: unknown) {
       setActionErr(e instanceof Error ? e.message : 'Failed to update agent');
+    }
+  }
+
+  async function changePolicy(toolName: string, type: ToolPermissionType) {
+    setActionErr(null);
+    try {
+      const enabled = new Set(
+        (data?.tools ?? []).filter(t => t.source === 'built-in').map(t => t.name),
+      );
+      const next = new Map(policies);
+      next.set(toolName, type);
+      // Preserve policies for catalog tools not currently listed as active.
+      for (const b of catalog) {
+        if (!next.has(b.id)) next.set(b.id, policies.get(b.id) ?? 'always_allow');
+      }
+      await saveBuiltinToolConfig(agentId, catalog, enabled, next);
+      onChange();
+    } catch (e: unknown) {
+      setActionErr(e instanceof Error ? e.message : 'Failed to update permission');
     }
   }
 
@@ -136,24 +186,41 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
         {Array.from(grouped.entries()).map(([source, tools]) => (
           <div key={source}>
             <div style={S.groupHeader}>{source === 'built-in' || source === 'unknown' ? 'Built-in' : 'MCP servers'}</div>
-            {tools.map(t => (
-              <div key={`${source}:${t.name}`} style={S.card}>
-                <span style={t.source === 'built-in' ? S.badge : S.mcpBadge}>
-                  {t.source === 'built-in' ? 'built-in' : 'mcp'}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={S.cardName}>{t.name}</div>
-                  {t.description && <div style={S.cardDesc}>{t.description}</div>}
+            {tools.map(t => {
+              const policy = policies.get(t.name) ?? 'always_allow';
+              return (
+                <div key={`${source}:${t.name}`} style={S.card}>
+                  <span style={t.source === 'built-in' ? S.badge : S.mcpBadge}>
+                    {t.source === 'built-in' ? 'built-in' : 'mcp'}
+                  </span>
+                  {t.source === 'built-in' && policy === 'always_ask' && (
+                    <span style={S.askBadge}>ask</span>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={S.cardName}>{t.name}</div>
+                    {t.description && <div style={S.cardDesc}>{t.description}</div>}
+                  </div>
+                  {t.source === 'built-in' && (
+                    <select
+                      style={S.policySelect}
+                      value={policy}
+                      onChange={e => changePolicy(t.name, e.target.value as ToolPermissionType)}
+                      title="Auto runs without asking; Ask pauses for confirmation"
+                    >
+                      <option value="always_allow">Auto</option>
+                      <option value="always_ask">Ask</option>
+                    </select>
+                  )}
+                  <button
+                    style={S.disableBtn}
+                    onClick={() => disableTool(t)}
+                    title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
+                  >
+                    Disable
+                  </button>
                 </div>
-                <button
-                  style={S.disableBtn}
-                  onClick={() => disableTool(t)}
-                  title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
-                >
-                  Disable
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))}
       </div>

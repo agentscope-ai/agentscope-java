@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that copies conversation activity out to aistio without touching it.
@@ -89,7 +90,10 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
         }
 
         TurnState turn = new TurnState();
-        return next.apply(input).doOnNext(event -> observe(sessionId, turn, event));
+        adapter.markBusy(sessionId, true);
+        return next.apply(input)
+                .doOnNext(event -> observe(sessionId, turn, event))
+                .doFinally(signal -> adapter.markBusy(sessionId, false));
     }
 
     @Override
@@ -110,6 +114,17 @@ public final class AistioObserverMiddleware implements MiddlewareBase {
             }
         }
         return next.apply(input);
+    }
+
+    /**
+     * Captures the fully composed system prompt when this middleware is registered last in the
+     * {@code onSystemPrompt} chain (paw wires aistio after other middlewares).
+     */
+    @Override
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        String sessionId = sessionIdOf(ctx, agent);
+        adapter.recordEffectiveSystemPrompt(sessionId, currentPrompt);
+        return Mono.just(currentPrompt == null ? "" : currentPrompt);
     }
 
     private void observe(String sessionId, TurnState turn, AgentEvent event) {

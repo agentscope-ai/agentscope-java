@@ -75,7 +75,7 @@ spring:
               uri: ${builder.control-plane-url}
               order: 10
               predicates:
-                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/v1/**
+                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
               filters:
                 # Env-key auth is data-plane only; strip if a client spoofs it toward control.
                 - RemoveRequestHeader=X-Builder-Environment-Key

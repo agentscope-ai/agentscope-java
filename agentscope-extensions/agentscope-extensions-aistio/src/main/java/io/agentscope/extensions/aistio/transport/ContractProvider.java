@@ -44,6 +44,37 @@ public interface ContractProvider {
 
     void terminate(String sessionId);
 
+    /** Aborts the current turn without terminating the session. Capability: {@code session-abort}. */
+    void abort(String sessionId);
+
+    /**
+     * Session task inventory. Capability: {@code task-query}. Returns a map with a {@code tasks}
+     * list.
+     */
+    Map<String, Object> tasks(String sessionId);
+
+    /**
+     * Background subagent tasks (not todolist). Capability: {@code subagent-task-query}.
+     */
+    default Map<String, Object> subagentTasks(String sessionId) {
+        throw new UnsupportedOperationException("subagent-task-query is not supported");
+    }
+
+    /** Cancel a background subagent task. Capability: {@code subagent-task-command}. */
+    default void cancelSubagentTask(String sessionId, String taskId) {
+        throw new UnsupportedOperationException("subagent-task-command is not supported");
+    }
+
+    /** Enter/exit plan mode. Body is JSON {@code {"active":true|false}}. Capability: {@code plan-mode}. */
+    default void planMode(String sessionId, byte[] body) {
+        throw new UnsupportedOperationException("plan-mode is not supported");
+    }
+
+    /** Current phase string for command success responses. */
+    default String sessionPhase(String sessionId) {
+        return "running";
+    }
+
     /** Signals that the requested session or resource does not exist on this instance. */
     class NotFoundException extends RuntimeException {
         public NotFoundException(String message) {

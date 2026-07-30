@@ -257,7 +257,7 @@ func (s *Server) toolsMcpCatalog(c *gin.Context) {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	c.JSON(http.StatusOK, []any{})
+	c.JSON(http.StatusOK, builtinMcpCatalog)
 }
 
 func (s *Server) toolsActive(c *gin.Context) {

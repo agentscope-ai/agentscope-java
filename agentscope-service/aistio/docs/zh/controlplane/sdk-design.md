@@ -116,13 +116,20 @@ SDK 在 ASDP `ConnectRequest.capabilities` 与 HTTP `/agentscope/info.capabiliti
 ```text
 session-reporting          # Level 1
 event-reporting            # Level 2
-context-reporting          # Level 4 推送
+context-reporting          # Context 推送（capability 门控，非 contractLevel 4）
 context-query              # HTTP GET .../context
-message-query              # HTTP GET .../messages（Level 3）
+message-query              # HTTP GET .../messages
 session-command            # compress / terminate
+session-abort              # abort 当前 turn（HTTP POST .../abort；ASDP command=abort）
+task-query                 # HTTP GET .../tasks
+subagent-task-query        # HTTP GET .../subagent-tasks
+subagent-task-command      # HTTP DELETE .../subagent-tasks/{id}
+session-undo / session-redo / plan-mode / export-transcript   # 可选
 subagent-inventory
 workspace-inventory
 ```
+
+冻结规则见 [contract.md Capabilities 词汇表](./contract.md#capabilities-词汇表冻结)：**禁止 `contractLevel: 4`**；未知 capability 由控制面忽略；过度声明（声明了但端点 501）视为数据面 bug。
 
 控制面未看到对应 capability 时：跳过轮询/推送处理，REST 返回明确「数据面不支持」错误，而不是空数据。
 
@@ -265,12 +272,20 @@ message WorkspaceInfo {
 
 | 端点 | 方法 | Capability | 说明 |
 |------|------|------------|------|
-| `/agentscope/sessions/{id}/context` | GET | `context-query` | Level 4 实时生效 Context（与 `ContextReport` 同构 JSON） |
-| `/agentscope/sessions/{id}/messages` | GET | `message-query` | Level 3 完整历史；`?offset=&limit=` 分页 |
+| `/agentscope/sessions/{id}/context` | GET | `context-query` | 实时生效 Context（与 `ContextReport` 同构 JSON） |
+| `/agentscope/sessions/{id}/messages` | GET | `message-query` | 完整历史；`?offset=&limit=` 分页 |
 | `/agentscope/subagents` | GET | `subagent-inventory` | 当前实例 subagent 清单 |
 | `/agentscope/workspaces` | GET | `workspace-inventory` | 当前实例 workspace 清单 |
+| `/agentscope/sessions/{id}/abort` | POST | `session-abort` | 中止当前 turn（与 ASDP `command=abort` 对等） |
+| `/agentscope/sessions/{id}/tasks` | GET | `task-query` | 会话任务明细 |
+| `/agentscope/sessions/{id}/subagent-tasks` | GET | `subagent-task-query` | 子代理任务列表 |
+| `/agentscope/sessions/{id}/subagent-tasks/{taskId}` | DELETE | `subagent-task-command` | 取消子代理任务 |
+| `/agentscope/sessions/{id}/undo` | POST | `session-undo` | （可选）撤销 |
+| `/agentscope/sessions/{id}/redo` | POST | `session-redo` | （可选）重做 |
+| `/agentscope/sessions/{id}/plan-mode` | POST | `plan-mode` | （可选）Plan mode |
+| `/agentscope/sessions/{id}/export-transcript` | GET | `export-transcript` | （可选）导出 transcript |
 
-已有端点不变：`info` / `health` / `sessions` / `sessions/{id}/state` / `compress` / `terminate`。
+已有端点不变：`info` / `health` / `sessions` / `sessions/{id}/state` / `compress` / `terminate`。`state` 规范响应与 Command 错误语义已冻结，见 [contract.md](./contract.md)。
 
 ### 4.2 响应形状（摘要）
 
@@ -307,9 +322,8 @@ message WorkspaceInfo {
 | 1 | 发现 + 健康（不变） |
 | 2 | + Session 列表/状态（不变） |
 | 3 | + compress/terminate（不变） |
-| **4（新）** | + context/messages 查询 +（可选）inventory |
 
-短期也可不引入 Level 4 数字，仅用 `capabilities` 细粒度门控，避免破坏现有 `contractLevel < 2` 跳过轮询逻辑。
+**冻结：不引入 `contractLevel: 4`。** context / messages / tasks / abort / inventory 等一律用 `capabilities` 细粒度门控，避免破坏现有 `contractLevel < 2` 跳过轮询逻辑。完整词汇与门控规则见 [contract.md](./contract.md#capabilities-词汇表冻结)。
 
 ---
 
@@ -379,7 +393,7 @@ class FrameworkAdapter(ABC):
         raise NotImplementedError
 
     async def handle_command(self, session_id: str, command: str, params: bytes | None = None) -> None:
-        """compress | terminate（及未来扩展）。"""
+        """compress | terminate | abort（及 undo/redo 等可选扩展）。"""
         raise NotImplementedError
 ```
 

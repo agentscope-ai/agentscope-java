@@ -19,6 +19,8 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("Events", func(t *testing.T) { testEvents(t, ctx, s) })
 	t.Run("ContextSnapshots", func(t *testing.T) { testContexts(t, ctx, s) })
 	t.Run("Metrics", func(t *testing.T) { testMetrics(t, ctx, s) })
+	t.Run("Aggregations", func(t *testing.T) { testAggregations(t, ctx, s) })
+	t.Run("Commands", func(t *testing.T) { testCommands(t, ctx, s) })
 	t.Run("TeamMessages", func(t *testing.T) { testMessages(t, ctx, s) })
 	t.Run("TeamTasks", func(t *testing.T) { testTasks(t, ctx, s) })
 }
@@ -180,6 +182,186 @@ func testMetrics(t *testing.T, ctx context.Context, s store.Store) {
 	rows, err := s.Metrics().QueryTokenUsage(ctx, store.TokenFilter{AgentName: "agent-m", Namespace: "ns"})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("query: %v len=%d", err, len(rows))
+	}
+}
+
+func testAggregations(t *testing.T, ctx context.Context, s store.Store) {
+	busy := true
+	s1, err := s.Sessions().Upsert(ctx, &store.Session{
+		SessionID: "agg-1", AgentName: "agent-agg", Namespace: "agg-ns",
+		Framework: "x", Phase: store.SessionPhaseActive, Busy: &busy,
+	})
+	if err != nil {
+		t.Fatalf("upsert1: %v", err)
+	}
+	s2, err := s.Sessions().Upsert(ctx, &store.Session{
+		SessionID: "agg-2", AgentName: "agent-agg", Namespace: "agg-ns",
+		Framework: "x", Phase: store.SessionPhaseIdle,
+	})
+	if err != nil {
+		t.Fatalf("upsert2: %v", err)
+	}
+	_, err = s.Sessions().Upsert(ctx, &store.Session{
+		SessionID: "agg-3", AgentName: "agent-agg", Namespace: "agg-ns",
+		Framework: "x", Phase: store.SessionPhaseTerminated,
+	})
+	if err != nil {
+		t.Fatalf("upsert3: %v", err)
+	}
+
+	phases, err := s.Sessions().CountByPhase(ctx, store.SessionFilter{AgentName: "agent-agg", Namespace: "agg-ns"})
+	if err != nil {
+		t.Fatalf("count by phase: %v", err)
+	}
+	if phases[store.SessionPhaseActive] != 1 || phases[store.SessionPhaseIdle] != 1 || phases[store.SessionPhaseTerminated] != 1 {
+		t.Fatalf("phases=%v", phases)
+	}
+
+	if err := s.Metrics().RecordSnapshot(ctx, &store.SessionSnapshot{
+		SessionFK: s1.ID, ContextPressure: 0.9, TotalTokens: 200,
+	}); err != nil {
+		t.Fatalf("snap1: %v", err)
+	}
+	if err := s.Metrics().RecordSnapshot(ctx, &store.SessionSnapshot{
+		SessionFK: s2.ID, ContextPressure: 0.3, TotalTokens: 50,
+	}); err != nil {
+		t.Fatalf("snap2: %v", err)
+	}
+
+	byPressure, err := s.Sessions().ListByPressure(ctx, store.SessionFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	}, 0.5, 10)
+	if err != nil {
+		t.Fatalf("list by pressure: %v", err)
+	}
+	if len(byPressure) != 1 || byPressure[0].Session.SessionID != "agg-1" {
+		t.Fatalf("expected agg-1 only, got %+v", byPressure)
+	}
+	if byPressure[0].Snapshot == nil || byPressure[0].Snapshot.ContextPressure != 0.9 {
+		t.Fatalf("unexpected snapshot: %+v", byPressure[0].Snapshot)
+	}
+
+	fk1 := s1.ID
+	fk2 := s2.ID
+	now := time.Now().UTC()
+	if err := s.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
+		SessionFK: &fk1, AgentName: "agent-agg", Namespace: "agg-ns",
+		PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30, RecordedAt: now,
+	}); err != nil {
+		t.Fatalf("tok1: %v", err)
+	}
+	if err := s.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
+		SessionFK: &fk2, AgentName: "agent-agg", Namespace: "agg-ns",
+		PromptTokens: 40, CompletionTokens: 60, TotalTokens: 100, RecordedAt: now,
+	}); err != nil {
+		t.Fatalf("tok2: %v", err)
+	}
+	if err := s.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
+		AgentName: "agent-other", Namespace: "agg-ns",
+		TotalTokens: 999, RecordedAt: now,
+	}); err != nil {
+		t.Fatalf("tok3: %v", err)
+	}
+
+	if err := s.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
+		AgentName: "agent-agg", Namespace: "agg-ns", ActiveSessions: 2,
+		AvgContextPressure: 0.6, ErrorCount: 3, RecordedAt: now,
+	}); err != nil {
+		t.Fatalf("agent metric: %v", err)
+	}
+
+	ams, err := s.Metrics().QueryAgentMetrics(ctx, store.AgentMetricFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	})
+	if err != nil || len(ams) != 1 {
+		t.Fatalf("query agent metrics: %v len=%d", err, len(ams))
+	}
+
+	buckets, err := s.Metrics().AggregateTokens(ctx, store.TokenFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	}, time.Hour)
+	if err != nil || len(buckets) != 1 {
+		t.Fatalf("aggregate: %v buckets=%+v", err, buckets)
+	}
+	if buckets[0].TotalTokens != 130 || buckets[0].SampleCount != 2 {
+		t.Fatalf("bucket=%+v", buckets[0])
+	}
+
+	top, err := s.Metrics().TopAgents(ctx, now.Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("top agents: %v", err)
+	}
+	if len(top) < 2 {
+		t.Fatalf("expected >=2 top agents, got %d", len(top))
+	}
+	if top[0].TotalTokens < top[1].TotalTokens {
+		t.Fatalf("top not sorted: %+v", top)
+	}
+
+	avg, p95, err := s.Metrics().PressureStats(ctx, store.SessionFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	})
+	if err != nil {
+		t.Fatalf("pressure stats: %v", err)
+	}
+	if avg <= 0 || p95 <= 0 {
+		t.Fatalf("avg=%v p95=%v", avg, p95)
+	}
+
+	sum, err := s.Metrics().SumTokenUsage(ctx, store.TokenFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	})
+	if err != nil || sum != 130 {
+		t.Fatalf("sum tokens: %v sum=%d", err, sum)
+	}
+
+	errs, err := s.Metrics().SumErrorCount(ctx, store.AgentMetricFilter{
+		AgentName: "agent-agg", Namespace: "agg-ns",
+	})
+	if err != nil || errs != 3 {
+		t.Fatalf("sum errors: %v errs=%d", err, errs)
+	}
+}
+
+func testCommands(t *testing.T, ctx context.Context, s store.Store) {
+	sess, err := s.Sessions().Upsert(ctx, &store.Session{
+		SessionID: "cmd-sess", AgentName: "agent-cmd", Namespace: "cmd-ns",
+		Framework: "x", Phase: store.SessionPhaseActive,
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	fk := sess.ID
+	cmd := &store.SessionCommand{
+		SessionFK: &fk, AgentName: "agent-cmd", Namespace: "cmd-ns",
+		SessionID: "cmd-sess", Command: "compress", Operator: "admin",
+		Source: "api", CommandID: "cmd-abc-1",
+	}
+	if err := s.Commands().Insert(ctx, cmd); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if cmd.ID.String() == "" || cmd.Status != store.CommandStatusAccepted {
+		t.Fatalf("insert defaults: %+v", cmd)
+	}
+
+	got, err := s.Commands().GetByCommandID(ctx, "cmd-abc-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Command != "compress" || got.AgentName != "agent-cmd" {
+		t.Fatalf("unexpected get: %+v", got)
+	}
+
+	list, err := s.Commands().List(ctx, store.SessionCommandFilter{
+		AgentName: "agent-cmd", Namespace: "cmd-ns",
+	})
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %v len=%d", err, len(list))
+	}
+
+	_, err = s.Commands().GetByCommandID(ctx, "missing")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 

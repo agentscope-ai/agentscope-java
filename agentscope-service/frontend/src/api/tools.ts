@@ -1,11 +1,15 @@
 import { getToken } from './auth';
+import { readApiError } from './http';
 import {
   AgentDefinition,
   AgentToolset,
   McpServerSpec,
+  PermissionPolicy,
   getAgent,
   updateAgent,
 } from './agents';
+
+export type ToolPermissionType = 'always_allow' | 'always_ask';
 
 export interface ActiveTool {
   name: string;
@@ -61,15 +65,7 @@ function base(agentId: string): string {
 }
 
 async function readError(res: Response, fallback: string): Promise<Error> {
-  try {
-    const body = await res.json();
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return new Error(body.message);
-    }
-  } catch {
-    // ignore
-  }
-  return new Error(`${fallback} (${res.status})`);
+  return readApiError(res, fallback);
 }
 
 export async function fetchBuiltinCatalog(agentId: string): Promise<BuiltinToolInfo[]> {
@@ -117,21 +113,46 @@ function requireVersion(agent: AgentDefinition): number {
   return agent.version;
 }
 
-/** Persist built-in enablement via PUT /api/agents/{id} (tools body). */
-export async function saveBuiltinEnabled(
+/** Per-tool permission policy from Agent body `tools[].configs`. */
+export function computeToolPolicies(
+  tools: AgentToolset[] | undefined,
+): Map<string, ToolPermissionType> {
+  const out = new Map<string, ToolPermissionType>();
+  const agentTs = (tools ?? []).find(t => t.type === 'agent_toolset');
+  const defaultType: ToolPermissionType =
+    agentTs?.defaultConfig?.permissionPolicy?.type === 'always_ask'
+      ? 'always_ask'
+      : 'always_allow';
+  for (const c of agentTs?.configs ?? []) {
+    if (!c?.name) continue;
+    const t = c.permissionPolicy?.type;
+    out.set(c.name, t === 'always_ask' ? 'always_ask' : defaultType);
+  }
+  return out;
+}
+
+/** Persist built-in enablement + per-tool permission policy via PUT /api/agents/{id}. */
+export async function saveBuiltinToolConfig(
   agentId: string,
   catalog: BuiltinToolInfo[],
   enabled: Set<string>,
+  policies: Map<string, ToolPermissionType>,
 ): Promise<AgentDefinition> {
   const agent = await getAgent(agentId);
   const other = (agent.tools ?? []).filter(t => t.type !== 'agent_toolset');
+  const existing = (agent.tools ?? []).find(t => t.type === 'agent_toolset');
+  const defaultPolicy: PermissionPolicy =
+    existing?.defaultConfig?.permissionPolicy ?? { type: 'always_allow' };
   const agentToolset: AgentToolset = {
     type: 'agent_toolset',
-    defaultConfig: { enabled: true, permissionPolicy: { type: 'always_allow' } },
+    defaultConfig: {
+      enabled: existing?.defaultConfig?.enabled !== false,
+      permissionPolicy: defaultPolicy,
+    },
     configs: catalog.map(b => ({
       name: b.id,
       enabled: enabled.has(b.id),
-      permissionPolicy: { type: 'always_allow' },
+      permissionPolicy: { type: policies.get(b.id) ?? 'always_allow' },
     })),
   };
   return updateAgent(agentId, {
@@ -139,6 +160,21 @@ export async function saveBuiltinEnabled(
     version: requireVersion(agent),
     tools: [agentToolset, ...other],
   });
+}
+
+/** Persist built-in enablement; preserves existing per-tool permission policies. */
+export async function saveBuiltinEnabled(
+  agentId: string,
+  catalog: BuiltinToolInfo[],
+  enabled: Set<string>,
+): Promise<AgentDefinition> {
+  const agent = await getAgent(agentId);
+  return saveBuiltinToolConfig(
+    agentId,
+    catalog,
+    enabled,
+    computeToolPolicies(agent.tools),
+  );
 }
 
 /** Add/replace an MCP server on Agent body `mcpServers` + `mcp_toolset`. */
@@ -198,7 +234,9 @@ export async function disableConfiguredTool(
       configs.push({
         name: tool.name,
         enabled: false,
-        permissionPolicy: { type: 'always_allow' },
+        permissionPolicy: agentTs?.defaultConfig?.permissionPolicy ?? {
+          type: 'always_allow',
+        },
       });
     }
     const other = (agent.tools ?? []).filter(t => t.type !== 'agent_toolset');

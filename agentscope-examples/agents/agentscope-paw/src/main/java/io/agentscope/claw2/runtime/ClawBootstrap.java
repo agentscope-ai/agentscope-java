@@ -231,7 +231,8 @@ public final class ClawBootstrap {
         return mainAgentId;
     }
 
-    HarnessAgent mainAgent() {
+    /** The configured main agent instance. */
+    public HarnessAgent mainAgent() {
         HarnessAgent a = agents.get(mainAgentId);
         if (a == null) {
             throw new IllegalStateException("Main agent not registered: " + mainAgentId);

@@ -25,9 +25,12 @@ import io.agentscope.extensions.aistio.model.SessionEvent;
 import io.agentscope.extensions.aistio.transport.ContractHttpServer;
 import io.agentscope.extensions.aistio.transport.ContractProvider;
 import io.agentscope.extensions.aistio.transport.GrpcTransport;
+import io.agentscope.extensions.aistio.transport.HttpSelfRegistration;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +64,14 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     /** Contract level 3: discovery, sessions, and commands. Finer gating is by capability. */
     public static final int CONTRACT_LEVEL = 3;
 
+    /**
+     * Phase vocabulary from the control-plane contract. Values outside it are counted into no
+     * bucket at all, so the console would report zero active sessions.
+     */
+    private static final String PHASE_ACTIVE = "active";
+
+    private static final String PHASE_IDLE = "idle";
+
     private static final long LEVEL1_INTERVAL_MS = 10_000L;
     private static final long EVENT_FLUSH_INTERVAL_MS = 5_000L;
     private static final int EVENT_BATCH_SIZE = 20;
@@ -74,6 +85,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     private final Map<String, ContextTracker> trackers = new ConcurrentHashMap<>();
     private final Map<String, String> phases = new ConcurrentHashMap<>();
+
+    /** Present only when busy is known (turn START/END or middleware mark). Never fake false. */
+    private final Map<String, Boolean> busyFlags = new ConcurrentHashMap<>();
+
+    /** Epoch millis of the first and most recent activity, reported as startedAt/lastActiveAt. */
+    private final Map<String, Long> startedAt = new ConcurrentHashMap<>();
+
+    private final Map<String, Long> lastActiveAt = new ConcurrentHashMap<>();
+
     private final Map<String, Integer> sequences = new ConcurrentHashMap<>();
     private final Map<String, Long> lastContextPush = new ConcurrentHashMap<>();
     private final List<SessionEvent> eventBuffer = new ArrayList<>();
@@ -81,6 +101,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private FrameworkAdapter adapter;
     private GrpcTransport grpc;
     private ContractHttpServer http;
+    private HttpSelfRegistration httpRegister;
     private ScheduledExecutorService scheduler;
     private volatile boolean started;
 
@@ -150,6 +171,31 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             }
         }
 
+        if (config.startHttpRegister()) {
+            String token = config.internalToken();
+            if (token == null || token.isBlank()) {
+                LOG.warning(
+                        "aistio: HTTP self-register enabled but internalToken is blank; skipping"
+                                + " (set BUILDER_INTERNAL_TOKEN / AistioConfig.internalToken)");
+            } else {
+                String baseUrl = resolvePublicBaseUrl();
+                httpRegister =
+                        new HttpSelfRegistration(
+                                config.controlPlaneHttp(),
+                                token,
+                                config.agentName(),
+                                config.namespace(),
+                                config.instanceId(),
+                                baseUrl,
+                                frameworkName(),
+                                frameworkName(),
+                                CONTRACT_LEVEL,
+                                List.copyOf(capabilities()),
+                                15_000L);
+                httpRegister.start();
+            }
+        }
+
         scheduler =
                 Executors.newSingleThreadScheduledExecutor(
                         r -> {
@@ -173,6 +219,18 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         return this;
     }
 
+    private String resolvePublicBaseUrl() {
+        if (config.publicBaseUrl() != null && !config.publicBaseUrl().isBlank()) {
+            String u = config.publicBaseUrl().trim();
+            while (u.endsWith("/")) {
+                u = u.substring(0, u.length() - 1);
+            }
+            return u;
+        }
+        int port = getContractPort();
+        return "http://localhost:" + port;
+    }
+
     @Override
     public synchronized void close() {
         if (!started) {
@@ -186,6 +244,10 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         if (grpc != null) {
             grpc.close();
             grpc = null;
+        }
+        if (httpRegister != null) {
+            httpRegister.close();
+            httpRegister = null;
         }
         if (http != null) {
             http.close();
@@ -233,10 +295,16 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                             sessionId, id -> new ContextTracker(id, frameworkName()));
             hashChanged = tracker.onEvent(event);
 
+            touch(sessionId);
+
             if (SessionEvent.SESSION_START.equals(event.getEventType())) {
-                phases.put(sessionId, "running");
+                phases.put(sessionId, PHASE_ACTIVE);
+                busyFlags.put(sessionId, true);
             } else if (SessionEvent.SESSION_END.equals(event.getEventType())) {
-                phases.put(sessionId, "completed");
+                // A finished conversation is resumable, so it is idle rather than terminated;
+                // terminated is reserved for sessions the runtime has actually dropped.
+                phases.put(sessionId, PHASE_IDLE);
+                busyFlags.put(sessionId, false);
             }
 
             if (config.enableEvents()) {
@@ -270,6 +338,16 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             String systemPrompt,
             List<ContextSnapshot.ToolInfo> tools,
             int maxTokens) {
+        describeSession(sessionId, systemPrompt, tools, maxTokens, null);
+    }
+
+    /** Lets the adapter seed the tracker, including the model name when known. */
+    public void describeSession(
+            String sessionId,
+            String systemPrompt,
+            List<ContextSnapshot.ToolInfo> tools,
+            int maxTokens,
+            String model) {
         synchronized (lock) {
             ContextTracker tracker =
                     trackers.computeIfAbsent(
@@ -283,6 +361,78 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             if (maxTokens > 0) {
                 tracker.setMaxTokens(maxTokens);
             }
+            if (model != null && !model.isEmpty()) {
+                tracker.setModel(model);
+            }
+        }
+    }
+
+    /** Stores the last middleware-composed system prompt for a session. */
+    public void setEffectiveSystemPrompt(String sessionId, String prompt) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return;
+        }
+        synchronized (lock) {
+            ContextTracker tracker =
+                    trackers.computeIfAbsent(
+                            sessionId, id -> new ContextTracker(id, frameworkName()));
+            tracker.setEffectiveSystemPrompt(prompt);
+        }
+    }
+
+    /** Last effective system prompt for the session, or empty. */
+    public String effectiveSystemPrompt(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return "";
+        }
+        synchronized (lock) {
+            ContextTracker tracker = trackers.get(sessionId);
+            return tracker == null ? "" : tracker.getEffectiveSystemPrompt();
+        }
+    }
+
+    /**
+     * Records whether a turn is in progress. Used by the AgentScope observer middleware; omitting
+     * the flag entirely is preferred over inventing {@code false} when unknown.
+     */
+    public void setBusy(String sessionId, boolean busy) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return;
+        }
+        busyFlags.put(sessionId, busy);
+        phases.put(sessionId, busy ? PHASE_ACTIVE : PHASE_IDLE);
+        touch(sessionId);
+    }
+
+    /** Updates context-window occupancy used for Level-1 {@code contextPressure}. */
+    public void setContextUsedTokens(String sessionId, int usedTokens) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return;
+        }
+        synchronized (lock) {
+            ContextTracker tracker = trackers.get(sessionId);
+            if (tracker != null) {
+                tracker.setContextUsedTokens(usedTokens);
+            }
+        }
+    }
+
+    private void touch(String sessionId) {
+        long now = System.currentTimeMillis();
+        startedAt.putIfAbsent(sessionId, now);
+        lastActiveAt.put(sessionId, now);
+    }
+
+    private static String isoOrNull(Long epochMillis) {
+        return epochMillis == null
+                ? null
+                : DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(epochMillis));
+    }
+
+    /** Omits unknown fields entirely; the contract reads a missing key as "not reported". */
+    private static void putIfPresent(Map<String, Object> target, String key, String value) {
+        if (value != null) {
+            target.put(key, value);
         }
     }
 
@@ -347,14 +497,18 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             for (Map.Entry<String, ContextTracker> entry : trackers.entrySet()) {
                 ContextTracker tracker = entry.getValue();
                 int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
+                int usedForPressure =
+                        tracker.getContextUsedTokens() > 0
+                                ? tracker.getContextUsedTokens()
+                                : totalTokens;
                 double pressure =
                         tracker.getMaxTokens() > 0
-                                ? (double) totalTokens / tracker.getMaxTokens()
+                                ? (double) usedForPressure / tracker.getMaxTokens()
                                 : 0.0;
                 out.add(
                         SessionSnapshot.newBuilder()
                                 .setSessionId(entry.getKey())
-                                .setPhase(phases.getOrDefault(entry.getKey(), "running"))
+                                .setPhase(phases.getOrDefault(entry.getKey(), PHASE_ACTIVE))
                                 .setMessageCount(tracker.getMessageCount())
                                 .setPromptTokens(tracker.getTokensIn())
                                 .setCompletionTokens(tracker.getTokensOut())
@@ -376,7 +530,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         if (grpc == null || adapter == null) {
             return;
         }
-        int active = (int) phases.values().stream().filter("running"::equals).count();
+        int active = (int) phases.values().stream().filter(PHASE_ACTIVE::equals).count();
         List<Inventory.SubagentInfo> subagents = awaitOrDefault(adapter.listSubagents(), List.of());
         List<Inventory.WorkspaceInfo> workspaces =
                 awaitOrDefault(adapter.listWorkspaces(), List.of());
@@ -410,6 +564,12 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         if (!config.sessionAffinity().isEmpty()) {
             out.put("sessionAffinity", config.sessionAffinity());
         }
+        if (adapter != null) {
+            Map<String, Object> agentConfig = adapter.buildAgentConfig();
+            if (agentConfig != null && !agentConfig.isEmpty()) {
+                out.put("agentConfig", agentConfig);
+            }
+        }
         return out;
     }
 
@@ -420,24 +580,43 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         List<Map<String, Object>> out = new ArrayList<>();
         synchronized (lock) {
             for (Map.Entry<String, ContextTracker> entry : trackers.entrySet()) {
+                String sessionId = entry.getKey();
                 ContextTracker tracker = entry.getValue();
                 int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
+                int usedForPressure =
+                        tracker.getContextUsedTokens() > 0
+                                ? tracker.getContextUsedTokens()
+                                : totalTokens;
                 Map<String, Object> session = new LinkedHashMap<>();
-                session.put("id", entry.getKey());
-                session.put("phase", phases.getOrDefault(entry.getKey(), "running"));
+                session.put("id", sessionId);
+                session.put("phase", phases.getOrDefault(sessionId, PHASE_ACTIVE));
+                Boolean busy = busyFlags.get(sessionId);
+                if (busy != null) {
+                    session.put("busy", busy);
+                }
+                if (!tracker.getModel().isEmpty()) {
+                    session.put("model", tracker.getModel());
+                }
+                putIfPresent(session, "startedAt", isoOrNull(startedAt.get(sessionId)));
+                putIfPresent(session, "lastActiveAt", isoOrNull(lastActiveAt.get(sessionId)));
                 session.put("messageCount", tracker.getMessageCount());
-                session.put(
-                        "tokenUsage",
-                        Map.of(
-                                "promptTokens",
-                                tracker.getTokensIn(),
-                                "completionTokens",
-                                tracker.getTokensOut()));
+                Map<String, Object> tokenUsage = new LinkedHashMap<>();
+                tokenUsage.put("promptTokens", tracker.getTokensIn());
+                tokenUsage.put("completionTokens", tracker.getTokensOut());
+                tokenUsage.put("totalTokens", totalTokens);
+                if (tracker.getMaxTokens() > 0) {
+                    tokenUsage.put("maxTokens", tracker.getMaxTokens());
+                }
+                session.put("tokenUsage", tokenUsage);
                 session.put(
                         "contextPressure",
                         tracker.getMaxTokens() > 0
-                                ? (double) totalTokens / tracker.getMaxTokens()
+                                ? (double) usedForPressure / tracker.getMaxTokens()
                                 : 0.0);
+                Map<String, Object> taskSummary = resolveTaskSummary(sessionId);
+                if (taskSummary != null) {
+                    session.put("taskSummary", taskSummary);
+                }
                 session.put("framework", framework);
                 if (!version.isEmpty()) {
                     session.put("frameworkVersion", version);
@@ -458,13 +637,45 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         ContextTracker tracker = requireTracker(sessionId);
         int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
         int maxTokens = tracker.getMaxTokens();
+        int usedForPressure =
+                tracker.getContextUsedTokens() > 0 ? tracker.getContextUsedTokens() : totalTokens;
         Map<String, Object> pressure = new LinkedHashMap<>();
-        pressure.put("usedTokens", totalTokens);
+        pressure.put("usedTokens", usedForPressure);
         pressure.put("maxTokens", maxTokens);
-        pressure.put("ratio", maxTokens > 0 ? (double) totalTokens / maxTokens : 0.0);
+        pressure.put("ratio", maxTokens > 0 ? (double) usedForPressure / maxTokens : 0.0);
+
+        Map<String, Object> tokenUsage = new LinkedHashMap<>();
+        tokenUsage.put("promptTokens", tracker.getTokensIn());
+        tokenUsage.put("completionTokens", tracker.getTokensOut());
+        tokenUsage.put("totalTokens", totalTokens);
+        if (maxTokens > 0) {
+            tokenUsage.put("maxTokens", maxTokens);
+        }
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("sessionId", sessionId);
+        out.put("id", sessionId);
+        out.put("phase", phases.getOrDefault(sessionId, PHASE_ACTIVE));
+        Boolean busy = busyFlags.get(sessionId);
+        if (busy != null) {
+            out.put("busy", busy);
+        }
+        if (!tracker.getModel().isEmpty()) {
+            out.put("model", tracker.getModel());
+        }
+        putIfPresent(out, "startedAt", isoOrNull(startedAt.get(sessionId)));
+        putIfPresent(out, "lastActiveAt", isoOrNull(lastActiveAt.get(sessionId)));
+        out.put("messageCount", tracker.getMessageCount());
+        out.put("tokenUsage", tokenUsage);
         out.put("contextPressure", pressure);
+        if (tracker.isCompacted()) {
+            out.put("isCompacted", true);
+        }
+        Map<String, Object> taskSummary = resolveTaskSummary(sessionId);
+        if (taskSummary != null) {
+            out.put("taskSummary", taskSummary);
+        }
+        out.put("framework", frameworkName());
         return out;
     }
 
@@ -542,7 +753,109 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         dispatchCommand(sessionId, FrameworkAdapter.COMMAND_TERMINATE, null);
     }
 
+    @Override
+    public void abort(String sessionId) {
+        dispatchCommand(sessionId, FrameworkAdapter.COMMAND_ABORT, null);
+        setBusy(sessionId, false);
+    }
+
+    @Override
+    public Map<String, Object> tasks(String sessionId) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        List<Map<String, Object>> items;
+        try {
+            items = adapter.listTasks(sessionId).block(ADAPTER_CALL_TIMEOUT);
+        } catch (UnsupportedOperationException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            if (!trackers.containsKey(sessionId)) {
+                throw new NotFoundException("session not found: " + sessionId);
+            }
+            throw e;
+        }
+        if ((items == null || items.isEmpty()) && !trackers.containsKey(sessionId)) {
+            throw new NotFoundException("session not found: " + sessionId);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("tasks", items == null ? List.of() : items);
+        return out;
+    }
+
+    @Override
+    public Map<String, Object> subagentTasks(String sessionId) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        List<Map<String, Object>> items =
+                adapter.listSubagentTasks(sessionId).block(ADAPTER_CALL_TIMEOUT);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("tasks", items == null ? List.of() : items);
+        return out;
+    }
+
+    @Override
+    public void cancelSubagentTask(String sessionId, String taskId) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        adapter.cancelSubagentTask(sessionId, taskId).block(ADAPTER_CALL_TIMEOUT);
+    }
+
+    @Override
+    public void planMode(String sessionId, byte[] body) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        adapter.setPlanMode(sessionId, body).block(ADAPTER_CALL_TIMEOUT);
+    }
+
+    @Override
+    public String sessionPhase(String sessionId) {
+        return phases.getOrDefault(sessionId, PHASE_ACTIVE);
+    }
+
     // ─── helpers ───
+
+    private Map<String, Object> resolveTaskSummary(String sessionId) {
+        if (adapter == null) {
+            return null;
+        }
+        try {
+            List<Map<String, Object>> tasks =
+                    adapter.listTasks(sessionId).block(ADAPTER_CALL_TIMEOUT);
+            return summarizeTasks(tasks);
+        } catch (UnsupportedOperationException e) {
+            return null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> summarizeTasks(List<Map<String, Object>> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return null;
+        }
+        int pending = 0;
+        int inProgress = 0;
+        int completed = 0;
+        for (Map<String, Object> task : tasks) {
+            Object state = task.get("state");
+            String wire = state == null ? "" : state.toString();
+            switch (wire) {
+                case "in_progress" -> inProgress++;
+                case "completed" -> completed++;
+                default -> pending++;
+            }
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total", tasks.size());
+        summary.put("pending", pending);
+        summary.put("inProgress", inProgress);
+        summary.put("completed", completed);
+        return summary;
+    }
 
     private ContextTracker requireTracker(String sessionId) {
         ContextTracker tracker = trackers.get(sessionId);

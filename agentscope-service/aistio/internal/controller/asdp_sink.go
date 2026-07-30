@@ -21,6 +21,7 @@ import (
 type ObservedSession struct {
 	ID                    string
 	Phase                 string
+	Busy                  *bool
 	MessageCount          int32
 	PromptTokens          int64
 	CompletionTokens      int64
@@ -301,6 +302,7 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 		Framework:        framework,
 		FrameworkVersion: o.FrameworkVersion,
 		Phase:            phase,
+		Busy:             resolveObservedBusy(o.Busy, phase),
 		InstanceRef:      o.InstanceRef,
 		InstanceIP:       o.InstanceIP,
 		TeamID:           o.TeamID,
@@ -357,6 +359,19 @@ func normalizePhase(p string) string {
 	default:
 		return p
 	}
+}
+
+// resolveObservedBusy: DP-reported busy wins; otherwise derive from phase;
+// empty phase → unknown (nil).
+func resolveObservedBusy(reported *bool, phase string) *bool {
+	if reported != nil {
+		return reported
+	}
+	if phase == "" {
+		return nil
+	}
+	b := phase == store.SessionPhaseActive
+	return &b
 }
 
 func parseTimePtr(s string) *time.Time {

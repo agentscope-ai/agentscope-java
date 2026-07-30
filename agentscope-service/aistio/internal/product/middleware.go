@@ -19,6 +19,7 @@ func (s *Server) jwtMiddleware() gin.HandlerFunc {
 		if path == "/api/auth/login" ||
 			path == "/actuator/health" ||
 			path == "/healthz" ||
+			strings.HasPrefix(path, "/api/deployments/webhook/") ||
 			strings.HasPrefix(path, "/api/internal/") {
 			c.Next()
 			return

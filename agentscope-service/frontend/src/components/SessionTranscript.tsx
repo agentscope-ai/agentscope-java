@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ManagedSession, archiveManagedSession, deleteManagedSession, getManagedSession } from '../api/managedSessions';
+import {
+  ManagedSession,
+  archiveManagedSession,
+  deleteManagedSession,
+  getManagedSession,
+  updateManagedSession,
+} from '../api/managedSessions';
 import { useNavigate } from 'react-router-dom';
 import SessionEventTimeline from './SessionEventTimeline';
 
@@ -25,10 +31,36 @@ const S: Record<string, React.CSSProperties> = {
   meta: { fontSize: '0.82rem', color: '#94a3b8', fontFamily: 'monospace', marginBottom: 22 },
   err: { color: '#dc2626', fontSize: '0.9rem' },
   notice: { color: '#94a3b8', fontSize: '0.9rem' },
+  panel: {
+    background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12,
+    padding: '16px 18px', marginBottom: 18,
+  },
+  panelTitle: { fontSize: '0.95rem', fontWeight: 600, color: '#0f172a', margin: '0 0 6px' },
+  hint: { fontSize: '0.78rem', color: '#94a3b8', marginBottom: 12 },
+  field: { display: 'block', fontSize: '0.8rem', color: '#64748b', marginBottom: 4, fontWeight: 500 },
+  input: {
+    width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 10,
+    border: '1px solid #cbd5e1', borderRadius: 8, fontSize: '0.88rem',
+  },
+  textarea: {
+    width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 10,
+    border: '1px solid #cbd5e1', borderRadius: 8, fontSize: '0.88rem', minHeight: 90,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  },
 };
 
 /** Sentinel {@code sessionKey} used by callers linking directly to a managed session. */
 const MANAGED_ONLY_KEY = '_managed';
+
+function parseOverrides(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' ? v as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Managed session transcript (event timeline). The legacy per-agent gateway sessions
@@ -46,13 +78,22 @@ export default function SessionTranscript({
   const managedOnly = sessionKey === MANAGED_ONLY_KEY && !!managedSessionId;
   const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [system, setSystem] = useState('');
+  const [model, setModel] = useState('');
+  const [maxIters, setMaxIters] = useState('');
+  const [savingOverrides, setSavingOverrides] = useState(false);
   const navigate = useNavigate();
 
   async function reload() {
     setErr(null);
     try {
       if (managedOnly && managedSessionId) {
-        setManagedSession(await getManagedSession(managedSessionId));
+        const sess = await getManagedSession(managedSessionId);
+        setManagedSession(sess);
+        const ov = parseOverrides(sess.agentOverridesJson);
+        setSystem(typeof ov.system === 'string' ? ov.system : '');
+        setModel(typeof ov.model === 'string' ? ov.model : '');
+        setMaxIters(ov.maxIters != null ? String(ov.maxIters) : '');
       }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -81,6 +122,29 @@ export default function SessionTranscript({
       navigate(`/agents/${encodeURIComponent(agentId)}/sessions`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
+    }
+  }
+
+  async function handleSaveOverrides(e: React.FormEvent) {
+    e.preventDefault();
+    if (!managedSessionId) return;
+    setSavingOverrides(true);
+    setErr(null);
+    try {
+      const agentOverrides: Record<string, unknown> = {
+        system: system.trim() ? system : null,
+        model: model.trim() ? model : null,
+        maxIters: maxIters.trim() ? Number(maxIters) : null,
+      };
+      if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
+        throw new Error('maxIters must be a number');
+      }
+      const updated = await updateManagedSession(managedSessionId, { agentOverrides });
+      setManagedSession(updated);
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : 'Failed to save overrides');
+    } finally {
+      setSavingOverrides(false);
     }
   }
 
@@ -121,6 +185,23 @@ export default function SessionTranscript({
         {managedSession && ` · ${managedSession.status}`}
       </div>
       {err && <div style={S.err}>{err}</div>}
+
+      <div style={S.panel}>
+        <div style={S.panelTitle}>Session overrides</div>
+        <div style={S.hint}>Applies on the next turn. Tools / MCP cannot be overridden here.</div>
+        <form onSubmit={handleSaveOverrides}>
+          <label style={S.field}>System prompt</label>
+          <textarea style={S.textarea} value={system} onChange={e => setSystem(e.target.value)} placeholder="Leave empty to clear override" />
+          <label style={S.field}>Model</label>
+          <input style={S.input} value={model} onChange={e => setModel(e.target.value)} placeholder="e.g. qwen-plus" />
+          <label style={S.field}>Max iters</label>
+          <input style={S.input} value={maxIters} onChange={e => setMaxIters(e.target.value)} placeholder="e.g. 10" />
+          <button type="submit" style={{ ...S.btn, ...S.primary }} disabled={savingOverrides}>
+            {savingOverrides ? 'Saving…' : 'Save overrides'}
+          </button>
+        </form>
+      </div>
+
       {managedSessionId && <SessionEventTimeline managedSessionId={managedSessionId} />}
     </div>
   );

@@ -49,7 +49,7 @@ func toDataPlaneInfo(info *prober.DataPlaneInfo) *v1alpha1.DataPlaneInfo {
 	if info.AgentConfig != nil {
 		dpi.Model = info.AgentConfig.Model
 		dpi.ModelProvider = info.AgentConfig.ModelProvider
-		dpi.Tools = info.AgentConfig.Tools
+		dpi.Tools = info.AgentConfig.ToolNames()
 	}
 	return dpi
 }

@@ -1,6 +1,7 @@
 package prober
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -241,4 +242,91 @@ func (p *HTTPProber) FetchWorkspaces(ctx context.Context, endpoint string) ([]Wo
 		return nil, err
 	}
 	return result.Workspaces, nil
+}
+
+func (p *HTTPProber) FetchTasks(ctx context.Context, endpoint string, sessionID string) ([]TaskInfo, error) {
+	url := fmt.Sprintf("%s/agentscope/sessions/%s/tasks", endpoint, sessionID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFoundOnDataPlane
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s returned status %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	var wrapped struct {
+		Tasks []TaskInfo `json:"tasks"`
+	}
+	if err := json.Unmarshal(body, &wrapped); err == nil && wrapped.Tasks != nil {
+		return wrapped.Tasks, nil
+	}
+	var bare []TaskInfo
+	if err := json.Unmarshal(body, &bare); err == nil {
+		return bare, nil
+	}
+	return nil, fmt.Errorf("parsing tasks response from %s", url)
+}
+
+func (p *HTTPProber) FetchSubagentTasks(ctx context.Context, endpoint string, sessionID string) ([]SubagentTaskInfo, error) {
+	url := fmt.Sprintf("%s/agentscope/sessions/%s/subagent-tasks", endpoint, sessionID)
+	var result struct {
+		Tasks []SubagentTaskInfo `json:"tasks"`
+	}
+	if err := p.getJSON(ctx, url, &result); err != nil {
+		return nil, err
+	}
+	return result.Tasks, nil
+}
+
+func (p *HTTPProber) CancelSubagentTask(ctx context.Context, endpoint string, sessionID, taskID string) error {
+	url := fmt.Sprintf("%s/agentscope/sessions/%s/subagent-tasks/%s", endpoint, sessionID, taskID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFoundOnDataPlane
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("DELETE %s returned status %d", url, resp.StatusCode)
+	}
+	return nil
+}
+
+func (p *HTTPProber) SendPlanMode(ctx context.Context, endpoint string, sessionID string, active bool) error {
+	url := fmt.Sprintf("%s/agentscope/sessions/%s/plan-mode", endpoint, sessionID)
+	body, err := json.Marshal(map[string]bool{"active": active})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("POST %s returned status %d", url, resp.StatusCode)
+	}
+	return nil
 }

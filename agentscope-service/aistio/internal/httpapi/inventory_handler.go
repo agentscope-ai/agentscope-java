@@ -56,6 +56,27 @@ func (s *Server) listAgentSubagents(c *gin.Context) {
 		}
 	}
 
+	if endpoint, caps, ok := s.registryInventoryEndpoint(name, namespace, v1alpha1.CapabilitySubagentInventory); ok {
+		subs, err := s.prober.FetchSubagents(c.Request.Context(), endpoint)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch subagents from data plane: " + err.Error()})
+			return
+		}
+		_ = caps
+		c.JSON(http.StatusOK, gin.H{
+			"agent":     name,
+			"namespace": namespace,
+			"source":    "registry",
+			"instances": []subagentInstance{{InstanceID: endpoint, Source: "http", Subagents: subs}},
+		})
+		return
+	}
+
+	if s.client == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "agent not found or inventory unavailable"})
+		return
+	}
+
 	agent, ok := s.getAgentForInventory(c, name, namespace, v1alpha1.CapabilitySubagentInventory)
 	if !ok {
 		return
@@ -101,6 +122,27 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 		}
 	}
 
+	if endpoint, caps, ok := s.registryInventoryEndpoint(name, namespace, v1alpha1.CapabilityWorkspaceInventory); ok {
+		workspaces, err := s.prober.FetchWorkspaces(c.Request.Context(), endpoint)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch workspaces from data plane: " + err.Error()})
+			return
+		}
+		_ = caps
+		c.JSON(http.StatusOK, gin.H{
+			"agent":     name,
+			"namespace": namespace,
+			"source":    "registry",
+			"instances": []workspaceInstance{{InstanceID: endpoint, Source: "http", Workspaces: workspaces}},
+		})
+		return
+	}
+
+	if s.client == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "agent not found or inventory unavailable"})
+		return
+	}
+
 	agent, ok := s.getAgentForInventory(c, name, namespace, v1alpha1.CapabilityWorkspaceInventory)
 	if !ok {
 		return
@@ -121,6 +163,30 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 		"source":    "http",
 		"instances": []workspaceInstance{{InstanceID: endpoint, Source: "http", Workspaces: workspaces}},
 	})
+}
+
+// registryInventoryEndpoint finds a healthy self-registered instance advertising capability.
+func (s *Server) registryInventoryEndpoint(name, namespace, capability string) (endpoint string, caps []string, ok bool) {
+	if s.registry == nil || s.prober == nil {
+		return "", nil, false
+	}
+	for _, dp := range s.registry.ListByAgent(name, namespace) {
+		if !dp.Healthy || dp.BaseURL == "" {
+			continue
+		}
+		has := false
+		for _, c := range dp.Capabilities {
+			if c == capability {
+				has = true
+				break
+			}
+		}
+		if !has {
+			continue
+		}
+		return dp.BaseURL, dp.Capabilities, true
+	}
+	return "", nil, false
 }
 
 // getAgentForInventory loads the Agent for the HTTP fallback path, verifying

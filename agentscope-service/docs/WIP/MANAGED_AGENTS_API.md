@@ -5,6 +5,8 @@
 > 路径前缀：AgentScope Service 为 `/api/*`（JWT）；Claude 为 `/v1/*`（API Key）。语义对齐优先于路径字面一致。
 >
 > 最后更新：2026-07-21
+>
+> 产品级对标与里程碑切片见：[MANAGED_AGENTS_PRODUCT_PLAN.md](MANAGED_AGENTS_PRODUCT_PLAN.md)
 
 ---
 
@@ -262,13 +264,31 @@ Worker 管理面（poll / ack / heartbeat / stop / list / get / stats）与 **en
 
 - poll / ack / heartbeat / stop / list / get / stats + environment key  
 
-其余（Files、Threads、Session update、Skills 一等资源）标为 **vNext**。  
+其余（Threads、Skills 一等资源、Session tools/MCP 覆盖等）标为 **vNext**。  
 产品指南：[guide/README.md](guide/README.md)。事件 / Worker / 错误见 [DATA_PLANE_CONTRACT.md](DATA_PLANE_CONTRACT.md)；Agent body 收拢见 [API_REFACTOR.md](API_REFACTOR.md)；生产债见 [FOLLOW_UP_PRODUCTION.md](FOLLOW_UP_PRODUCTION.md)。
+
+### 5.1 本期承诺面（M0–M5，见产品对标规划）
+
+与 [MANAGED_AGENTS_PRODUCT_PLAN.md §8.2](MANAGED_AGENTS_PRODUCT_PLAN.md) 对齐；里程碑完成后冻结 minor：
+
+| 资源 | 承诺路由 |
+|---|---|
+| Agents | `GET/POST /api/agents`、`GET/PUT/DELETE /api/agents/{id}`、`POST …/archive`、`GET …/versions[/{v}]` |
+| Environments | `GET/POST /api/environments`、`GET/PATCH/DELETE /api/environments/{id}`、`POST …/archive`、`POST …/rotate-key` |
+| Sessions | `GET/POST /api/sessions`、`GET/PATCH/DELETE /api/sessions/{id}`、`POST …/archive` |
+| Events（DP） | `GET/POST /api/sessions/{id}/events`、`GET …/events/stream` |
+| Memory | store CRUD + `POST …/archive` + `POST …/redact` + memories `*path` 读写删 + versions |
+| Vaults | vault CRUD + `PATCH` + `POST …/archive`；credentials list/create/patch/delete/validate |
+| Deployments | CRUD + archive + run + pause/unpause + webhook |
+| Files | `GET/POST /api/files`、`GET /api/files/{id}[/content]`、`DELETE /api/files/{id}` |
+| Channels | 现有 channel 与 binding 路由 |
 
 ---
 
 ## 6. 参考
 
+- 产品对标规划：[MANAGED_AGENTS_PRODUCT_PLAN.md](MANAGED_AGENTS_PRODUCT_PLAN.md)  
+- OpenAPI（承诺面）：[../openapi/managed-agents.yaml](../openapi/managed-agents.yaml)  
 - 产品指南（Overview / Quickstart / 模块）：[guide/README.md](guide/README.md)  
 - Claude overview: https://platform.claude.com/docs/en/managed-agents/overview  
 - Claude sessions: https://platform.claude.com/docs/en/managed-agents/sessions  

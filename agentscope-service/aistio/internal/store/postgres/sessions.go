@@ -18,6 +18,10 @@ type sessionRepo struct {
 	pool *pgxpool.Pool
 }
 
+const sessionColumns = `id, session_id, agent_name, namespace, framework, framework_version,
+			phase, busy, instance_ref, instance_ip, team_id, team_role, team_context,
+			started_at, last_active_at, terminated_at, created_at, updated_at`
+
 func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Session, error) {
 	if s.Phase == "" {
 		s.Phase = store.SessionPhaseActive
@@ -26,15 +30,16 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 	row := r.pool.QueryRow(ctx, `
 		INSERT INTO sessions (
 			session_id, agent_name, namespace, framework, framework_version,
-			phase, instance_ref, instance_ip, team_id, team_role, team_context,
+			phase, busy, instance_ref, instance_ip, team_id, team_role, team_context,
 			started_at, last_active_at, terminated_at, created_at, updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
 		)
 		ON CONFLICT (agent_name, namespace, session_id) DO UPDATE SET
 			framework = COALESCE(NULLIF(EXCLUDED.framework, ''), sessions.framework),
 			framework_version = COALESCE(EXCLUDED.framework_version, sessions.framework_version),
 			phase = EXCLUDED.phase,
+			busy = EXCLUDED.busy,
 			instance_ref = COALESCE(EXCLUDED.instance_ref, sessions.instance_ref),
 			instance_ip = COALESCE(EXCLUDED.instance_ip, sessions.instance_ip),
 			team_id = COALESCE(EXCLUDED.team_id, sessions.team_id),
@@ -44,11 +49,9 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 			last_active_at = COALESCE(EXCLUDED.last_active_at, sessions.last_active_at),
 			terminated_at = EXCLUDED.terminated_at,
 			updated_at = EXCLUDED.updated_at
-		RETURNING id, session_id, agent_name, namespace, framework, framework_version,
-			phase, instance_ref, instance_ip, team_id, team_role, team_context,
-			started_at, last_active_at, terminated_at, created_at, updated_at`,
+		RETURNING `+sessionColumns,
 		s.SessionID, s.AgentName, s.Namespace, s.Framework, nullStr(s.FrameworkVersion),
-		s.Phase, nullStr(s.InstanceRef), nullStr(s.InstanceIP), nullStr(s.TeamID), nullStr(s.TeamRole),
+		s.Phase, s.Busy, nullStr(s.InstanceRef), nullStr(s.InstanceIP), nullStr(s.TeamID), nullStr(s.TeamRole),
 		nullJSON(s.TeamContext), s.StartedAt, s.LastActiveAt, s.TerminatedAt, now, now,
 	)
 	out := &store.Session{}
@@ -60,9 +63,7 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 
 func (r *sessionRepo) Get(ctx context.Context, agentName, namespace, sessionID string) (*store.Session, error) {
 	row := r.pool.QueryRow(ctx, `
-		SELECT id, session_id, agent_name, namespace, framework, framework_version,
-			phase, instance_ref, instance_ip, team_id, team_role, team_context,
-			started_at, last_active_at, terminated_at, created_at, updated_at
+		SELECT `+sessionColumns+`
 		FROM sessions WHERE agent_name=$1 AND namespace=$2 AND session_id=$3`,
 		agentName, namespace, sessionID)
 	out := &store.Session{}
@@ -77,9 +78,7 @@ func (r *sessionRepo) Get(ctx context.Context, agentName, namespace, sessionID s
 
 func (r *sessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*store.Session, error) {
 	row := r.pool.QueryRow(ctx, `
-		SELECT id, session_id, agent_name, namespace, framework, framework_version,
-			phase, instance_ref, instance_ip, team_id, team_role, team_context,
-			started_at, last_active_at, terminated_at, created_at, updated_at
+		SELECT `+sessionColumns+`
 		FROM sessions WHERE id=$1`, id)
 	out := &store.Session{}
 	if err := scanSession(row, out); err != nil {
@@ -92,38 +91,8 @@ func (r *sessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*store.Session
 }
 
 func (r *sessionRepo) List(ctx context.Context, f store.SessionFilter) ([]*store.Session, error) {
-	var (
-		conds []string
-		args  []any
-	)
-	add := func(cond string, v any) {
-		args = append(args, v)
-		conds = append(conds, fmt.Sprintf(cond, len(args)))
-	}
-	if f.AgentName != "" {
-		add("agent_name=$%d", f.AgentName)
-	}
-	if f.Namespace != "" {
-		add("namespace=$%d", f.Namespace)
-	}
-	if f.SessionID != "" {
-		add("session_id=$%d", f.SessionID)
-	}
-	if f.Phase != "" {
-		add("phase=$%d", f.Phase)
-	}
-	if f.Framework != "" {
-		add("framework=$%d", f.Framework)
-	}
-	if f.TeamID != "" {
-		add("team_id=$%d", f.TeamID)
-	}
-	if f.TeamRole != "" {
-		add("team_role=$%d", f.TeamRole)
-	}
-	q := `SELECT id, session_id, agent_name, namespace, framework, framework_version,
-		phase, instance_ref, instance_ip, team_id, team_role, team_context,
-		started_at, last_active_at, terminated_at, created_at, updated_at FROM sessions`
+	conds, args := sessionFilterConds(f)
+	q := `SELECT ` + sessionColumns + ` FROM sessions`
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
 	}
@@ -178,7 +147,7 @@ func (r *sessionRepo) TerminateMissing(ctx context.Context, agentName, namespace
 	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE sessions
-		SET phase=$4, terminated_at=now(), updated_at=now()
+		SET phase=$4, terminated_at=now(), updated_at=now(), busy=false
 		WHERE agent_name=$1 AND namespace=$2
 		  AND phase != $4
 		  AND created_at < $3
@@ -199,6 +168,100 @@ func (r *sessionRepo) CountActive(ctx context.Context, agentName, namespace stri
 	return n, err
 }
 
+func (r *sessionRepo) CountByPhase(ctx context.Context, f store.SessionFilter) (map[string]int, error) {
+	conds, args := sessionFilterConds(f)
+	q := `SELECT lower(phase), COUNT(*) FROM sessions`
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += " GROUP BY lower(phase)"
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var phase string
+		var n int
+		if err := rows.Scan(&phase, &n); err != nil {
+			return nil, err
+		}
+		out[phase] = n
+	}
+	return out, rows.Err()
+}
+
+func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter, minPressure float64, limit int) ([]*store.SessionWithSnapshot, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	conds, args := sessionFilterCondsPrefixed(f, "s")
+	args = append(args, minPressure, limit)
+	pressureIdx := len(args) - 1
+	limitIdx := len(args)
+	whereParts := append([]string{}, conds...)
+	whereParts = append(whereParts, fmt.Sprintf("snap.context_pressure >= $%d", pressureIdx))
+	where := " WHERE " + strings.Join(whereParts, " AND ")
+	prefixed := make([]string, 0, 18)
+	for _, c := range []string{
+		"id", "session_id", "agent_name", "namespace", "framework", "framework_version",
+		"phase", "busy", "instance_ref", "instance_ip", "team_id", "team_role", "team_context",
+		"started_at", "last_active_at", "terminated_at", "created_at", "updated_at",
+	} {
+		prefixed = append(prefixed, "s."+c)
+	}
+	q := fmt.Sprintf(`
+		SELECT %s,
+			snap.id, snap.session_fk, snap.captured_at, snap.message_count, snap.prompt_tokens,
+			snap.completion_tokens, snap.total_tokens, snap.context_pressure, snap.is_compacted,
+			snap.effective_message_count, snap.context_hash, snap.task_summary
+		FROM sessions s
+		INNER JOIN LATERAL (
+			SELECT * FROM session_snapshots ss
+			WHERE ss.session_fk = s.id
+			ORDER BY ss.captured_at DESC
+			LIMIT 1
+		) snap ON true
+		%s
+		ORDER BY snap.context_pressure DESC
+		LIMIT $%d`, strings.Join(prefixed, ", "), where, limitIdx)
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.SessionWithSnapshot
+	for rows.Next() {
+		sess := &store.Session{}
+		snap := &store.SessionSnapshot{}
+		var hash *string
+		var summary []byte
+		var fwVer, instRef, instIP, teamID, teamRole *string
+		var teamCtx []byte
+		if err := rows.Scan(
+			&sess.ID, &sess.SessionID, &sess.AgentName, &sess.Namespace, &sess.Framework, &fwVer,
+			&sess.Phase, &sess.Busy, &instRef, &instIP, &teamID, &teamRole, &teamCtx,
+			&sess.StartedAt, &sess.LastActiveAt, &sess.TerminatedAt, &sess.CreatedAt, &sess.UpdatedAt,
+			&snap.ID, &snap.SessionFK, &snap.CapturedAt, &snap.MessageCount, &snap.PromptTokens,
+			&snap.CompletionTokens, &snap.TotalTokens, &snap.ContextPressure, &snap.IsCompacted,
+			&snap.EffectiveMessageCount, &hash, &summary,
+		); err != nil {
+			return nil, err
+		}
+		sess.FrameworkVersion = deref(fwVer)
+		sess.InstanceRef = deref(instRef)
+		sess.InstanceIP = deref(instIP)
+		sess.TeamID = deref(teamID)
+		sess.TeamRole = deref(teamRole)
+		sess.TeamContext = teamCtx
+		snap.ContextHash = deref(hash)
+		snap.TaskSummary = summary
+		out = append(out, &store.SessionWithSnapshot{Session: sess, Snapshot: snap})
+	}
+	return out, rows.Err()
+}
+
 func (r *sessionRepo) DeleteByAgent(ctx context.Context, agentName, namespace string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE agent_name=$1 AND namespace=$2`, agentName, namespace)
 	return err
@@ -207,6 +270,45 @@ func (r *sessionRepo) DeleteByAgent(ctx context.Context, agentName, namespace st
 func (r *sessionRepo) DeleteByTeam(ctx context.Context, teamName, namespace string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE team_id=$1 AND namespace=$2`, teamName, namespace)
 	return err
+}
+
+func sessionFilterConds(f store.SessionFilter) (conds []string, args []any) {
+	return sessionFilterCondsPrefixed(f, "")
+}
+
+func sessionFilterCondsPrefixed(f store.SessionFilter, alias string) (conds []string, args []any) {
+	col := func(name string) string {
+		if alias == "" {
+			return name
+		}
+		return alias + "." + name
+	}
+	add := func(name string, v any) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf("%s=$%d", col(name), len(args)))
+	}
+	if f.AgentName != "" {
+		add("agent_name", f.AgentName)
+	}
+	if f.Namespace != "" {
+		add("namespace", f.Namespace)
+	}
+	if f.SessionID != "" {
+		add("session_id", f.SessionID)
+	}
+	if f.Phase != "" {
+		add("phase", f.Phase)
+	}
+	if f.Framework != "" {
+		add("framework", f.Framework)
+	}
+	if f.TeamID != "" {
+		add("team_id", f.TeamID)
+	}
+	if f.TeamRole != "" {
+		add("team_role", f.TeamRole)
+	}
+	return conds, args
 }
 
 type scannable interface {
@@ -218,7 +320,7 @@ func scanSession(row scannable, s *store.Session) error {
 	var teamCtx []byte
 	err := row.Scan(
 		&s.ID, &s.SessionID, &s.AgentName, &s.Namespace, &s.Framework, &fwVer,
-		&s.Phase, &instRef, &instIP, &teamID, &teamRole, &teamCtx,
+		&s.Phase, &s.Busy, &instRef, &instIP, &teamID, &teamRole, &teamCtx,
 		&s.StartedAt, &s.LastActiveAt, &s.TerminatedAt, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {

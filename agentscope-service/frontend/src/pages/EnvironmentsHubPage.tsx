@@ -5,6 +5,7 @@ import {
   createEnvironment,
   deleteEnvironment,
   listEnvironments,
+  updateEnvironment,
 } from '../api/environments';
 import { HandsStatus, fetchHandsStatus } from '../api/hands';
 
@@ -59,8 +60,11 @@ export default function EnvironmentsHubPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Environment | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState('local');
+  const [editName, setEditName] = useState('');
+  const [editConfigText, setEditConfigText] = useState('{}');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [hands, setHands] = useState<HandsStatus | null>(null);
 
@@ -96,6 +100,36 @@ export default function EnvironmentsHubPage() {
       await refresh();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Create failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function openEdit(env: Environment) {
+    setEditing(env);
+    setEditName(env.name);
+    setEditConfigText(JSON.stringify(env.config ?? {}, null, 2));
+    setErr(null);
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing || !editName.trim()) return;
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(editConfigText || '{}') as Record<string, unknown>;
+    } catch {
+      setErr('Config must be valid JSON');
+      return;
+    }
+    setBusyId(editing.id);
+    setErr(null);
+    try {
+      await updateEnvironment(editing.id, { name: editName.trim(), config });
+      setEditing(null);
+      await refresh();
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : 'Update failed');
     } finally {
       setBusyId(null);
     }
@@ -167,7 +201,12 @@ export default function EnvironmentsHubPage() {
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'monospace' }}>{env.id}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              {!env.archivedAt && (
+                <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => openEdit(env)}>
+                  Edit
+                </button>
+              )}
               {!env.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => handleArchive(env.id)}>
                   Archive
@@ -210,6 +249,37 @@ export default function EnvironmentsHubPage() {
                 <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>
                   {busyId === 'create' ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div style={S.modal} onClick={() => setEditing(null)}>
+          <div style={S.modalBody} onClick={e => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>Edit environment</h2>
+            <form onSubmit={handleUpdate}>
+              <label style={S.formField}>Name</label>
+              <input
+                style={{ ...S.input, marginBottom: 14 }}
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                autoFocus
+              />
+              <label style={S.formField}>Type (read-only)</label>
+              <input style={{ ...S.input, marginBottom: 14, color: '#94a3b8' }} value={editing.type} disabled />
+              <label style={S.formField}>Config (JSON)</label>
+              <textarea
+                style={{ ...S.input, marginBottom: 20, minHeight: 140, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.82rem' }}
+                value={editConfigText}
+                onChange={e => setEditConfigText(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button type="button" style={S.rowBtn} onClick={() => setEditing(null)}>Cancel</button>
+                <button type="submit" style={S.primaryBtn} disabled={busyId === editing.id}>
+                  {busyId === editing.id ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </form>

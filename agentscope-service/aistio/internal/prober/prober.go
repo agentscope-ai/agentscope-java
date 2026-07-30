@@ -41,4 +41,16 @@ type DataPlaneProber interface {
 
 	// FetchWorkspaces calls GET /agentscope/workspaces (capability: workspace-inventory).
 	FetchWorkspaces(ctx context.Context, endpoint string) ([]WorkspaceInfo, error)
+
+	// FetchTasks calls GET /agentscope/sessions/{id}/tasks (capability: task-query).
+	FetchTasks(ctx context.Context, endpoint string, sessionID string) ([]TaskInfo, error)
+
+	// FetchSubagentTasks calls GET /agentscope/sessions/{id}/subagent-tasks.
+	FetchSubagentTasks(ctx context.Context, endpoint string, sessionID string) ([]SubagentTaskInfo, error)
+
+	// CancelSubagentTask calls DELETE /agentscope/sessions/{id}/subagent-tasks/{taskId}.
+	CancelSubagentTask(ctx context.Context, endpoint string, sessionID, taskID string) error
+
+	// SendPlanMode calls POST /agentscope/sessions/{id}/plan-mode with {"active":bool}.
+	SendPlanMode(ctx context.Context, endpoint string, sessionID string, active bool) error
 }

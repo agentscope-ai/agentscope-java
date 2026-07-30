@@ -451,6 +451,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return null;
     }
 
+    /**
+     * Background subagent {@link TaskRepository} owned by the subagent middleware, or {@code null}
+     * when subagents are not configured.
+     */
+    public TaskRepository getTaskRepository() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.getTaskRepository();
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            return dsm.getTaskRepository();
+        }
+        return null;
+    }
+
     /** @see ReActAgent#getDefaultSessionId() */
     public String getDefaultSessionId() {
         return delegate.getDefaultSessionId();

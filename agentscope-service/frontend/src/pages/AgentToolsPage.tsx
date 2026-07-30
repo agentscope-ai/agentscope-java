@@ -59,9 +59,10 @@ export default function AgentToolsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={helpStyle}>
-        Tools the agent can call this session. Built-in tools come from the harness;
-        MCP servers are wired through <code>workspace/tools.json</code>. Toggling here
-        edits that file — the change applies to the next session boot.
+        Tools and MCP servers are stored on the Agent definition (<code>tools</code> /{' '}
+        <code>mcpServers</code>) and create a new agent version on save. Changes apply to
+        the next Session. Use <b>Ask</b> on a built-in tool to pause for confirmation
+        before that tool runs (HITL).
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         <ToolsActivePanel

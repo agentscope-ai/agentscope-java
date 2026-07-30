@@ -20,7 +20,7 @@ x-builder-env: &builder-env
   BUILDER_DB_USER: builder
   BUILDER_DB_PASSWORD: builder
   BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
-  BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-dev-internal-token}
+  BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
   BUILDER_CONTROL_URL: http://control:8081
   BUILDER_DATA_URL: http://data:8082
   DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
@@ -63,7 +63,7 @@ services:
       AISTIO_PRODUCT_DSN: postgres://builder:builder@db:5432/builder?sslmode=disable
       AISTIO_HTTP_BIND: ":8081"
       BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
-      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-dev-internal-token}
+      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
       BUILDER_DATA_URL: http://data:8082
     ports:
       - "8081:8081"

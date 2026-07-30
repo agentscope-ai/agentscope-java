@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,9 +13,14 @@ import (
 )
 
 // SessionWithSnapshot is a runtime session plus its latest Level-1 snapshot.
+// Also carries resolved instance capability metadata when available.
 type SessionWithSnapshot struct {
 	*store.Session
-	Snapshot *store.SessionSnapshot `json:"snapshot,omitempty"`
+	Snapshot         *store.SessionSnapshot `json:"snapshot,omitempty"`
+	InstanceHealthy  *bool                  `json:"instanceHealthy,omitempty"`
+	Capabilities     []string               `json:"capabilities,omitempty"`
+	ContractLevel    int32                  `json:"contractLevel,omitempty"`
+	Model            string                 `json:"model,omitempty"`
 }
 
 // listSessions handles GET /api/v1/sessions. Each row includes the latest
@@ -53,7 +60,8 @@ func (s *Server) listSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sessions": out})
 }
 
-// getSession returns a single session with its latest snapshot attached.
+// getSession returns a single session with its latest snapshot and resolved
+// data-plane instance capabilities (so the console does not client-side join).
 func (s *Server) getSession(c *gin.Context) {
 	sess, ok := s.resolveSession(c)
 	if !ok {
@@ -63,7 +71,58 @@ func (s *Server) getSession(c *gin.Context) {
 	if snap, err := s.store.Metrics().LatestSnapshot(c.Request.Context(), sess.ID); err == nil {
 		item.Snapshot = snap
 	}
+	s.enrichSessionInstance(sess, &item)
+	s.enrichSessionModel(c, sess, &item)
 	c.JSON(http.StatusOK, item)
+}
+
+// enrichSessionModel fills Model from a live /state probe when the DP reports it.
+func (s *Server) enrichSessionModel(c *gin.Context, sess *store.Session, item *SessionWithSnapshot) {
+	if item.Model != "" || s.prober == nil || s.registry == nil || sess == nil || sess.InstanceRef == "" {
+		return
+	}
+	dp := s.registry.Get(sess.InstanceRef)
+	if dp == nil || dp.BaseURL == "" {
+		return
+	}
+	state, err := s.prober.FetchSessionState(c.Request.Context(), dp.BaseURL, sess.SessionID)
+	if err != nil || state == nil {
+		return
+	}
+	item.Model = state.Model
+	if state.Busy != nil {
+		item.Busy = state.Busy
+	}
+}
+
+// enrichSessionInstance fills instanceHealthy / capabilities / contractLevel
+// from the dataplane registry using sess.InstanceRef.
+func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSnapshot) {
+	if s.registry == nil || sess == nil {
+		return
+	}
+	if sess.InstanceRef != "" {
+		if dp := s.registry.Get(sess.InstanceRef); dp != nil {
+			h := dp.Healthy
+			item.InstanceHealthy = &h
+			item.Capabilities = append([]string(nil), dp.Capabilities...)
+			item.ContractLevel = dp.ContractLevel
+			return
+		}
+		h := false
+		item.InstanceHealthy = &h
+		return
+	}
+	// No instanceRef: try first healthy instance for the agent.
+	for _, dp := range s.registry.ListByAgent(sess.AgentName, sess.Namespace) {
+		if dp.Healthy {
+			h := true
+			item.InstanceHealthy = &h
+			item.Capabilities = append([]string(nil), dp.Capabilities...)
+			item.ContractLevel = dp.ContractLevel
+			return
+		}
+	}
 }
 
 // queryTokenMetrics handles GET /api/v1/metrics/tokens.
@@ -101,64 +160,278 @@ func (s *Server) queryTokenMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"metrics": rows})
 }
 
-// fleetOverview handles GET /api/v1/overview.
-func (s *Server) fleetOverview(c *gin.Context) {
-	ctx := c.Request.Context()
-	sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{Limit: 5000})
+// queryAgentMetrics handles GET /api/v1/metrics/agents.
+func (s *Server) queryAgentMetrics(c *gin.Context) {
+	filter := store.AgentMetricFilter{
+		AgentName: c.Query("agent"),
+		Namespace: c.Query("namespace"),
+		Limit:     parseLimit(c, 500),
+	}
+	if since := c.Query("since"); since != "" {
+		t, err := time.Parse(time.RFC3339, since)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid since (RFC3339)"})
+			return
+		}
+		filter.Since = &t
+	}
+	if until := c.Query("until"); until != "" {
+		t, err := time.Parse(time.RFC3339, until)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid until (RFC3339)"})
+			return
+		}
+		filter.Until = &t
+	}
+	rows, err := s.store.Metrics().QueryAgentMetrics(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-
-	agents := map[string]struct{}{}
-	instances := map[string]struct{}{}
-	var active int
-	ids := make([]uuid.UUID, 0, len(sessions))
-	for _, sess := range sessions {
-		agents[sess.Namespace+"/"+sess.AgentName] = struct{}{}
-		if sess.InstanceRef != "" {
-			instances[sess.InstanceRef] = struct{}{}
-		}
-		if sess.Phase == "active" || sess.Phase == "Active" || sess.Phase == "idle" || sess.Phase == "Idle" {
-			active++
-		}
-		ids = append(ids, sess.ID)
+	if rows == nil {
+		rows = []*store.AgentMetric{}
 	}
+	c.JSON(http.StatusOK, gin.H{"metrics": rows})
+}
 
-	snaps, _ := s.store.Metrics().LatestSnapshots(ctx, ids)
-	var pressureSum float64
-	var pressureN int
-	for _, snap := range snaps {
-		if snap == nil {
+type overviewCacheEntry struct {
+	at   time.Time
+	body gin.H
+}
+
+var (
+	overviewCacheMu sync.Mutex
+	overviewCache   *overviewCacheEntry
+)
+
+const overviewCacheTTL = 5 * time.Second
+
+func invalidateOverviewCache() {
+	overviewCacheMu.Lock()
+	overviewCache = nil
+	overviewCacheMu.Unlock()
+}
+
+// fleetOverview handles GET /api/v1/overview using store aggregations.
+func (s *Server) fleetOverview(c *gin.Context) {
+	overviewCacheMu.Lock()
+	if overviewCache != nil && time.Since(overviewCache.at) < overviewCacheTTL {
+		body := overviewCache.body
+		overviewCacheMu.Unlock()
+		c.JSON(http.StatusOK, body)
+		return
+	}
+	overviewCacheMu.Unlock()
+
+	ctx := c.Request.Context()
+	byPhase, err := s.store.Sessions().CountByPhase(ctx, store.SessionFilter{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	normalizePhase := func(m map[string]int) map[string]int {
+		out := map[string]int{
+			"active": 0, "idle": 0, "compressing": 0, "terminated": 0,
+		}
+		total := 0
+		for k, v := range m {
+			lk := strings.ToLower(k)
+			out[lk] += v
+			total += v
+		}
+		out["_total"] = total
+		return out
+	}
+	phases := normalizePhase(byPhase)
+	sessionCount := phases["_total"]
+	delete(phases, "_total")
+	activeOnly := phases["active"]
+
+	avgPressure, p95Pressure, _ := s.store.Metrics().PressureStats(ctx, store.SessionFilter{})
+
+	since24h := time.Now().UTC().Add(-24 * time.Hour)
+	tokenTotal, _ := s.store.Metrics().SumTokenUsage(ctx, store.TokenFilter{Since: &since24h})
+	errorCount, _ := s.store.Metrics().SumErrorCount(ctx, store.AgentMetricFilter{Since: &since24h})
+	topAgents, _ := s.store.Metrics().TopAgents(ctx, since24h, 10)
+	if topAgents == nil {
+		topAgents = []store.AgentUsage{}
+	}
+	highPressure, _ := s.store.Sessions().ListByPressure(ctx, store.SessionFilter{}, 0.8, 8)
+	if highPressure == nil {
+		highPressure = []*store.SessionWithSnapshot{}
+	}
+	// Flatten for JSON friendliness (avoid nested session key).
+	highPressureOut := make([]gin.H, 0, len(highPressure))
+	for _, hp := range highPressure {
+		if hp == nil || hp.Session == nil {
 			continue
 		}
-		pressureSum += snap.ContextPressure
-		pressureN++
-	}
-	avgPressure := 0.0
-	if pressureN > 0 {
-		avgPressure = pressureSum / float64(pressureN)
+		row := gin.H{
+			"sessionId": hp.Session.SessionID,
+			"agentName": hp.Session.AgentName,
+			"namespace": hp.Session.Namespace,
+			"phase":     hp.Session.Phase,
+		}
+		if hp.Snapshot != nil {
+			row["contextPressure"] = hp.Snapshot.ContextPressure
+			row["totalTokens"] = hp.Snapshot.TotalTokens
+		}
+		highPressureOut = append(highPressureOut, row)
 	}
 
-	since := time.Now().UTC().Add(-24 * time.Hour)
-	tokens, _ := s.store.Metrics().QueryTokenUsage(ctx, store.TokenFilter{Since: &since, Limit: 10000})
-	var tokenTotal int64
-	for _, t := range tokens {
-		tokenTotal += t.TotalTokens
+	agents := map[string]struct{}{}
+	// Count unique agents from non-terminated sessions via a small list.
+	sessions, _ := s.store.Sessions().List(ctx, store.SessionFilter{Limit: 5000})
+	for _, sess := range sessions {
+		agents[sess.Namespace+"/"+sess.AgentName] = struct{}{}
 	}
 
 	dataplaneCount := 0
+	healthyCount := 0
+	staleCount := 0
+	stalePlanes := []gin.H{}
 	if s.registry != nil {
-		dataplaneCount = len(s.registry.List())
+		planes := s.registry.List()
+		dataplaneCount = len(planes)
+		for _, dp := range planes {
+			ns := dp.Namespace
+			if ns == "" {
+				ns = "default"
+			}
+			agents[ns+"/"+dp.AgentName] = struct{}{}
+			if dp.Healthy {
+				healthyCount++
+			} else {
+				staleCount++
+				stalePlanes = append(stalePlanes, gin.H{
+					"instanceId": dp.InstanceID,
+					"agentName":  dp.AgentName,
+					"namespace":  ns,
+					"lastSeenAt": dp.LastSeenAt,
+				})
+			}
+		}
+		for _, a := range s.registry.AggregateAgents() {
+			ns := a.Namespace
+			if ns == "" {
+				ns = "default"
+			}
+			agents[ns+"/"+a.Name] = struct{}{}
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"agentCount":           len(agents),
-		"instanceCount":        max(len(instances), dataplaneCount),
-		"dataplaneCount":       dataplaneCount,
-		"sessionCount":         len(sessions),
-		"activeSessionCount":   active,
-		"avgContextPressure":   avgPressure,
-		"tokenUsage24h":        tokenTotal,
-	})
+	// Orphan sessions: have instanceRef but registry entry missing/unhealthy.
+	orphanSessions := []gin.H{}
+	if s.registry != nil {
+		for _, sess := range sessions {
+			if sess.InstanceRef == "" {
+				continue
+			}
+			ph := strings.ToLower(sess.Phase)
+			if ph == "terminated" {
+				continue
+			}
+			dp := s.registry.Get(sess.InstanceRef)
+			if dp == nil || !dp.Healthy {
+				orphanSessions = append(orphanSessions, gin.H{
+					"sessionId":   sess.SessionID,
+					"agentName":   sess.AgentName,
+					"namespace":   sess.Namespace,
+					"instanceRef": sess.InstanceRef,
+				})
+				if len(orphanSessions) >= 8 {
+					break
+				}
+			}
+		}
+	}
+
+	body := gin.H{
+		"agentCount":            len(agents),
+		"instanceCount":         dataplaneCount,
+		"healthyInstanceCount":  healthyCount,
+		"staleInstanceCount":    staleCount,
+		"dataplaneCount":        dataplaneCount,
+		"sessionCount":          sessionCount,
+		"activeSessionCount":    activeOnly,
+		"sessionsByPhase":       phases,
+		"avgContextPressure":    avgPressure,
+		"p95ContextPressure":    p95Pressure,
+		"tokenUsage24h":         tokenTotal,
+		"errorCount24h":         errorCount,
+		"topAgents":             topAgents,
+		"highPressureSessions":  highPressureOut,
+		"staleDataplanes":       stalePlanes,
+		"orphanSessions":        orphanSessions,
+	}
+
+	overviewCacheMu.Lock()
+	overviewCache = &overviewCacheEntry{at: time.Now(), body: body}
+	overviewCacheMu.Unlock()
+
+	c.JSON(http.StatusOK, body)
+}
+
+// overviewTimeseries handles GET /api/v1/overview/timeseries.
+func (s *Server) overviewTimeseries(c *gin.Context) {
+	metric := c.DefaultQuery("metric", "tokens")
+	bucketStr := c.DefaultQuery("bucket", "1h")
+	var bucket time.Duration
+	switch bucketStr {
+	case "1m", "minute":
+		bucket = time.Minute
+	case "1d", "day":
+		bucket = 24 * time.Hour
+	default:
+		bucket = time.Hour
+	}
+	since := time.Now().UTC().Add(-24 * time.Hour)
+	if v := c.Query("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid since (RFC3339)"})
+			return
+		}
+		since = t
+	}
+	switch metric {
+	case "tokens":
+		rows, err := s.store.Metrics().AggregateTokens(c.Request.Context(), store.TokenFilter{
+			AgentName: c.Query("agent"),
+			Namespace: c.Query("namespace"),
+			Since:     &since,
+		}, bucket)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if rows == nil {
+			rows = []store.TokenBucket{}
+		}
+		c.JSON(http.StatusOK, gin.H{"metric": "tokens", "bucket": bucketStr, "points": rows})
+	case "active_sessions":
+		// Approximate from agent_metrics time series.
+		rows, err := s.store.Metrics().QueryAgentMetrics(c.Request.Context(), store.AgentMetricFilter{
+			AgentName: c.Query("agent"),
+			Namespace: c.Query("namespace"),
+			Since:     &since,
+			Limit:     2000,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		type point struct {
+			BucketStart    time.Time `json:"bucketStart"`
+			ActiveSessions int32     `json:"activeSessions"`
+		}
+		points := make([]point, 0, len(rows))
+		for i := len(rows) - 1; i >= 0; i-- {
+			m := rows[i]
+			points = append(points, point{BucketStart: m.RecordedAt, ActiveSessions: m.ActiveSessions})
+		}
+		c.JSON(http.StatusOK, gin.H{"metric": "active_sessions", "bucket": bucketStr, "points": points})
+	default:
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "metric must be tokens or active_sessions"})
+	}
 }

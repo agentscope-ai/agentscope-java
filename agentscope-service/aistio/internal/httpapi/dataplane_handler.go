@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
+	"github.com/spring-ai-alibaba/aistio/internal/prober"
 )
 
 type registerReq struct {
@@ -31,17 +33,36 @@ func (s *Server) registerDataPlane(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "agentName, instanceId, and baseUrl are required"})
 		return
 	}
-	interval := s.registry.Upsert(dataplane.Entry{
+	baseURL := strings.TrimRight(req.BaseURL, "/")
+	entry := dataplane.Entry{
 		AgentName:     req.AgentName,
 		Namespace:     req.Namespace,
 		InstanceID:    req.InstanceID,
-		BaseURL:       strings.TrimRight(req.BaseURL, "/"),
+		BaseURL:       baseURL,
 		Runtime:       req.Runtime,
 		Framework:     req.Framework,
 		ContractLevel: req.ContractLevel,
 		Capabilities:  req.Capabilities,
 		Source:        firstNonEmpty(req.Source, dataplane.SourceSelfRegister),
-	})
+	}
+	if s.prober != nil {
+		if info, err := s.prober.ProbeInfo(c.Request.Context(), baseURL); err == nil && info != nil {
+			if info.ContractLevel > 0 {
+				entry.ContractLevel = info.ContractLevel
+			}
+			if len(info.Capabilities) > 0 {
+				entry.Capabilities = append([]string(nil), info.Capabilities...)
+			}
+			if info.Runtime != "" {
+				entry.Runtime = info.Runtime
+			}
+			if info.AgentConfig != nil {
+				entry.AgentConfig = probeAgentConfigToMap(info.AgentConfig)
+			}
+		}
+	}
+	interval := s.registry.Upsert(entry)
+	invalidateOverviewCache()
 	c.JSON(http.StatusOK, gin.H{
 		"instanceId":        req.InstanceID,
 		"heartbeatInterval": interval.Seconds(),
@@ -72,6 +93,7 @@ func (s *Server) deleteDataPlane(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "unknown instance"})
 		return
 	}
+	invalidateOverviewCache()
 	c.Status(http.StatusNoContent)
 }
 
@@ -157,7 +179,37 @@ func (s *Server) getAgentFromRegistry(c *gin.Context) {
 	if s.store != nil {
 		active, _ = s.store.Sessions().CountActive(c.Request.Context(), name, ns)
 	}
-	c.JSON(http.StatusOK, gin.H{
+	var agentConfig map[string]interface{}
+	for _, e := range entries {
+		if e.AgentConfig != nil {
+			agentConfig = e.AgentConfig
+			break
+		}
+	}
+	if agentConfig == nil && s.prober != nil {
+		for _, e := range entries {
+			if !e.Healthy || e.BaseURL == "" {
+				continue
+			}
+			if info, err := s.prober.ProbeInfo(c.Request.Context(), e.BaseURL); err == nil && info != nil && info.AgentConfig != nil {
+				agentConfig = probeAgentConfigToMap(info.AgentConfig)
+				s.registry.Upsert(dataplane.Entry{
+					AgentName:     e.AgentName,
+					Namespace:     e.Namespace,
+					InstanceID:    e.InstanceID,
+					BaseURL:       e.BaseURL,
+					Runtime:       e.Runtime,
+					Framework:     e.Framework,
+					ContractLevel: e.ContractLevel,
+					Capabilities:  e.Capabilities,
+					AgentConfig:   agentConfig,
+					Source:        e.Source,
+				})
+				break
+			}
+		}
+	}
+	resp := gin.H{
 		"name":           match.Name,
 		"namespace":      match.Namespace,
 		"type":           "BYO",
@@ -169,7 +221,26 @@ func (s *Server) getAgentFromRegistry(c *gin.Context) {
 		"capabilities":   match.Capabilities,
 		"instances":      entries,
 		"source":         "registry",
-	})
+	}
+	if agentConfig != nil {
+		resp["agentConfig"] = agentConfig
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func probeAgentConfigToMap(cfg *prober.ProbeAgentConfig) map[string]interface{} {
+	if cfg == nil {
+		return nil
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 // internalTokenMiddleware authenticates data-plane self-registration calls.

@@ -16,6 +16,7 @@ type Store interface {
 	Metrics() MetricsRepository
 	TeamMessages() TeamMessageRepository
 	TeamTasks() TeamTaskRepository
+	Commands() SessionCommandRepository
 
 	// Migrate applies schema migrations. No-op for memory.
 	Migrate(ctx context.Context) error
@@ -27,6 +28,11 @@ type Store interface {
 	// PurgeOlderThan deletes historical rows older than the given cutoffs.
 	// Used by the RetentionWorker. Returns total rows deleted.
 	PurgeOlderThan(ctx context.Context, r RetentionConfig) (int64, error)
+
+	// WithSessionLock runs fn while holding an exclusive lock for sessionKey.
+	// Memory uses an in-process keyed mutex; Postgres uses pg_advisory_lock so
+	// the lock is safe across aistiod replicas that share the same database.
+	WithSessionLock(ctx context.Context, sessionKey string, fn func(context.Context) error) error
 }
 
 // SessionRepository manages the sessions table.
@@ -41,6 +47,11 @@ type SessionRepository interface {
 	// Returns the number of rows updated.
 	TerminateMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error)
 	CountActive(ctx context.Context, agentName, namespace string) (int32, error)
+	// CountByPhase returns session counts keyed by lowercase phase.
+	CountByPhase(ctx context.Context, filter SessionFilter) (map[string]int, error)
+	// ListByPressure returns sessions whose latest snapshot context_pressure
+	// is >= minPressure, ordered by pressure descending.
+	ListByPressure(ctx context.Context, filter SessionFilter, minPressure float64, limit int) ([]*SessionWithSnapshot, error)
 	DeleteByAgent(ctx context.Context, agentName, namespace string) error
 	DeleteByTeam(ctx context.Context, teamName, namespace string) error
 }
@@ -70,6 +81,26 @@ type MetricsRepository interface {
 	// LatestSnapshots returns the most recent Level-1 snapshot for each session
 	// FK. Missing sessions are omitted from the result map.
 	LatestSnapshots(ctx context.Context, sessionFKs []uuid.UUID) (map[uuid.UUID]*SessionSnapshot, error)
+	// QueryAgentMetrics returns agent-level metric samples.
+	QueryAgentMetrics(ctx context.Context, filter AgentMetricFilter) ([]*AgentMetric, error)
+	// AggregateTokens buckets token usage by the given duration (e.g. time.Hour).
+	AggregateTokens(ctx context.Context, filter TokenFilter, bucket time.Duration) ([]TokenBucket, error)
+	// TopAgents returns agents ranked by total tokens since the given time.
+	TopAgents(ctx context.Context, since time.Time, limit int) ([]AgentUsage, error)
+	// PressureStats returns average and p95 context pressure across latest snapshots.
+	PressureStats(ctx context.Context, filter SessionFilter) (avg, p95 float64, err error)
+	// SumTokenUsage returns the sum of total_tokens matching the filter.
+	SumTokenUsage(ctx context.Context, filter TokenFilter) (int64, error)
+	// SumErrorCount returns the sum of error_count from agent_metrics matching the filter.
+	SumErrorCount(ctx context.Context, filter AgentMetricFilter) (int32, error)
+}
+
+// SessionCommandRepository manages the session_commands audit table.
+type SessionCommandRepository interface {
+	Insert(ctx context.Context, cmd *SessionCommand) error
+	Update(ctx context.Context, cmd *SessionCommand) error
+	GetByCommandID(ctx context.Context, commandID string) (*SessionCommand, error)
+	List(ctx context.Context, filter SessionCommandFilter) ([]*SessionCommand, error)
 }
 
 // TeamMessageRepository manages the team_messages outbox.

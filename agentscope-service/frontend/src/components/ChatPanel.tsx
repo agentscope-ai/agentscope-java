@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ensureDefaultEnvironment } from '../api/environments';
+import { ManagedFile, createFile, listFiles } from '../api/files';
 import {
   createManagedSession,
   EventStreamHandle,
@@ -189,6 +190,8 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
   const [restoring, setRestoring] = useState(true);
   const [managedSessionId, setManagedSessionId] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
+  const [files, setFiles] = useState<ManagedFile[]>([]);
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const streamHandleRef = useRef<EventStreamHandle | null>(null);
@@ -201,6 +204,21 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
       try { localStorage.removeItem(managedStorageKey(agentId)); } catch { /* ignore */ }
     }
   }, [agentId]);
+
+  useEffect(() => {
+    listFiles().then(setFiles).catch(() => setFiles([]));
+  }, []);
+
+  function sessionResources() {
+    return selectedFileIds.map(fileId => ({ type: 'file', fileId }));
+  }
+
+  async function handleUploadFile(file: File) {
+    const content = await file.text();
+    const created = await createFile({ filename: file.name, content });
+    setFiles(prev => [created, ...prev]);
+    setSelectedFileIds(prev => prev.includes(created.id) ? prev : [...prev, created.id]);
+  }
 
   const handleManagedEvent = useCallback((evt: SessionEvent) => {
     const confirm = extractConfirmation(evt);
@@ -263,7 +281,11 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
       try {
         if (!sessionId) {
           const env = await ensureDefaultEnvironment();
-          const session = await createManagedSession({ agent: agentId, environmentId: env.id });
+          const session = await createManagedSession({
+            agent: agentId,
+            environmentId: env.id,
+            resources: sessionResources(),
+          });
           sessionId = session.id;
         } else if (urlManagedId) {
           // Deep-linked from the inbox — verify it still exists before adopting it.
@@ -375,7 +397,11 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     persistManagedSession(null);
     try {
       const env = await ensureDefaultEnvironment();
-      const session = await createManagedSession({ agent: agentId, environmentId: env.id });
+      const session = await createManagedSession({
+        agent: agentId,
+        environmentId: env.id,
+        resources: sessionResources(),
+      });
       setManagedSessionId(session.id);
       persistManagedSession(session.id);
       streamHandleRef.current = streamEvents(session.id, handleManagedEvent);
@@ -397,6 +423,54 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           {restoring ? 'resolving…' : sessionLabel}{sessionLabel.length >= 24 ? '…' : ''}
         </span>
         <span style={{ flex: 1 }} />
+        {files.length > 0 && (
+          <select
+            style={{ ...S.iconBtn, maxWidth: 180 }}
+            value=""
+            onChange={e => {
+              const id = e.target.value;
+              if (!id) return;
+              setSelectedFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
+            }}
+            title="Attach uploaded file to the next new session"
+          >
+            <option value="">Attach file…</option>
+            {files.map(f => (
+              <option key={f.id} value={f.id}>{f.filename}</option>
+            ))}
+          </select>
+        )}
+        {selectedFileIds.length > 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            {selectedFileIds.length} file(s) for next session
+            <button
+              type="button"
+              style={{ ...S.iconBtn, marginLeft: 6, padding: '2px 8px' }}
+              onClick={() => setSelectedFileIds([])}
+            >
+              Clear
+            </button>
+          </span>
+        )}
+        <label style={{ ...S.iconBtn, cursor: 'pointer' }} title="Upload a text file (mounted on next new session)">
+          📎 Upload
+          <input
+            type="file"
+            accept=".md,.txt,.json,.csv,.yaml,.yml,.xml,.html,.js,.ts,.py,.go,.java"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) void handleUploadFile(f).catch(err => {
+                setMessages(prev => [...prev, {
+                  id: nextId(), role: 'system',
+                  text: `[error] ${err instanceof Error ? err.message : 'upload failed'}`,
+                  tools: [],
+                }]);
+              });
+              e.target.value = '';
+            }}
+          />
+        </label>
         {managedSessionId && (
           <button
             type="button"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .base import (
+    COMMAND_ABORT,
     COMMAND_COMPRESS,
     COMMAND_TERMINATE,
     KNOWN_COMMANDS,
@@ -11,6 +12,7 @@ from .registry import find_adapter, register_adapter, registered_adapters
 
 __all__ = [
     "FrameworkAdapter",
+    "COMMAND_ABORT",
     "COMMAND_COMPRESS",
     "COMMAND_TERMINATE",
     "KNOWN_COMMANDS",

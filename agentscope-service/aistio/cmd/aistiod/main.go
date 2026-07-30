@@ -32,6 +32,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/httpapi"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
+	"github.com/spring-ai-alibaba/aistio/internal/sessionops"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/postgres"
@@ -531,6 +532,16 @@ func main() {
 	}
 
 	apiServer := httpapi.NewServer(apiOpts)
+
+	if ops := apiServer.SessionOps(); ops != nil && runtimeStore != nil {
+		go (&sessionops.QueueWorker{
+			Router:   ops,
+			Store:    runtimeStore,
+			Interval: 3 * time.Second,
+			Batch:    20,
+		}).Run(ctx)
+		logger.Info("session command queue worker started")
+	}
 
 	// Without a manager the REST server is the only long-running component,
 	// so it runs in the foreground.

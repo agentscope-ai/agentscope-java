@@ -88,8 +88,17 @@ public record Inventory(
             if (tools != null && !tools.isEmpty()) {
                 out.put("tools", tools);
             }
+            if (workspaceMode != null && !workspaceMode.isEmpty()) {
+                out.put("workspaceMode", workspaceMode);
+            }
             if (url != null && !url.isEmpty()) {
                 out.put("url", url);
+            }
+            if (invokeCount > 0) {
+                out.put("invokeCount", invokeCount);
+            }
+            if (lastInvokedAt > 0) {
+                out.put("lastInvokedAt", lastInvokedAt);
             }
             return out;
         }

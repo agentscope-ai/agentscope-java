@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -73,6 +74,7 @@ func (s *Server) Register(r gin.IRouter) {
 	s.registerMemory(r)
 	s.registerVaults(r)
 	s.registerDeployments(r)
+	s.registerFiles(r)
 	s.registerInternal(r)
 }
 
@@ -132,6 +134,47 @@ func parseStringSlice(s string) []string {
 		return []string{}
 	}
 	return out
+}
+
+// pageParams parses optional offset pagination. A zero limit means "no limit",
+// which preserves the historical full-dump behaviour.
+func pageParams(c *gin.Context) (limit, offset int, ok bool) {
+	limitStr := c.Query("limit")
+	offsetStr := c.Query("offset")
+	if limitStr == "" && offsetStr == "" {
+		return 0, 0, true
+	}
+	if limitStr != "" {
+		n, err := strconv.Atoi(limitStr)
+		if err != nil || n < 1 || n > 500 {
+			return 0, 0, false
+		}
+		limit = n
+	}
+	if offsetStr != "" {
+		n, err := strconv.Atoi(offsetStr)
+		if err != nil || n < 0 {
+			return 0, 0, false
+		}
+		offset = n
+	}
+	if offsetStr != "" && limitStr == "" {
+		// Offset without limit is ambiguous; require an explicit limit.
+		return 0, 0, false
+	}
+	return limit, offset, true
+}
+
+func appendPage(q string, limit, offset int, args []any) (string, []any) {
+	if limit <= 0 {
+		return q, args
+	}
+	args = append(args, limit, offset)
+	return q + fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args
+}
+
+func writeTotalCount(c *gin.Context, total int64) {
+	c.Header("X-Total-Count", strconv.FormatInt(total, 10))
 }
 
 func nullMillis(v *int64) any {
