@@ -109,6 +109,7 @@ public final class BuilderBootstrap {
     private final Map<String, HarnessAgent> agents;
     private final AgentscopeConfig loadedConfig;
     private final List<Channel> registeredChannels;
+    private final List<Consumer<HarnessAgent.Builder>> globalConfigurators;
     private final HarnessGateway gateway;
     private final ChannelManager channelManager;
 
@@ -119,6 +120,7 @@ public final class BuilderBootstrap {
             Map<String, HarnessAgent> agents,
             AgentscopeConfig loadedConfig,
             List<Channel> registeredChannels,
+            List<Consumer<HarnessAgent.Builder>> globalConfigurators,
             HarnessGateway gateway,
             ChannelManager channelManager) {
         this.cwd = Objects.requireNonNull(cwd, "cwd");
@@ -128,6 +130,8 @@ public final class BuilderBootstrap {
         this.loadedConfig = loadedConfig != null ? loadedConfig : new AgentscopeConfig();
         this.registeredChannels =
                 registeredChannels != null ? List.copyOf(registeredChannels) : List.of();
+        this.globalConfigurators =
+                globalConfigurators != null ? List.copyOf(globalConfigurators) : List.of();
         this.gateway = gateway;
         this.channelManager = channelManager;
     }
@@ -232,6 +236,25 @@ public final class BuilderBootstrap {
 
     public Path configPath() {
         return configPath;
+    }
+
+    /**
+     * Applies the cross-cutting configuration registered through {@link
+     * Builder#configureAllAgents(Consumer)} to an agent created after bootstrap startup.
+     *
+     * <p>Dynamic agents must use this method so filesystem, state-store, middleware, and similar
+     * application-wide settings remain consistent with agents loaded during {@link Builder#build()}.
+     * Call it after applying the dynamic agent's own fields and toolkit, but before {@link
+     * HarnessAgent.Builder#build()}; this mirrors startup ordering and gives global configurators
+     * the same final override semantics for both startup and dynamically created agents.
+     *
+     * @param builder fully initialized dynamic builder awaiting global configuration and build
+     */
+    public void configureDynamicAgent(HarnessAgent.Builder builder) {
+        Objects.requireNonNull(builder, "builder");
+        for (Consumer<HarnessAgent.Builder> configurator : globalConfigurators) {
+            configurator.accept(builder);
+        }
     }
 
     List<Channel> registeredChannels() {
@@ -646,6 +669,7 @@ public final class BuilderBootstrap {
                     Map.copyOf(built),
                     fileConfig,
                     resolvedChannels,
+                    globalConfigurators,
                     gateway,
                     channelMgr);
         }

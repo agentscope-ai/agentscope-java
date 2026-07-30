@@ -78,16 +78,15 @@ builder:
   workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
 
   # ---- Workspace storage topology (multi-tenant filesystem) ----
-  # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
-  # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,
-  # AGENTS.md, default skills/subagents/knowledge shipped on disk) blended with
-  # per-(owner, agent) RemoteFilesystem routes for memory/, MEMORY.md, sessions/,
-  # tasks/, skills/, subagents/. The remote routes are backed by a `BaseStore`
-  # Spring bean — operators MUST provide one (e.g. SqliteBaseStore, a Redis-
-  # backed implementation, etc.); a missing bean fails context refresh fast.
+  # Agents use LocalFilesystemSpec with a local AgentStateStore, or
+  # RemoteFilesystemSpec when a distributed AgentStateStore is supplied. Both
+  # topologies honor shared-read-prefixes with the same copy-on-write semantics.
   workspace-store:
     local:
       max-file-size-mb: 10
+    # Comma-separated workspace-relative directories exposed to every tenant as a
+    # shared read-only baseline. Tenant writes are copy-on-write and remain isolated.
+    shared-read-prefixes: ${BUILDER_WORKSPACE_SHARED_READ_PREFIXES:docs}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.
