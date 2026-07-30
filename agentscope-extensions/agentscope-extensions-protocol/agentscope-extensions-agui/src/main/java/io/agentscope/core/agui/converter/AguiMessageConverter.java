@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.converter;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
@@ -30,6 +31,7 @@ import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -58,6 +60,19 @@ import java.util.stream.Collectors;
  * message format and AgentScope's internal message format.
  */
 public class AguiMessageConverter {
+
+    /** Interrupt reason emitted for permission-mode tool confirmations. */
+    private static final String CONFIRM_INTERRUPT_REASON = "tool_confirmation";
+
+    /** Interrupt metadata key: the tool name. */
+    private static final String METADATA_TOOL_NAME = "toolName";
+
+    /** Interrupt metadata key: the parsed tool arguments. */
+    private static final String METADATA_TOOL_INPUT = "toolInput";
+
+    /** Interrupt metadata key: the tool arguments serialized as a JSON-object string. */
+    private static final String METADATA_TOOL_CONTENT = "toolContent";
+
     /**
      * Creates a new AguiMessageConverter
      */
@@ -168,11 +183,40 @@ public class AguiMessageConverter {
      * @return The converted AgentScope messages
      */
     public List<Msg> toMsgList(RunAgentInput input, Map<String, String> resumeToolCallIds) {
+        return toMsgList(input, resumeToolCallIds, Map.of());
+    }
+
+    /**
+     * Convert an AG-UI run input to AgentScope messages, resolving resume entries through known
+     * interrupt-to-tool-call mappings and the originating interrupts.
+     *
+     * <p>Resume entries whose originating interrupt was a permission-mode tool confirmation (reason
+     * {@code tool_confirmation}) are converted into a {@code ConfirmResult}-carrying message so
+     * {@code ReActAgent} can promote/deny the ASKING tool call and resume. All other resume entries
+     * fall back to the tool-result message form used by the tool-suspension flow.
+     *
+     * @param input The AG-UI run input
+     * @param resumeToolCallIds Mapping from interrupt ID to tool call ID
+     * @param resumeInterrupts Mapping from interrupt ID to the originating interrupt
+     * @return The converted AgentScope messages
+     */
+    public List<Msg> toMsgList(
+            RunAgentInput input,
+            Map<String, String> resumeToolCallIds,
+            Map<String, AguiEvent.Interrupt> resumeInterrupts) {
         Objects.requireNonNull(input, "input cannot be null");
         List<Msg> msgs = new ArrayList<>(toMsgList(input.getMessages()));
+        Map<String, AguiEvent.Interrupt> interrupts =
+                resumeInterrupts != null ? resumeInterrupts : Map.of();
         for (AguiResume resume : input.getResume()) {
             String toolCallId = resolveToolCallId(resume.getInterruptId(), resumeToolCallIds);
-            if (toolCallId != null && !toolCallId.isBlank()) {
+            if (toolCallId == null || toolCallId.isBlank()) {
+                continue;
+            }
+            AguiEvent.Interrupt interrupt = interrupts.get(resume.getInterruptId());
+            if (interrupt != null && CONFIRM_INTERRUPT_REASON.equals(interrupt.reason())) {
+                msgs.add(toConfirmResultMsg(resume, toolCallId, interrupt));
+            } else {
                 msgs.add(toToolResultMsg(resume, toolCallId));
             }
         }
@@ -359,6 +403,80 @@ public class AguiMessageConverter {
                 .role(MsgRole.TOOL)
                 .content(result)
                 .build();
+    }
+
+    /**
+     * Build a {@link Msg} carrying a {@link ConfirmResult} for a permission-mode tool confirmation
+     * resume.
+     *
+     * <p>The resulting Msg is a USER-role message whose metadata contains a single-entry {@code
+     * List<ConfirmResult>} under {@link Msg#METADATA_CONFIRM_RESULTS}. The {@code ToolUseBlock}
+     * inside the {@link ConfirmResult} is reconstructed from the originating interrupt metadata so
+     * that its {@code content} field (the tool arguments as a JSON-object string) is guaranteed
+     * non-null, avoiding the {@code "argument content is null"} bug in
+     * {@code ReActAgent.applyConfirmResults}.
+     *
+     * @param resume the AG-UI resume entry
+     * @param toolCallId the resolved tool call ID
+     * @param interrupt the originating interrupt containing tool metadata
+     * @return a USER-role Msg with the confirmation result
+     */
+    @SuppressWarnings("unchecked")
+    private Msg toConfirmResultMsg(
+            AguiResume resume, String toolCallId, AguiEvent.Interrupt interrupt) {
+        boolean approved = isApproved(resume);
+        Map<String, Object> metadata = interrupt.metadata();
+        String toolName = metadata != null ? stringValue(metadata.get(METADATA_TOOL_NAME)) : null;
+        Map<String, Object> toolInput = null;
+        String toolContent = null;
+        if (metadata != null) {
+            Object inputObj = metadata.get(METADATA_TOOL_INPUT);
+            if (inputObj instanceof Map) {
+                toolInput = (Map<String, Object>) inputObj;
+            }
+            toolContent = stringValue(metadata.get(METADATA_TOOL_CONTENT));
+        }
+
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id(toolCallId)
+                        .name(toolName)
+                        .input(toolInput)
+                        .content(toolContent)
+                        .build();
+
+        ConfirmResult confirmResult = new ConfirmResult(approved, toolUseBlock);
+        return Msg.builder()
+                .id("agui-confirm-" + resume.getInterruptId())
+                .role(MsgRole.USER)
+                .textContent(approved ? "approved" : "denied")
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, List.of(confirmResult)))
+                .build();
+    }
+
+    /**
+     * Determine whether the user approved the tool.
+     *
+     * <p>If the status is {@code cancelled}, the tool is denied. Otherwise, the payload is checked
+     * for an explicit {@code approved} boolean field; if absent, the tool is approved.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean isApproved(AguiResume resume) {
+        if (resume.isCancelled()) {
+            return false;
+        }
+        Object payload = resume.getPayload();
+        if (payload instanceof Map<?, ?> map) {
+            Object approved = map.get("approved");
+            if (approved instanceof Boolean) {
+                return (Boolean) approved;
+            }
+        }
+        return true;
+    }
+
+    private static String stringValue(Object value) {
+        return value instanceof String s ? s : null;
     }
 
     private String resumeContent(AguiResume resume) {

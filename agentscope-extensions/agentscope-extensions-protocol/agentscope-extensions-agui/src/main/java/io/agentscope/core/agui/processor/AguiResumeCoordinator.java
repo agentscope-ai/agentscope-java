@@ -40,6 +40,9 @@ final class AguiResumeCoordinator {
 
     static final String CONTRACT_ERROR_CODE = "AGUI_INTERRUPT_CONTRACT_ERROR";
 
+    /** Interrupt reason emitted for permission-mode tool confirmations. */
+    private static final String CONFIRM_INTERRUPT_REASON = "tool_confirmation";
+
     private final ConcurrentMap<String, Map<String, AguiEvent.Interrupt>>
             pendingInterruptsByThread = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> activeRunsByThread = new ConcurrentHashMap<>();
@@ -150,13 +153,18 @@ final class AguiResumeCoordinator {
             return runtimeContext;
         }
         Map<String, String> toolCallIds = new LinkedHashMap<>();
+        Map<String, AguiEvent.Interrupt> resumeInterrupts = new LinkedHashMap<>();
         for (AguiResume resume : input.getResume()) {
             AguiEvent.Interrupt interrupt = pending.get(resume.getInterruptId());
-            if (interrupt != null
-                    && "tool_call".equals(interrupt.reason())
-                    && interrupt.toolCallId() != null
-                    && !interrupt.toolCallId().isBlank()) {
+            if (interrupt == null
+                    || interrupt.toolCallId() == null
+                    || interrupt.toolCallId().isBlank()) {
+                continue;
+            }
+            if ("tool_call".equals(interrupt.reason())
+                    || CONFIRM_INTERRUPT_REASON.equals(interrupt.reason())) {
                 toolCallIds.put(resume.getInterruptId(), interrupt.toolCallId());
+                resumeInterrupts.put(resume.getInterruptId(), interrupt);
             }
         }
         if (toolCallIds.isEmpty()) {
@@ -166,6 +174,9 @@ final class AguiResumeCoordinator {
                 .put(
                         AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY,
                         Map.copyOf(toolCallIds))
+                .put(
+                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY,
+                        Map.copyOf(resumeInterrupts))
                 .build();
     }
 
