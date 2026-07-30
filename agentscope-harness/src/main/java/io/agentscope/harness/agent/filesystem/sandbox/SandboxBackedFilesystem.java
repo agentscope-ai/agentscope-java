@@ -29,22 +29,31 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * A {@link BaseSandboxFilesystem} that delegates execution to a live {@link Sandbox}.
  *
- * <p>Stable proxy created at agent build time; a fresh {@link Sandbox} is injected on each call
- * via the volatile {@code sandbox} field by {@link
- * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}.
+ * <p>Stable proxy created at agent build time. The active {@link Sandbox} for an operation is
+ * resolved <b>per call</b> from the {@link RuntimeContext} (bound by {@link
+ * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} via {@code
+ * ctx.put(Sandbox.class, ...)}), so concurrent calls on the same agent instance each see their
+ * own sandbox.
+ *
+ * <p>The agent-level {@link SandboxAware} slot is kept only as a fallback for internal paths
+ * that operate without a per-call context (e.g. {@code RuntimeContext.empty()} maintenance
+ * writes); it must not be relied on when calls may run concurrently.
  */
 public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements SandboxAware {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
     private final String fsId;
-    private volatile Sandbox sandbox;
+
+    /** Fallback slot for context-less paths; compare-and-set cleared to avoid cross-call races. */
+    private final AtomicReference<Sandbox> fallbackSandbox = new AtomicReference<>();
 
     public SandboxBackedFilesystem() {
         this.fsId = "sandbox-" + UUID.randomUUID().toString().substring(0, 8);
@@ -52,12 +61,21 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     @Override
     public void setSandbox(Sandbox sandbox) {
-        this.sandbox = sandbox;
+        this.fallbackSandbox.set(sandbox);
     }
 
     @Override
     public Sandbox getSandbox() {
-        return sandbox;
+        return fallbackSandbox.get();
+    }
+
+    /**
+     * Clears the fallback slot only if it still holds {@code expected}. Used by the lifecycle
+     * middleware on release so a finishing call never wipes a sandbox injected by a newer
+     * concurrent call.
+     */
+    public void clearSandbox(Sandbox expected) {
+        fallbackSandbox.compareAndSet(expected, null);
     }
 
     @Override
@@ -68,7 +86,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         try {
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
@@ -91,7 +109,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
         for (Map.Entry<String, byte[]> file : files) {
@@ -147,7 +165,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
@@ -192,8 +210,17 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         return results;
     }
 
-    private Sandbox requireSandbox() {
-        Sandbox s = sandbox;
+    private Sandbox requireSandbox(RuntimeContext runtimeContext) {
+        // Per-call binding first: each in-flight call sees the sandbox bound to its own context,
+        // so concurrent calls on the same agent instance never observe each other's sandbox.
+        if (runtimeContext != null) {
+            Sandbox bound = runtimeContext.get(Sandbox.class);
+            if (bound != null) {
+                return bound;
+            }
+        }
+        // Fallback for context-less internal paths (RuntimeContext.empty() maintenance writes).
+        Sandbox s = fallbackSandbox.get();
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
                     "No active sandbox — sandbox filesystem used outside of a call context");

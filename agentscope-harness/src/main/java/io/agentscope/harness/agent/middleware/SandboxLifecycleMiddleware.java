@@ -21,7 +21,6 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +33,8 @@ import org.slf4j.LoggerFactory;
  *   <li>Read {@link SandboxContext} from the current {@link RuntimeContext}</li>
  *   <li>Acquire a session via {@link SandboxManager}</li>
  *   <li>Start the session (4-branch workspace init)</li>
- *   <li>Inject the live session into the {@link SandboxBackedFilesystem} proxy</li>
+ *   <li>Bind the live session to the per-call {@link RuntimeContext} (and mirror it into the
+ *       {@link SandboxBackedFilesystem} fallback slot for context-less internal paths)</li>
  * </ol>
  *
  * <h2>doFinally</h2>
@@ -42,8 +42,12 @@ import org.slf4j.LoggerFactory;
  *   <li>Persist sandbox session state via {@link SandboxManager} and
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
  *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
- *   <li>Clear the session reference from the filesystem proxy</li>
+ *   <li>Unbind the session from the per-call context and CAS-clear the fallback slot</li>
  * </ol>
+ *
+ * <p>All per-call state ({@link Sandbox}, {@link SandboxAcquireResult}) is carried on the
+ * per-call {@link RuntimeContext} rather than on this (agent-level, shared) middleware
+ * instance, so concurrent calls on one agent never clear or release each other's sandbox.
  *
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
  * the agent call result is always returned to the caller even if sandbox cleanup fails.
@@ -54,8 +58,6 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
-            new AtomicReference<>();
     private volatile Consumer<RuntimeContext> beforeStartCallback;
 
     public SandboxLifecycleMiddleware(
@@ -108,13 +110,19 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             Sandbox sandbox = result.getSandbox();
             try {
                 sandbox.start();
+                // Per-call binding: the filesystem proxy resolves the sandbox from the
+                // RuntimeContext, so concurrent calls each see their own sandbox. The proxy's
+                // fallback slot is mirrored only for context-less internal paths.
+                ctx.put(Sandbox.class, sandbox);
+                ctx.put(SandboxAcquireResult.class, result);
                 filesystemProxy.setSandbox(sandbox);
-                currentAcquireResult.set(result);
                 log.debug(
                         "[sandbox-mw] Acquired sandbox {}",
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
             } catch (Exception e) {
-                filesystemProxy.setSandbox(null);
+                ctx.put(Sandbox.class, null);
+                ctx.put(SandboxAcquireResult.class, null);
+                filesystemProxy.clearSandbox(sandbox);
                 try {
                     sandboxManager.release(result);
                 } catch (Exception releaseErr) {
@@ -136,14 +144,22 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
      * Releases the sandbox after the current call. Called from
      * {@code ReActAgent.afterAgentExecution()} to ensure cleanup for both paths.
      *
+     * <p>The acquire result is retrieved from the per-call context, so this only ever releases
+     * the sandbox that <em>this</em> call acquired — never a concurrent call's.
+     *
      * @param ctx the per-call RuntimeContext (captured at acquire time)
      */
     public void releaseForCall(RuntimeContext ctx) {
-        SandboxAcquireResult result = currentAcquireResult.getAndSet(null);
+        if (ctx == null) {
+            return;
+        }
+        SandboxAcquireResult result = ctx.get(SandboxAcquireResult.class);
         if (result == null) {
             return;
         }
-        SandboxContext sandboxContext = ctx != null ? ctx.get(SandboxContext.class) : null;
+        ctx.put(SandboxAcquireResult.class, null);
+        ctx.put(Sandbox.class, null);
+        SandboxContext sandboxContext = ctx.get(SandboxContext.class);
         try {
             sandboxManager.persistState(result, sandboxContext, ctx);
         } catch (Exception e) {
@@ -155,6 +171,6 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
         }
         result.getLease().close();
-        filesystemProxy.setSandbox(null);
+        filesystemProxy.clearSandbox(result.getSandbox());
     }
 }

@@ -143,6 +143,36 @@ class SandboxBackedFilesystemTest {
         assertEquals("transfer down", responses.get(0).error());
     }
 
+    @Test
+    void execute_prefersContextBoundSandboxOverFallbackSlot() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox fallback = new FakeSandbox(new ExecResult(0, "fallback", "", false));
+        FakeSandbox bound = new FakeSandbox(new ExecResult(0, "bound", "", false));
+        filesystem.setSandbox(fallback);
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(Sandbox.class, bound);
+
+        filesystem.execute(ctx, "whoami", 5);
+
+        assertEquals("whoami", bound.lastCommand);
+        assertEquals(null, fallback.lastCommand);
+    }
+
+    @Test
+    void clearSandbox_onlyClearsWhenSlotStillHoldsExpected() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox first = new FakeSandbox(new ExecResult(0, "", "", false));
+        FakeSandbox second = new FakeSandbox(new ExecResult(0, "", "", false));
+
+        filesystem.setSandbox(first);
+        filesystem.setSandbox(second); // newer concurrent call overwrote the slot
+        filesystem.clearSandbox(first); // finishing older call must not wipe the newer one
+        assertEquals(second, filesystem.getSandbox());
+
+        filesystem.clearSandbox(second);
+        assertEquals(null, filesystem.getSandbox());
+    }
+
     private static final class FakeTransferSandbox extends BaseFakeSandbox
             implements SandboxFileTransfer {
 
