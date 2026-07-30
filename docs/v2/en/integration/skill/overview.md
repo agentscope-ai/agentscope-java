@@ -1,6 +1,6 @@
 # Skill Repository
 
-An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](../../docs/harness/skill)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
+An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](../../docs/harness/skill.md)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
 
 The `agentscope-extensions-*` repository ships the following ready-to-use implementations:
 
@@ -10,7 +10,7 @@ The `agentscope-extensions-*` repository ships the following ready-to-use implem
 | [MySQL Repository](mysql-repository.md) | MySQL database | Online editing via admin console / business systems |
 | [PostgreSQL Repository](postgresql-repository.md) | PostgreSQL database | Existing PostgreSQL infra, online editing |
 
-> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](../infrastructure/nacos).
+> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](../infrastructure/nacos.md).
 
 ## Wiring
 

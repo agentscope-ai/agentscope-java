@@ -15,16 +15,24 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,6 +77,7 @@ public class AguiMvcController {
     private final String agentIdHeader;
     private final long sseTimeout;
     private final ExecutorService executorService;
+    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiMvcController(Builder builder) {
         this.processor =
@@ -83,12 +92,14 @@ public class AguiMvcController {
                                 builder.config != null
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
+                        .adapterFactory(builder.adapterFactory)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
         this.sseTimeout = builder.sseTimeout > 0 ? builder.sseTimeout : 600000L;
         this.executorService = Executors.newCachedThreadPool();
+        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -99,7 +110,20 @@ public class AguiMvcController {
      * @return An SseEmitter for streaming AG-UI events
      */
     public SseEmitter handle(RunAgentInput input, String headerAgentId) {
-        return handleInternal(input, headerAgentId, null);
+        return handle(input, headerAgentId, null);
+    }
+
+    /**
+     * Handle an AG-UI run request.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param request The native servlet request (may be null)
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    public SseEmitter handle(
+            RunAgentInput input, String headerAgentId, HttpServletRequest request) {
+        return handleInternal(input, headerAgentId, null, request);
     }
 
     /**
@@ -112,11 +136,31 @@ public class AguiMvcController {
      */
     public SseEmitter handleWithAgentId(
             RunAgentInput input, String headerAgentId, String pathAgentId) {
-        return handleInternal(input, headerAgentId, pathAgentId);
+        return handleWithAgentId(input, headerAgentId, pathAgentId, null);
+    }
+
+    /**
+     * Handle an AG-UI run request with agent ID in the URL path.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable
+     * @param request The native servlet request (may be null)
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    public SseEmitter handleWithAgentId(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            HttpServletRequest request) {
+        return handleInternal(input, headerAgentId, pathAgentId, request);
     }
 
     private SseEmitter handleInternal(
-            RunAgentInput input, String headerAgentId, String pathAgentId) {
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            HttpServletRequest request) {
         SseEmitter emitter = new SseEmitter(sseTimeout);
         String threadId = input.getThreadId();
         String runId = input.getRunId();
@@ -127,7 +171,12 @@ public class AguiMvcController {
                     try {
                         // Process request - returns both agent and event stream
                         AguiRequestProcessor.ProcessResult result =
-                                processor.process(input, headerAgentId, pathAgentId);
+                                processor.process(
+                                        input,
+                                        headerAgentId,
+                                        pathAgentId,
+                                        resolveRuntimeContext(
+                                                input, headerAgentId, pathAgentId, request));
 
                         // Set up callbacks for client disconnect handling
                         // using the same agent instance from the result
@@ -188,6 +237,55 @@ public class AguiMvcController {
         return emitter;
     }
 
+    private RuntimeContext resolveRuntimeContext(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            HttpServletRequest request) {
+        return runtimeContextResolver != null
+                ? runtimeContextResolver.resolve(
+                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
+                : null;
+    }
+
+    private AguiRuntimeContextRequest runtimeContextRequest(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            HttpServletRequest request) {
+        return AguiRuntimeContextRequest.builder()
+                .input(input)
+                .headerAgentId(headerAgentId)
+                .pathAgentId(pathAgentId)
+                .transport(AguiRuntimeContextRequest.Transport.MVC)
+                .method(request != null ? request.getMethod() : null)
+                .path(request != null ? request.getRequestURI() : null)
+                .headers(headers(request))
+                .queryParams(queryParams(request))
+                .nativeRequest(request)
+                .build();
+    }
+
+    private static Map<String, List<String>> headers(HttpServletRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, List<String>> headers = new LinkedHashMap<>();
+        for (String name : Collections.list(request.getHeaderNames())) {
+            headers.put(name, Collections.list(request.getHeaders(name)));
+        }
+        return headers;
+    }
+
+    private static Map<String, List<String>> queryParams(HttpServletRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, List<String>> queryParams = new LinkedHashMap<>();
+        request.getParameterMap().forEach((name, values) -> queryParams.put(name, List.of(values)));
+        return queryParams;
+    }
+
     private void sendEvent(SseEmitter emitter, AguiEvent event) {
         try {
             String jsonData = encoder.encodeToJson(event);
@@ -244,6 +342,8 @@ public class AguiMvcController {
         private boolean serverSideMemory = false;
         private String agentIdHeader;
         private long sseTimeout = 600000L;
+        private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiAgentAdapterFactory adapterFactory;
 
         /**
          * Set the agent registry.
@@ -308,6 +408,28 @@ public class AguiMvcController {
          */
         public Builder sseTimeout(long sseTimeout) {
             this.sseTimeout = sseTimeout;
+            return this;
+        }
+
+        /**
+         * Set the runtime context resolver.
+         *
+         * @param runtimeContextResolver The resolver used for each request
+         * @return This builder
+         */
+        public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
+            this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the adapter factory.
+         *
+         * @param adapterFactory The factory used to create per-request adapters
+         * @return This builder
+         */
+        public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
+            this.adapterFactory = adapterFactory;
             return this;
         }
 

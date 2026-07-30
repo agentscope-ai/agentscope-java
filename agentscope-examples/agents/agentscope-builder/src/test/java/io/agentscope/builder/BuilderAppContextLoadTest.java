@@ -101,14 +101,12 @@ class BuilderAppContextLoadTest {
             return new InMemoryStore();
         }
 
-        // Mockito.delegatesTo creates a proxy typed as AgentStateStore (not
-        // InMemoryAgentStateStore), bypassing HarnessAgent.isLocalSession() instanceof.
+        // Keep this hermetic context on the single-node topology. Using the concrete local store
+        // also lets BuilderConfig select its built-in local session metadata store.
         @Bean
         @Primary
         AgentStateStore testStateStore() {
-            return Mockito.mock(
-                    AgentStateStore.class,
-                    org.mockito.AdditionalAnswers.delegatesTo(new InMemoryAgentStateStore()));
+            return new InMemoryAgentStateStore();
         }
     }
 }
