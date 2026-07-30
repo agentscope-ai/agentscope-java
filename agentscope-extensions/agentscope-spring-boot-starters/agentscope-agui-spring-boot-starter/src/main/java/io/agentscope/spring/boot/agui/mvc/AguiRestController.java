@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agui.model.RunAgentInput;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -75,8 +76,9 @@ public class AguiRestController {
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
-                    String agentIdHeader) {
-        return aguiMvcController.handle(input, agentIdHeader);
+                    String agentIdHeader,
+            HttpServletRequest request) {
+        return aguiMvcController.handle(input, agentIdHeader, request);
     }
 
     /**
@@ -99,7 +101,8 @@ public class AguiRestController {
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
-                    String agentIdHeader) {
-        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId);
+                    String agentIdHeader,
+            HttpServletRequest request) {
+        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, request);
     }
 }
