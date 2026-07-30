@@ -91,6 +91,18 @@ public final class ModelContextWindows {
                     Map.entry("glm-4-flash-250414", 128_000),
                     Map.entry("glm-4-long", 1_000_000));
 
+    public static final Map<String, Integer> MINIMAX =
+            Map.ofEntries(
+                    Map.entry("minimax-m3", 1_000_000),
+                    Map.entry("minimax-m2.7-highspeed", 204_800),
+                    Map.entry("minimax-m2.7", 204_800),
+                    Map.entry("minimax-m2.5-highspeed", 204_800),
+                    Map.entry("minimax-m2.5", 204_800),
+                    Map.entry("minimax-m2.1-highspeed", 204_800),
+                    Map.entry("minimax-m2.1", 204_800),
+                    Map.entry("minimax-m2", 204_800),
+                    Map.entry("m2-her", 65_536));
+
     public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(
                     Map.entry("claude-opus-4", 200_000),
