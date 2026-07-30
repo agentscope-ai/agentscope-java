@@ -38,7 +38,10 @@ import java.util.List;
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
+ *
+ * @deprecated use {@link io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekMultiAgentFormatter}.
  */
+@Deprecated
 public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     private final boolean appendEmptyUserIfEndsWithAssistant;

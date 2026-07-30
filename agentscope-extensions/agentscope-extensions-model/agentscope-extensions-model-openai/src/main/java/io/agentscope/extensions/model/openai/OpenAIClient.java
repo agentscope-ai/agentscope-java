@@ -24,6 +24,7 @@ import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
@@ -33,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -400,6 +402,7 @@ public class OpenAIClient {
                             .body(requestBody)
                             .build();
 
+            AtomicBoolean seenChunk = new AtomicBoolean(false);
             return transport.stream(httpRequest)
                     // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
                     // rather than merely filtering it out, otherwise completion is deferred until
@@ -423,6 +426,19 @@ public class OpenAIClient {
                                                         errorCode,
                                                         data));
                                         return;
+                                    }
+                                    // Some OpenAI-compatible providers (e.g. MiniMax) emit an
+                                    // extra non-chunk chat.completion summary event after regular
+                                    // chunks. Drop duplicated summary message content, but only
+                                    // after seeing at least one chunk so stream-only full
+                                    // chat.completion events are preserved.
+                                    if (response.isChunk()) {
+                                        seenChunk.set(true);
+                                    } else if (seenChunk.get()) {
+                                        OpenAIChoice summaryChoice = response.getFirstChoice();
+                                        if (summaryChoice != null) {
+                                            summaryChoice.setMessage(null);
+                                        }
                                     }
                                     sink.next(response);
                                 }
