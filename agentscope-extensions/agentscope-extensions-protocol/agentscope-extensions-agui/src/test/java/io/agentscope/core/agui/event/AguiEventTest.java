@@ -675,18 +675,20 @@ class AguiEventTest {
                     new AguiEvent.Raw("thread-1", "run-1", Map.of("custom", "data", "count", 123));
 
             assertEquals(AguiEventType.RAW, event.getType());
-            assertNotNull(event.rawEvent());
-        }
-
-        @Test
-        void testWithNullRawEvent() {
-            AguiEvent.Raw event = new AguiEvent.Raw("thread-1", "run-1", null);
-
+            assertNotNull(event.event());
+            assertNull(event.source());
             assertNull(event.rawEvent());
         }
 
         @Test
-        void testWithComplexRawEvent() {
+        void testWithNullEvent() {
+            AguiEvent.Raw event = new AguiEvent.Raw("thread-1", "run-1", null);
+
+            assertNull(event.event());
+        }
+
+        @Test
+        void testWithComplexEvent() {
             Map<String, Object> complexData =
                     Map.of(
                             "error",
@@ -697,7 +699,24 @@ class AguiEventTest {
                             Map.of("reason", "Timeout"));
             AguiEvent.Raw event = new AguiEvent.Raw("thread-1", "run-1", complexData);
 
-            assertTrue(event.rawEvent() instanceof Map);
+            assertTrue(event.event() instanceof Map);
+        }
+
+        @Test
+        void testWithBaseProperties() {
+            Map<String, Object> convertedFrom = Map.of("kind", "agent-event");
+            AguiEvent.Raw event =
+                    new AguiEvent.Raw(
+                            "thread-1",
+                            "run-1",
+                            Map.of("payload", "value"),
+                            "agent",
+                            123456789L,
+                            convertedFrom);
+
+            assertEquals("agent", event.source());
+            assertEquals(123456789L, event.timestamp());
+            assertEquals(convertedFrom, event.rawEvent());
         }
 
         @Test
@@ -707,7 +726,7 @@ class AguiEventTest {
 
             String str = event.toString();
             assertTrue(str.contains("thread-1"));
-            assertTrue(str.contains("rawEvent"));
+            assertTrue(str.contains("event"));
         }
 
         @Test
@@ -730,10 +749,42 @@ class AguiEventTest {
 
             String json = JsonUtils.getJsonCodec().toJson(event);
             checkExistAndDuplicate(json, "\"type\":\"RAW\"");
-            assertTrue(json.contains("\"rawEvent\""));
+            assertTrue(json.contains("\"event\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.Raw);
+            assertTrue(((AguiEvent.Raw) deserialized).event() instanceof Map);
+        }
+    }
+
+    @Nested
+    class BaseEventPropertiesTest {
+
+        @Test
+        void testJsonSerialization() throws JsonProcessingException {
+            Map<String, Object> rawEvent = Map.of("type", "TEXT_BLOCK_DELTA", "id", "source-1");
+            AguiEvent.TextMessageContent event =
+                    new AguiEvent.TextMessageContent(
+                            "thread-1", "run-1", "msg-1", "Hello", 123456789L, rawEvent);
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"TEXT_MESSAGE_CONTENT\"");
+            assertTrue(json.contains("\"timestamp\":123456789"));
+            assertTrue(json.contains("\"rawEvent\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.TextMessageContent);
+            assertEquals(123456789L, deserialized.timestamp());
+            assertTrue(deserialized.rawEvent() instanceof Map);
+        }
+
+        @Test
+        void testLegacyConstructorLeavesBasePropertiesNull() {
+            AguiEvent.TextMessageContent event =
+                    new AguiEvent.TextMessageContent("thread-1", "run-1", "msg-1", "Hello");
+
+            assertNull(event.timestamp());
+            assertNull(event.rawEvent());
         }
     }
 

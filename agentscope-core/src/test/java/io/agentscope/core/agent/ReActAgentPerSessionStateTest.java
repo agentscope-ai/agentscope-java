@@ -34,6 +34,10 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.legacy.ToolkitState;
@@ -177,6 +181,33 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("replacePermissionContext updates and persists only the targeted slot")
+    void replacePermissionContextUpdatesOnlyTargetSlot() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        PermissionRule denyRule =
+                new PermissionRule("blocked_tool", null, PermissionBehavior.DENY, "parent-policy");
+        PermissionContextState replacement =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.BYPASS)
+                        .addDenyRule("blocked_tool", denyRule)
+                        .build();
+
+        agent.replacePermissionContext("u1", "sessA", replacement);
+
+        assertEquals(replacement, agent.getAgentState("u1", "sessA").getPermissionContext());
+        assertTrue(
+                agent.getAgentState("u1", "sessB").getPermissionContext().isTrivial(),
+                "replacing one slot must not alter another slot");
+
+        ReActAgent reborn = agent(store);
+        assertEquals(
+                replacement,
+                reborn.getAgentState("u1", "sessA").getPermissionContext(),
+                "the replacement must survive state-store reload");
     }
 
     @Test

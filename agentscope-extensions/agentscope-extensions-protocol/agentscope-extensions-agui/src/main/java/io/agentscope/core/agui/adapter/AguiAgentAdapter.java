@@ -15,16 +15,20 @@
  */
 package io.agentscope.core.agui.adapter;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverterRegistry;
+import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -34,15 +38,18 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.util.JsonException;
-import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 
 /**
@@ -76,11 +83,14 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_CONTEXT_KEY = "agui.context";
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
+    public static final String RUNTIME_CONTEXT_RESUME_KEY = "agui.resume";
+    public static final String RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY = "agui.resume.toolCallIds";
 
     private final Agent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
     private final AguiToolConverter toolConverter;
+    private final AgentEventConverterRegistry agentEventConverterRegistry;
 
     /**
      * Creates a new AguiAgentAdapter.
@@ -93,6 +103,9 @@ public class AguiAgentAdapter {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
         this.toolConverter = new AguiToolConverter();
+        this.agentEventConverterRegistry =
+                new AgentEventConverterRegistry(
+                        config.getEventConverters(), config.getEventEnrichers());
     }
 
     /**
@@ -105,13 +118,33 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
+        return run(input, null);
+    }
+
+    /**
+     * Run the agent with AG-UI protocol input and caller-provided runtime context.
+     *
+     * <p>The provided context is copied and enriched with AG-UI runtime metadata. AG-UI metadata
+     * and the session id are always derived from {@code input} so callers can add custom values
+     * without losing the protocol defaults.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return A Flux of AG-UI events
+     */
+    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
         return Flux.defer(
                 () -> {
                     String threadId = input.getThreadId();
                     String runId = input.getRunId();
 
-                    // Convert AG-UI messages to AgentScope messages
-                    List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
+                    RuntimeContext effectiveRuntimeContext =
+                            buildRuntimeContext(input, runtimeContext);
+
+                    // Convert AG-UI messages and official resume entries to AgentScope messages.
+                    List<Msg> msgs =
+                            messageConverter.toMsgList(
+                                    input, resumeToolCallIds(effectiveRuntimeContext));
 
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
@@ -120,47 +153,147 @@ public class AguiAgentAdapter {
                                     .incremental(true)
                                     .build();
 
-                    // Track state for event conversion
-                    EventConversionState state = new EventConversionState(threadId, runId);
-                    // buildRuntimeContext constructs a per-call toolkit (if frontend tools are
-                    // present) and carries it via RuntimeContext; the agent's shared toolkit is
-                    // never mutated, so concurrent runs on the same agent do not pollute each
-                    // other.
-                    RuntimeContext runtimeContext = buildRuntimeContext(input);
-
-                    Flux<Event> agentEvents;
+                    AgentStream agentStream;
                     try {
-                        agentEvents = agent.stream(msgs, options, runtimeContext);
-                        if (agentEvents == null) {
-                            agentEvents = agent.stream(msgs, options);
-                        }
-                        agentEvents = Objects.requireNonNull(agentEvents, "agent stream is null");
+                        agentStream =
+                                streamWithRuntimeContext(
+                                        msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
-                        // Synchronous failure from agent.stream() (before a Flux is returned):
-                        // surface it as AG-UI error events rather than propagating. Asynchronous
-                        // errors inside the stream are handled by onErrorResume below.
-                        return Flux.concat(
-                                Flux.just(new AguiEvent.RunStarted(threadId, runId, null, input)),
-                                errorEvents(threadId, runId, error));
+                        return errorEvents(threadId, runId, input, error, true);
                     }
 
+                    AtomicBoolean eventSeen = new AtomicBoolean(false);
+
                     return Flux.concat(
-                                    // Emit RUN_STARTED
-                                    Flux.just(
-                                            new AguiEvent.RunStarted(threadId, runId, null, input)),
-                                    // Stream agent events and convert to AG-UI events
-                                    // Use concatMapIterable to preserve strict event ordering
-                                    agentEvents.concatMapIterable(
-                                            event -> convertEvent(event, state)),
-                                    // Emit any pending end events and RUN_FINISHED
-                                    Flux.defer(() -> finishRun(state)))
-                            .onErrorResume(error -> errorEvents(threadId, runId, error));
+                                    agentStream
+                                            .events()
+                                            .doOnNext(
+                                                    event -> {
+                                                        eventSeen.set(true);
+                                                    }),
+                                    Flux.defer(() -> agentStream.finish().get()))
+                            .onErrorResume(
+                                    error ->
+                                            errorEvents(
+                                                    threadId,
+                                                    runId,
+                                                    input,
+                                                    error,
+                                                    !eventSeen.get()));
                 });
     }
 
-    private RuntimeContext buildRuntimeContext(RunAgentInput input) {
+    private AgentStream streamWithRuntimeContext(
+            List<Msg> msgs,
+            StreamOptions options,
+            RuntimeContext runtimeContext,
+            RunAgentInput input) {
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+
+        if (agent instanceof ReActAgent reAct) {
+            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
+            Flux<AgentEvent> events =
+                    Objects.requireNonNull(
+                            reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
+            return new AgentStream(
+                    convertAgentEvents(events, context), () -> finishPendingEvents(context));
+        }
+        if (isHarnessAgent(agent)) {
+            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
+            Flux<AgentEvent> events =
+                    Objects.requireNonNull(
+                            invokeHarnessStreamEvents(agent, msgs, runtimeContext),
+                            "agent stream is null");
+            return new AgentStream(
+                    convertAgentEvents(events, context), () -> finishPendingEvents(context));
+        }
+
+        // fallback 1.x
+        EventConversionState state = new EventConversionState(threadId, runId);
+        Flux<Event> events = agent.stream(msgs, options, runtimeContext);
+        if (events == null) {
+            events = agent.stream(msgs, options);
+        }
+        Objects.requireNonNull(events, "agent stream is null");
+        return new AgentStream(
+                Flux.concat(
+                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                        events.concatMapIterable(event -> convertEvent(event, state))),
+                () -> finishRun(state));
+    }
+
+    private Flux<AguiEvent> convertAgentEvents(Flux<AgentEvent> events, AguiStreamContext context) {
+        return events
+                // Use concatMapIterable to preserve strict event ordering
+                .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
+                .onErrorResume(
+                        error -> Flux.concat(finishPendingEvents(context), Flux.error(error)));
+    }
+
+    private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {
+        return Flux.fromIterable(
+                agentEventConverterRegistry.enrich(null, context.finishPendingEvents(), context));
+    }
+
+    private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
+
+    @SuppressWarnings("unchecked")
+    private Flux<AgentEvent> invokeHarnessStreamEvents(
+            Agent harnessAgent, List<Msg> msgs, RuntimeContext runtimeContext) {
+        try {
+            Method method =
+                    harnessAgent
+                            .getClass()
+                            .getMethod("streamEvents", List.class, RuntimeContext.class);
+            Object result = method.invoke(harnessAgent, msgs, runtimeContext);
+            if (!(result instanceof Flux<?> flux)) {
+                throw new IllegalStateException("HarnessAgent streamEvents did not return Flux");
+            }
+            return (Flux<AgentEvent>) flux;
+        } catch (InvocationTargetException e) {
+            Throwable target = e.getTargetException();
+            if (target instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (target instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("HarnessAgent streamEvents failed", target);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                    "HarnessAgent does not expose streamEvents(List, RuntimeContext)", e);
+        }
+    }
+
+    private static boolean isHarnessAgent(Agent agent) {
+        Class<?> type = agent.getClass();
+        while (type != null) {
+            if ("io.agentscope.harness.agent.HarnessAgent".equals(type.getName())) {
+                return true;
+            }
+            type = type.getSuperclass();
+        }
+        return false;
+    }
+
+    /**
+     * Build the runtime context used for the agent invocation.
+     *
+     * <p>The caller-provided context is copied first, then AG-UI protocol metadata is applied so
+     * that required request values and session isolation are always preserved. A per-call toolkit
+     * is built from a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit and
+     * carried via {@link RuntimeContext#getToolkit()} so the shared field is never mutated and
+     * concurrent runs on the same agent are isolated.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return The effective runtime context for this run
+     */
+    protected RuntimeContext buildRuntimeContext(
+            RunAgentInput input, RuntimeContext runtimeContext) {
         Toolkit perCallToolkit = buildPerCallToolkit(input);
-        return RuntimeContext.builder()
+        return RuntimeContext.builder(runtimeContext)
                 .sessionId(input.getThreadId())
                 .toolkit(perCallToolkit)
                 .put(RunAgentInput.class, input)
@@ -171,7 +304,25 @@ public class AguiAgentAdapter {
                 .put(RUNTIME_CONTEXT_CONTEXT_KEY, input.getContext())
                 .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
                 .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
+                .put(RUNTIME_CONTEXT_RESUME_KEY, input.getResume())
                 .build();
+    }
+
+    private Map<String, String> resumeToolCallIds(RuntimeContext runtimeContext) {
+        if (runtimeContext == null) {
+            return Map.of();
+        }
+        Object value = runtimeContext.get(RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY);
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, String> toolCallIds = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String key && entry.getValue() instanceof String id) {
+                toolCallIds.put(key, id);
+            }
+        }
+        return Map.copyOf(toolCallIds);
     }
 
     /**
@@ -218,13 +369,46 @@ public class AguiAgentAdapter {
         return perCallToolkit;
     }
 
-    private Flux<AguiEvent> errorEvents(String threadId, String runId, Throwable error) {
+    private Flux<AguiEvent> errorEvents(
+            String threadId,
+            String runId,
+            RunAgentInput input,
+            Throwable error,
+            boolean includeRunStarted) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
-        return Flux.just(
-                new AguiEvent.RunError(threadId, runId, errorMessage, mapErrorCode(error)),
-                new AguiEvent.RunFinished(threadId, runId));
+        List<AguiEvent> events = new ArrayList<>();
+        if (includeRunStarted) {
+            events.add(new AguiEvent.RunStarted(threadId, runId, null, input));
+        }
+        events.add(
+                new AguiEvent.RunError(
+                        threadId,
+                        runId,
+                        errorMessage,
+                        mapErrorCode(error),
+                        System.currentTimeMillis(),
+                        null));
+        events.add(new AguiEvent.RunFinished(threadId, runId));
+        return Flux.fromIterable(events);
     }
+
+    private static String mapErrorCode(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "TIMEOUT_ERROR";
+        }
+        if (error instanceof java.lang.InterruptedException) {
+            return "INTERRUPTED_ERROR";
+        }
+        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
+            return "INVALID_INPUT_ERROR";
+        }
+        return "INTERNAL_ERROR";
+    }
+
+    // ========================================================================
+    // Legacy v1 stream() conversion methods below. Kept for generic Agent fallback.
+    // ========================================================================
 
     /**
      * Convert an AgentScope event to AG-UI events.
@@ -232,7 +416,9 @@ public class AguiAgentAdapter {
      * @param event The AgentScope event
      * @param state The conversion state
      * @return List of AG-UI events
+     * @deprecated since 2.0.0, use streamEvents() conversion strategies instead.
      */
+    @Deprecated(since = "2.0.0", forRemoval = false)
     private List<AguiEvent> convertEvent(Event event, EventConversionState state) {
         List<AguiEvent> events = new ArrayList<>();
         Msg msg = event.getMessage();
@@ -397,7 +583,9 @@ public class AguiAgentAdapter {
      *
      * @param state The conversion state
      * @return Flux of final events
+     * @deprecated since 2.0.0, v2 stream cleanup is handled by {@link AguiStreamContext}.
      */
+    @Deprecated(since = "2.0.0", forRemoval = false)
     private Flux<AguiEvent> finishRun(EventConversionState state) {
         List<AguiEvent> events = new ArrayList<>();
 
@@ -434,7 +622,9 @@ public class AguiAgentAdapter {
      *
      * @param toolResult The tool result block
      * @return The text content, or null if not present
+     * @deprecated since 2.0.0, tool result aggregation is handled by v2 converters.
      */
+    @Deprecated(since = "2.0.0", forRemoval = false)
     private String extractToolResultText(ToolResultBlock toolResult) {
         if (toolResult.getOutput() == null || toolResult.getOutput().isEmpty()) {
             return null;
@@ -454,39 +644,12 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * Serialize tool arguments to JSON string.
-     *
-     * @param input The tool input map
-     * @return JSON string representation
-     */
-    private String serializeToolArgs(Map<String, Object> input) {
-        if (input == null || input.isEmpty()) {
-            return "{}";
-        }
-        try {
-            return JsonUtils.getJsonCodec().toJson(input);
-        } catch (JsonException e) {
-            return "{}";
-        }
-    }
-
-    private static String mapErrorCode(Throwable error) {
-        if (error instanceof java.util.concurrent.TimeoutException) {
-            return "TIMEOUT_ERROR";
-        }
-        if (error instanceof java.lang.InterruptedException) {
-            return "INTERRUPTED_ERROR";
-        }
-        if (error instanceof IllegalArgumentException || error instanceof IllegalStateException) {
-            return "INVALID_INPUT_ERROR";
-        }
-        return "INTERNAL_ERROR";
-    }
-
-    /**
      * State tracker for event conversion.
      * Uses LinkedHashSet to preserve insertion order for proper event sequencing.
+     *
+     * @deprecated since 2.0.0, use {@link AguiStreamContext} for streamEvents() conversion state.
      */
+    @Deprecated(since = "2.0.0", forRemoval = false)
     private static class EventConversionState {
         final String threadId;
         final String runId;
