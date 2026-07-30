@@ -166,7 +166,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     // @formatter:on
 
     private final List<SubagentEntry> baseEntries;
-    private volatile List<SubagentEntry> entries;
     private volatile Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
@@ -176,6 +175,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     private final Path mainWorkspace;
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
+    private final WorkspaceManager workspaceManager;
+
+    private record SubagentSnapshot(
+            List<SubagentEntry> entries, DefaultAgentManager agentManager) {}
 
     /**
      * Optional {@link AgentGenerateTool} for LLM-driven subagent spec generation. Lazy because
@@ -195,10 +198,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             Path mainWorkspace,
             Function<SubagentDeclaration, SubagentFactory> factoryBuilder) {
         this.baseEntries = List.copyOf(entries);
-        this.entries = this.baseEntries;
         this.isSessionMode = false;
         DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
         this.agentManager = dam;
+        this.workspaceManager = workspaceManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
         this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
@@ -226,9 +229,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             Object externalSubagentTool,
             TaskRepository taskRepository) {
         this.baseEntries = List.copyOf(entries);
-        this.entries = this.baseEntries;
         this.isSessionMode = true;
         this.agentManager = null;
+        this.workspaceManager = null;
         this.subagentTool = externalSubagentTool;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
@@ -373,7 +376,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * contains an {@link AgentGenerateTool}.
      */
     public List<Object> getTools() {
-        if (entries.isEmpty()) {
+        if (baseEntries.isEmpty()) {
             return List.of();
         }
         AgentGenerateTool gen = this.agentGenerateTool;
@@ -389,7 +392,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        reloadSubagentEntries();
+        if (ctx != null) {
+            installSnapshot(ctx, loadSubagentSnapshot(ctx));
+        }
         return next.apply(input);
     }
 
@@ -399,11 +404,11 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        List<SubagentEntry> currentEntries = this.entries;
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        List<SubagentEntry> currentEntries = snapshotFor(rc).entries();
         if (currentEntries.isEmpty()) {
             return next.apply(input);
         }
-        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         String sessionId = rc != null ? rc.getSessionId() : null;
 
         // ---- Phase B-3 push delivery -------------------------------------------------------
@@ -584,13 +589,28 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         return out;
     }
 
-    private void reloadSubagentEntries() {
+    private SubagentSnapshot snapshotFor(RuntimeContext runtimeContext) {
+        SubagentSnapshot existing = runtimeContext.get(SubagentSnapshot.class);
+        if (existing != null) {
+            return existing;
+        }
+        SubagentSnapshot snapshot = loadSubagentSnapshot(runtimeContext);
+        installSnapshot(runtimeContext, snapshot);
+        return snapshot;
+    }
+
+    private void installSnapshot(RuntimeContext runtimeContext, SubagentSnapshot snapshot) {
+        runtimeContext.put(SubagentSnapshot.class, snapshot);
+        runtimeContext.put(AgentSpawnTool.CTX_AGENT_MANAGER, snapshot.agentManager());
+    }
+
+    private SubagentSnapshot loadSubagentSnapshot(RuntimeContext runtimeContext) {
         if (filesystem == null || factoryBuilder == null || isSessionMode) {
-            return;
+            return new SubagentSnapshot(baseEntries, agentManager);
         }
         try {
             List<SubagentDeclaration> decls =
-                    AgentSpecLoader.loadFromFilesystem(filesystem, mainWorkspace);
+                    AgentSpecLoader.loadFromFilesystem(filesystem, runtimeContext, mainWorkspace);
 
             List<SubagentEntry> newEntries = new ArrayList<>(baseEntries);
             for (SubagentDeclaration decl : decls) {
@@ -605,13 +625,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                                     decl));
                 }
             }
-
-            this.entries = List.copyOf(newEntries);
-            if (agentManager != null) {
-                agentManager.refreshEntries(this.entries);
-            }
+            List<SubagentEntry> snapshotEntries = List.copyOf(newEntries);
+            return new SubagentSnapshot(
+                    snapshotEntries, new DefaultAgentManager(snapshotEntries, workspaceManager));
         } catch (Exception e) {
             log.warn("Failed to reload subagent entries from filesystem: {}", e.getMessage());
+            return new SubagentSnapshot(baseEntries, agentManager);
         }
     }
 
