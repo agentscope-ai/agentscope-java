@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -24,8 +23,8 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -77,7 +76,6 @@ public class AguiMvcController {
     private final String agentIdHeader;
     private final long sseTimeout;
     private final ExecutorService executorService;
-    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiMvcController(Builder builder) {
         this.processor =
@@ -93,13 +91,13 @@ public class AguiMvcController {
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
+                        .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
         this.sseTimeout = builder.sseTimeout > 0 ? builder.sseTimeout : 600000L;
         this.executorService = Executors.newCachedThreadPool();
-        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -172,10 +170,7 @@ public class AguiMvcController {
                         // Process request - returns both agent and event stream
                         AguiRequestProcessor.ProcessResult result =
                                 processor.process(
-                                        input,
-                                        headerAgentId,
-                                        pathAgentId,
-                                        resolveRuntimeContext(
+                                        runtimeContextRequest(
                                                 input, headerAgentId, pathAgentId, request));
 
                         // Set up callbacks for client disconnect handling
@@ -237,23 +232,12 @@ public class AguiMvcController {
         return emitter;
     }
 
-    private RuntimeContext resolveRuntimeContext(
+    private AguiRuntimeContextRequest<HttpServletRequest> runtimeContextRequest(
             RunAgentInput input,
             String headerAgentId,
             String pathAgentId,
             HttpServletRequest request) {
-        return runtimeContextResolver != null
-                ? runtimeContextResolver.resolve(
-                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
-                : null;
-    }
-
-    private AguiRuntimeContextRequest runtimeContextRequest(
-            RunAgentInput input,
-            String headerAgentId,
-            String pathAgentId,
-            HttpServletRequest request) {
-        return AguiRuntimeContextRequest.builder()
+        return AguiRuntimeContextRequest.<HttpServletRequest>builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)

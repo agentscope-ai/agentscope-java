@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -24,8 +23,8 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.util.LinkedHashMap;
@@ -79,7 +78,6 @@ public class AguiWebFluxHandler {
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
     private final String agentIdHeader;
-    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
@@ -95,11 +93,11 @@ public class AguiWebFluxHandler {
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
+                        .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
-        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -145,10 +143,7 @@ public class AguiWebFluxHandler {
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
                     processor.process(
-                            input,
-                            headerAgentId,
-                            pathAgentId,
-                            resolveRuntimeContext(input, headerAgentId, pathAgentId, request));
+                            runtimeContextRequest(input, headerAgentId, pathAgentId, request));
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
             Flux<ServerSentEvent<String>> sseStream =
@@ -181,17 +176,9 @@ public class AguiWebFluxHandler {
         }
     }
 
-    private RuntimeContext resolveRuntimeContext(
+    private AguiRuntimeContextRequest<ServerRequest> runtimeContextRequest(
             RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
-        return runtimeContextResolver != null
-                ? runtimeContextResolver.resolve(
-                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
-                : null;
-    }
-
-    private AguiRuntimeContextRequest runtimeContextRequest(
-            RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
-        return AguiRuntimeContextRequest.builder()
+        return AguiRuntimeContextRequest.<ServerRequest>builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)
