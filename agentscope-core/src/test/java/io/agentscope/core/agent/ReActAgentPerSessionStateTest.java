@@ -120,6 +120,52 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearContext removes one session's conversation and persists the same session")
+    void clearContextClearsAndPersistsOneSession() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        AgentState target = agent.getAgentState("u1", "sessA");
+        target.contextMutable().add(userMsg("forget this"));
+        target.setSummary("old summary");
+        target.getPlanModeContext().setPlanActive(true);
+        agent.saveAgentState("u1", "sessA");
+
+        AgentState other = agent.getAgentState("u1", "sessB");
+        other.contextMutable().add(userMsg("keep this"));
+        other.setSummary("other summary");
+        agent.saveAgentState("u1", "sessB");
+
+        agent.clearContext("u1", "sessA");
+
+        assertEquals("sessA", target.getSessionId());
+        assertTrue(target.getContext().isEmpty());
+        assertEquals("", target.getSummary());
+        assertTrue(target.getPlanModeContext().isPlanActive(), "non-context state is preserved");
+        assertEquals(List.of("keep this"), allText(other));
+        assertEquals("other summary", other.getSummary());
+
+        ReActAgent reborn = agent(store);
+        AgentState restored = reborn.getAgentState("u1", "sessA");
+        assertEquals("sessA", restored.getSessionId());
+        assertTrue(restored.getContext().isEmpty());
+        assertEquals("", restored.getSummary());
+        assertTrue(restored.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
+    @DisplayName("clearContext uses the session from RuntimeContext")
+    void clearContextUsesRuntimeContext() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        agent.getAgentState("u1", "sessA").contextMutable().add(userMsg("forget this"));
+        agent.getAgentState("u1", "sessB").contextMutable().add(userMsg("keep this"));
+
+        agent.clearContext(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
+        assertEquals(List.of("keep this"), allText(agent.getAgentState("u1", "sessB")));
+    }
+
+    @Test
     @DisplayName("user interrupt persists recovery state to the store")
     void userInterruptPersistsRecoveryState() throws Exception {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();

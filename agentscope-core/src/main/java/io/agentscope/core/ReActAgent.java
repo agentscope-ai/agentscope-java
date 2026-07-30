@@ -3652,6 +3652,47 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
+     * are preserved. The conversation messages and any compaction summary are removed, and the
+     * updated state is persisted immediately when an {@link AgentStateStore} is configured.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearContext(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearContext(uid, sid);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session keeps the same identity. Unlike creating a new session, this only removes
+     * the conversation messages and compaction summary, so permission configuration, tool state,
+     * tasks, and plan-mode state remain available. The updated state is persisted immediately when
+     * an {@link AgentStateStore} is configured.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = getAgentState(userId, sid);
+        state.contextMutable().clear();
+        state.setSummary("");
+        saveAgentState(userId, sid);
+    }
+
+    /**
      * Switches the {@link PermissionMode} for the given {@code (userId, sessionId)} session at
      * runtime and rebuilds that session's cached {@link PermissionEngine} so the change takes
      * effect on the next tool evaluation. The configured rules and working directories are
