@@ -27,26 +27,46 @@ import java.util.List;
  * <p>When confirmed, the caller may supply a modified {@link #toolCall} (allowing the user to
  * tweak input) and/or new {@link #rules} that the {@code PermissionEngine} should remember for
  * future calls — e.g. "always allow this command going forward".
+ *
+ * <p>When denied ({@code confirmed == false}), an optional {@link #message} can override the
+ * default tool-result text ({@code "Permission denied by user"}).
  */
 public class ConfirmResult {
 
     private final boolean confirmed;
     private final ToolUseBlock toolCall;
     private final List<PermissionRule> rules;
+    private final String message;
 
     @JsonCreator
     public ConfirmResult(
             @JsonProperty("confirmed") boolean confirmed,
             @JsonProperty("toolCall") ToolUseBlock toolCall,
-            @JsonProperty("rules") List<PermissionRule> rules) {
+            @JsonProperty("rules") List<PermissionRule> rules,
+            @JsonProperty("message") String message) {
         this.confirmed = confirmed;
         this.toolCall = toolCall;
         this.rules = rules;
+        this.message = message;
     }
 
-    /** Convenience constructor without rules. */
+    /** Convenience constructor without a custom deny message. */
+    public ConfirmResult(boolean confirmed, ToolUseBlock toolCall, List<PermissionRule> rules) {
+        this(confirmed, toolCall, rules, null);
+    }
+
+    /** Convenience constructor without rules or a custom deny message. */
     public ConfirmResult(boolean confirmed, ToolUseBlock toolCall) {
-        this(confirmed, toolCall, null);
+        this(confirmed, toolCall, null, null);
+    }
+
+    /**
+     * Convenience constructor with a custom deny message and no rules.
+     *
+     * <p>Useful when the user rejects a tool call and wants the model to see a specific reason.
+     */
+    public ConfirmResult(boolean confirmed, ToolUseBlock toolCall, String message) {
+        this(confirmed, toolCall, null, message);
     }
 
     public boolean isConfirmed() {
@@ -65,5 +85,16 @@ public class ConfirmResult {
      */
     public List<PermissionRule> getRules() {
         return rules;
+    }
+
+    /**
+     * Optional text used as the denied tool-result content when {@link #confirmed} is false.
+     *
+     * <p>When null or blank, the agent falls back to {@code "Permission denied by user"}.
+     *
+     * @return custom deny message, or null
+     */
+    public String getMessage() {
+        return message;
     }
 }
