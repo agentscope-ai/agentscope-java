@@ -18,14 +18,13 @@ package io.agentscope.extensions.jdbc.dialect;
 /**
  * H2 dialect for {@link JdbcDialect}.
  *
- * <p>H2 2.x supports the PostgreSQL-compatible {@code ON CONFLICT ... DO UPDATE}
- * UPSERT syntax, ANSI {@code information_schema} views, and standard types
- * ({@code VARCHAR}, {@code TEXT}, {@code BLOB}). This dialect therefore follows
- * the ANSI/PostgreSQL baseline with zero database-specific divergences — all
- * implementations use the same SQL patterns as {@link PostgresDialect}.
+ * <p>Uses {@code CLOB} for large text columns and {@code MERGE INTO} for UPSERT
+ * operations. H2 2.x does not support PostgreSQL's {@code ON CONFLICT} syntax in
+ * all modes, so the ANSI SQL {@code MERGE INTO} statement is used instead — this
+ * is H2's native, well-tested UPSERT mechanism.
  *
- * <p>Earlier H2 versions (1.x) that require the legacy {@code MERGE INTO} syntax
- * are not supported.
+ * <p>All other SQL (INSERT, CAS UPDATE, SELECT, DELETE, search, table-existence
+ * check, identifier quoting) follows the ANSI baseline.
  *
  * @author shanhongyu
  */
@@ -49,12 +48,15 @@ public class H2Dialect implements JdbcDialect {
 
     @Override
     public String getUpsertSql() {
-        return "INSERT INTO %s (namespace_path, item_key, value_json, version, updated_at)"
-                + " VALUES (?, ?, ?, 1, ?)"
-                + " ON CONFLICT (namespace_path, item_key) DO UPDATE SET"
-                + "   value_json = EXCLUDED.value_json,"
-                + "   version    = %1$s.version + 1,"
-                + "   updated_at = EXCLUDED.updated_at";
+        return "MERGE INTO %s AS t USING (VALUES (?, ?, ?, ?)) AS s(np, ik, vj, ts)"
+                + " ON t.namespace_path = s.np AND t.item_key = s.ik"
+                + " WHEN MATCHED THEN UPDATE SET"
+                + "   value_json = s.vj,"
+                + "   version    = t.version + 1,"
+                + "   updated_at = s.ts"
+                + " WHEN NOT MATCHED THEN INSERT"
+                + "   (namespace_path, item_key, value_json, version, updated_at)"
+                + "   VALUES (s.np, s.ik, s.vj, 1, s.ts)";
     }
 
     // ------------------------------------------------------------------
@@ -76,15 +78,16 @@ public class H2Dialect implements JdbcDialect {
 
     @Override
     public String getUpsertStateSql() {
-        return "INSERT INTO %s (session_id, state_key, item_index, state_data)"
-                + " VALUES (?, ?, ?, ?)"
-                + " ON CONFLICT (session_id, state_key, item_index) DO UPDATE SET"
-                + "   state_data = EXCLUDED.state_data";
+        return "MERGE INTO %s AS t USING (VALUES (?, ?, ?, ?)) AS s(sid, sk, ii, sd)"
+                + " ON t.session_id = s.sid AND t.state_key = s.sk AND t.item_index = s.ii"
+                + " WHEN MATCHED THEN UPDATE SET state_data = s.sd"
+                + " WHEN NOT MATCHED THEN INSERT"
+                + "   (session_id, state_key, item_index, state_data)"
+                + "   VALUES (s.sid, s.sk, s.ii, s.sd)";
     }
 
     @Override
     public String getCheckTableExistsSql() {
-        // One bind parameter: the table name. Searches all schemas for simplicity.
         return "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?";
     }
 
@@ -94,8 +97,8 @@ public class H2Dialect implements JdbcDialect {
 
     @Override
     public String getUpsertSnapshotSql() {
-        return "INSERT INTO %s (snapshot_id, data) VALUES (?, ?)"
-                + " ON CONFLICT (snapshot_id) DO UPDATE SET"
-                + "   data = EXCLUDED.data, created_at = CURRENT_TIMESTAMP";
+        // H2's simplified MERGE: replaces the entire row on key conflict.
+        // This correctly handles binary parameters, unlike the VALUES subquery form.
+        return "MERGE INTO %s (snapshot_id, data) KEY (snapshot_id) VALUES (?, ?)";
     }
 }

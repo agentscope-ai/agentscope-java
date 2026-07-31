@@ -34,6 +34,9 @@
         <h2.version>2.4.240</h2.version>
         <sqlite.version>3.47.1.0</sqlite.version>
         <testcontainers.version>1.21.3</testcontainers.version>
+        <!-- Testcontainers integration tests are excluded from compilation by default;
+             enabled with -Pintegration which sets this to a non-matching pattern. -->
+        <test.exclude.integration>**/integration/**</test.exclude.integration>
     </properties>
 
     <dependencies>
@@ -66,14 +69,33 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <testExcludes>
+                        <testExclude>${test.exclude.integration}</testExclude>
+                    </testExcludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
         <!--
-            Real-database integration tests via Testcontainers.
-            Enable with: ./mvnw -pl agentscope-extensions/agentscope-extensions-jdbc -am verify -Pintegration
+            Real-database integration tests via Testcontainers (MySQL + PostgreSQL).
+            Enable with:
+              mvn -pl agentscope-extensions/agentscope-extensions-jdbc -am verify -Pintegration
             Requires Docker on the build machine.
         -->
         <profile>
             <id>integration</id>
+            <properties>
+                <!-- Clear the exclude so Testcontainers tests compile and run -->
+                <test.exclude.integration>none</test.exclude.integration>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.testcontainers</groupId>
@@ -110,19 +132,6 @@
                     <scope>test</scope>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <includes>
-                                <include>**/*IntegrationTest.java</include>
-                            </includes>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 </project>
