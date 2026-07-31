@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.spec;
 
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
@@ -259,17 +260,6 @@ public class LocalFilesystemSpec {
         return this;
     }
 
-    /**
-     * Builds the effective filesystem as an {@link OverlayFilesystem} with the agent
-     * {@code workspace} as the upper (read-write, shell host) layer and the user
-     * {@link #project(Path)} as the read-only lower layer. Writes always land in
-     * {@code workspace}; reads check {@code workspace} first then fall back to {@code project},
-     * giving copy-on-write semantics for files that originate in the project tree.
-     *
-     * @param workspace agent workspace root (becomes overlay upper)
-     * @param localNamespaceFactory optional namespace factory for per-user/session folder scoping
-     * @return an {@link OverlayFilesystem} wired with the options in this spec
-     */
     /** Project root explicitly configured, or {@code null} to fall back to {@code ${user.dir}}. */
     public Path getProject() {
         return project;
@@ -285,6 +275,20 @@ public class LocalFilesystemSpec {
         return List.copyOf(additionalRoots);
     }
 
+    /**
+     * Builds the effective filesystem as an {@link OverlayFilesystem}. Namespaced workspace
+     * content is the upper layer. Shared static workspace assets ({@code AGENTS.md},
+     * {@code tools.json}, {@code knowledge/}, {@code skills/}, and {@code subagents/}) form the
+     * next layer, followed by project-authored content. Runtime data does not use the shared layer
+     * and therefore remains isolated by the supplied namespace factory.
+     *
+     * <p>Writes land in the namespaced workspace unless project-writable mode is enabled. Reads
+     * prefer user-specific content, then shared static workspace assets, then project content.
+     *
+     * @param workspace agent workspace root (becomes overlay upper)
+     * @param localNamespaceFactory optional namespace factory for per-user/session folder scoping
+     * @return an {@link OverlayFilesystem} wired with the options in this spec
+     */
     public AbstractFilesystem toFilesystem(Path workspace, NamespaceFactory localNamespaceFactory) {
         Path effectiveProject =
                 project != null ? project : Paths.get(System.getProperty("user.dir"));
@@ -304,7 +308,7 @@ public class LocalFilesystemSpec {
                         inheritEnv,
                         localNamespaceFactory,
                         effectiveProject);
-        LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        AbstractFilesystem lower = staticAssetFallback(workspace, effectiveProject);
         if (projectWritable) {
             LocalFilesystem projectFs =
                     new LocalFilesystem(
@@ -313,5 +317,27 @@ public class LocalFilesystemSpec {
                     (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
         }
         return OverlayFilesystem.of(upper, lower);
+    }
+
+    private static AbstractFilesystem staticAssetFallback(Path workspace, Path project) {
+        LocalFilesystem projectRoot = new LocalFilesystem(project, true, 10, null);
+        LocalFilesystem workspaceRoot = new LocalFilesystem(workspace, true, 10, null);
+
+        Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
+        AbstractFilesystem sharedRootFallback = OverlayFilesystem.of(workspaceRoot, projectRoot);
+        routes.put("AGENTS.md", sharedRootFallback);
+        routes.put("tools.json", sharedRootFallback);
+        routes.put("knowledge/", staticDirectoryFallback(workspace, project, "knowledge"));
+        routes.put("skills/", staticDirectoryFallback(workspace, project, "skills"));
+        routes.put("subagents/", staticDirectoryFallback(workspace, project, "subagents"));
+        return new CompositeFilesystem(projectRoot, routes);
+    }
+
+    private static AbstractFilesystem staticDirectoryFallback(
+            Path workspace, Path project, String directory) {
+        LocalFilesystem shared = new LocalFilesystem(workspace.resolve(directory), true, 10, null);
+        LocalFilesystem projectDefault =
+                new LocalFilesystem(project.resolve(directory), true, 10, null);
+        return OverlayFilesystem.of(shared, projectDefault);
     }
 }
