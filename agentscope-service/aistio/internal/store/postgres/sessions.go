@@ -139,7 +139,7 @@ func (r *sessionRepo) UpdatePhase(ctx context.Context, id uuid.UUID, phase strin
 	return nil
 }
 
-func (r *sessionRepo) TerminateMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
+func (r *sessionRepo) ArchiveMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().UTC().Add(-olderThan)
 	keep := keepSessionIDs
 	if keep == nil {
@@ -147,12 +147,29 @@ func (r *sessionRepo) TerminateMissing(ctx context.Context, agentName, namespace
 	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE sessions
-		SET phase=$4, terminated_at=now(), updated_at=now(), busy=false
+		SET phase=$4, updated_at=now(), busy=false
 		WHERE agent_name=$1 AND namespace=$2
-		  AND phase != $4
+		  AND phase NOT IN ($4, $6)
 		  AND created_at < $3
 		  AND NOT (session_id = ANY($5))`,
-		agentName, namespace, cutoff, store.SessionPhaseTerminated, keep)
+		agentName, namespace, cutoff, store.SessionPhaseArchived, keep, store.SessionPhaseTerminated)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+func (r *sessionRepo) ArchiveIdleOlderThan(ctx context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().UTC().Add(-olderThan)
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE sessions
+		SET phase=$1, updated_at=now(), busy=false
+		WHERE phase = $2
+		  AND COALESCE(last_active_at, updated_at, created_at) < $3`,
+		store.SessionPhaseArchived, store.SessionPhaseIdle, cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -163,8 +180,8 @@ func (r *sessionRepo) CountActive(ctx context.Context, agentName, namespace stri
 	var n int32
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM sessions
-		WHERE agent_name=$1 AND namespace=$2 AND phase != $3`,
-		agentName, namespace, store.SessionPhaseTerminated).Scan(&n)
+		WHERE agent_name=$1 AND namespace=$2 AND phase NOT IN ($3, $4)`,
+		agentName, namespace, store.SessionPhaseTerminated, store.SessionPhaseArchived).Scan(&n)
 	return n, err
 }
 

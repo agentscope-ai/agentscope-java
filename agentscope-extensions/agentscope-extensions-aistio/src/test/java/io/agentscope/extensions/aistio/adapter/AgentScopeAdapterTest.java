@@ -134,18 +134,33 @@ class AgentScopeAdapterTest {
     }
 
     @Test
-    void tokensAreSummedFromMessageUsage() {
-        Msg answered =
+    void contextTokensUseLatestInputAsWindowOccupancy() {
+        Msg first =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
                         .name("assistant")
-                        .content(TextBlock.builder().text("4").build())
+                        .content(TextBlock.builder().text("hi").build())
                         .usage(ChatUsage.builder().inputTokens(100).outputTokens(20).build())
                         .build();
+        Msg second =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(TextBlock.builder().text("again").build())
+                        .usage(ChatUsage.builder().inputTokens(250).outputTokens(30).build())
+                        .build();
         AgentScopeAdapter adapter = new AgentScopeAdapter();
-        adapter.attach(agentWith(List.of(text(MsgRole.USER, "hi"), answered)), event -> {});
+        adapter.attach(
+                agentWith(
+                        List.of(
+                                text(MsgRole.USER, "hi"),
+                                first,
+                                text(MsgRole.USER, "again"),
+                                second)),
+                event -> {});
 
-        assertEquals(120, adapter.extractContext(SESSION).block().getTotalTokens());
+        // Must NOT sum usages (100+20+250+30); window ≈ latest inputTokens.
+        assertEquals(250, adapter.extractContext(SESSION).block().getTotalTokens());
     }
 
     @Test

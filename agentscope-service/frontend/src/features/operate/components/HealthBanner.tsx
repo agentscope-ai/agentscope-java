@@ -1,17 +1,15 @@
 import { Link } from 'react-router-dom';
-import type { HighPressureSession, OrphanSession, StaleDataplane } from '../api';
+import type { OrphanSession, StaleDataplane } from '../api';
+import { sessionDetailPath } from '../api';
 
 export function HealthBanner({
   staleDataplanes = [],
-  highPressureSessions = [],
   orphanSessions = [],
 }: {
   staleDataplanes?: StaleDataplane[];
-  highPressureSessions?: HighPressureSession[];
   orphanSessions?: OrphanSession[];
 }) {
-  const issues =
-    staleDataplanes.length + highPressureSessions.length + orphanSessions.length;
+  const issues = staleDataplanes.length + orphanSessions.length;
   if (issues === 0) return null;
 
   return (
@@ -39,33 +37,6 @@ export function HealthBanner({
         </div>
       )}
 
-      {highPressureSessions.length > 0 && (
-        <div>
-          <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-amber-800">
-            High context pressure ({highPressureSessions.length})
-          </div>
-          <ul className="space-y-1.5 text-amber-900/90">
-            {highPressureSessions.slice(0, 5).map((s) => (
-              <li key={s.sessionId}>
-                <Link
-                  to={`/operate/sessions/${encodeURIComponent(s.sessionId)}`}
-                  className="hover:underline"
-                >
-                  {s.sessionId}
-                </Link>
-                <span className="text-amber-700/80">
-                  {' '}
-                  · {s.agentName}
-                  {s.contextPressure != null
-                    ? ` · ${Math.round(s.contextPressure * 100)}%`
-                    : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {orphanSessions.length > 0 && (
         <div>
           <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-amber-800">
@@ -74,15 +45,13 @@ export function HealthBanner({
           <ul className="space-y-1.5 text-amber-900/90">
             {orphanSessions.slice(0, 5).map((s) => (
               <li key={s.sessionId}>
-                <Link
-                  to={`/operate/sessions/${encodeURIComponent(s.sessionId)}`}
-                  className="hover:underline"
-                >
+                <Link to={sessionDetailPath(s)} className="hover:underline">
                   {s.sessionId}
                 </Link>
                 <span className="text-amber-700/80">
                   {' '}
-                  · {s.agentName} · instance missing/unhealthy
+                  · {s.agentName}
+                  {s.instanceRef ? ` · ${s.instanceRef}` : ''}
                 </span>
               </li>
             ))}

@@ -71,6 +71,9 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private static final String PHASE_ACTIVE = "active";
 
     private static final String PHASE_IDLE = "idle";
+    private static final String PHASE_COMPRESSING = "compressing";
+    private static final String PHASE_ARCHIVED = "archived";
+    private static final String PHASE_TERMINATED = "terminated";
 
     private static final long LEVEL1_INTERVAL_MS = 10_000L;
     private static final long EVENT_FLUSH_INTERVAL_MS = 5_000L;
@@ -352,6 +355,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             ContextTracker tracker =
                     trackers.computeIfAbsent(
                             sessionId, id -> new ContextTracker(id, frameworkName()));
+            phases.putIfAbsent(sessionId, PHASE_IDLE);
             if (systemPrompt != null) {
                 tracker.setSystemPrompt(systemPrompt);
             }
@@ -392,15 +396,34 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     }
 
     /**
-     * Records whether a turn is in progress. Used by the AgentScope observer middleware; omitting
-     * the flag entirely is preferred over inventing {@code false} when unknown.
+     * Records whether a turn is in progress by driving {@code phase}: {@code active} while busy,
+     * {@code idle} when the turn ends. {@code busy} on Level-1 responses is derived from phase.
      */
     public void setBusy(String sessionId, boolean busy) {
         if (sessionId == null || sessionId.isEmpty()) {
             return;
         }
         busyFlags.put(sessionId, busy);
+        String current = phases.get(sessionId);
+        if (PHASE_COMPRESSING.equals(current)
+                || PHASE_ARCHIVED.equals(current)
+                || PHASE_TERMINATED.equals(current)) {
+            // Do not clobber in-flight compress / terminal states from turn hooks.
+            touch(sessionId);
+            return;
+        }
         phases.put(sessionId, busy ? PHASE_ACTIVE : PHASE_IDLE);
+        touch(sessionId);
+    }
+
+    /** Sets operational phase explicitly (e.g. compressing). */
+    public void setPhase(String sessionId, String phase) {
+        if (sessionId == null || sessionId.isEmpty() || phase == null || phase.isEmpty()) {
+            return;
+        }
+        phases.put(sessionId, phase);
+        boolean active = PHASE_ACTIVE.equals(phase);
+        busyFlags.put(sessionId, active);
         touch(sessionId);
     }
 
@@ -496,19 +519,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         synchronized (lock) {
             for (Map.Entry<String, ContextTracker> entry : trackers.entrySet()) {
                 ContextTracker tracker = entry.getValue();
-                int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
-                int usedForPressure =
-                        tracker.getContextUsedTokens() > 0
-                                ? tracker.getContextUsedTokens()
-                                : totalTokens;
+                int usedForPressure = tracker.getContextUsedTokens();
                 double pressure =
-                        tracker.getMaxTokens() > 0
+                        tracker.getMaxTokens() > 0 && usedForPressure > 0
                                 ? (double) usedForPressure / tracker.getMaxTokens()
                                 : 0.0;
                 out.add(
                         SessionSnapshot.newBuilder()
                                 .setSessionId(entry.getKey())
-                                .setPhase(phases.getOrDefault(entry.getKey(), PHASE_ACTIVE))
+                                .setPhase(phases.getOrDefault(entry.getKey(), PHASE_IDLE))
                                 .setMessageCount(tracker.getMessageCount())
                                 .setPromptTokens(tracker.getTokensIn())
                                 .setCompletionTokens(tracker.getTokensOut())
@@ -583,17 +602,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                 String sessionId = entry.getKey();
                 ContextTracker tracker = entry.getValue();
                 int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
-                int usedForPressure =
-                        tracker.getContextUsedTokens() > 0
-                                ? tracker.getContextUsedTokens()
-                                : totalTokens;
+                int usedForPressure = tracker.getContextUsedTokens();
                 Map<String, Object> session = new LinkedHashMap<>();
                 session.put("id", sessionId);
-                session.put("phase", phases.getOrDefault(sessionId, PHASE_ACTIVE));
+                session.put("phase", phases.getOrDefault(sessionId, PHASE_IDLE));
                 Boolean busy = busyFlags.get(sessionId);
-                if (busy != null) {
-                    session.put("busy", busy);
+                if (busy == null) {
+                    busy = PHASE_ACTIVE.equals(phases.getOrDefault(sessionId, PHASE_IDLE));
                 }
+                session.put("busy", busy);
                 if (!tracker.getModel().isEmpty()) {
                     session.put("model", tracker.getModel());
                 }
@@ -610,7 +627,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                 session.put("tokenUsage", tokenUsage);
                 session.put(
                         "contextPressure",
-                        tracker.getMaxTokens() > 0
+                        tracker.getMaxTokens() > 0 && usedForPressure > 0
                                 ? (double) usedForPressure / tracker.getMaxTokens()
                                 : 0.0);
                 Map<String, Object> taskSummary = resolveTaskSummary(sessionId);
@@ -637,12 +654,14 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         ContextTracker tracker = requireTracker(sessionId);
         int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
         int maxTokens = tracker.getMaxTokens();
-        int usedForPressure =
-                tracker.getContextUsedTokens() > 0 ? tracker.getContextUsedTokens() : totalTokens;
+        // Window occupancy only — never fall back to lifetime spend (tokensIn+tokensOut).
+        int usedForPressure = tracker.getContextUsedTokens();
         Map<String, Object> pressure = new LinkedHashMap<>();
         pressure.put("usedTokens", usedForPressure);
         pressure.put("maxTokens", maxTokens);
-        pressure.put("ratio", maxTokens > 0 ? (double) usedForPressure / maxTokens : 0.0);
+        pressure.put(
+                "ratio",
+                maxTokens > 0 && usedForPressure > 0 ? (double) usedForPressure / maxTokens : 0.0);
 
         Map<String, Object> tokenUsage = new LinkedHashMap<>();
         tokenUsage.put("promptTokens", tracker.getTokensIn());
@@ -655,11 +674,12 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("sessionId", sessionId);
         out.put("id", sessionId);
-        out.put("phase", phases.getOrDefault(sessionId, PHASE_ACTIVE));
+        out.put("phase", phases.getOrDefault(sessionId, PHASE_IDLE));
         Boolean busy = busyFlags.get(sessionId);
-        if (busy != null) {
-            out.put("busy", busy);
+        if (busy == null) {
+            busy = PHASE_ACTIVE.equals(phases.getOrDefault(sessionId, PHASE_IDLE));
         }
+        out.put("busy", busy);
         if (!tracker.getModel().isEmpty()) {
             out.put("model", tracker.getModel());
         }
@@ -745,12 +765,20 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     @Override
     public void compress(String sessionId) {
-        dispatchCommand(sessionId, FrameworkAdapter.COMMAND_COMPRESS, null);
+        setPhase(sessionId, PHASE_COMPRESSING);
+        try {
+            dispatchCommand(sessionId, FrameworkAdapter.COMMAND_COMPRESS, null);
+            setPhase(sessionId, PHASE_IDLE);
+        } catch (RuntimeException e) {
+            setPhase(sessionId, PHASE_IDLE);
+            throw e;
+        }
     }
 
     @Override
     public void terminate(String sessionId) {
         dispatchCommand(sessionId, FrameworkAdapter.COMMAND_TERMINATE, null);
+        setPhase(sessionId, PHASE_TERMINATED);
     }
 
     @Override
@@ -813,7 +841,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     @Override
     public String sessionPhase(String sessionId) {
-        return phases.getOrDefault(sessionId, PHASE_ACTIVE);
+        return phases.getOrDefault(sessionId, PHASE_IDLE);
     }
 
     // ─── helpers ───

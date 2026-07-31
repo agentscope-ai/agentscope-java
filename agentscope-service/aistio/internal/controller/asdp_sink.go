@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -314,6 +315,9 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 	if err != nil {
 		return nil, fmt.Errorf("upserting session %s: %w", o.ID, err)
 	}
+	if err := st.Turns().SyncOnPhase(ctx, saved.ID, phase); err != nil {
+		return nil, fmt.Errorf("syncing turn for session %s: %w", o.ID, err)
+	}
 
 	snap := &store.SessionSnapshot{
 		SessionFK:             saved.ID,
@@ -326,19 +330,21 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 		EffectiveMessageCount: o.EffectiveMessageCount,
 		ContextHash:           o.ContextHash,
 	}
+	prevSnap, _ := st.Metrics().LatestSnapshot(ctx, saved.ID)
+	dPrompt, dCompletion := store.TokenUsageDelta(prevSnap, o.PromptTokens, o.CompletionTokens)
 	if err := st.Metrics().RecordSnapshot(ctx, snap); err != nil {
 		return nil, fmt.Errorf("recording snapshot for session %s: %w", o.ID, err)
 	}
 
-	if o.PromptTokens > 0 || o.CompletionTokens > 0 {
+	if dPrompt > 0 || dCompletion > 0 {
 		fk := saved.ID
 		if err := st.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
 			SessionFK:        &fk,
 			AgentName:        agent.Name,
 			Namespace:        agent.Namespace,
-			PromptTokens:     o.PromptTokens,
-			CompletionTokens: o.CompletionTokens,
-			TotalTokens:      o.PromptTokens + o.CompletionTokens,
+			PromptTokens:     dPrompt,
+			CompletionTokens: dCompletion,
+			TotalTokens:      dPrompt + dCompletion,
 		}); err != nil {
 			return nil, fmt.Errorf("recording token usage for session %s: %w", o.ID, err)
 		}
@@ -354,10 +360,12 @@ func normalizePhase(p string) string {
 		return store.SessionPhaseIdle
 	case "Compressing", "compressing":
 		return store.SessionPhaseCompressing
+	case "Archived", "archived":
+		return store.SessionPhaseArchived
 	case "Terminated", "terminated":
 		return store.SessionPhaseTerminated
 	default:
-		return p
+		return strings.ToLower(p)
 	}
 }
 

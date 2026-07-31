@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PressureGauge } from '@/components/PressureGauge';
-import type { RuntimeSession } from '../api';
+import { phaseHint, phaseTone, type RuntimeSession } from '../api';
 
 function formatTime(v?: string) {
   if (!v) return '—';
@@ -12,31 +12,20 @@ function formatTime(v?: string) {
   }
 }
 
-function busyLabel(busy?: boolean | null) {
-  if (busy === true) return { text: 'busy', tone: 'warning' as const };
-  if (busy === false) return { text: 'idle', tone: 'success' as const };
-  return { text: 'unknown', tone: 'default' as const };
-}
-
 export function StatusStrip({ session }: { session?: RuntimeSession }) {
-  const busy = busyLabel(session?.busy);
   const healthy = session?.instanceHealthy;
+  const hint = phaseHint(session?.phase);
+  const instanceId = session?.instanceRef;
+  const instanceUrl = session?.instanceBaseUrl;
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground">Phase</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Badge>{session?.phase || '—'}</Badge>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Busy</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Badge tone={busy.tone}>{busy.text}</Badge>
+        <CardContent className="space-y-1.5">
+          <Badge tone={phaseTone(session?.phase)}>{session?.phase || '—'}</Badge>
+          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
         </CardContent>
       </Card>
       <Card>
@@ -57,7 +46,7 @@ export function StatusStrip({ session }: { session?: RuntimeSession }) {
       </Card>
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Tokens</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">Lifetime tokens</CardTitle>
         </CardHeader>
         <CardContent className="font-mono text-sm tabular-nums text-foreground">
           {(session?.snapshot?.totalTokens ?? 0).toLocaleString()}
@@ -75,13 +64,31 @@ export function StatusStrip({ session }: { session?: RuntimeSession }) {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground">Instance</CardTitle>
         </CardHeader>
-        <CardContent>
-          {healthy === true ? (
-            <Badge tone="success">healthy</Badge>
-          ) : healthy === false ? (
-            <Badge tone="danger">unhealthy</Badge>
+        <CardContent className="space-y-1.5">
+          <div>
+            {healthy === true ? (
+              <Badge tone="success">healthy</Badge>
+            ) : healthy === false ? (
+              <Badge tone="danger">unhealthy</Badge>
+            ) : (
+              <Badge>unknown</Badge>
+            )}
+          </div>
+          {instanceId || instanceUrl ? (
+            <div className="min-w-0 space-y-0.5">
+              {instanceId ? (
+                <p className="truncate font-mono text-xs text-foreground" title={instanceId}>
+                  {instanceId}
+                </p>
+              ) : null}
+              {instanceUrl ? (
+                <p className="truncate font-mono text-xs text-muted-foreground" title={instanceUrl}>
+                  {instanceUrl}
+                </p>
+              ) : null}
+            </div>
           ) : (
-            <Badge>unknown</Badge>
+            <p className="text-xs text-muted-foreground">No instance bound</p>
           )}
         </CardContent>
       </Card>

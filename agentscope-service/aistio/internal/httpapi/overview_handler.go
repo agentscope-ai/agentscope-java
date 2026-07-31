@@ -18,6 +18,7 @@ type SessionWithSnapshot struct {
 	*store.Session
 	Snapshot         *store.SessionSnapshot `json:"snapshot,omitempty"`
 	InstanceHealthy  *bool                  `json:"instanceHealthy,omitempty"`
+	InstanceBaseURL  string                 `json:"instanceBaseUrl,omitempty"`
 	Capabilities     []string               `json:"capabilities,omitempty"`
 	ContractLevel    int32                  `json:"contractLevel,omitempty"`
 	Model            string                 `json:"model,omitempty"`
@@ -105,23 +106,31 @@ func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSna
 		if dp := s.registry.Get(sess.InstanceRef); dp != nil {
 			h := dp.Healthy
 			item.InstanceHealthy = &h
+			item.InstanceBaseURL = dp.BaseURL
 			item.Capabilities = append([]string(nil), dp.Capabilities...)
 			item.ContractLevel = dp.ContractLevel
 			return
 		}
+		// Affinity miss: mark unhealthy but still copy capabilities from a
+		// healthy peer so the console can gate on message-query / context-query
+		// (resolveSessionEndpoint already falls back the same way).
 		h := false
 		item.InstanceHealthy = &h
-		return
 	}
-	// No instanceRef: try first healthy instance for the agent.
 	for _, dp := range s.registry.ListByAgent(sess.AgentName, sess.Namespace) {
-		if dp.Healthy {
+		if !dp.Healthy {
+			continue
+		}
+		if item.InstanceHealthy == nil {
 			h := true
 			item.InstanceHealthy = &h
-			item.Capabilities = append([]string(nil), dp.Capabilities...)
-			item.ContractLevel = dp.ContractLevel
-			return
 		}
+		if item.InstanceBaseURL == "" {
+			item.InstanceBaseURL = dp.BaseURL
+		}
+		item.Capabilities = append([]string(nil), dp.Capabilities...)
+		item.ContractLevel = dp.ContractLevel
+		return
 	}
 }
 
@@ -231,7 +240,7 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	}
 	normalizePhase := func(m map[string]int) map[string]int {
 		out := map[string]int{
-			"active": 0, "idle": 0, "compressing": 0, "terminated": 0,
+			"active": 0, "idle": 0, "compressing": 0, "archived": 0, "terminated": 0,
 		}
 		total := 0
 		for k, v := range m {
@@ -247,36 +256,25 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	delete(phases, "_total")
 	activeOnly := phases["active"]
 
-	avgPressure, p95Pressure, _ := s.store.Metrics().PressureStats(ctx, store.SessionFilter{})
-
 	since24h := time.Now().UTC().Add(-24 * time.Hour)
+	since5m := time.Now().UTC().Add(-5 * time.Minute)
 	tokenTotal, _ := s.store.Metrics().SumTokenUsage(ctx, store.TokenFilter{Since: &since24h})
 	errorCount, _ := s.store.Metrics().SumErrorCount(ctx, store.AgentMetricFilter{Since: &since24h})
 	topAgents, _ := s.store.Metrics().TopAgents(ctx, since24h, 10)
 	if topAgents == nil {
 		topAgents = []store.AgentUsage{}
 	}
-	highPressure, _ := s.store.Sessions().ListByPressure(ctx, store.SessionFilter{}, 0.8, 8)
-	if highPressure == nil {
-		highPressure = []*store.SessionWithSnapshot{}
+	topSessionsByTokens, _ := s.store.Metrics().TopSessionsByTokens(ctx, since24h, 10)
+	if topSessionsByTokens == nil {
+		topSessionsByTokens = []store.SessionUsage{}
 	}
-	// Flatten for JSON friendliness (avoid nested session key).
-	highPressureOut := make([]gin.H, 0, len(highPressure))
-	for _, hp := range highPressure {
-		if hp == nil || hp.Session == nil {
-			continue
-		}
-		row := gin.H{
-			"sessionId": hp.Session.SessionID,
-			"agentName": hp.Session.AgentName,
-			"namespace": hp.Session.Namespace,
-			"phase":     hp.Session.Phase,
-		}
-		if hp.Snapshot != nil {
-			row["contextPressure"] = hp.Snapshot.ContextPressure
-			row["totalTokens"] = hp.Snapshot.TotalTokens
-		}
-		highPressureOut = append(highPressureOut, row)
+	topSessionsByDuration, _ := s.store.Metrics().TopSessionsByDuration(ctx, since24h, 10)
+	if topSessionsByDuration == nil {
+		topSessionsByDuration = []store.SessionDuration{}
+	}
+	topAgentsByActive, _ := s.store.Metrics().TopAgentsByActiveSessions(ctx, since5m, 10)
+	if topAgentsByActive == nil {
+		topAgentsByActive = []store.AgentUsage{}
 	}
 
 	agents := map[string]struct{}{}
@@ -328,12 +326,13 @@ func (s *Server) fleetOverview(c *gin.Context) {
 				continue
 			}
 			ph := strings.ToLower(sess.Phase)
-			if ph == "terminated" {
+			if ph == "terminated" || ph == "archived" {
 				continue
 			}
 			dp := s.registry.Get(sess.InstanceRef)
 			if dp == nil || !dp.Healthy {
 				orphanSessions = append(orphanSessions, gin.H{
+					"id":          sess.ID.String(),
 					"sessionId":   sess.SessionID,
 					"agentName":   sess.AgentName,
 					"namespace":   sess.Namespace,
@@ -347,22 +346,22 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	}
 
 	body := gin.H{
-		"agentCount":            len(agents),
-		"instanceCount":         dataplaneCount,
-		"healthyInstanceCount":  healthyCount,
-		"staleInstanceCount":    staleCount,
-		"dataplaneCount":        dataplaneCount,
-		"sessionCount":          sessionCount,
-		"activeSessionCount":    activeOnly,
-		"sessionsByPhase":       phases,
-		"avgContextPressure":    avgPressure,
-		"p95ContextPressure":    p95Pressure,
-		"tokenUsage24h":         tokenTotal,
-		"errorCount24h":         errorCount,
-		"topAgents":             topAgents,
-		"highPressureSessions":  highPressureOut,
-		"staleDataplanes":       stalePlanes,
-		"orphanSessions":        orphanSessions,
+		"agentCount":             len(agents),
+		"instanceCount":          dataplaneCount,
+		"healthyInstanceCount":   healthyCount,
+		"staleInstanceCount":     staleCount,
+		"dataplaneCount":         dataplaneCount,
+		"sessionCount":           sessionCount,
+		"activeSessionCount":     activeOnly,
+		"sessionsByPhase":        phases,
+		"tokenUsage24h":          tokenTotal,
+		"errorCount24h":          errorCount,
+		"topAgents":              topAgents,
+		"topSessionsByTokens":    topSessionsByTokens,
+		"topSessionsByDuration":  topSessionsByDuration,
+		"topAgentsByActive":      topAgentsByActive,
+		"staleDataplanes":        stalePlanes,
+		"orphanSessions":         orphanSessions,
 	}
 
 	overviewCacheMu.Lock()

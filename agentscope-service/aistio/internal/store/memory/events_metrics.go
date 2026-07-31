@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -378,6 +379,146 @@ func (r *metricsRepo) TopAgents(_ context.Context, since time.Time, limit int) (
 	for i := 0; i < len(out); i++ {
 		for j := i + 1; j < len(out); j++ {
 			if out[j].TotalTokens > out[i].TotalTokens {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *metricsRepo) TopSessionsByTokens(_ context.Context, since time.Time, limit int) ([]store.SessionUsage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+
+	totals := map[uuid.UUID]int64{}
+	for i := range r.s.tokens {
+		m := r.s.tokens[i]
+		if m.SessionFK == nil || m.RecordedAt.Before(since) {
+			continue
+		}
+		totals[*m.SessionFK] += m.TotalTokens
+	}
+	out := make([]store.SessionUsage, 0, len(totals))
+	for fk, total := range totals {
+		s, ok := r.s.sessions[fk]
+		if !ok || s == nil {
+			continue
+		}
+		out = append(out, store.SessionUsage{
+			SessionFK:   fk,
+			SessionID:   s.SessionID,
+			AgentName:   s.AgentName,
+			Namespace:   s.Namespace,
+			Phase:       s.Phase,
+			TotalTokens: total,
+		})
+	}
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].TotalTokens > out[i].TotalTokens {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *metricsRepo) TopSessionsByDuration(_ context.Context, since time.Time, limit int) ([]store.SessionDuration, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	_ = since
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+
+	now := time.Now().UTC()
+	out := make([]store.SessionDuration, 0)
+	for _, s := range r.s.sessions {
+		if s == nil || strings.ToLower(s.Phase) != store.SessionPhaseActive {
+			continue
+		}
+		var running *store.SessionTurn
+		for i := range r.s.turns {
+			t := &r.s.turns[i]
+			if t.SessionFK == s.ID && t.Status == store.TurnStatusRunning {
+				if running == nil || t.TurnIndex > running.TurnIndex {
+					running = t
+				}
+			}
+		}
+		if running == nil {
+			continue
+		}
+		dur := now.Sub(running.StartedAt)
+		if dur < 0 {
+			dur = 0
+		}
+		started := running.StartedAt
+		ended := now
+		out = append(out, store.SessionDuration{
+			SessionFK:  s.ID,
+			SessionID:  s.SessionID,
+			AgentName:  s.AgentName,
+			Namespace:  s.Namespace,
+			Phase:      s.Phase,
+			DurationMs: dur.Milliseconds(),
+			StartedAt:  &started,
+			EndedAt:    &ended,
+			TurnIndex:  running.TurnIndex,
+		})
+	}
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].DurationMs > out[i].DurationMs {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+
+	type agentKey struct{ agent, ns string }
+	peaks := map[agentKey]int32{}
+	for i := range r.s.agents {
+		m := r.s.agents[i]
+		if m.RecordedAt.Before(since) {
+			continue
+		}
+		k := agentKey{m.AgentName, m.Namespace}
+		if m.ActiveSessions > peaks[k] {
+			peaks[k] = m.ActiveSessions
+		}
+	}
+	out := make([]store.AgentUsage, 0, len(peaks))
+	for k, peak := range peaks {
+		out = append(out, store.AgentUsage{
+			AgentName:      k.agent,
+			Namespace:      k.ns,
+			ActiveSessions: peak,
+		})
+	}
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].ActiveSessions > out[i].ActiveSessions {
 				out[i], out[j] = out[j], out[i]
 			}
 		}

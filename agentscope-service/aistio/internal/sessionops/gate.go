@@ -40,6 +40,18 @@ func normalizePhase(phase string) string {
 	return strings.ToLower(strings.TrimSpace(phase))
 }
 
+// phaseIsActive reports whether the session is mid-turn (phase authoritative).
+func phaseIsActive(sess *store.Session) bool {
+	if sess == nil {
+		return false
+	}
+	if normalizePhase(sess.Phase) == store.SessionPhaseActive {
+		return true
+	}
+	// Legacy: busy=true without phase=active still means in-flight turn.
+	return sess.Busy != nil && *sess.Busy
+}
+
 // interruptAllowed reports whether abort/terminate may run for the phase.
 func interruptAllowed(phase string) bool {
 	switch normalizePhase(phase) {
@@ -65,33 +77,50 @@ func checkCapability(entry *dataplane.Entry, command string) *Error {
 	return nil
 }
 
-// checkInstanceReachable rejects missing or stale (unhealthy) instances.
-// Prefer instanceRef only — never fall back to sibling replicas here.
-func checkInstanceReachable(registry *dataplane.Registry, sess *store.Session) (*dataplane.Entry, *Error) {
-	if sess.InstanceRef == "" {
-		return nil, errUnreachable("session has no instanceRef")
+// resolveInstance prefers session.instanceRef (affinity). Soft-affinity peer
+// fallback is allowed only when the session is not hard-bound mid-turn
+// (active / compressing), so abort/compress-in-flight never hit a cold replica.
+func resolveInstance(registry *dataplane.Registry, sess *store.Session) (*dataplane.Entry, *Error) {
+	if sess == nil {
+		return nil, errUnreachable("session is nil")
 	}
 	if registry == nil {
 		return nil, errUnreachable("data plane registry unavailable")
 	}
-	entry := registry.Get(sess.InstanceRef)
-	if entry == nil {
-		return nil, errUnreachable("instance not registered: " + sess.InstanceRef)
+	phase := normalizePhase(sess.Phase)
+	hardBound := phase == store.SessionPhaseActive || phase == store.SessionPhaseCompressing
+
+	if sess.InstanceRef != "" {
+		if entry := registry.Get(sess.InstanceRef); entry != nil && entry.Healthy && entry.BaseURL != "" {
+			return entry, nil
+		}
+		if hardBound {
+			return nil, errUnreachable("instance unavailable while session is " + phase + ": " + sess.InstanceRef)
+		}
+	} else if hardBound {
+		return nil, errUnreachable("session has no instanceRef while " + phase)
 	}
-	if !entry.Healthy {
-		return nil, errUnreachable("instance stale/unhealthy: " + sess.InstanceRef)
+
+	for _, entry := range registry.ListByAgent(sess.AgentName, sess.Namespace) {
+		if entry != nil && entry.Healthy && entry.BaseURL != "" {
+			return entry, nil
+		}
 	}
-	if entry.BaseURL == "" {
-		return nil, errUnreachable("instance has empty baseUrl: " + sess.InstanceRef)
+	if sess.InstanceRef != "" {
+		return nil, errUnreachable("preferred instance unavailable and no healthy peer: " + sess.InstanceRef)
 	}
-	return entry, nil
+	return nil, errUnreachable("no healthy data plane instance for agent " + sess.AgentName)
 }
 
-// checkGate enforces phase/busy rules.
+// checkInstanceReachable is the soft-affinity resolver used by the router.
+func checkInstanceReachable(registry *dataplane.Registry, sess *store.Session) (*dataplane.Entry, *Error) {
+	return resolveInstance(registry, sess)
+}
+
+// checkGate enforces the operational phase state machine.
 //
-// For idle-required commands:
-//   - busy=true → errBusy(wait_idle) — caller may queue
-//   - busy=nil (unknown) → errBusy(force_confirm) unless Force=true
+// Compress/undo/redo/plan require phase=idle (or unknown phase with force).
+// Active / compressing → wait_idle (queueable). Archived / terminated → reject.
 //
 // Returns (forced, err).
 func checkGate(sess *store.Session, command string, force bool) (forced bool, err *Error) {
@@ -101,28 +130,34 @@ func checkGate(sess *store.Session, command string, force bool) (forced bool, er
 	switch cmd {
 	case CommandAbort, CommandTerminate:
 		if !interruptAllowed(phase) {
-			if phase == store.SessionPhaseTerminated {
-				return false, errNotFound("session is terminated")
+			if phase == store.SessionPhaseTerminated || phase == store.SessionPhaseArchived {
+				return false, errNotFound("session is " + phase)
 			}
 			return false, errBusy("command not allowed in phase "+sess.Phase, HintWaitIdle)
 		}
 		return false, nil
 
 	case CommandCompress, CommandUndo, CommandRedo, CommandPlan:
-		if phase == store.SessionPhaseTerminated {
-			return false, errNotFound("session is terminated")
-		}
-		if sess.Busy != nil {
-			if *sess.Busy {
+		switch phase {
+		case store.SessionPhaseTerminated, store.SessionPhaseArchived:
+			return false, errNotFound("session is " + phase)
+		case store.SessionPhaseActive, store.SessionPhaseCompressing:
+			return false, errBusy("session phase is "+phase, HintWaitIdle)
+		case store.SessionPhaseIdle:
+			return false, nil
+		default:
+			// Unknown / empty phase: treat like legacy busy unknown.
+			if phaseIsActive(sess) {
 				return false, errBusy("session is busy", HintWaitIdle)
 			}
-			return false, nil
+			if sess.Busy != nil && !*sess.Busy {
+				return false, nil
+			}
+			if force {
+				return true, nil
+			}
+			return false, errBusy("session phase unknown; confirm to proceed", HintForceConfirm)
 		}
-		// busy unknown
-		if force {
-			return true, nil
-		}
-		return false, errBusy("session busy state unknown; confirm to proceed", HintForceConfirm)
 
 	default:
 		return false, errUnsupported("unknown command: " + command)

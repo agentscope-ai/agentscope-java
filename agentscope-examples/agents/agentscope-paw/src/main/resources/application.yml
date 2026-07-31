@@ -38,7 +38,7 @@ claw:
     agent-name: ${CLAW_AISTIO_AGENT_NAME:agentscope-paw}
     namespace: default
     contract-port: ${CLAW_AISTIO_CONTRACT_PORT:18090}
-    enable-events: false
+    enable-events: true
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

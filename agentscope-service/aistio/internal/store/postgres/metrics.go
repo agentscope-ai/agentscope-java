@@ -283,6 +283,93 @@ func (r *metricsRepo) TopAgents(ctx context.Context, since time.Time, limit int)
 	return out, rows.Err()
 }
 
+func (r *metricsRepo) TopSessionsByTokens(ctx context.Context, since time.Time, limit int) ([]store.SessionUsage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, s.session_id, s.agent_name, s.namespace, s.phase, SUM(t.total_tokens)::bigint
+		FROM token_usage_metrics t
+		INNER JOIN sessions s ON s.id = t.session_fk
+		WHERE t.recorded_at >= $1 AND t.session_fk IS NOT NULL
+		GROUP BY s.id, s.session_id, s.agent_name, s.namespace, s.phase
+		ORDER BY SUM(t.total_tokens) DESC
+		LIMIT $2`, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.SessionUsage
+	for rows.Next() {
+		var u store.SessionUsage
+		if err := rows.Scan(&u.SessionFK, &u.SessionID, &u.AgentName, &u.Namespace, &u.Phase, &u.TotalTokens); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (r *metricsRepo) TopSessionsByDuration(ctx context.Context, since time.Time, limit int) ([]store.SessionDuration, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	// Active sessions only, ranked by current running turn elapsed.
+	_ = since // activity window unused: live ranking is point-in-time for running turns
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, s.session_id, s.agent_name, s.namespace, s.phase, t.started_at,
+			now() AT TIME ZONE 'utc' AS ended_at,
+			(EXTRACT(EPOCH FROM (now() AT TIME ZONE 'utc' - t.started_at)) * 1000)::bigint AS duration_ms,
+			t.turn_index
+		FROM sessions s
+		INNER JOIN session_turns t ON t.session_fk = s.id AND t.status = $1
+		WHERE lower(s.phase) = $2
+		ORDER BY duration_ms DESC
+		LIMIT $3`, store.TurnStatusRunning, store.SessionPhaseActive, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.SessionDuration
+	for rows.Next() {
+		var d store.SessionDuration
+		if err := rows.Scan(
+			&d.SessionFK, &d.SessionID, &d.AgentName, &d.Namespace, &d.Phase,
+			&d.StartedAt, &d.EndedAt, &d.DurationMs, &d.TurnIndex,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *metricsRepo) TopAgentsByActiveSessions(ctx context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT agent_name, namespace, MAX(active_sessions)::int
+		FROM agent_metrics
+		WHERE recorded_at >= $1
+		GROUP BY agent_name, namespace
+		ORDER BY MAX(active_sessions) DESC
+		LIMIT $2`, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.AgentUsage
+	for rows.Next() {
+		var u store.AgentUsage
+		if err := rows.Scan(&u.AgentName, &u.Namespace, &u.ActiveSessions); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (r *metricsRepo) PressureStats(ctx context.Context, f store.SessionFilter) (avg, p95 float64, err error) {
 	conds, args := sessionFilterCondsPrefixed(f, "s")
 	where := ""

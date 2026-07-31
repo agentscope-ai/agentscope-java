@@ -173,6 +173,23 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"events": events})
 }
 
+// listSessionTurns handles GET /api/v1/sessions/:sessionId/turns.
+func (s *Server) listSessionTurns(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	turns, err := s.store.Turns().List(c.Request.Context(), sess.ID, parseLimit(c, 100))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if turns == nil {
+		turns = []*store.SessionTurn{}
+	}
+	c.JSON(http.StatusOK, gin.H{"turns": turns})
+}
+
 // compressSession handles POST /api/v1/sessions/:sessionId/compress.
 func (s *Server) compressSession(c *gin.Context) {
 	s.executeSessionCommand(c, sessionops.CommandCompress)
@@ -186,6 +203,66 @@ func (s *Server) terminateSession(c *gin.Context) {
 // abortSession handles POST /api/v1/sessions/:sessionId/abort.
 func (s *Server) abortSession(c *gin.Context) {
 	s.executeSessionCommand(c, sessionops.CommandAbort)
+}
+
+// archiveSession handles POST /api/v1/sessions/:sessionId/archive.
+// Control-plane only: moves idle/active sessions into Operate History.
+func (s *Server) archiveSession(c *gin.Context) {
+	if !s.requireOperateWrite(c) {
+		return
+	}
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	phase := strings.ToLower(sess.Phase)
+	if phase == store.SessionPhaseTerminated {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "session is terminated", Code: sessionops.CodeNotFound})
+		return
+	}
+	if phase == store.SessionPhaseArchived {
+		c.JSON(http.StatusOK, gin.H{"accepted": true, "phase": store.SessionPhaseArchived})
+		return
+	}
+	if phase == store.SessionPhaseActive || phase == store.SessionPhaseCompressing {
+		c.JSON(http.StatusConflict, ErrorResponse{
+			Error: "archive requires idle session",
+			Code:  sessionops.CodeBusy,
+			Hint:  sessionops.HintWaitIdle,
+		})
+		return
+	}
+	if err := s.store.Sessions().UpdatePhase(c.Request.Context(), sess.ID, store.SessionPhaseArchived); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"accepted": true, "phase": store.SessionPhaseArchived})
+}
+
+// restoreSession handles POST /api/v1/sessions/:sessionId/restore.
+// Control-plane only: archived → idle (soft affinity instanceRef preserved).
+func (s *Server) restoreSession(c *gin.Context) {
+	if !s.requireOperateWrite(c) {
+		return
+	}
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	phase := strings.ToLower(sess.Phase)
+	if phase == store.SessionPhaseTerminated {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "terminated sessions cannot be restored", Code: sessionops.CodeNotFound})
+		return
+	}
+	if phase != store.SessionPhaseArchived && phase != "" {
+		c.JSON(http.StatusOK, gin.H{"accepted": true, "phase": sess.Phase})
+		return
+	}
+	if err := s.store.Sessions().UpdatePhase(c.Request.Context(), sess.ID, store.SessionPhaseIdle); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"accepted": true, "phase": store.SessionPhaseIdle})
 }
 
 // executeSessionCommand runs a destructive session op through the Session
@@ -586,8 +663,10 @@ func (s *Server) resolveSessionAgent(c *gin.Context, sess *store.Session) (*v1al
 			agent := &v1alpha1.Agent{}
 			agent.Name = sess.AgentName
 			agent.Namespace = sess.Namespace
-			agent.Status.DataPlaneInfo.ContractLevel = dp.ContractLevel
-			agent.Status.DataPlaneInfo.Capabilities = append([]string{}, dp.Capabilities...)
+			agent.Status.DataPlaneInfo = &v1alpha1.DataPlaneInfo{
+				ContractLevel: dp.ContractLevel,
+				Capabilities:  append([]string{}, dp.Capabilities...),
+			}
 			return agent, true
 		}
 	}

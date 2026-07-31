@@ -7,11 +7,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// Session phases.
+// Session phases (operational state machine).
+//
+//	active      — turn/inference in progress; hard-bound to instance; no compress
+//	idle        — turn finished; soft affinity on instanceRef; compress allowed
+//	compressing — compress in flight on a bound instance; no new turn
+//	archived    — History: operator archive, idle TTL, or DP stopped listing the session
+//	terminated  — hard destroy only (explicit terminate / DELETE / team teardown / DP reports terminated); not restorable
 const (
 	SessionPhaseActive      = "active"
 	SessionPhaseIdle        = "idle"
 	SessionPhaseCompressing = "compressing"
+	SessionPhaseArchived    = "archived"
 	SessionPhaseTerminated  = "terminated"
 )
 
@@ -31,8 +38,9 @@ type Session struct {
 	Framework        string          `json:"framework"`
 	FrameworkVersion string          `json:"frameworkVersion,omitempty"`
 	Phase            string          `json:"phase"`
-	// Busy is true when a turn/inference is in progress. nil means the data
-	// plane did not report busy (unknown). Independent of Phase.
+	// Busy is derived from phase when reported by modern data planes
+	// (busy := phase == "active"). Kept for backward compatibility; prefer Phase.
+	// nil means the data plane did not report busy (unknown).
 	Busy             *bool           `json:"busy,omitempty"`
 	InstanceRef      string          `json:"instanceRef,omitempty"`
 	InstanceIP       string          `json:"instanceIP,omitempty"`
@@ -69,6 +77,52 @@ type AgentUsage struct {
 	ActiveSessions int32   `json:"activeSessions"`
 	AvgPressure    float64 `json:"avgPressure,omitempty"`
 	ErrorCount     int32   `json:"errorCount,omitempty"`
+}
+
+// SessionUsage is a per-session token aggregate for TopSessionsByTokens.
+type SessionUsage struct {
+	SessionFK   uuid.UUID `json:"sessionFk"`
+	SessionID   string    `json:"sessionId"`
+	AgentName   string    `json:"agentName"`
+	Namespace   string    `json:"namespace"`
+	Phase       string    `json:"phase,omitempty"`
+	TotalTokens int64     `json:"totalTokens"`
+}
+
+// SessionDuration ranks active sessions by current running turn elapsed.
+type SessionDuration struct {
+	SessionFK  uuid.UUID  `json:"sessionFk"`
+	SessionID  string     `json:"sessionId"`
+	AgentName  string     `json:"agentName"`
+	Namespace  string     `json:"namespace"`
+	Phase      string     `json:"phase,omitempty"`
+	DurationMs int64      `json:"durationMs"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	EndedAt    *time.Time `json:"endedAt,omitempty"`
+	TurnIndex  int        `json:"turnIndex,omitempty"`
+}
+
+// Session turn status values.
+const (
+	TurnStatusRunning   = "running"
+	TurnStatusCompleted = "completed"
+	TurnStatusAborted   = "aborted"
+	TurnStatusFailed    = "failed"
+)
+
+// SessionTurn is one inference cycle within a session (user request → response).
+type SessionTurn struct {
+	ID               uuid.UUID  `json:"id"`
+	SessionFK        uuid.UUID  `json:"sessionFk"`
+	TurnIndex        int        `json:"turnIndex"`
+	Status           string     `json:"status"`
+	StartedAt        time.Time  `json:"startedAt"`
+	EndedAt          *time.Time `json:"endedAt,omitempty"`
+	DurationMs       int64      `json:"durationMs,omitempty"`
+	UserPreview      string     `json:"userPreview,omitempty"`
+	PromptTokens     int64      `json:"promptTokens,omitempty"`
+	CompletionTokens int64      `json:"completionTokens,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 // SessionCommandStatus values for the session_commands audit table.

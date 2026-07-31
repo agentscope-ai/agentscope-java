@@ -199,8 +199,8 @@ Host: <agent-pod-ip>:8080
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `id` | string | 是 | 会话唯一标识 |
-| `phase` | string | 是 | 会话阶段：`Active` / `Idle` / `Compressing` / `Terminated` |
-| `busy` | bool | 否 | 当前是否有 turn 进行中；与 `phase` **独立**（例如 `phase=Active` 且 `busy=false` 表示空闲可接指令） |
+| `phase` | string | 是 | 运维状态机（权威）：`active` / `idle` / `compressing` / `archived` / `terminated` |
+| `busy` | bool | 否 | **派生/兼容字段**：`busy := (phase == active)`。新实现以 `phase` 为准；未上报时控制面不得默认 `false` |
 | `model` | string | 否 | 当前生效模型名 |
 | `startedAt` | string | 否 | 会话开始时间（RFC 3339） |
 | `lastActiveAt` | string | 否 | 最近活跃时间（RFC 3339） |
@@ -216,11 +216,36 @@ Host: <agent-pod-ip>:8080
 | `framework` | string | 否 | 框架标识，如 `langgraph` / `claude-agent-sdk` |
 | `frameworkState` | object | 否 | 框架私有状态；**仅**供 Console Raw 面板展示，控制面不解析业务语义 |
 
+**`phase` 状态机（运维视角）：**
+
+| phase | 含义 | instanceRef | compress | 新 turn |
+|-------|------|-------------|----------|---------|
+| `active` | 正在推理 | 硬绑定当前实例 | 禁止 | 进行中 |
+| `idle` | 推理结束，可运维 | 软亲和（保留偏好，可换实例） | 允许 | 允许 → `active` |
+| `compressing` | 正在压缩 | 硬绑定执行实例 | 进行中 | 禁止 |
+| `archived` | 久不活跃、主动归档，或数据面 Level-1 暂时不再上报（Console History） | 可空/只读 | 禁止 | 禁止（restore → `idle`） |
+| `terminated` | **仅**显式硬销毁（Operate Terminate / DELETE / team 销毁 / DP 明确上报 `terminated`）。DP 失踪 ≠ terminated | — | 禁止 | 禁止 |
+
+软亲和：`idle` 保留 `instanceRef` 作偏好；用户在新实例发起 turn 后，控制面 poll/ASDP upsert 会用非空 `instanceRef` 覆盖。compress 优先打亲和实例，不可达则 fallback 到同 agent 健康实例。
+
+**Session / Turn / Duration（冻结）：**
+
+| 概念 | 标识 | 含义 |
+|------|------|------|
+| Session | `sessionId` | 可 resume 的对话线程；`phase` 描述线程运维态 |
+| Turn | `(sessionId, turnIndex)` | 一轮用户请求的推理周期（DP 一次 `call()`） |
+| Turn duration | `session_turns.duration_ms` | `active` 开始 → `idle`/abort/terminate 结束；**同 sessionId 多轮各自记一条** |
+| Session lifetime | `sessions.started_at` → end | 线程墙钟寿命；**不作** Overview duration 排行依据 |
+
+- 控制面在 Level-1 phase 边沿开/关 turn（进入 `active` → open；离开 `active` → close）。
+- Overview「按 duration」只展示 **`phase=active` 的当前 running turn elapsed**。
+- Agent 详情 Active/History（`archived`）是 **session 级**；Session 详情 Turn timeline 是 **turn 级**，勿混用 History 一词。
+
 **字段缺失语义（冻结规则）：**
 
 - 仅 `id` + `phase` 必填；其余字段未上报时**省略该字段**（或显式 `null`），UI 显示为「未上报」。
 - **禁止**用 `0` / `false` / `""` 填补未知值——假零会误导进度条与任务统计。
-- `busy` 表示 turn 进行中，与 `phase` 正交；未上报 `busy` 时控制面视为「未知」，不得默认 `false`。
+- `busy` 已弃用为正交信号；与 `phase` 冲突时以 `phase` 为准。
 - `tokenUsage.maxTokens` 供 UI 进度条使用；缺省时进度条不可用。
 - `frameworkState` 仅透传给 Raw 面板；结构化观测走 `taskSummary` / `GET .../tasks` 等显式字段。
 

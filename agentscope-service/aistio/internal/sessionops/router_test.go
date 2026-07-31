@@ -25,8 +25,8 @@ func newTestStore(t *testing.T) store.Store {
 	return st
 }
 
-func TestCheckGate_BusyUnknownRequiresForce(t *testing.T) {
-	sess := &store.Session{Phase: store.SessionPhaseActive, Busy: nil}
+func TestCheckGate_UnknownPhaseRequiresForce(t *testing.T) {
+	sess := &store.Session{Phase: "", Busy: nil}
 
 	forced, err := checkGate(sess, CommandCompress, false)
 	if err == nil || err.Code != CodeBusy || err.Hint != HintForceConfirm {
@@ -36,6 +36,30 @@ func TestCheckGate_BusyUnknownRequiresForce(t *testing.T) {
 	forced, err = checkGate(sess, CommandCompress, true)
 	if err != nil || !forced {
 		t.Fatalf("expected force allow with Forced, got forced=%v err=%v", forced, err)
+	}
+}
+
+func TestCheckGate_ActiveBlocksCompress(t *testing.T) {
+	sess := &store.Session{Phase: store.SessionPhaseActive, Busy: boolPtr(true)}
+	_, err := checkGate(sess, CommandCompress, true)
+	if err == nil || err.Code != CodeBusy || err.Hint != HintWaitIdle {
+		t.Fatalf("expected busy/wait_idle even with force, got %v", err)
+	}
+}
+
+func TestCheckGate_IdleAllowsCompress(t *testing.T) {
+	sess := &store.Session{Phase: store.SessionPhaseIdle, Busy: boolPtr(false)}
+	forced, err := checkGate(sess, CommandCompress, false)
+	if err != nil || forced {
+		t.Fatalf("idle should allow compress, got forced=%v err=%v", forced, err)
+	}
+}
+
+func TestCheckGate_ArchivedRejectsCompress(t *testing.T) {
+	sess := &store.Session{Phase: store.SessionPhaseArchived}
+	_, err := checkGate(sess, CommandCompress, false)
+	if err == nil || err.Code != CodeNotFound {
+		t.Fatalf("expected not_found for archived, got %v", err)
 	}
 }
 
@@ -105,7 +129,7 @@ func TestCheckInstanceReachable_Stale(t *testing.T) {
 	}
 }
 
-func TestCheckInstanceReachable_NoSiblingFallback(t *testing.T) {
+func TestCheckInstanceReachable_SoftAffinityFallback(t *testing.T) {
 	reg := dataplane.NewRegistry()
 	reg.Upsert(dataplane.Entry{
 		AgentName:  "agent-a",
@@ -113,10 +137,31 @@ func TestCheckInstanceReachable_NoSiblingFallback(t *testing.T) {
 		InstanceID: "sibling",
 		BaseURL:    "http://127.0.0.1:9",
 	})
-	sess := &store.Session{InstanceRef: "missing", AgentName: "agent-a", Namespace: "default"}
+	sess := &store.Session{
+		InstanceRef: "missing", AgentName: "agent-a", Namespace: "default",
+		Phase: store.SessionPhaseIdle,
+	}
+	entry, err := checkInstanceReachable(reg, sess)
+	if err != nil || entry == nil || entry.InstanceID != "sibling" {
+		t.Fatalf("expected soft-affinity sibling fallback, got entry=%v err=%v", entry, err)
+	}
+}
+
+func TestCheckInstanceReachable_NoFallbackWhenActive(t *testing.T) {
+	reg := dataplane.NewRegistry()
+	reg.Upsert(dataplane.Entry{
+		AgentName:  "agent-a",
+		Namespace:  "default",
+		InstanceID: "sibling",
+		BaseURL:    "http://127.0.0.1:9",
+	})
+	sess := &store.Session{
+		InstanceRef: "missing", AgentName: "agent-a", Namespace: "default",
+		Phase: store.SessionPhaseActive,
+	}
 	_, err := checkInstanceReachable(reg, sess)
 	if err == nil || err.Code != CodeUnreachable {
-		t.Fatalf("must not fall back to sibling, got %v", err)
+		t.Fatalf("active must not fall back to sibling, got %v", err)
 	}
 }
 
@@ -222,7 +267,7 @@ func TestRouter_Execute_MissingCapability(t *testing.T) {
 	}
 }
 
-func TestRouter_Execute_BusyUnknownWithoutForce(t *testing.T) {
+func TestRouter_Execute_ActivePhaseBlocksCompress(t *testing.T) {
 	st := newTestStore(t)
 	reg := dataplane.NewRegistry()
 	reg.Upsert(dataplane.Entry{
@@ -238,9 +283,10 @@ func TestRouter_Execute_BusyUnknownWithoutForce(t *testing.T) {
 	})
 
 	r := NewRouter(reg, st, nil, nil)
-	_, err := r.Execute(context.Background(), sess, Request{Command: CommandCompress})
+	q := false
+	_, err := r.Execute(context.Background(), sess, Request{Command: CommandCompress, Queue: &q})
 	opErr, ok := AsError(err)
-	if !ok || opErr.Code != CodeBusy || opErr.Hint != HintForceConfirm {
-		t.Fatalf("expected busy/force_confirm, got %v", err)
+	if !ok || opErr.Code != CodeBusy || opErr.Hint != HintWaitIdle {
+		t.Fatalf("expected busy/wait_idle, got %v", err)
 	}
 }

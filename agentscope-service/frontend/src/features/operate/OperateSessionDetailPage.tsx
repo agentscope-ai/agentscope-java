@@ -1,13 +1,24 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
 import { canPlanMode, canQueryContext, canQueryMessages, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
 import {
   abortSession,
+  archiveSession,
   compressSession,
   fetchRuntimeSession,
   fetchSessionCommands,
@@ -16,21 +27,30 @@ import {
   fetchSessionMessages,
   fetchSessionSubagentTasks,
   fetchSessionTasks,
+  fetchSessionTurns,
+  restoreSession,
   setSessionPlanMode,
   terminateSession,
+  type SessionTurn,
 } from './api';
 import { CompressButton } from './components/CompressButton';
-import { ContextPanel } from './components/ContextPanel';
-import { MessagesList } from './components/MessagesList';
+import { ContextPanel, contextSummary } from './components/ContextPanel';
+import { ConversationHistoryPanel } from './components/ConversationHistoryPanel';
 import { StatusStrip } from './components/StatusStrip';
 
 export default function OperateSessionDetailPage() {
   const { sessionId = '' } = useParams();
+  const [params, setParams] = useSearchParams();
+  const agent = params.get('agent') || undefined;
+  const namespace = params.get('namespace') || undefined;
+  const turnParam = params.get('turn');
   const qc = useQueryClient();
+  const [contextOpen, setContextOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
 
   const session = useQuery({
-    queryKey: ['runtime-session', sessionId],
-    queryFn: () => fetchRuntimeSession(sessionId),
+    queryKey: ['runtime-session', sessionId, agent, namespace],
+    queryFn: () => fetchRuntimeSession(sessionId, { agent, namespace }),
     enabled: !!sessionId,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
@@ -47,19 +67,20 @@ export default function OperateSessionDetailPage() {
   const s = session.data;
   // Capabilities come from the session response (enriched by control plane) —
   // do NOT join against dataplanes[0].
+  const sessionReady = !!s;
   const contractLevel = s?.contractLevel ?? 0;
   const capabilities = s?.capabilities || [];
 
   const context = useQuery({
     queryKey: ['runtime-context', sessionId],
     queryFn: () => fetchSessionContext(sessionId),
-    enabled: !!sessionId && canQueryContext(capabilities),
+    enabled: sessionReady && canQueryContext(capabilities),
   });
 
   const messages = useQuery({
     queryKey: ['runtime-messages', sessionId],
     queryFn: () => fetchSessionMessages(sessionId),
-    enabled: !!sessionId && canQueryMessages(capabilities),
+    enabled: sessionReady && canQueryMessages(capabilities),
   });
 
   const tasks = useQuery({
@@ -83,22 +104,68 @@ export default function OperateSessionDetailPage() {
     retry: false,
   });
 
+  const turns = useQuery({
+    queryKey: ['runtime-turns', sessionId],
+    queryFn: () => fetchSessionTurns(sessionId),
+    enabled: !!sessionId,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  });
+
+  const turnList = turns.data?.turns || [];
+  const selectedTurnIndex = (() => {
+    if (turnParam) {
+      const n = Number(turnParam);
+      if (Number.isFinite(n) && turnList.some((t) => t.turnIndex === n)) return n;
+    }
+    const running = turnList.find((t) => t.status === 'running');
+    if (running) return running.turnIndex;
+    return turnList[0]?.turnIndex ?? null;
+  })();
+
+  function selectTurn(t: SessionTurn) {
+    const next = new URLSearchParams(params);
+    next.set('turn', String(t.turnIndex));
+    setParams(next, { replace: true });
+  }
+
   const compress = useMutation({
     mutationFn: (opts: { force?: boolean; queue?: boolean }) => compressSession(sessionId, opts),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
       qc.invalidateQueries({ queryKey: ['runtime-commands', sessionId] });
+      qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
     },
   });
   const terminate = useMutation({
     mutationFn: () => terminateSession(sessionId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
+      qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
+    },
+  });
+  const archive = useMutation({
+    mutationFn: () => archiveSession(sessionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
+      qc.invalidateQueries({ queryKey: ['runtime-sessions'] });
+      qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
+    },
+  });
+  const restore = useMutation({
+    mutationFn: () => restoreSession(sessionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
+      qc.invalidateQueries({ queryKey: ['runtime-sessions'] });
+      qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
+    },
   });
   const abort = useMutation({
     mutationFn: () => abortSession(sessionId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
       qc.invalidateQueries({ queryKey: ['runtime-commands', sessionId] });
+      qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
     },
   });
   const planMode = useMutation({
@@ -131,6 +198,13 @@ export default function OperateSessionDetailPage() {
     (context.data as { frameworkState?: { planActive?: boolean } } | undefined)?.frameworkState
       ?.planActive,
   );
+  const ctxSummary = contextSummary(context.data);
+  const phase = (s?.phase || '').toLowerCase();
+  const isArchived = phase === 'archived';
+  const readOnlyOps = phase === 'terminated' || isArchived;
+  const canArchive = phase === 'idle';
+  const canRestore = isArchived;
+  const compressDisabled = readOnlyOps || phase === 'compressing';
 
   return (
     <Page>
@@ -141,14 +215,15 @@ export default function OperateSessionDetailPage() {
         <PageHeader
           className="mt-2"
           title={sessionId}
-          description={`${s?.agentName} · ${s?.namespace} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}`}
+          description={`${s?.agentName} · ${s?.namespace} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
           actions={
             <>
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="compress">
                 {(enabled, tip) =>
                   enabled ? (
                     <CompressButton
-                      busy={s?.busy}
+                      busy={phase === 'active' ? true : phase === 'idle' ? false : s?.busy}
+                      disabled={compressDisabled}
                       pending={compress.isPending}
                       onCompress={async (opts) => {
                         const res = await compress.mutateAsync(opts);
@@ -160,14 +235,37 @@ export default function OperateSessionDetailPage() {
                   )
                 }
               </CapabilityGate>
+              {canArchive && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={archive.isPending}
+                  onClick={() => archive.mutate()}
+                >
+                  Archive
+                </Button>
+              )}
+              {canRestore && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate()}
+                >
+                  Restore
+                </Button>
+              )}
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="abort">
                 {(enabled, tip) =>
-                  enabled ? (
+                  enabled && !readOnlyOps ? (
                     <Button size="sm" variant="outline" disabled={abort.isPending} onClick={() => abort.mutate()}>
                       Abort turn
                     </Button>
                   ) : (
-                    <DisabledAction label="Abort turn" tip={tip} />
+                    <DisabledAction
+                      label="Abort turn"
+                      tip={readOnlyOps ? `Session is ${phase}` : tip}
+                    />
                   )
                 }
               </CapabilityGate>
@@ -176,7 +274,7 @@ export default function OperateSessionDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={planMode.isPending || planActive}
+                    disabled={readOnlyOps || planMode.isPending || planActive}
                     onClick={() => planMode.mutate(true)}
                   >
                     Enter plan
@@ -184,7 +282,7 @@ export default function OperateSessionDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={planMode.isPending || !planActive}
+                    disabled={readOnlyOps || planMode.isPending || !planActive}
                     onClick={() => planMode.mutate(false)}
                   >
                     Exit plan
@@ -193,7 +291,7 @@ export default function OperateSessionDetailPage() {
               )}
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="terminate">
                 {(enabled, tip) =>
-                  enabled ? (
+                  enabled && !readOnlyOps ? (
                     <Button
                       size="sm"
                       variant="destructive"
@@ -203,7 +301,9 @@ export default function OperateSessionDetailPage() {
                       Terminate
                     </Button>
                   ) : (
-                    <DisabledAction label="Terminate" tip={tip} />
+                    <Button size="sm" variant="destructive" disabled title={readOnlyOps ? `Session is ${phase}` : tip}>
+                      Terminate
+                    </Button>
                   )
                 }
               </CapabilityGate>
@@ -215,12 +315,65 @@ export default function OperateSessionDetailPage() {
       <StatusStrip session={s} />
 
       <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle>Context</CardTitle>
+            <CardDescription>
+              Effective AgentState for the next model call (sys prompt, tools, window) — not session history.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canQueryContext(capabilities) || context.isLoading || context.isError}
+            onClick={() => setContextOpen(true)}
+          >
+            View
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {!sessionReady || session.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : !canQueryContext(capabilities) ? (
+            <p className="text-sm text-muted-foreground">context-query not advertised by data plane.</p>
+          ) : context.isError ? (
+            <p className="text-sm text-red-600">Failed to load context.</p>
+          ) : context.isLoading || (context.isFetching && !context.data) ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : !context.data || !ctxSummary ? (
+            <p className="text-sm text-muted-foreground">No context.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {ctxSummary.isCompacted && <Badge tone="warning">compacted</Badge>}
+              {ctxSummary.planActive && <Badge tone="info">plan mode</Badge>}
+              {ctxSummary.model && <Badge tone="info">{ctxSummary.model}</Badge>}
+              <span className="text-sm text-muted-foreground">
+                {ctxSummary.messageCount} effective msgs
+                {ctxSummary.toolCount ? ` · ${ctxSummary.toolCount} tools` : ''}
+                {ctxSummary.totalTokens != null
+                  ? ` · window ${ctxSummary.totalTokens.toLocaleString()}${ctxSummary.maxTokens != null ? ` / ${ctxSummary.maxTokens.toLocaleString()}` : ''}`
+                  : ''}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader>
           <CardTitle>Events</CardTitle>
         </CardHeader>
         <CardContent className="max-h-80 space-y-2.5 overflow-auto">
           {(events.data?.events || []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No events stored yet.</p>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>No Level-2 events in the control-plane store for this session.</p>
+              <p>
+                Events are pushed asynchronously (ASDP / event reporting). Paw defaults to{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-[12px]">claw.aistio.enable-events: false</code>
+                , so Operate shows Messages/Context via on-demand query instead. Enable event reporting on the
+                data plane if you need a live event timeline here.
+              </p>
+            </div>
           ) : (
             (events.data?.events || []).map((e, i) => (
               <div key={i} className="rounded-lg border border-border px-4 py-3 text-sm">
@@ -234,12 +387,16 @@ export default function OperateSessionDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Context</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Dialog open={contextOpen} onOpenChange={setContextOpen}>
+        <DialogContent size="xl">
+          <DialogHeader>
+            <DialogTitle>Context</DialogTitle>
+            <DialogDescription>
+              Effective AgentState window (sys prompt, tools, effective messages). Window tokens are
+              latest-turn input size, not lifetime spend.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
             <ContextPanel
               data={context.data}
               unavailableReason={
@@ -248,23 +405,9 @@ export default function OperateSessionDetailPage() {
               error={context.isError}
               loading={context.isLoading}
             />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Messages</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MessagesList
-              data={messages.data}
-              unavailableReason={
-                !canQueryMessages(capabilities) ? 'message-query not advertised by data plane.' : undefined
-              }
-              loading={messages.isLoading}
-            />
-          </CardContent>
-        </Card>
-      </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
 
       {canQueryTasks(capabilities) && (
         <Card>
@@ -329,24 +472,55 @@ export default function OperateSessionDetailPage() {
         </Card>
       )}
 
+      <ConversationHistoryPanel
+        turns={turnList}
+        turnsLoading={turns.isLoading}
+        messagesData={messages.data}
+        messagesLoading={messages.isLoading || (messages.isFetching && messages.data == null)}
+        messagesUnavailableReason={
+          !sessionReady
+            ? undefined
+            : !canQueryMessages(capabilities)
+              ? 'message-query not advertised by data plane.'
+              : undefined
+        }
+        sessionPending={!sessionReady && (session.isLoading || session.isFetching)}
+        selectedTurnIndex={selectedTurnIndex}
+        deepLinkTurnIndex={
+          turnParam && Number.isFinite(Number(turnParam)) ? Number(turnParam) : null
+        }
+        onSelectTurn={selectTurn}
+      />
+
       {(commands.data?.commands || []).length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Commands</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {(commands.data?.commands || []).map((c) => (
-              <div key={c.id} className="rounded-lg border border-border px-4 py-3 text-sm">
-                <div className="font-medium">
-                  {c.command} · {c.status}
+          <button
+            type="button"
+            className="flex w-full items-center gap-3 px-6 py-4 text-left hover:bg-muted/40"
+            onClick={() => setCommandsOpen((v) => !v)}
+          >
+            <span className="font-mono text-muted-foreground">{commandsOpen ? '▾' : '▸'}</span>
+            <CardTitle className="text-base">Commands</CardTitle>
+            <span className="text-sm text-muted-foreground">
+              {(commands.data?.commands || []).length} command
+              {(commands.data?.commands || []).length === 1 ? '' : 's'}
+            </span>
+          </button>
+          {commandsOpen && (
+            <CardContent className="space-y-2.5 border-t border-border pt-4">
+              {(commands.data?.commands || []).map((c) => (
+                <div key={c.id} className="rounded-lg border border-border px-4 py-3 text-sm">
+                  <div className="font-medium">
+                    {c.command} · {c.status}
+                  </div>
+                  <div className="mt-0.5 text-muted-foreground">
+                    {new Date(c.requestedAt).toLocaleString()}
+                    {c.error ? ` · ${c.error}` : ''}
+                  </div>
                 </div>
-                <div className="mt-0.5 text-muted-foreground">
-                  {new Date(c.requestedAt).toLocaleString()}
-                  {c.error ? ` · ${c.error}` : ''}
-                </div>
-              </div>
-            ))}
-          </CardContent>
+              ))}
+            </CardContent>
+          )}
         </Card>
       )}
     </Page>

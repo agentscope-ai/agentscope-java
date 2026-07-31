@@ -79,17 +79,16 @@ func testSessions(t *testing.T, ctx context.Context, s store.Store) {
 		t.Fatalf("count active: %v n=%d", err, n)
 	}
 
-	// TerminateMissing: keep sess-1, terminate sess-2 (make it old via UpdatePhase + TerminateMissing with 0 age).
-	// First create an old session by using olderThan=0 so anything not in keep is terminated.
-	terminated, err := s.Sessions().TerminateMissing(ctx, "agent-a", "default", []string{"sess-1"}, 0)
+	// ArchiveMissing: keep sess-1, archive sess-2 (DP stopped listing ≠ hard destroy).
+	archived, err := s.Sessions().ArchiveMissing(ctx, "agent-a", "default", []string{"sess-1"}, 0)
 	if err != nil {
-		t.Fatalf("terminate missing: %v", err)
+		t.Fatalf("archive missing: %v", err)
 	}
-	if terminated < 1 {
-		t.Fatalf("expected >=1 terminated, got %d", terminated)
+	if archived < 1 {
+		t.Fatalf("expected >=1 archived, got %d", archived)
 	}
 	got2, _ := s.Sessions().Get(ctx, "agent-a", "default", "sess-2")
-	if got2.Phase != store.SessionPhaseTerminated {
+	if got2.Phase != store.SessionPhaseArchived {
 		t.Fatalf("sess-2 phase=%s", got2.Phase)
 	}
 
@@ -187,16 +186,21 @@ func testMetrics(t *testing.T, ctx context.Context, s store.Store) {
 
 func testAggregations(t *testing.T, ctx context.Context, s store.Store) {
 	busy := true
+	start := time.Now().UTC().Add(-2 * time.Hour)
+	active := time.Now().UTC()
 	s1, err := s.Sessions().Upsert(ctx, &store.Session{
 		SessionID: "agg-1", AgentName: "agent-agg", Namespace: "agg-ns",
 		Framework: "x", Phase: store.SessionPhaseActive, Busy: &busy,
+		StartedAt: &start, LastActiveAt: &active,
 	})
 	if err != nil {
 		t.Fatalf("upsert1: %v", err)
 	}
+	s2Start := time.Now().UTC().Add(-30 * time.Minute)
 	s2, err := s.Sessions().Upsert(ctx, &store.Session{
 		SessionID: "agg-2", AgentName: "agent-agg", Namespace: "agg-ns",
 		Framework: "x", Phase: store.SessionPhaseIdle,
+		StartedAt: &s2Start, LastActiveAt: &active,
 	})
 	if err != nil {
 		t.Fatalf("upsert2: %v", err)
@@ -204,6 +208,7 @@ func testAggregations(t *testing.T, ctx context.Context, s store.Store) {
 	_, err = s.Sessions().Upsert(ctx, &store.Session{
 		SessionID: "agg-3", AgentName: "agent-agg", Namespace: "agg-ns",
 		Framework: "x", Phase: store.SessionPhaseTerminated,
+		StartedAt: &s2Start, LastActiveAt: &active,
 	})
 	if err != nil {
 		t.Fatalf("upsert3: %v", err)
@@ -296,6 +301,49 @@ func testAggregations(t *testing.T, ctx context.Context, s store.Store) {
 	}
 	if top[0].TotalTokens < top[1].TotalTokens {
 		t.Fatalf("top not sorted: %+v", top)
+	}
+
+	byTok, err := s.Metrics().TopSessionsByTokens(ctx, now.Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("top sessions tokens: %v", err)
+	}
+	if len(byTok) < 2 {
+		t.Fatalf("expected >=2 session token rows, got %d", len(byTok))
+	}
+	if byTok[0].TotalTokens < byTok[1].TotalTokens {
+		t.Fatalf("session tokens not sorted: %+v", byTok)
+	}
+	foundAgg2 := false
+	for _, u := range byTok {
+		if u.SessionID == "agg-2" && u.TotalTokens == 100 {
+			foundAgg2 = true
+		}
+	}
+	if !foundAgg2 {
+		t.Fatalf("expected agg-2 with 100 tokens in %+v", byTok)
+	}
+
+	if err := s.Turns().SyncOnPhase(ctx, s1.ID, store.SessionPhaseActive); err != nil {
+		t.Fatalf("sync turn: %v", err)
+	}
+
+	byDur, err := s.Metrics().TopSessionsByDuration(ctx, now.Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("top sessions duration: %v", err)
+	}
+	if len(byDur) != 1 || byDur[0].SessionID != "agg-1" {
+		t.Fatalf("expected only active agg-1 turn, got %+v", byDur)
+	}
+	if byDur[0].DurationMs < 0 {
+		t.Fatalf("bad duration: %+v", byDur[0])
+	}
+
+	byActive, err := s.Metrics().TopAgentsByActiveSessions(ctx, now.Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("top agents active: %v", err)
+	}
+	if len(byActive) == 0 || byActive[0].ActiveSessions < 1 {
+		t.Fatalf("expected active peak, got %+v", byActive)
 	}
 
 	avg, p95, err := s.Metrics().PressureStats(ctx, store.SessionFilter{

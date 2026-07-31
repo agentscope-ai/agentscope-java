@@ -11,6 +11,7 @@ import (
 // Implementations: PostgreSQL (production), memory (dev/tests).
 type Store interface {
 	Sessions() SessionRepository
+	Turns() TurnRepository
 	Events() EventRepository
 	ContextSnapshots() ContextSnapshotRepository
 	Metrics() MetricsRepository
@@ -42,10 +43,14 @@ type SessionRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Session, error)
 	List(ctx context.Context, filter SessionFilter) ([]*Session, error)
 	UpdatePhase(ctx context.Context, id uuid.UUID, phase string) error
-	// TerminateMissing marks sessions for the agent whose session_id is NOT in
-	// keepSessionIDs and whose created_at is older than olderThan as terminated.
-	// Returns the number of rows updated.
-	TerminateMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error)
+	// ArchiveMissing marks sessions for the agent whose session_id is NOT in
+	// keepSessionIDs and whose created_at is older than olderThan as archived
+	// (History). DP stopping Level-1 listing is not a hard destroy — use
+	// explicit terminate for terminated. Already archived/terminated rows are
+	// left alone. Returns the number of rows updated.
+	ArchiveMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error)
+	// ArchiveIdleOlderThan marks idle sessions inactive longer than olderThan as archived.
+	ArchiveIdleOlderThan(ctx context.Context, olderThan time.Duration) (int, error)
 	CountActive(ctx context.Context, agentName, namespace string) (int32, error)
 	// CountByPhase returns session counts keyed by lowercase phase.
 	CountByPhase(ctx context.Context, filter SessionFilter) (map[string]int, error)
@@ -54,6 +59,15 @@ type SessionRepository interface {
 	ListByPressure(ctx context.Context, filter SessionFilter, minPressure float64, limit int) ([]*SessionWithSnapshot, error)
 	DeleteByAgent(ctx context.Context, agentName, namespace string) error
 	DeleteByTeam(ctx context.Context, teamName, namespace string) error
+}
+
+// TurnRepository manages session_turns (one row per inference turn).
+type TurnRepository interface {
+	// SyncOnPhase opens a running turn when phase becomes active, and closes
+	// any running turn when phase leaves active. Idempotent across polls.
+	SyncOnPhase(ctx context.Context, sessionFK uuid.UUID, phase string) error
+	List(ctx context.Context, sessionFK uuid.UUID, limit int) ([]*SessionTurn, error)
+	CurrentRunning(ctx context.Context, sessionFK uuid.UUID) (*SessionTurn, error)
 }
 
 // EventRepository manages the session_events table (Level 2).
@@ -87,6 +101,13 @@ type MetricsRepository interface {
 	AggregateTokens(ctx context.Context, filter TokenFilter, bucket time.Duration) ([]TokenBucket, error)
 	// TopAgents returns agents ranked by total tokens since the given time.
 	TopAgents(ctx context.Context, since time.Time, limit int) ([]AgentUsage, error)
+	// TopSessionsByTokens returns sessions ranked by summed token deltas since the given time.
+	TopSessionsByTokens(ctx context.Context, since time.Time, limit int) ([]SessionUsage, error)
+	// TopSessionsByDuration returns active sessions ranked by current running
+	// turn elapsed (now - turn.started_at). Idle/archived sessions are excluded.
+	TopSessionsByDuration(ctx context.Context, since time.Time, limit int) ([]SessionDuration, error)
+	// TopAgentsByActiveSessions ranks agents by peak active_sessions in agent_metrics since.
+	TopAgentsByActiveSessions(ctx context.Context, since time.Time, limit int) ([]AgentUsage, error)
 	// PressureStats returns average and p95 context pressure across latest snapshots.
 	PressureStats(ctx context.Context, filter SessionFilter) (avg, p95 float64, err error)
 	// SumTokenUsage returns the sum of total_tokens matching the filter.

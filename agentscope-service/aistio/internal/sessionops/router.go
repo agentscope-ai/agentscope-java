@@ -70,9 +70,9 @@ func (r *Router) Execute(ctx context.Context, sess *store.Session, req Request) 
 
 	forced, errGate := checkGate(sess, cmd, req.Force)
 	if errGate != nil {
-		// busy=true on idle-required command → queue by default.
+		// Mid-turn / compressing on idle-required command → queue by default.
 		if errGate.Code == CodeBusy && errGate.Hint == HintWaitIdle &&
-			isIdleRequired(cmd) && sess.Busy != nil && *sess.Busy && shouldQueue(req) {
+			isIdleRequired(cmd) && phaseIsActive(sess) && shouldQueue(req) {
 			return r.enqueue(ctx, sess, req)
 		}
 		r.auditRejected(ctx, sess, req, forced, errGate)
@@ -82,6 +82,15 @@ func (r *Router) Execute(ctx context.Context, sess *store.Session, req Request) 
 	var result *Result
 	var execErr error
 	lockErr := r.withLock(ctx, sess.ID.String(), func(ctx context.Context) error {
+		// Re-resolve under lock in case affinity changed.
+		entry, errUnreach = checkInstanceReachable(r.Registry, sess)
+		if errUnreach != nil {
+			execErr = errUnreach
+			return nil
+		}
+		if entry.InstanceID != "" && entry.InstanceID != sess.InstanceRef {
+			sess.InstanceRef = entry.InstanceID
+		}
 		result, execErr = r.executeLocked(ctx, sess, entry, req, forced)
 		return nil
 	})

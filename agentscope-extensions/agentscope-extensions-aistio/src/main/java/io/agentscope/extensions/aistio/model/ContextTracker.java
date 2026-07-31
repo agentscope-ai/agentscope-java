@@ -51,7 +51,8 @@ public final class ContextTracker {
     private int tokensIn;
     private int tokensOut;
 
-    /** Tokens currently occupying the effective context window (for pressure). */
+    /** Tokens currently occupying the effective context window (for pressure).
+     * Set from the latest model-call inputTokens — never a sum across messages. */
     private int contextUsedTokens;
 
     private int messageCount;

@@ -16,7 +16,6 @@
 package io.agentscope.extensions.aistio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,7 +44,7 @@ class SessionBridgeContractTest {
     }
 
     @Test
-    void sessionsOmitBusyUntilKnownAndIncludeModelMaxTokens() {
+    void sessionsDeriveBusyFromPhaseAndIncludeModelMaxTokens() {
         AgentScopeAdapter adapter = new AgentScopeAdapter();
         SessionBridge bridge = bridgeWith(adapter, new StubAgent("a1", null));
 
@@ -53,16 +52,19 @@ class SessionBridgeContractTest {
 
         Map<String, Object> session = bridge.sessions().get(0);
         assertEquals(SESSION, session.get("id"));
-        assertFalse(session.containsKey("busy"));
+        assertEquals("idle", session.get("phase"));
+        assertEquals(false, session.get("busy"));
         assertEquals("qwen-max", session.get("model"));
         @SuppressWarnings("unchecked")
         Map<String, Object> tokenUsage = (Map<String, Object>) session.get("tokenUsage");
         assertEquals(128000, tokenUsage.get("maxTokens"));
 
         bridge.onEvent(SessionEvent.builder(SESSION, SessionEvent.SESSION_START).build());
+        assertEquals("active", bridge.sessions().get(0).get("phase"));
         assertEquals(true, bridge.sessions().get(0).get("busy"));
 
         bridge.setBusy(SESSION, false);
+        assertEquals("idle", bridge.sessions().get(0).get("phase"));
         assertEquals(false, bridge.sessions().get(0).get("busy"));
     }
 

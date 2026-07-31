@@ -54,12 +54,15 @@ func TestExecute_QueuesWhenBusy(t *testing.T) {
 	}
 }
 
-func TestExecute_BusyUnknownNeedsForce(t *testing.T) {
+func TestExecute_UnknownPhaseNeedsForce(t *testing.T) {
 	st := newTestStore(t)
 	sess, _ := st.Sessions().Upsert(context.Background(), &store.Session{
 		SessionID: "u1", AgentName: "a", Namespace: "default",
 		Phase: store.SessionPhaseIdle, Busy: nil, InstanceRef: "inst-u",
 	})
+	// Store defaults empty phase → active; clear after upsert to simulate unknown.
+	sess.Phase = ""
+	sess.Busy = nil
 	reg := dataplane.NewRegistry()
 	reg.Upsert(dataplane.Entry{
 		AgentName: "a", Namespace: "default", InstanceID: "inst-u",

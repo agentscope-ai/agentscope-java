@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,8 @@ import {
   fetchDataPlanes,
   fetchManagedAgent,
   fetchRuntimeSessions,
+  phaseTone,
+  sessionDetailPath,
 } from './api';
 
 type TabId = 'definition' | 'instances' | 'sessions' | 'usage' | 'inventory';
@@ -26,14 +28,28 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'inventory', label: 'Inventory' },
 ];
 
-function isTerminated(phase?: string) {
-  return (phase || '').toLowerCase() === 'terminated';
+function isHistory(phase?: string) {
+  const p = (phase || '').toLowerCase();
+  return p === 'archived' || p === 'terminated';
+}
+
+function isActiveOps(phase?: string) {
+  const p = (phase || '').toLowerCase();
+  return p === 'active' || p === 'idle' || p === 'compressing' || (!p && !isHistory(phase));
 }
 
 export default function OperateAgentDetailPage({ name }: { name: string }) {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const namespace = params.get('namespace') || 'default';
-  const [tab, setTab] = useState<TabId>('definition');
+  const tabParam = params.get('tab');
+  const tab: TabId = TABS.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'definition';
+
+  function setTab(next: TabId) {
+    const nextParams = new URLSearchParams(params);
+    if (next === 'definition') nextParams.delete('tab');
+    else nextParams.set('tab', next);
+    setParams(nextParams, { replace: true });
+  }
 
   const agent = useQuery({
     queryKey: ['v1-agent', name, namespace],
@@ -85,8 +101,9 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
     const act: typeof allSessions = [];
     const hist: typeof allSessions = [];
     for (const s of allSessions) {
-      if (isTerminated(s.phase)) hist.push(s);
-      else act.push(s);
+      if (isHistory(s.phase)) hist.push(s);
+      else if (isActiveOps(s.phase)) act.push(s);
+      else hist.push(s);
     }
     return { active: act, history: hist };
   }, [allSessions]);
@@ -204,7 +221,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
           <Card>
             <CardHeader>
               <CardTitle>Active</CardTitle>
-              <CardDescription>Non-terminated sessions</CardDescription>
+              <CardDescription>active · idle · compressing</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {active.length === 0 ? (
@@ -213,12 +230,14 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                 active.map((s) => (
                   <Link
                     key={s.id}
-                    to={`/operate/sessions/${encodeURIComponent(s.sessionId)}`}
+                    to={sessionDetailPath(s)}
                     className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm hover:bg-muted/50"
                   >
                     <div className="min-w-0">
                       <div className="truncate font-medium">{s.sessionId}</div>
-                      <div className="mt-0.5 text-sm uppercase text-muted-foreground">{s.phase}</div>
+                      <div className="mt-1">
+                        <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                      </div>
                     </div>
                     <PressureGauge value={s.snapshot?.contextPressure} />
                   </Link>
@@ -229,21 +248,23 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
           <Card>
             <CardHeader>
               <CardTitle>History</CardTitle>
-              <CardDescription>Terminated sessions</CardDescription>
+              <CardDescription>archived (restore OK) · terminated</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {history.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No terminated sessions.</p>
+                <p className="text-sm text-muted-foreground">No archived sessions.</p>
               ) : (
                 history.map((s) => (
                   <Link
                     key={s.id}
-                    to={`/operate/sessions/${encodeURIComponent(s.sessionId)}`}
+                    to={sessionDetailPath(s)}
                     className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm hover:bg-muted/50"
                   >
                     <div className="min-w-0">
                       <div className="truncate font-medium">{s.sessionId}</div>
-                      <div className="mt-0.5 text-sm uppercase text-muted-foreground">{s.phase}</div>
+                      <div className="mt-1">
+                        <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                      </div>
                     </div>
                     <PressureGauge value={s.snapshot?.contextPressure} />
                   </Link>
@@ -257,9 +278,10 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       {tab === 'usage' && (
         <Card>
           <CardHeader>
-            <CardTitle>Usage</CardTitle>
+            <CardTitle>Usage samples</CardTitle>
             <CardDescription>
-              Token metrics for the last 24h ·{' '}
+              One row per control-plane poll (last 24h). Tokens = usage observed in that interval
+              (delta), not a running total ·{' '}
               <Link className="text-primary hover:underline" to="/operate">
                 Fleet overview
               </Link>
@@ -279,7 +301,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                     <tr>
                       <th className="px-4 py-3 font-medium">Recorded</th>
                       <th className="px-4 py-3 font-medium">Active</th>
-                      <th className="px-4 py-3 font-medium">Tokens</th>
+                      <th className="px-4 py-3 font-medium">Δ Tokens</th>
                       <th className="px-4 py-3 font-medium">Pressure</th>
                       <th className="px-4 py-3 font-medium">Errors</th>
                     </tr>

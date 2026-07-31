@@ -225,9 +225,12 @@ func (s *Server) registerRoutes() {
 				sessions.DELETE("/:sessionId/subagent-tasks/:taskId", s.cancelSessionSubagentTask)
 				sessions.POST("/:sessionId/plan-mode", s.postSessionPlanMode)
 				sessions.GET("/:sessionId/commands", s.listSessionCommands)
+				sessions.GET("/:sessionId/turns", s.listSessionTurns)
 				sessions.POST("/:sessionId/compress", s.compressSession)
 				sessions.POST("/:sessionId/terminate", s.terminateSession)
 				sessions.POST("/:sessionId/abort", s.abortSession)
+				sessions.POST("/:sessionId/archive", s.archiveSession)
+				sessions.POST("/:sessionId/restore", s.restoreSession)
 				sessions.DELETE("/:sessionId", s.deleteSession)
 			}
 			v1.GET("/commands", s.listRecentCommands)

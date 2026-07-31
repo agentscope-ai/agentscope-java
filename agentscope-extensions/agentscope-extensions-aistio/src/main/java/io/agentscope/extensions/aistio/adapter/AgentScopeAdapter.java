@@ -272,20 +272,44 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
             if (state == null) {
                 return;
             }
-            int used = 0;
-            for (Msg msg : state.getContext()) {
-                ChatUsage usage = msg.getChatUsage();
-                if (usage == null) {
-                    usage = msg.getUsage();
-                }
-                if (usage != null) {
-                    used += usage.getTotalTokens();
-                }
-            }
-            target.setContextUsedTokens(sessionId, used);
+            target.setContextUsedTokens(sessionId, windowUsedTokens(state.getContext()));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "aistio: context pressure refresh failed for " + sessionId, e);
         }
+    }
+
+    /**
+     * Estimates tokens currently occupying the model context window.
+     *
+     * <p>Each message's {@link ChatUsage#getInputTokens()} already includes the full prompt for that
+     * turn (prior history + new tokens). Summing usages across messages therefore double-counts
+     * history. The latest non-zero input size is the best available proxy for live window
+     * occupancy.
+     */
+    static int windowUsedTokens(List<Msg> context) {
+        if (context == null || context.isEmpty()) {
+            return 0;
+        }
+        int used = 0;
+        for (Msg msg : context) {
+            ChatUsage usage = chatUsageOf(msg);
+            if (usage == null) {
+                continue;
+            }
+            int input = usage.getInputTokens();
+            if (input > 0) {
+                used = input;
+            }
+        }
+        return used;
+    }
+
+    private static ChatUsage chatUsageOf(Msg msg) {
+        if (msg == null) {
+            return null;
+        }
+        ChatUsage usage = msg.getChatUsage();
+        return usage != null ? usage : msg.getUsage();
     }
 
     boolean isKnownSession(String sessionId) {
@@ -314,16 +338,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                                 new ContextSnapshot.ContextMessage(roleOf(msg), text, isSummary));
                     }
 
-                    int totalTokens = 0;
-                    for (Msg msg : context) {
-                        ChatUsage usage = msg.getChatUsage();
-                        if (usage == null) {
-                            usage = msg.getUsage();
-                        }
-                        if (usage != null) {
-                            totalTokens += usage.getTotalTokens();
-                        }
-                    }
+                    // Window occupancy (not lifetime spend): see windowUsedTokens().
+                    int totalTokens = windowUsedTokens(context);
 
                     String basePrompt = sysPromptOf(target);
                     String effectivePrompt = basePrompt;

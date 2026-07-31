@@ -30,6 +30,7 @@ type Store struct {
 	tasks        []store.TeamTask
 	history      []store.TeamTaskHistory
 	commands     []store.SessionCommand
+	turns        []store.SessionTurn
 
 	nextSnapID int64
 	nextEvtID  int64
@@ -55,6 +56,7 @@ func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 }
 
 func (s *Store) Sessions() store.SessionRepository                 { return &sessionRepo{s} }
+func (s *Store) Turns() store.TurnRepository                       { return &turnRepo{s} }
 func (s *Store) Events() store.EventRepository                     { return &eventRepo{s} }
 func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return &contextRepo{s} }
 func (s *Store) Metrics() store.MetricsRepository                  { return &metricsRepo{s} }

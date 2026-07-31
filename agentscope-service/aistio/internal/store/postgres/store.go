@@ -21,6 +21,7 @@ type Store struct {
 	retention store.RetentionConfig
 
 	sessions *sessionRepo
+	turns    *turnRepo
 	events   *eventRepo
 	contexts *contextRepo
 	metrics  *metricsRepo
@@ -56,6 +57,7 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 
 	s := &Store{pool: pool, retention: cfg.Retention}
 	s.sessions = &sessionRepo{pool: pool}
+	s.turns = &turnRepo{pool: pool}
 	s.events = &eventRepo{pool: pool}
 	s.contexts = &contextRepo{pool: pool}
 	s.metrics = &metricsRepo{pool: pool}
@@ -66,6 +68,7 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 }
 
 func (s *Store) Sessions() store.SessionRepository                 { return s.sessions }
+func (s *Store) Turns() store.TurnRepository                       { return s.turns }
 func (s *Store) Events() store.EventRepository                     { return s.events }
 func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return s.contexts }
 func (s *Store) Metrics() store.MetricsRepository                  { return s.metrics }

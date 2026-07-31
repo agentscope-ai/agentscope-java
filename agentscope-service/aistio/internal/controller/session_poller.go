@@ -90,8 +90,8 @@ func (r *SessionPollerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if r.Store != nil {
-		if _, err := r.Store.Sessions().TerminateMissing(ctx, agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
-			logger.Error(err, "failed to mark orphaned sessions")
+		if _, err := r.Store.Sessions().ArchiveMissing(ctx, agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
+			logger.Error(err, "failed to archive sessions missing from data plane")
 		}
 	}
 

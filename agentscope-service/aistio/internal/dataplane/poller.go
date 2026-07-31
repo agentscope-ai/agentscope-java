@@ -60,7 +60,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 	}
 	keep := make([]string, 0, len(snaps))
 	var activeCount int32
-	var totalTokens int64
+	var intervalTokens int64
 	var pressureSum float64
 	var pressureN int
 	for _, snap := range snaps {
@@ -92,6 +92,9 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			log.Printf("dataplane poller: upsert session %s: %v", snap.ID, err)
 			continue
 		}
+		if err := p.Store.Turns().SyncOnPhase(ctx, stored.ID, phase); err != nil {
+			log.Printf("dataplane poller: sync turn %s: %v", snap.ID, err)
+		}
 		if phase == store.SessionPhaseActive {
 			activeCount++
 		}
@@ -100,7 +103,9 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			prompt = snap.TokenUsage.PromptTokens
 			completion = snap.TokenUsage.CompletionTokens
 		}
-		totalTokens += prompt + completion
+		prevSnap, _ := p.Store.Metrics().LatestSnapshot(ctx, stored.ID)
+		dPrompt, dCompletion := store.TokenUsageDelta(prevSnap, prompt, completion)
+		intervalTokens += dPrompt + dCompletion
 		if snap.ContextPressure > 0 {
 			pressureSum += snap.ContextPressure
 			pressureN++
@@ -122,19 +127,21 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			ContextHash:           snap.ContextHash,
 			TaskSummary:           taskSummary,
 		})
-		tok := &store.TokenUsageMetric{
-			SessionFK:        &stored.ID,
-			AgentName:        e.AgentName,
-			Namespace:        e.Namespace,
-			PromptTokens:     prompt,
-			CompletionTokens: completion,
-			TotalTokens:      prompt + completion,
-			RecordedAt:       time.Now().UTC(),
+		if dPrompt > 0 || dCompletion > 0 {
+			tok := &store.TokenUsageMetric{
+				SessionFK:        &stored.ID,
+				AgentName:        e.AgentName,
+				Namespace:        e.Namespace,
+				PromptTokens:     dPrompt,
+				CompletionTokens: dCompletion,
+				TotalTokens:      dPrompt + dCompletion,
+				RecordedAt:       time.Now().UTC(),
+			}
+			if snap.Model != "" {
+				tok.Model = snap.Model
+			}
+			_ = p.Store.Metrics().RecordTokenUsage(ctx, tok)
 		}
-		if snap.Model != "" {
-			tok.Model = snap.Model
-		}
-		_ = p.Store.Metrics().RecordTokenUsage(ctx, tok)
 
 		if snap.ContextHash != "" && hasCap(e.Capabilities, "context-query") {
 			prev, err := p.Store.ContextSnapshots().Latest(ctx, stored.ID)
@@ -156,10 +163,12 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		Namespace:          e.Namespace,
 		RecordedAt:         time.Now().UTC(),
 		ActiveSessions:     activeCount,
-		TotalTokens:        totalTokens,
+		TotalTokens:        intervalTokens,
 		AvgContextPressure: avgPressure,
 	})
-	_, _ = p.Store.Sessions().TerminateMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+	_, _ = p.Store.Sessions().ArchiveMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+	// TTL archive: idle sessions with no activity for 7d move to History (archived).
+	_, _ = p.Store.Sessions().ArchiveIdleOlderThan(ctx, 7*24*time.Hour)
 }
 
 // deriveBusy implements the busy/phase resolution chain:

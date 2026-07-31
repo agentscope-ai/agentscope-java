@@ -239,6 +239,6 @@ func TestMatrix_StaleInstance_UnreachableNoSiblingHit(t *testing.T) {
 		t.Fatal("stale instance must not be contacted")
 	}
 	if siblingDP.CompressCalledFor("sess-1") || siblingDP.AbortCalledFor("sess-1") {
-		t.Fatal("must NOT fall back to sibling instance")
+		t.Fatal("must NOT fall back to sibling while session is active")
 	}
 }

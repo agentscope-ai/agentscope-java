@@ -12,6 +12,8 @@ export interface RuntimeSession {
   startedAt?: string;
   lastActiveAt?: string;
   instanceHealthy?: boolean;
+  /** Resolved data-plane HTTP base URL for instanceRef (when registered). */
+  instanceBaseUrl?: string;
   capabilities?: string[];
   contractLevel?: number;
   model?: string;
@@ -36,7 +38,43 @@ export interface AgentUsage {
   errorCount?: number;
 }
 
+export interface SessionUsage {
+  sessionFk: string;
+  sessionId: string;
+  agentName: string;
+  namespace: string;
+  phase?: string;
+  totalTokens: number;
+}
+
+export interface SessionDurationRank {
+  sessionFk: string;
+  sessionId: string;
+  agentName: string;
+  namespace: string;
+  phase?: string;
+  durationMs: number;
+  startedAt?: string;
+  endedAt?: string;
+  turnIndex?: number;
+}
+
+export interface SessionTurn {
+  id: string;
+  sessionFk: string;
+  turnIndex: number;
+  status: string;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  userPreview?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  createdAt?: string;
+}
+
 export interface HighPressureSession {
+  id?: string;
   sessionId: string;
   agentName: string;
   namespace: string;
@@ -53,6 +91,7 @@ export interface StaleDataplane {
 }
 
 export interface OrphanSession {
+  id?: string;
   sessionId: string;
   agentName: string;
   namespace: string;
@@ -68,12 +107,12 @@ export interface FleetOverview {
   sessionCount: number;
   activeSessionCount: number;
   sessionsByPhase?: Record<string, number>;
-  avgContextPressure: number;
-  p95ContextPressure?: number;
   tokenUsage24h: number;
   errorCount24h?: number;
   topAgents?: AgentUsage[];
-  highPressureSessions?: HighPressureSession[];
+  topSessionsByTokens?: SessionUsage[];
+  topSessionsByDuration?: SessionDurationRank[];
+  topAgentsByActive?: AgentUsage[];
   staleDataplanes?: StaleDataplane[];
   orphanSessions?: OrphanSession[];
 }
@@ -194,17 +233,51 @@ export function fetchAgentMetrics(params?: { agent?: string; namespace?: string;
   return api.get<{ metrics: AgentMetric[] }>(`/api/v1/metrics/agents${qs ? `?${qs}` : ''}`);
 }
 
-export function fetchRuntimeSessions(params?: { agent?: string; phase?: string }) {
+export function fetchRuntimeSessions(params?: {
+  agent?: string;
+  phase?: string;
+  namespace?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const q = new URLSearchParams();
   if (params?.agent) q.set('agent', params.agent);
   if (params?.phase) q.set('phase', params.phase);
+  if (params?.namespace) q.set('namespace', params.namespace);
+  if (params?.limit != null) q.set('limit', String(params.limit));
+  if (params?.offset != null) q.set('offset', String(params.offset));
   const qs = q.toString();
   return api.get<{ sessions: RuntimeSession[] }>(`/api/v1/sessions${qs ? `?${qs}` : ''}`);
 }
 
-export function fetchRuntimeSession(id: string, agent?: string) {
-  const q = agent ? `?agent=${encodeURIComponent(agent)}` : '';
-  return api.get<RuntimeSession>(`/api/v1/sessions/${encodeURIComponent(id)}${q}`);
+/** Prefer control-plane store UUID; fall back to framework sessionId + agent. */
+export function sessionDetailPath(s: {
+  id?: string;
+  sessionId: string;
+  agentName?: string;
+  namespace?: string;
+}): string {
+  if (s.id) {
+    return `/operate/sessions/${encodeURIComponent(s.id)}`;
+  }
+  const q = new URLSearchParams();
+  if (s.agentName) q.set('agent', s.agentName);
+  if (s.namespace) q.set('namespace', s.namespace);
+  const qs = q.toString();
+  return `/operate/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+}
+
+export function fetchRuntimeSession(
+  id: string,
+  opts?: { agent?: string; namespace?: string },
+) {
+  const q = new URLSearchParams();
+  if (opts?.agent) q.set('agent', opts.agent);
+  if (opts?.namespace) q.set('namespace', opts.namespace);
+  const qs = q.toString();
+  return api.get<RuntimeSession>(
+    `/api/v1/sessions/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
+  );
 }
 
 export function fetchSessionEvents(id: string) {
@@ -238,6 +311,10 @@ export function fetchSessionCommands(id: string) {
   return api.get<{ commands: SessionCommand[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/commands`);
 }
 
+export function fetchSessionTurns(id: string) {
+  return api.get<{ turns: SessionTurn[] }>(`/api/v1/sessions/${encodeURIComponent(id)}/turns`);
+}
+
 export function compressSession(id: string, opts?: { force?: boolean; queue?: boolean }) {
   return api.post<{
     accepted?: boolean;
@@ -256,8 +333,56 @@ export function terminateSession(id: string) {
   return api.post(`/api/v1/sessions/${encodeURIComponent(id)}/terminate`);
 }
 
+export function archiveSession(id: string) {
+  return api.post<{ accepted?: boolean; phase?: string }>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/archive`,
+  );
+}
+
+export function restoreSession(id: string) {
+  return api.post<{ accepted?: boolean; phase?: string }>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/restore`,
+  );
+}
+
 export function abortSession(id: string) {
   return api.post(`/api/v1/sessions/${encodeURIComponent(id)}/abort`);
+}
+
+/** Phase badge tone for Operate UI. */
+export function phaseTone(phase?: string): 'default' | 'success' | 'warning' | 'danger' | 'info' {
+  switch ((phase || '').toLowerCase()) {
+    case 'active':
+      return 'warning';
+    case 'idle':
+      return 'success';
+    case 'compressing':
+      return 'info';
+    case 'terminated':
+      return 'danger';
+    case 'archived':
+      return 'default';
+    default:
+      return 'default';
+  }
+}
+
+/** Human hint beside phase: active = mid-turn, idle = ops allowed. */
+export function phaseHint(phase?: string): string {
+  switch ((phase || '').toLowerCase()) {
+    case 'active':
+      return 'inferencing';
+    case 'idle':
+      return 'ready (compress OK)';
+    case 'compressing':
+      return 'compress in flight';
+    case 'archived':
+      return 'history';
+    case 'terminated':
+      return 'destroyed';
+    default:
+      return '';
+  }
 }
 
 export function fetchManagedAgents() {

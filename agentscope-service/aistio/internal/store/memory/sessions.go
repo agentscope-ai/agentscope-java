@@ -179,7 +179,7 @@ func (r *sessionRepo) UpdatePhase(_ context.Context, id uuid.UUID, phase string)
 	return nil
 }
 
-func (r *sessionRepo) TerminateMissing(_ context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
+func (r *sessionRepo) ArchiveMissing(_ context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	keep := map[string]bool{}
@@ -193,7 +193,7 @@ func (r *sessionRepo) TerminateMissing(_ context.Context, agentName, namespace s
 		if s.AgentName != agentName || s.Namespace != namespace {
 			continue
 		}
-		if s.Phase == store.SessionPhaseTerminated {
+		if s.Phase == store.SessionPhaseTerminated || s.Phase == store.SessionPhaseArchived {
 			continue
 		}
 		if keep[s.SessionID] {
@@ -202,8 +202,41 @@ func (r *sessionRepo) TerminateMissing(_ context.Context, agentName, namespace s
 		if !s.CreatedAt.Before(cutoff) {
 			continue
 		}
-		s.Phase = store.SessionPhaseTerminated
-		s.TerminatedAt = &now
+		s.Phase = store.SessionPhaseArchived
+		falseBusy := false
+		s.Busy = &falseBusy
+		s.UpdatedAt = now
+		n++
+	}
+	return n, nil
+}
+
+func (r *sessionRepo) ArchiveIdleOlderThan(_ context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		return 0, nil
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	cutoff := time.Now().UTC().Add(-olderThan)
+	n := 0
+	now := time.Now().UTC()
+	for _, s := range r.s.sessions {
+		if s.Phase != store.SessionPhaseIdle {
+			continue
+		}
+		activity := s.CreatedAt
+		if !s.UpdatedAt.IsZero() {
+			activity = s.UpdatedAt
+		}
+		if s.LastActiveAt != nil {
+			activity = *s.LastActiveAt
+		}
+		if !activity.Before(cutoff) {
+			continue
+		}
+		s.Phase = store.SessionPhaseArchived
+		falseBusy := false
+		s.Busy = &falseBusy
 		s.UpdatedAt = now
 		n++
 	}
@@ -215,7 +248,8 @@ func (r *sessionRepo) CountActive(_ context.Context, agentName, namespace string
 	defer r.s.mu.RUnlock()
 	var n int32
 	for _, s := range r.s.sessions {
-		if s.AgentName == agentName && s.Namespace == namespace && s.Phase != store.SessionPhaseTerminated {
+		if s.AgentName == agentName && s.Namespace == namespace &&
+			s.Phase != store.SessionPhaseTerminated && s.Phase != store.SessionPhaseArchived {
 			n++
 		}
 	}

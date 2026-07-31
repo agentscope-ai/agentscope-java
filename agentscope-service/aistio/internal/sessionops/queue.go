@@ -62,13 +62,18 @@ func (w *QueueWorker) tick(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		if sess.Busy != nil && *sess.Busy {
-			continue // still busy — wait
+		if phaseIsActive(sess) || normalizePhase(sess.Phase) == store.SessionPhaseCompressing {
+			continue // still mid-turn / compressing — wait
 		}
-		// busy unknown: only drain if the original request was Forced, else leave queued
-		// until an operator re-submits with force (or busy becomes known idle).
-		if sess.Busy == nil && !cmd.Forced {
-			continue
+		phase := normalizePhase(sess.Phase)
+		if phase != store.SessionPhaseIdle && !cmd.Forced {
+			// Unknown phase without force: leave queued until idle is observed.
+			if phase == "" && sess.Busy == nil {
+				continue
+			}
+			if phase != "" && phase != store.SessionPhaseIdle {
+				continue
+			}
 		}
 		if _, err := w.Router.ExecuteQueued(ctx, sess, cmd); err != nil {
 			if opErr, ok := AsError(err); ok && opErr.Code == CodeBusy {
