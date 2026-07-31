@@ -22,6 +22,7 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
+import io.agentscope.harness.agent.skill.RuntimeContextSkillRepository;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.HarnessSkillEntry;
@@ -32,6 +33,7 @@ import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,19 +57,16 @@ import reactor.core.publisher.Mono;
  *       {@code <wsRoot>/.skills-cache/<source-ns>/<skill>/} via {@link MarketplaceStager}.
  *   <li>Build a {@link SkillCatalog} of {@link HarnessSkillEntry} (with lazy resources and
  *       resolved {@code filesRoot}).
- *   <li>Install the catalog into the {@link SkillRuntime}, which (idempotently) registers the
- *       {@code load_skill_through_path} tool on the agent's runtime toolkit.
+ *   <li>Bind the catalog to the current {@link RuntimeContext} through {@link SkillRuntime}, which
+ *       also (idempotently) registers {@code load_skill_through_path} on the runtime toolkit.
  *   <li>Render the {@code <available_skills>} prompt block and append it to the current system
  *       prompt.
  * </ol>
  *
- * <p><b>Toolkit note:</b> the {@code toolkit} constructor parameter is accepted for API
- * compatibility but is <em>not</em> used for runtime tool registration. Instead,
- * {@link #onSystemPrompt} always installs into {@code agent.getToolkit()} so the tool is
- * registered on the toolkit that the running agent actually uses for reasoning. This matters
- * because {@link io.agentscope.harness.agent.HarnessAgent HarnessAgent} makes a deep copy of
- * the toolkit when building the inner {@link io.agentscope.core.ReActAgent ReActAgent}, so the
- * constructor-injected intermediate toolkit is not the same instance as the agent's live toolkit.
+ * <p><b>Toolkit note:</b> construction registers the load tool as ungrouped before {@link
+ * io.agentscope.core.ReActAgent ReActAgent} copies the toolkit, so persisted sessions with an empty
+ * active-group list still see it. Each system-prompt pass also verifies the live toolkit, so direct
+ * middleware usage remains supported.
  */
 @SuppressWarnings("deprecation")
 public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
@@ -75,13 +74,13 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
-    private final Toolkit toolkit;
     private final SkillFilter builderFilter;
     private final SkillVisibilityFilter visibilityFilter;
     private final MarketplaceStager stager;
     private final ShellPathPolicy shellPathPolicy;
     private final SkillRuntime runtime;
     private final Map<AgentSkillRepository, String> sourceNamespaces;
+    private final Map<String, RepoBound> frozenSkills;
 
     public HarnessSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
         this(repositories, toolkit, null, null, null, ShellPathPolicy.noShell());
@@ -110,8 +109,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Full constructor.
      *
      * @param repositories     compose-ordered list (low-to-high priority)
-     * @param toolkit          accepted for API compatibility; not used for runtime registration
-     *                         (see class-level note on toolkit copy semantics)
+     * @param toolkit          toolkit being assembled for the agent
      * @param builderFilter    skill filter passed at agent build time (may be {@code null})
      * @param visibilityFilter optional per-request filter (canary/allow-list)
      * @param stager           marketplace stager; {@code null} disables staging entirely
@@ -126,8 +124,46 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
             SkillVisibilityFilter visibilityFilter,
             MarketplaceStager stager,
             ShellPathPolicy shellPathPolicy) {
+        this(
+                repositories,
+                toolkit,
+                builderFilter,
+                visibilityFilter,
+                stager,
+                shellPathPolicy,
+                false);
+    }
+
+    /**
+     * Creates a middleware whose merged repository view is captured once during construction.
+     * Filters remain per-call, and lazy resource access remains bound to the current context.
+     */
+    public static HarnessSkillMiddleware frozen(
+            List<AgentSkillRepository> repositories,
+            Toolkit toolkit,
+            SkillFilter builderFilter,
+            SkillVisibilityFilter visibilityFilter,
+            MarketplaceStager stager,
+            ShellPathPolicy shellPathPolicy) {
+        return new HarnessSkillMiddleware(
+                repositories,
+                toolkit,
+                builderFilter,
+                visibilityFilter,
+                stager,
+                shellPathPolicy,
+                true);
+    }
+
+    private HarnessSkillMiddleware(
+            List<AgentSkillRepository> repositories,
+            Toolkit toolkit,
+            SkillFilter builderFilter,
+            SkillVisibilityFilter visibilityFilter,
+            MarketplaceStager stager,
+            ShellPathPolicy shellPathPolicy,
+            boolean freezeRepositories) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
-        this.toolkit = toolkit;
         this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
         this.visibilityFilter = visibilityFilter;
         this.stager = stager;
@@ -137,11 +173,22 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         // Pre-resolve source namespaces once at build time. The compose order is fixed for
         // the lifetime of the middleware, so this is safe and avoids repeated work per call.
         this.sourceNamespaces = MarketplaceStager.resolveSourceNamespaces(this.repositories);
+        this.frozenSkills =
+                freezeRepositories
+                        ? Collections.unmodifiableMap(
+                                new LinkedHashMap<>(mergeRepositories(RuntimeContext.empty())))
+                        : null;
+        this.runtime.prepareToolkit(toolkit);
     }
 
     /** Visible for tests / introspection. */
     public SkillRuntime runtime() {
         return runtime;
+    }
+
+    /** Whether repository enumeration is frozen to the construction-time snapshot. */
+    public boolean isFrozen() {
+        return frozenSkills != null;
     }
 
     /**
@@ -159,13 +206,14 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
-        Map<String, RepoBound> merged = mergeRepositories(ctx);
+        Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
             return;
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        if (!visible.isEmpty()) {
-            stager.stage(visible, sourceNamespaces);
+        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        if (!enabled.isEmpty()) {
+            stager.stage(enabled, sourceNamespaces);
         }
     }
 
@@ -177,23 +225,24 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
         Toolkit agentToolkit = agent != null ? agent.getToolkit() : null;
 
-        Map<String, RepoBound> merged = mergeRepositories(ctx);
+        Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
-            runtime.install(SkillCatalog.empty(), agentToolkit);
+            runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
 
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        if (visible.isEmpty()) {
-            runtime.install(SkillCatalog.empty(), agentToolkit);
+        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        if (enabled.isEmpty()) {
+            runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
 
         Map<String, StageResult> staged =
-                stager != null ? stager.stage(visible, sourceNamespaces) : Map.of();
+                stager != null ? stager.stage(enabled, sourceNamespaces) : Map.of();
 
-        List<HarnessSkillEntry> entries = new ArrayList<>(visible.size());
-        for (RepoBound bound : visible) {
+        List<HarnessSkillEntry> entries = new ArrayList<>(enabled.size());
+        for (RepoBound bound : enabled) {
             SkillResources lazy = null;
             if (bound.repo() instanceof LazyResourceCapable lrc) {
                 try {
@@ -211,11 +260,9 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
 
         SkillCatalog catalog = SkillCatalog.of(entries);
-        runtime.install(catalog, agentToolkit);
+        runtime.install(catalog, ctx, agentToolkit);
 
-        SkillFilter effective =
-                builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
-        String append = runtime.renderPrompt(catalog, effective);
+        String append = runtime.renderPrompt(catalog, SkillFilter.all());
         if (append == null || append.isEmpty()) {
             return Mono.just(currentPrompt);
         }
@@ -228,6 +275,29 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     //  Internals
     // ---------------------------------------------------------------------
 
+    private Map<String, RepoBound> skillsForCall(RuntimeContext ctx) {
+        return frozenSkills != null ? frozenSkills : mergeRepositories(ctx);
+    }
+
+    private SkillFilter effectiveFilter(RuntimeContext ctx) {
+        return builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
+    }
+
+    private List<RepoBound> applySkillFilter(
+            java.util.Collection<RepoBound> input, SkillFilter filter) {
+        if (input.isEmpty()) {
+            return List.of();
+        }
+        SkillFilter effective = filter != null ? filter : SkillFilter.all();
+        List<RepoBound> out = new ArrayList<>(input.size());
+        for (RepoBound bound : input) {
+            if (effective.isAllowed(bound.skill().getName())) {
+                out.add(bound);
+            }
+        }
+        return out;
+    }
+
     /**
      * Merge skills from every repository, in compose order. Later entries with the same
      * {@code AgentSkill.name} win. Also remembers the source repository per winning skill so
@@ -238,7 +308,10 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
-                skills = repo.getAllSkills();
+                skills =
+                        repo instanceof RuntimeContextSkillRepository contextRepository
+                                ? contextRepository.getAllSkills(ctx)
+                                : repo.getAllSkills();
             } catch (Exception e) {
                 log.warn(
                         "Skill repository {} failed to load: {}",

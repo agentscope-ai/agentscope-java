@@ -29,6 +29,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
@@ -43,6 +44,8 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -112,6 +115,14 @@ public class AgentSpawnTool {
      * argument → {@code false}.
      */
     public static final String CTX_EXPOSE_TO_USER = "agentscope.subagent.expose_to_user";
+
+    /**
+     * {@link RuntimeContext} string key for the immutable subagent registry selected by the
+     * current parent-agent invocation. {@link
+     * io.agentscope.harness.agent.middleware.SubagentsMiddleware} installs a namespace-scoped
+     * manager here so concurrent callers never overwrite each other's declarations.
+     */
+    public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
 
     private static final String BG_RESULT_TEMPLATE =
             """
@@ -240,23 +251,24 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
+            if (manager.isPrimaryOnly(agentId)) {
                 return Mono.just(
                         "Error: agent_id '"
                                 + agentId
                                 + "' is PRIMARY-only and cannot be spawned as a subagent.");
             }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
             return Mono.just("Error: Unknown agent_id: " + agentId);
         }
         log.debug("agent_spawn resolved: agentId={}", agentId);
         Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(agentId);
+        var declOpt = manager.getDeclaration(agentId);
         boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
 
         String key;
@@ -268,6 +280,14 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                propagatePlanMode(
+                        parentState, currentUserId, existing.sessionId(), existing.agent());
+                propagateParentDenyRules(
+                        parentState,
+                        currentUserId,
+                        existing.sessionId(),
+                        existing.agent(),
+                        declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -295,17 +315,10 @@ public class AgentSpawnTool {
         persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
-        if (parentState != null
-                && parentState.getPlanModeContext().isPlanActive()
-                && agent instanceof HarnessAgent ha) {
-            ha.enterPlanMode(currentUserId, sessionId);
-        }
+        propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -353,8 +366,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
@@ -501,7 +513,11 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(spawned.agentId());
+        DefaultAgentManager manager = managerFor(runtimeContext);
+        propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
+        var declOpt = manager.getDeclaration(spawned.agentId());
+        propagateParentDenyRules(
+                parentState, currentUserId, spawned.sessionId(), spawned.agent(), declOpt);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -519,8 +535,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -592,6 +607,30 @@ public class AgentSpawnTool {
     //  Helpers
     // -----------------------------------------------------------------
 
+    private DefaultAgentManager managerFor(RuntimeContext runtimeContext) {
+        DefaultAgentManager scoped =
+                runtimeContext != null
+                        ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
+                        : null;
+        return scoped != null ? scoped : agentManager;
+    }
+
+    /**
+     * Activates plan mode on a local child immediately before it can be invoked.
+     *
+     * <p>This must run for both newly-created and reused children. In particular, a persistent
+     * child may have been created while its parent was in build mode and then reused after the
+     * parent entered plan mode.
+     */
+    private static void propagatePlanMode(
+            AgentState parentState, String userId, String sessionId, Agent child) {
+        if (parentState != null
+                && parentState.getPlanModeContext().isPlanActive()
+                && child instanceof HarnessAgent harnessChild) {
+            harnessChild.enterPlanMode(userId, sessionId);
+        }
+    }
+
     /**
      * Returns a {@link Mono} that invokes the local subagent.
      *
@@ -621,6 +660,7 @@ public class AgentSpawnTool {
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
                 ctxView -> {
+                    DefaultAgentManager manager = managerFor(parentCtx);
                     // ── Path 1: streamEvents() — AgentEvent forwarding ──
                     Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
                     if (emitterOpt.isPresent()) {
@@ -633,15 +673,17 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
-                        return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
+                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                .doOnTerminate(
-                                        () ->
+                                // doFinally, not doOnTerminate: the latter skips cancel, so a
+                                // parent cancel would leave the AgentStartEvent above unmatched
+                                // and consumers would render this subagent as running forever.
+                                .doFinally(
+                                        signal ->
                                                 parentEmitter.emit(
                                                         new AgentEndEvent(null)
                                                                 .withSource(sourcePath)));
@@ -652,8 +694,7 @@ public class AgentSpawnTool {
                         SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
                         EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                        return agentManager
-                                .invokeAgentStream(
+                        return manager.invokeAgentStream(
                                         agent,
                                         sessionId,
                                         userId,
@@ -677,13 +718,13 @@ public class AgentSpawnTool {
                                 .switchIfEmpty(
                                         Mono.defer(
                                                 () ->
-                                                        agentManager.invokeAgent(
+                                                        manager.invokeAgent(
                                                                 agent, sessionId, userId, prompt,
                                                                 parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -901,7 +942,7 @@ public class AgentSpawnTool {
             return null;
         }
         Optional<Agent> agentOpt =
-                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+                managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
         if (agentOpt.isEmpty()) {
             log.warn(
                     "Failed to restore subagent from state: agentId={} not found in registry",
@@ -1124,6 +1165,7 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -1141,8 +1183,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -1203,25 +1244,86 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
+    private static void propagateParentDenyRules(
+            AgentState parentState,
+            String userId,
+            String childSessionId,
+            Agent childAgent,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return;
+        }
+
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return;
+        }
+
+        if (childAgent instanceof HarnessAgent harnessAgent) {
+            mergeParentDenyRulesIntoSlot(
+                    userId, childSessionId, harnessAgent.getDelegate(), parentPermissions);
+        } else if (childAgent instanceof ReActAgent reactAgent) {
+            mergeParentDenyRulesIntoSlot(userId, childSessionId, reactAgent, parentPermissions);
+        }
+    }
+
+    private static void mergeParentDenyRulesIntoSlot(
+            String userId,
+            String childSessionId,
+            ReActAgent child,
+            PermissionContextState parentPermissions) {
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState merged = mergeParentDenyRules(childPermissions, parentPermissions);
+        if (!merged.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, merged);
+        }
+    }
+
     /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
+     * Adds parent DENY rules without widening the child's configured permissions.
+     *
+     * <p>A trivial child uses the legacy lightweight permission path, where a tool-level
+     * {@code PASSTHROUGH} is allowed. Adding the first DENY rule makes the context non-trivial and
+     * activates the full engine; {@link PermissionMode#BYPASS} preserves that prior fallback while
+     * explicit DENY rules still take precedence.
      */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
-            return;
-        }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
-            return;
-        }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
-        }
+    private static PermissionContextState mergeParentDenyRules(
+            PermissionContextState child, PermissionContextState parent) {
+        PermissionContextState.Builder merged =
+                PermissionContextState.builder()
+                        .mode(child.isTrivial() ? PermissionMode.BYPASS : child.getMode());
+
+        child.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+        child.getAllowRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAllowRule(toolName, rule)));
+
+        Map<String, List<PermissionRule>> denyRules = new LinkedHashMap<>();
+        child.getDenyRules()
+                .forEach((toolName, rules) -> denyRules.put(toolName, new ArrayList<>(rules)));
+        parent.getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            List<PermissionRule> targetRules =
+                                    denyRules.computeIfAbsent(
+                                            toolName, ignored -> new ArrayList<>());
+                            for (PermissionRule rule : rules) {
+                                if (!targetRules.contains(rule)) {
+                                    targetRules.add(rule);
+                                }
+                            }
+                        });
+        denyRules.forEach(
+                (toolName, rules) -> rules.forEach(rule -> merged.addDenyRule(toolName, rule)));
+
+        child.getAskRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAskRule(toolName, rule)));
+        return merged.build();
     }
 }

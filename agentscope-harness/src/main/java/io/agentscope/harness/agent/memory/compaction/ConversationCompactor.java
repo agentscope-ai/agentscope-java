@@ -26,12 +26,14 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -115,9 +117,10 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
-        // Filter previous summary messages from the prefix before offloading to avoid
-        // re-storing already-archived summaries.
-        List<Msg> prefix = filterSummaryMessages(new ArrayList<>(messages.subList(0, cutoff)));
+        // Keep prior summaries in the summarization input so each compaction builds on the
+        // previous one, but exclude them from memory flushing to avoid duplicate extraction.
+        List<Msg> summaryInput = new ArrayList<>(messages.subList(0, cutoff));
+        List<Msg> flushInput = filterSummaryMessages(summaryInput);
         List<Msg> tail = new ArrayList<>(messages.subList(cutoff, messages.size()));
 
         log.info(
@@ -127,11 +130,11 @@ public class ConversationCompactor {
                 cutoff,
                 tail.size());
 
-        // Step 2: Flush long-term memories from the prefix (best-effort).
+        // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
-                                .flushMemories(rc, prefix)
+                                .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
@@ -172,12 +175,12 @@ public class ConversationCompactor {
             offloadStep = Mono.just("");
         }
 
-        // Step 4: LLM summarization of the prefix, combined with the offload result.
+        // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.
         return flushStep
                 .then(offloadStep)
                 .flatMap(
                         offloadPath ->
-                                summarizePrefix(prefix, config)
+                                summarizePrefix(summaryInput, config)
                                         .map(
                                                 summary -> {
                                                     String filePath =
@@ -435,8 +438,8 @@ public class ConversationCompactor {
      * conversation history was offloaded.
      * When null, falls back to the simple "summary to date" format.
      *
-     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify and
-     * skip summary messages during future flush/offload cycles.
+     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
+     * summaries, and the stable content-based ID keeps repeated session offloads idempotent.
      */
     private static Msg buildSummaryMessage(String summary, String filePath) {
         String content;
@@ -454,10 +457,16 @@ public class ConversationCompactor {
             content = "Here is a summary of the conversation to date:\n\n" + summary;
         }
         return Msg.builder()
+                .id(buildSummaryMessageId(content))
                 .role(MsgRole.USER)
                 .name(SUMMARY_MSG_NAME)
                 .content(TextBlock.builder().text(content).build())
                 .build();
+    }
+
+    private static String buildSummaryMessageId(String content) {
+        UUID stableId = UUID.nameUUIDFromBytes(content.getBytes(StandardCharsets.UTF_8));
+        return SUMMARY_MSG_NAME + ":" + stableId;
     }
 
     // -------------------------------------------------------------------------
@@ -467,13 +476,12 @@ public class ConversationCompactor {
     /**
      * Removes previously injected summary messages from a list.
      *
-     * <p>During chained summarization the working memory may already contain a summary USER
-     * message from a prior compaction round. We filter these out before offloading to the
-     * backend so the original messages (already stored there) are not duplicated.
+     * <p>Prior summaries remain part of the next summarization input, but memory flushing must
+     * only process the newly compacted raw messages to avoid duplicate extraction.
      */
     static List<Msg> filterSummaryMessages(List<Msg> messages) {
         return messages.stream()
-                .filter(m -> !SUMMARY_MSG_NAME.equals(m.getName()))
+                .filter(message -> !SUMMARY_MSG_NAME.equals(message.getName()))
                 .collect(Collectors.toList());
     }
 

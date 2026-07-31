@@ -1,6 +1,6 @@
 # Agent Protocol
 
-`agentscope-extensions-agent-protocol` 把 AgentScope 的 [Harness Agent](../../docs/harness/architecture) 暴露为 [Agent Protocol](https://agentprotocol.ai/) 标准 HTTP 接口，让外部系统（CI、其他 Agent 平台、自动化任务）可以用统一的方式提交"任务"，无需关心你的 Agent 实现细节。
+`agentscope-extensions-agent-protocol` 把 AgentScope 的 [Harness Agent](../../docs/harness/architecture.md) 暴露为 [Agent Protocol](https://agentprotocol.ai/) 标准 HTTP 接口，让外部系统（CI、其他 Agent 平台、自动化任务）可以用统一的方式提交"任务"，无需关心你的 Agent 实现细节。
 
 ## 何时使用
 
