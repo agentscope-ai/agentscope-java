@@ -647,8 +647,24 @@ class DashScopeHttpClientTest {
                                         && dashScopeHttpException.getErrorCode().equals(errorCode)
                                         && dashScopeHttpException
                                                 .getMessage()
-                                                .equals("DashScope API error: " + errorMessage))
+                                                .equals("DashScope API error: " + errorMessage)
+                                        && dashScopeHttpException
+                                                .getResponseBody()
+                                                .contains("\"request_id\":\"request_id_123\""))
                 .verify();
+    }
+
+    @Test
+    void testStreamIgnoresMalformedSseData() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: malformed-json\\n\\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+
+        StepVerifier.create(client.stream(request, null, null, null)).verifyComplete();
     }
 
     @Test
