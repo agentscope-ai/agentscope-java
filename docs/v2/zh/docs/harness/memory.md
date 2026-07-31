@@ -260,6 +260,6 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [工作区](./workspace) — `MEMORY.md` / `memory/` 在工作区的位置
-- [Context](./context) — 永不压缩的对话日志 `*.log.jsonl`
-- [架构](./architecture) — 长会话事实如何沉淀进 `MEMORY.md`
+- [工作区](./workspace.md) — `MEMORY.md` / `memory/` 在工作区的位置
+- [Context](../building-blocks/context.md) — 永不压缩的对话日志 `*.log.jsonl`
+- [架构](./architecture.md) — 长会话事实如何沉淀进 `MEMORY.md`

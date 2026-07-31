@@ -17,6 +17,7 @@ package io.agentscope.builder.web.config;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
+import io.agentscope.builder.runtime.session.SessionStore;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
@@ -186,6 +187,7 @@ public class BuilderConfig {
             BaseStore baseStore,
             Optional<AgentStateStore> sessionOpt,
             Optional<SandboxFilesystemSpec> sandboxFilesystemSpecOpt)
+            Optional<SessionStore> sessionStoreOpt)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -226,6 +228,20 @@ public class BuilderConfig {
                 "Using {} filesystem mode with AgentStateStore {}.",
                 filesystemMode.configValue(),
                 stateStore.getClass().getSimpleName());
+
+        if (sessionStoreOpt.isPresent()) {
+            builder.sessionStore(sessionStoreOpt.get());
+            log.info(
+                    "Using custom SessionStore implementation: {}",
+                    sessionStoreOpt.get().getClass().getSimpleName());
+        } else if (localStore) {
+            log.info("Using built-in local session metadata store");
+        } else {
+            throw new IllegalStateException(
+                    "Distributed AgentStateStore requires a shared SessionStore bean for "
+                            + "session metadata. Provide a SessionStore implementation or use a "
+                            + "local AgentStateStore for single-node deployments.");
+        }
 
         builder.configureAllAgents(
                 b -> {
