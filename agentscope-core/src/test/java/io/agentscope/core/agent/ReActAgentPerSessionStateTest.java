@@ -230,6 +230,22 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearContext falls back to the default session for absent session identity")
+    void clearContextFallsBackToDefaultSession() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        String defaultSessionId = agent.getDefaultSessionId();
+        AgentState defaultState = agent.getAgentState(null, defaultSessionId);
+
+        defaultState.contextMutable().add(userMsg("clear through null context"));
+        agent.clearContext((RuntimeContext) null);
+        assertTrue(defaultState.getContext().isEmpty());
+
+        defaultState.contextMutable().add(userMsg("clear through blank session id"));
+        agent.clearContext(null, " ");
+        assertTrue(defaultState.getContext().isEmpty());
+    }
+
+    @Test
     @DisplayName("replacePermissionContext updates and persists only the targeted slot")
     void replacePermissionContextUpdatesOnlyTargetSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
