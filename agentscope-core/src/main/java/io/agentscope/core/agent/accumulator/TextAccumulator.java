@@ -15,8 +15,13 @@
  */
 package io.agentscope.core.agent.accumulator;
 
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Text content accumulator for accumulating streaming text chunks.
@@ -26,16 +31,32 @@ import io.agentscope.core.message.TextBlock;
  */
 public class TextAccumulator implements ContentAccumulator<TextBlock> {
 
+    private static final Long DEFAULT_PROVIDER_BLOCK_INDEX = -1L;
+
     private final StringBuilder accumulated = new StringBuilder();
+    private final Map<Long, TextSegment> segments = new LinkedHashMap<>();
 
     /**
      * @hidden
      */
     @Override
     public void add(TextBlock block) {
-        if (block != null && block.getText() != null) {
-            accumulated.append(block.getText());
+        if (block == null) {
+            return;
         }
+
+        String text = block.getText() != null ? block.getText() : "";
+        accumulated.append(text);
+
+        Long providerBlockIndex =
+                block.getProviderBlockIndex() != null
+                        ? block.getProviderBlockIndex()
+                        : DEFAULT_PROVIDER_BLOCK_INDEX;
+
+        TextSegment segment =
+                segments.computeIfAbsent(providerBlockIndex, ignored -> new TextSegment());
+        segment.text.append(text);
+        segment.citations.addAll(block.getCitations());
     }
 
     /**
@@ -43,7 +64,7 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return accumulated.length() > 0 || segments.values().stream().anyMatch(TextSegment::cited);
     }
 
     /**
@@ -54,7 +75,44 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         if (!hasContent()) {
             return null;
         }
-        return TextBlock.builder().text(accumulated.toString()).build();
+
+        List<Citation> citations =
+                segments.values().stream().flatMap(segment -> segment.citations.stream()).toList();
+        return TextBlock.builder().text(accumulated.toString()).citations(citations).build();
+    }
+
+    /**
+     * Builds text blocks while preserving provider block boundaries when citations are present.
+     *
+     * <p>Uncited text keeps the historical behavior of producing one aggregated block. When any
+     * segment is cited, every provider segment is returned in original order so each citation
+     * remains attached to the exact claim it supports.
+     *
+     * @hidden
+     * @return aggregated text blocks, or an empty list when no text or citations were received
+     */
+    public List<TextBlock> buildAggregatedBlocks() {
+        if (!hasContent()) {
+            return List.of();
+        }
+
+        boolean hasCitations = segments.values().stream().anyMatch(TextSegment::cited);
+        if (!hasCitations) {
+            return List.of(TextBlock.builder().text(accumulated.toString()).build());
+        }
+
+        List<TextBlock> blocks = new ArrayList<>();
+        for (TextSegment segment : segments.values()) {
+            if (segment.text.length() == 0 && segment.citations.isEmpty()) {
+                continue;
+            }
+            blocks.add(
+                    TextBlock.builder()
+                            .text(segment.text.toString())
+                            .citations(segment.citations)
+                            .build());
+        }
+        return blocks;
     }
 
     /**
@@ -63,6 +121,7 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        segments.clear();
     }
 
     /**
@@ -73,5 +132,15 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
      */
     public String getAccumulated() {
         return accumulated.toString();
+    }
+
+    private static final class TextSegment {
+
+        private final StringBuilder text = new StringBuilder();
+        private final List<Citation> citations = new ArrayList<>();
+
+        private boolean cited() {
+            return !citations.isEmpty();
+        }
     }
 }

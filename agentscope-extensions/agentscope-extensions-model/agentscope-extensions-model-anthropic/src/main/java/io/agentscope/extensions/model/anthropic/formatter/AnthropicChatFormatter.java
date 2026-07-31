@@ -42,6 +42,12 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
     }
 
     @Override
+    protected List<MessageParam> doFormat(
+            List<Msg> msgs, AnthropicMessageConverter requestConverter) {
+        return requestConverter.convert(msgs);
+    }
+
+    @Override
     public ChatResponse parseResponse(Object response, Instant startTime) {
         if (response instanceof Message message) {
             return AnthropicResponseParser.parseMessage(message, startTime);

@@ -47,6 +47,54 @@ public abstract class AnthropicBaseFormatter
     }
 
     /**
+     * Format messages with request and default options, applying Anthropic-specific conversion
+     * settings such as citation mode.
+     *
+     * <p>Creates a request-scoped {@link AnthropicMessageConverter} when citations are enabled.
+     * The converter is a local variable — the formatter's {@link #messageConverter} field is never
+     * mutated, so concurrent requests are safe.
+     *
+     * @param messages messages to format
+     * @param options request-specific generation options
+     * @param defaultOptions model default generation options
+     * @return formatted Anthropic messages
+     */
+    public List<MessageParam> format(
+            List<Msg> messages, GenerateOptions options, GenerateOptions defaultOptions) {
+        boolean enabled =
+                Boolean.TRUE.equals(
+                        getOptionOrDefault(
+                                options, defaultOptions, GenerateOptions::getCitationsEnabled));
+        if (!enabled) {
+            return format(messages);
+        }
+
+        AnthropicMessageConverter requestConverter =
+                new AnthropicMessageConverter(
+                        this::convertToolResultToString, CitationMode.ENABLED);
+
+        return formatWithTracing(messages, () -> doFormat(messages, requestConverter));
+    }
+
+    /**
+     * Format messages using a request-scoped message converter.
+     *
+     * <p>This non-abstract hook allows built-in formatters to receive the request-scoped converter
+     * (which may have citations enabled) without exposing mutable state. External subclasses that
+     * only override {@link #doFormat(List)} continue to work unchanged.
+     *
+     * <p>The default implementation delegates to {@link #doFormat(List)}, ignoring the converter.
+     *
+     * @param messages messages to format
+     * @param requestConverter converter configured for this request's options
+     * @return formatted Anthropic messages
+     */
+    protected List<MessageParam> doFormat(
+            List<Msg> messages, AnthropicMessageConverter requestConverter) {
+        return doFormat(messages);
+    }
+
+    /**
      * Apply generation options to Anthropic request parameters.
      *
      * @param paramsBuilder Anthropic request parameters builder

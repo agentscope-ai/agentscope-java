@@ -24,12 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.anthropic.core.JsonValue;
+import com.anthropic.models.messages.CitationPageLocation;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -103,6 +106,56 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(responseUsage);
         assertEquals(100, responseUsage.getInputTokens());
         assertEquals(50, responseUsage.getOutputTokens());
+    }
+
+    @Test
+    void testParseMessageWithPdfCitation() {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("PDF source text")
+                        .documentIndex(0)
+                        .documentTitle("guide.pdf")
+                        .fileId(Optional.empty())
+                        .startPageNumber(2)
+                        .endPageNumber(3)
+                        .build();
+        com.anthropic.models.messages.TextBlock providerText =
+                com.anthropic.models.messages.TextBlock.builder()
+                        .text("The feature is supported.")
+                        .addCitation(providerCitation)
+                        .build();
+        Message message =
+                Message.builder()
+                        .id("msg_cited")
+                        .addContent(providerText)
+                        .model("claude-sonnet-4-20250514")
+                        .role(JsonValue.from("assistant"))
+                        .stopReason(Optional.empty())
+                        .stopSequence(Optional.empty())
+                        .type(JsonValue.from("message"))
+                        .usage(
+                                Usage.builder()
+                                        .cacheCreation(Optional.empty())
+                                        .cacheCreationInputTokens(Optional.empty())
+                                        .cacheReadInputTokens(Optional.empty())
+                                        .inferenceGeo(Optional.empty())
+                                        .inputTokens(10)
+                                        .outputTokens(5)
+                                        .serverToolUse(Optional.empty())
+                                        .serviceTier(Optional.empty())
+                                        .build())
+                        .build();
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals(0L, parsed.getProviderBlockIndex());
+        Citation.PageLocation citation =
+                assertInstanceOf(Citation.PageLocation.class, parsed.getCitations().get(0));
+        assertEquals("PDF source text", citation.citedText());
+        assertEquals("guide.pdf", citation.documentTitle());
+        assertEquals(2, citation.startPageNumber());
+        assertEquals(3, citation.endPageNumber());
     }
 
     @Test
@@ -335,6 +388,37 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamEventCitationDelta() throws Exception {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("Streamed PDF source")
+                        .documentIndex(1)
+                        .documentTitle(Optional.empty())
+                        .fileId(Optional.empty())
+                        .startPageNumber(4)
+                        .endPageNumber(5)
+                        .build();
+        RawContentBlockDeltaEvent deltaEvent =
+                RawContentBlockDeltaEvent.builder()
+                        .index(2)
+                        .citationsDelta(providerCitation)
+                        .build();
+
+        ChatResponse response =
+                invokeParseStreamEvent(
+                        RawMessageStreamEvent.ofContentBlockDelta(deltaEvent), Instant.now());
+
+        TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("", parsed.getText());
+        assertEquals(1, parsed.getCitations().size());
+        assertEquals(2L, parsed.getProviderBlockIndex());
+        Citation.PageLocation citation =
+                assertInstanceOf(Citation.PageLocation.class, parsed.getCitations().get(0));
+        assertEquals("Streamed PDF source", citation.citedText());
+        assertEquals(4, citation.startPageNumber());
     }
 
     @Test

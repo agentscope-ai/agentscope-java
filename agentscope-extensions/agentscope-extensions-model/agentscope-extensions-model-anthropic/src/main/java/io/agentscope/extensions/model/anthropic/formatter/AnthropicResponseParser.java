@@ -19,6 +19,7 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -50,13 +51,25 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (var block : message.content()) {
+        for (int index = 0; index < message.content().size(); index++) {
+            long blockIndex = index;
+            var block = message.content().get(index);
             // Text block
             block.text()
                     .ifPresent(
-                            textBlock ->
-                                    contentBlocks.add(
-                                            TextBlock.builder().text(textBlock.text()).build()));
+                            textBlock -> {
+                                List<Citation> citations =
+                                        textBlock
+                                                .citations()
+                                                .map(AnthropicCitationConverter::convert)
+                                                .orElse(List.of());
+                                contentBlocks.add(
+                                        TextBlock.builder()
+                                                .text(textBlock.text())
+                                                .citations(citations)
+                                                .providerBlockIndex(blockIndex)
+                                                .build());
+                            });
 
             // Tool use block
             block.toolUse()
@@ -138,7 +151,24 @@ public class AnthropicResponseParser {
                     .ifPresent(
                             textDelta ->
                                     contentBlocks.add(
-                                            TextBlock.builder().text(textDelta.text()).build()));
+                                            TextBlock.builder()
+                                                    .text(textDelta.text())
+                                                    .providerBlockIndex(deltaEvent.index())
+                                                    .build()));
+
+            deltaEvent
+                    .delta()
+                    .citations()
+                    .flatMap(
+                            citationsDelta ->
+                                    AnthropicCitationConverter.convert(citationsDelta.citation()))
+                    .ifPresent(
+                            citation ->
+                                    contentBlocks.add(
+                                            TextBlock.builder()
+                                                    .citations(List.of(citation))
+                                                    .providerBlockIndex(deltaEvent.index())
+                                                    .build()));
 
             deltaEvent
                     .delta()
