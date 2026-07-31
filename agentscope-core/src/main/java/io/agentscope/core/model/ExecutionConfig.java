@@ -71,6 +71,16 @@ public class ExecutionConfig {
     private final Predicate<Throwable> retryOn;
 
     /**
+     * Runtime-only context for emitting attempt lifecycle events.
+     *
+     * <p>This field is <b>not serialized</b> and does not participate in JSON
+     * round-trips or config merging. It is set by the caller (e.g., ReActAgent)
+     * and read by {@link ModelUtils#applyTimeoutAndRetry} to wire the attempt
+     * tracker into the retry pipeline.
+     */
+    private final AttemptEventContext attemptEventContext;
+
+    /**
      * Predicate that determines if an error should be retried.
      *
      * <p>Retryable errors include:
@@ -170,6 +180,7 @@ public class ExecutionConfig {
         this.maxBackoff = builder.maxBackoff;
         this.backoffMultiplier = builder.backoffMultiplier;
         this.retryOn = builder.retryOn;
+        this.attemptEventContext = builder.attemptEventContext;
     }
 
     /**
@@ -224,6 +235,19 @@ public class ExecutionConfig {
      */
     public Predicate<Throwable> getRetryOn() {
         return retryOn;
+    }
+
+    /**
+     * Gets the runtime attempt event context.
+     *
+     * <p>This field is not serialized or merged. It carries the event emitter,
+     * reply ID, and attempt role from the caller (e.g., ReActAgent) into the
+     * model transport pipeline.
+     *
+     * @return the attempt event context, or null if not set
+     */
+    public AttemptEventContext getAttemptEventContext() {
+        return attemptEventContext;
     }
 
     /**
@@ -287,6 +311,14 @@ public class ExecutionConfig {
                         : fallback.backoffMultiplier);
         builder.retryOn(primary.retryOn != null ? primary.retryOn : fallback.retryOn);
 
+        // Propagate the runtime-only attempt event context (primary takes precedence).
+        // This field is not serialized but MUST be propagated through merges so that
+        // AttemptEventContext injected by ReActAgent reaches ModelUtils.applyTimeoutAndRetry.
+        builder.attemptEventContext(
+                primary.attemptEventContext != null
+                        ? primary.attemptEventContext
+                        : fallback.attemptEventContext);
+
         return builder.build();
     }
 
@@ -298,6 +330,7 @@ public class ExecutionConfig {
         private Duration maxBackoff;
         private Double backoffMultiplier;
         private Predicate<Throwable> retryOn;
+        private AttemptEventContext attemptEventContext;
 
         /**
          * Sets the timeout duration for a single execution.
@@ -373,6 +406,20 @@ public class ExecutionConfig {
          */
         public Builder retryOn(Predicate<Throwable> retryOn) {
             this.retryOn = retryOn;
+            return this;
+        }
+
+        /**
+         * Sets the runtime attempt event context for emitting attempt lifecycle events.
+         *
+         * <p>This field is not serialized or merged. It carries the event emitter,
+         * reply ID, and attempt role from the caller into the model transport pipeline.
+         *
+         * @param attemptEventContext the attempt event context, or null to disable tracking
+         * @return this builder instance
+         */
+        public Builder attemptEventContext(AttemptEventContext attemptEventContext) {
+            this.attemptEventContext = attemptEventContext;
             return this;
         }
 
