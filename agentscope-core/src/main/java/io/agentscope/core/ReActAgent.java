@@ -50,6 +50,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.hook.Hook;
@@ -1566,7 +1567,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     + " sessionId); start a fresh session, clear the persisted"
                                     + " state, or use an in-memory state store to begin clean.");
                 }
-                applyConfirmResults(confirmResults);
+                List<ConfirmResult> normalizedResults =
+                        validateAndNormalizeConfirmResults(confirmResults, asking);
+                // Surface the accepted confirmation payload before mutating context or executing
+                // tools, so stream consumers can close the RequireUserConfirmEvent loop.
+                publishEvent(
+                        new UserConfirmResultEvent(
+                                resolvePendingConfirmRequestReplyId(), normalizedResults));
+                applyConfirmResults(normalizedResults);
+                clearPendingConfirmRequest();
                 return resumeAgent();
             }
 
@@ -1619,6 +1628,128 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
             return collected;
+        }
+
+        /**
+         * Validate the user-provided confirmation payload against the currently ASKING tool calls.
+         *
+         * <p>Permission HITL resumes as a batch: every ASKING tool call must be covered exactly
+         * once, and no result may reference a stale or unrelated tool call. Returning a copied list
+         * gives downstream event emission and state mutation the same trusted payload.
+         */
+        private List<ConfirmResult> validateAndNormalizeConfirmResults(
+                List<ConfirmResult> results, List<ToolUseBlock> asking) {
+            Set<String> expectedIds =
+                    asking.stream()
+                            .map(ToolUseBlock::getId)
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            Map<String, ToolUseBlock> askingById =
+                    asking.stream()
+                            .filter(t -> t.getId() != null)
+                            .collect(Collectors.toMap(ToolUseBlock::getId, Function.identity()));
+            Set<String> providedIds = new LinkedHashSet<>();
+            List<ConfirmResult> normalized = new ArrayList<>();
+
+            for (ConfirmResult result : results) {
+                if (result == null || result.getToolCall() == null) {
+                    throw new IllegalStateException(
+                            "ConfirmResult and ConfirmResult.toolCall must not be null.");
+                }
+                ToolUseBlock toolCall = result.getToolCall();
+                String toolCallId = toolCall.getId();
+                if (toolCallId == null || toolCallId.isEmpty()) {
+                    throw new IllegalStateException("ConfirmResult.toolCall.id must not be empty.");
+                }
+                if (!providedIds.add(toolCallId)) {
+                    throw new IllegalStateException(
+                            "Duplicate ConfirmResult for tool call ID: " + toolCallId);
+                }
+                if (!expectedIds.contains(toolCallId)) {
+                    throw new IllegalStateException(
+                            "ConfirmResult references non-ASKING tool call ID: "
+                                    + toolCallId
+                                    + ". Expected: "
+                                    + expectedIds);
+                }
+                normalized.add(result);
+            }
+
+            if (!providedIds.equals(expectedIds)) {
+                Set<String> missing = new LinkedHashSet<>(expectedIds);
+                missing.removeAll(providedIds);
+                Set<String> unexpected = new LinkedHashSet<>(providedIds);
+                unexpected.removeAll(expectedIds);
+                throw new IllegalStateException(
+                        "ConfirmResults must cover all ASKING tool calls exactly once. Missing: "
+                                + missing
+                                + ", Unexpected: "
+                                + unexpected);
+            }
+
+            return List.copyOf(normalized);
+        }
+
+        /**
+         * Resolve the reply id from the assistant message that originally paused for confirmation.
+         *
+         * <p>This keeps {@link UserConfirmResultEvent} correlated with the prior
+         * {@link RequireUserConfirmEvent}, even though the confirmation arrives in a later
+         * {@code agent.call(...)} invocation.
+         */
+        private String resolvePendingConfirmRequestReplyId() {
+            Msg confirmRequestMsg = findLastAssistantMsg();
+            if (confirmRequestMsg == null || confirmRequestMsg.getMetadata() == null) {
+                return "";
+            }
+            Object raw = confirmRequestMsg.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            return raw instanceof String s ? s : "";
+        }
+
+        /**
+         * Persist the reply id for the pending confirmation request on the live assistant message.
+         *
+         * <p>The assistant message already owns the ASKING {@link ToolUseBlock}s, so storing the
+         * correlation metadata there lets the next call recover it from session state.
+         */
+        private void persistPendingConfirmRequest(String replyId) {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        /**
+         * Remove confirmation-request correlation metadata after the resume payload is accepted.
+         *
+         * <p>Leaving it behind would make later agent turns appear to belong to an already-closed
+         * HITL request.
+         */
+        private void clearPendingConfirmRequest() {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null || lastAssistant.getMetadata() == null) {
+                return;
+            }
+            if (!lastAssistant.getMetadata().containsKey(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID)) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.remove(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        private void replaceLastAssistantMsg(Msg replacement) {
+            List<Msg> ctx = state.contextMutable();
+            for (int i = ctx.size() - 1; i >= 0; i--) {
+                if (ctx.get(i).getRole() == MsgRole.ASSISTANT) {
+                    ctx.set(i, replacement);
+                    return;
+                }
+            }
         }
 
         /**
@@ -2507,6 +2638,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // completion;
                                 // initialise it to empty since no successful execution happened.
                                 resultHolder.set(List.of());
+                                persistPendingConfirmRequest(replyId);
                                 return Flux.<AgentEvent>just(
                                         new RequireUserConfirmEvent(replyId, pending),
                                         new RequestStopEvent(
