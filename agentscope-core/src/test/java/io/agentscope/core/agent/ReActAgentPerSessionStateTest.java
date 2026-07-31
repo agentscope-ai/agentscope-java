@@ -228,7 +228,7 @@ class ReActAgentPerSessionStateTest {
         assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
         assertEquals(List.of("keep this"), allText(agent.getAgentState("u1", "sessB")));
     }
-  
+
     @Test
     @DisplayName("replacePermissionContext updates and persists only the targeted slot")
     void replacePermissionContextUpdatesOnlyTargetSlot() {
