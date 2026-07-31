@@ -440,7 +440,8 @@ class ReActAgentHitlTest {
         ToolUseBlock pending = pendingAskingTool(agent);
         String reason = "User rejected: do not delete production data";
         Msg second =
-                agent.call(List.of(confirmMsg(new ConfirmResult(false, pending, reason)))).block();
+                agent.call(List.of(confirmMsg(ConfirmResult.withMessage(false, pending, reason))))
+                        .block();
         assertNotNull(second);
 
         ToolResultBlock denied =
@@ -452,6 +453,36 @@ class ReActAgentHitlTest {
         assertNotNull(denied);
         assertEquals(ToolResultState.DENIED, denied.getState());
         assertEquals(reason, toolResultText(denied));
+    }
+
+    @Test
+    void askingToolResumeWithBlankDenyMessageFallsBackToDefault() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+
+        ToolUseBlock pending = pendingAskingTool(agent);
+        Msg second =
+                agent.call(List.of(confirmMsg(ConfirmResult.withMessage(false, pending, "   "))))
+                        .block();
+        assertNotNull(second);
+
+        ToolResultBlock denied =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(denied);
+        assertEquals(ToolResultState.DENIED, denied.getState());
+        assertEquals("Permission denied by user", toolResultText(denied));
     }
 
     @Test
@@ -473,7 +504,10 @@ class ReActAgentHitlTest {
 
         // Second stream: deny — should surface the same Start/Delta/End sequence as auto-deny
         List<AgentEvent> resumeEvents =
-                agent.streamEvents(List.of(confirmMsg(new ConfirmResult(false, pending, reason))))
+                agent.streamEvents(
+                                List.of(
+                                        confirmMsg(
+                                                ConfirmResult.withMessage(false, pending, reason))))
                         .collectList()
                         .block();
         assertNotNull(resumeEvents);

@@ -29,7 +29,9 @@ import java.util.List;
  * future calls — e.g. "always allow this command going forward".
  *
  * <p>When denied ({@code confirmed == false}), an optional {@link #message} can override the
- * default tool-result text ({@code "Permission denied by user"}).
+ * default tool-result text ({@code "Permission denied by user"}). Prefer {@link #withMessage} or
+ * the 4-arg constructor — there is no 3-arg {@code (confirmed, toolCall, message)} overload so
+ * {@code new ConfirmResult(c, t, null)} stays unambiguous against the rules overload.
  */
 public class ConfirmResult {
 
@@ -61,12 +63,19 @@ public class ConfirmResult {
     }
 
     /**
-     * Convenience constructor with a custom deny message and no rules.
+     * Factory for a confirm result with a custom deny message and no rules.
      *
-     * <p>Useful when the user rejects a tool call and wants the model to see a specific reason.
+     * <p>Use this (or the 4-arg constructor) instead of a 3-arg message overload so that {@code
+     * new ConfirmResult(confirmed, toolCall, null)} remains unambiguously the rules constructor.
+     *
+     * @param confirmed whether the user approved the tool call
+     * @param toolCall the (possibly modified) tool call being decided
+     * @param message custom tool-result text when denying; blank/null falls back to the default
+     * @return a new {@link ConfirmResult}
      */
-    public ConfirmResult(boolean confirmed, ToolUseBlock toolCall, String message) {
-        this(confirmed, toolCall, null, message);
+    public static ConfirmResult withMessage(
+            boolean confirmed, ToolUseBlock toolCall, String message) {
+        return new ConfirmResult(confirmed, toolCall, null, message);
     }
 
     public boolean isConfirmed() {
