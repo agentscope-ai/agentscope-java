@@ -112,6 +112,10 @@ public interface MiddlewareBase {
     /**
      * Intercept the raw model API call.
      *
+     * <p>Transformations to {@link io.agentscope.core.event.TextBlockDeltaEvent} instances in the
+     * returned stream are reflected in the final response message. This allows middleware to
+     * normalize model text before consumers, including native structured-output parsing, use it.
+     *
      * @param agent the agent instance
      * @param ctx   per-call runtime context (session, user, attributes)
      * @param input model-call input (messages, tools, options, model)

@@ -25,6 +25,7 @@ import io.agentscope.builder.runtime.config.SkillRepositorySupport;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.runtime.outbound.OutboundTool;
 import io.agentscope.builder.runtime.session.AgentManagerConfig;
+import io.agentscope.builder.runtime.session.LocalSessionStore;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionStore;
 import io.agentscope.builder.runtime.session.SubagentRunRegistry;
@@ -426,6 +427,8 @@ public final class BuilderBootstrap {
         private final List<Consumer<HarnessAgent.Builder>> globalConfigurators =
                 new java.util.ArrayList<>();
         private final Map<String, Channel> channels = new LinkedHashMap<>();
+        private SessionStore sessionStore;
+        private boolean useRemoteSessionStore;
 
         private Builder() {}
 
@@ -485,6 +488,21 @@ public final class BuilderBootstrap {
                     this.channels.put(c.channelId(), c);
                 }
             }
+            return this;
+        }
+
+        /** Uses the provided session metadata store instead of the default local JSON store. */
+        public Builder sessionStore(SessionStore sessionStore) {
+            this.sessionStore = Objects.requireNonNull(sessionStore, "sessionStore");
+            return this;
+        }
+
+        /**
+         * Requires a concrete remote {@link SessionStore} to be provided via {@link
+         * #sessionStore(SessionStore)} when the runtime is configured for distributed storage.
+         */
+        public Builder remoteSessionStore(boolean remote) {
+            this.useRemoteSessionStore = remote;
             return this;
         }
 
@@ -563,7 +581,16 @@ public final class BuilderBootstrap {
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);
 
             Path storeFile = mainWorkspace.resolve("sessions.json");
-            SessionStore sessionStore = new SessionStore(storeFile);
+            if (this.sessionStore == null && useRemoteSessionStore) {
+                throw new IllegalStateException(
+                        "Distributed session metadata requires a SessionStore implementation; "
+                                + "call BuilderBootstrap.Builder.sessionStore(...) with a "
+                                + "shared remote store.");
+            }
+            SessionStore sessionStore =
+                    this.sessionStore != null
+                            ? this.sessionStore
+                            : new LocalSessionStore(storeFile);
             sessionStore.load();
 
             AgentManagerConfig amCfg = resolveAgentManagerConfig(fileConfig);
