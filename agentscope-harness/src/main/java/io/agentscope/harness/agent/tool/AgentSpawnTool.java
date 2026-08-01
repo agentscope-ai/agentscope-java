@@ -711,8 +711,13 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
-                        AtomicBoolean endEmitted = new AtomicBoolean();
-                        Runnable emitEnd =
+                        // Emit AGENT_END at most once. Prefer the success path (flatMap) so the
+                        // bookend is delivered *before* the Mono value reaches
+                        // execWithTimeoutPromotion's CompletableFuture bridge — otherwise
+                        // whenComplete can advance the parent and complete the streamEvents sink
+                        // before doFinally runs, dropping the child AGENT_END under load (CI).
+                        AtomicBoolean endEmitted = new AtomicBoolean(false);
+                        Runnable emitChildEnd =
                                 () -> {
                                     if (endEmitted.compareAndSet(false, true)) {
                                         parentEmitter.emit(
@@ -726,16 +731,18 @@ public class AgentSpawnTool {
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                // Emit before success or error reaches the parent, which may
-                                // otherwise complete its event sink before doFinally runs.
-                                .doOnSuccess(ignored -> emitEnd.run())
-                                .doOnError(ignored -> emitEnd.run())
-                                // Preserve best-effort cancellation signaling without emitting a
-                                // duplicate if cancellation races with normal termination.
+                                .flatMap(
+                                        msg -> {
+                                            emitChildEnd.run();
+                                            return Mono.just(msg);
+                                        })
+                                .doOnError(err -> emitChildEnd.run())
+                                // Cancel: flatMap/doOnError do not run; still need the bookend so
+                                // consumers do not render the subagent as running forever.
                                 .doFinally(
                                         signal -> {
                                             if (signal == SignalType.CANCEL) {
-                                                emitEnd.run();
+                                                emitChildEnd.run();
                                             }
                                         });
                     }
