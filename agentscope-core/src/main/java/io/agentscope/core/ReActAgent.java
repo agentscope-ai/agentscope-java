@@ -3735,9 +3735,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             stateCache.computeIfPresent(
                                                     slot,
                                                     (key, current) -> {
-                                                        current.setSummary("");
-                                                        current.contextMutable().clear();
-                                                        return current;
+                                                        AgentState state =
+                                                                loadOrCreateAgentStateForSlot(
+                                                                        stateStore,
+                                                                        userId,
+                                                                        sid,
+                                                                        initialPermissionContext,
+                                                                        getAgentId(),
+                                                                        initialActiveToolGroups);
+                                                        state.setSummary("");
+                                                        state.contextMutable().clear();
+                                                        return state;
                                                     });
                                     if (agentState == null) {
                                         return;

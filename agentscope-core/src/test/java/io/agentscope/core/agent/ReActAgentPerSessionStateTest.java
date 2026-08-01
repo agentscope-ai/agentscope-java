@@ -40,9 +40,12 @@ import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +57,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -78,7 +82,7 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
-    private ReActAgent agent(InMemoryAgentStateStore store) {
+    private ReActAgent agent(AgentStateStore store) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hi")
@@ -229,6 +233,33 @@ class ReActAgentPerSessionStateTest {
 
         assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
         assertEquals(List.of("keep this"), allText(agent.getAgentState("u1", "sessB")));
+    }
+
+    @Test
+    @DisplayName("clearContext reloads persisted state before clearing conversation")
+    void clearContextReloadsPersistedStateBeforeClearingConversation(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent staleAgent = agent(store);
+        AgentState staleState = staleAgent.getAgentState("u1", "sessA");
+        staleState.contextMutable().add(userMsg("stale context"));
+        staleAgent.saveAgentState("u1", "sessA");
+
+        ReActAgent writerAgent = agent(store);
+        AgentState latestState = writerAgent.getAgentState("u1", "sessA");
+        latestState.contextMutable().add(userMsg("latest context"));
+        latestState.setSummary("latest summary");
+        latestState.getPlanModeContext().setPlanActive(true);
+        writerAgent.saveAgentState("u1", "sessA");
+
+        staleAgent.clearContext("u1", "sessA");
+
+        ReActAgent restoredAgent = agent(store);
+        AgentState restoredState = restoredAgent.getAgentState("u1", "sessA");
+        assertTrue(restoredState.getContext().isEmpty());
+        assertEquals("", restoredState.getSummary());
+        assertTrue(
+                restoredState.getPlanModeContext().isPlanActive(),
+                "the latest non-conversation state must be preserved");
     }
 
     @Test
