@@ -61,6 +61,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 - [**Workspace 与沙箱** →](https://java.agentscope.io/v2/zh/docs/harness/workspace.html) 在隔离环境中执行工具 —— 本地、Docker、Kubernetes 或 AgentRun 云沙箱。
 - [**多智能体编排** →](https://java.agentscope.io/v2/zh/docs/harness/subagent.html) 多种子智能体定义模式，`agent_spawn` / `agent_send` + 事件流实时转发。
 - [**分布式部署** →](https://java.agentscope.io/v2/zh/docs/others/going-to-production.html) 真正的分布式 session 与 memory 管理（Redis / MySQL / PostgreSQL / OSS / COS），跨副本 session 恢复。
+- [**智能体进化** →](https://help.aliyun.com/zh/document_detail/3042583.html) 提供 Agent 全栈观测与审计、Agent 评估与实验、Agent 资产管理与持续优化等能力。
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
