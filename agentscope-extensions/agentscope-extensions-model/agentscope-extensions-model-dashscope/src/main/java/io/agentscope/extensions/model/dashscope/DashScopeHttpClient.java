@@ -270,33 +270,36 @@ public class DashScopeHttpClient {
                             .build();
 
             return transport.stream(httpRequest)
-                    .map(
-                            data -> {
+                    .<ParsedStreamResponse>handle(
+                            (data, sink) -> {
                                 try {
                                     // Decrypt response if encryption is enabled
                                     if (finalEncryptionContext != null) {
                                         data = decryptResponse(data, finalEncryptionContext);
                                     }
-                                    return JsonUtils.getJsonCodec()
-                                            .fromJson(data, DashScopeResponse.class);
+                                    sink.next(
+                                            new ParsedStreamResponse(
+                                                    data,
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(
+                                                                    data,
+                                                                    DashScopeResponse.class)));
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",
                                             data,
                                             e.getMessage());
-                                    // Return null and filter out later
-                                    return null;
                                 }
                             })
-                    .filter(response -> response != null)
                     .handle(
-                            (response, sink) -> {
+                            (streamResponse, sink) -> {
+                                DashScopeResponse response = streamResponse.response();
                                 if (response.isError()) {
                                     sink.error(
                                             new DashScopeHttpException(
                                                     "DashScope API error: " + response.getMessage(),
                                                     response.getCode(),
-                                                    null));
+                                                    streamResponse.responseBody()));
                                 } else {
                                     sink.next(response);
                                 }
@@ -833,6 +836,8 @@ public class DashScopeHttpClient {
             return new DashScopeHttpClient(transport, apiKey, baseUrl, publicKeyId, publicKey);
         }
     }
+
+    private record ParsedStreamResponse(String responseBody, DashScopeResponse response) {}
 
     /**
      * Exception thrown when DashScope HTTP operations fail.

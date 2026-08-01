@@ -295,6 +295,9 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
+        final boolean capturedPlanModeEnabled = b.planModeEnabled;
+        final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
+        final String capturedPlanFileDir = b.planFileDir;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
         final boolean capturedDisableCompaction = b.disableCompaction;
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
@@ -336,6 +339,8 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
+            configurePlanMode(
+                    sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
 
             if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
             if (capturedProjectGlobalSkillsDir != null) {
@@ -384,6 +389,9 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
+        final boolean capturedPlanModeEnabled = b.planModeEnabled;
+        final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
+        final String capturedPlanFileDir = b.planFileDir;
         final GenerateOptions capturedGenOpts = b.generateOptions;
         // See buildGeneralPurposeFactory: propagate the parent's model/tool execution configs so
         // declared subagents honor the parent's timeouts. Without this they fall back to
@@ -475,6 +483,8 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+            configurePlanMode(
+                    sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
 
             if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
             if (capturedProjectGlobalSkillsDir != null) {
@@ -489,6 +499,28 @@ final class HarnessAgentBuilderSupport {
             sub.middlewares(capturedMiddlewares);
             return sub.build();
         };
+    }
+
+    /**
+     * Propagates build-time plan-mode capabilities to an automatically constructed subagent.
+     *
+     * <p>Copying the parent's explicit middleware list is not sufficient: {@code
+     * PlanModeMiddleware} and {@code PlanModeManager} are installed dynamically by {@link
+     * HarnessAgent.Builder#build()}. The child must therefore receive the builder configuration
+     * before it is built; setting only {@code AgentState.planActive} later would expose the state
+     * without installing the write-operation guard.
+     */
+    private static void configurePlanMode(
+            HarnessAgent.Builder sub,
+            boolean planModeEnabled,
+            boolean planModeAllowShell,
+            String planFileDir) {
+        if (!planModeEnabled) {
+            return;
+        }
+        sub.enablePlanMode()
+                .planFileDirectory(planFileDir)
+                .allowShellInPlanMode(planModeAllowShell);
     }
 
     /**
