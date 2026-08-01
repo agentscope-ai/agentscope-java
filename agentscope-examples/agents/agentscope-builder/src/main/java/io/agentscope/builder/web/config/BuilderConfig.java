@@ -179,6 +179,7 @@ public class BuilderConfig {
      * @param baseStore the shared {@link BaseStore} used when remote filesystem mode is selected
      * @param sessionOpt an optional state store; defaults to {@link InMemoryAgentStateStore}
      * @param sandboxFilesystemSpecOpt the sandbox filesystem created when sandbox support is enabled
+     * @param sessionStoreOpt an optional shared session metadata store
      */
     @Bean
     public BuilderBootstrap builderBootstrap(
@@ -186,7 +187,7 @@ public class BuilderConfig {
             ToolEventBus toolEventBus,
             BaseStore baseStore,
             Optional<AgentStateStore> sessionOpt,
-            Optional<SandboxFilesystemSpec> sandboxFilesystemSpecOpt)
+            Optional<SandboxFilesystemSpec> sandboxFilesystemSpecOpt,
             Optional<SessionStore> sessionStoreOpt)
             throws IOException {
         Path cwd = resolveCwd();
@@ -214,6 +215,7 @@ public class BuilderConfig {
         }
 
         FilesystemMode filesystemMode = resolveFilesystemMode(workspaceFilesystemMode, stateStore);
+        boolean localStore = isLocalStateStore(stateStore);
         SandboxFilesystemSpec sandboxFilesystemSpec =
                 filesystemMode == FilesystemMode.SANDBOX
                         ? sandboxFilesystemSpecOpt.orElseThrow(
