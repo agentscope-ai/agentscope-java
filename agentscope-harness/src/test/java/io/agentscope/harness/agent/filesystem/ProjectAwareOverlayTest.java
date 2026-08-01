@@ -80,6 +80,24 @@ class ProjectAwareOverlayTest {
     }
 
     @Test
+    void write_absoluteWorkspaceSourcePath_landsInProjectDir() {
+        String absPath = workspace.resolve("src/App.java").toAbsolutePath().toString();
+        WriteResult r = overlay.write(rc, absPath, "public class App {}");
+        assertTrue(r.isSuccess(), () -> "write failed: " + r.error());
+        assertTrue(Files.exists(project.resolve("src/App.java")));
+        assertFalse(Files.exists(workspace.resolve("src/App.java")));
+    }
+
+    @Test
+    void write_absoluteWorkspaceMetadata_landsInWorkspace() {
+        String absPath = workspace.resolve("MEMORY.md").toAbsolutePath().toString();
+        WriteResult r = overlay.write(rc, absPath, "# Memory");
+        assertTrue(r.isSuccess(), () -> "write failed: " + r.error());
+        assertTrue(Files.exists(workspace.resolve("MEMORY.md")));
+        assertFalse(Files.exists(project.resolve("MEMORY.md")));
+    }
+
+    @Test
     void write_memoryMd_landsInWorkspace() {
         WriteResult r = overlay.write(rc, "MEMORY.md", "# Memory");
         assertTrue(r.isSuccess(), () -> "write failed: " + r.error());
@@ -221,9 +239,15 @@ class ProjectAwareOverlayTest {
     }
 
     @Test
-    void isWorkspacePath_absoluteUnderWorkspace_returnsTrue() {
-        String absPath = workspace.resolve("anything.txt").toAbsolutePath().toString();
+    void isWorkspacePath_absoluteWorkspaceMetadata_returnsTrue() {
+        String absPath = workspace.resolve("MEMORY.md").toAbsolutePath().toString();
         assertTrue(overlay.isWorkspacePath(absPath));
+    }
+
+    @Test
+    void isWorkspacePath_absoluteWorkspaceSourceFile_returnsFalse() {
+        String absPath = workspace.resolve("src/App.java").toAbsolutePath().toString();
+        assertFalse(overlay.isWorkspacePath(absPath));
     }
 
     @Test

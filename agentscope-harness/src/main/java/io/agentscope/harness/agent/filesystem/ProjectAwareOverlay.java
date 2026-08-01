@@ -96,7 +96,7 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         if (isWorkspacePath(filePath)) {
             return upper().write(runtimeContext, filePath, content);
         }
-        return projectFs.write(runtimeContext, filePath, content);
+        return projectFs.write(runtimeContext, toProjectTargetPath(filePath), content);
     }
 
     @Override
@@ -109,8 +109,9 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         if (isWorkspacePath(filePath)) {
             return super.edit(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        if (projectFs.exists(runtimeContext, filePath)) {
-            return projectFs.edit(runtimeContext, filePath, oldString, newString, replaceAll);
+        String target = toProjectTargetPath(filePath);
+        if (projectFs.exists(runtimeContext, target)) {
+            return projectFs.edit(runtimeContext, target, oldString, newString, replaceAll);
         }
         // Fallback: file may exist only in upper (written before projectWritable was enabled)
         return super.edit(runtimeContext, filePath, oldString, newString, replaceAll);
@@ -121,8 +122,9 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         if (isWorkspacePath(path)) {
             return super.delete(runtimeContext, path);
         }
-        if (projectFs.exists(runtimeContext, path)) {
-            return projectFs.delete(runtimeContext, path);
+        String target = toProjectTargetPath(path);
+        if (projectFs.exists(runtimeContext, target)) {
+            return projectFs.delete(runtimeContext, target);
         }
         return super.delete(runtimeContext, path);
     }
@@ -136,7 +138,7 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
             if (isWorkspacePath(entry.getKey())) {
                 workspaceFiles.add(entry);
             } else {
-                projectFiles.add(entry);
+                projectFiles.add(Map.entry(toProjectTargetPath(entry.getKey()), entry.getValue()));
             }
         }
         List<FileUploadResponse> results = new ArrayList<>();
@@ -157,18 +159,53 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         }
         String normalized = filePath.replace('\\', '/').strip();
 
-        if (Path.of(normalized).isAbsolute()) {
-            return Path.of(normalized).normalize().startsWith(workspaceRoot);
+        String rel = workspaceRelative(normalized);
+        if (rel != null) {
+            return matchesWorkspacePrefix(rel);
         }
 
         while (normalized.startsWith("/")) {
             normalized = normalized.substring(1);
         }
+        return matchesWorkspacePrefix(normalized);
+    }
+
+    private boolean matchesWorkspacePrefix(String rel) {
         for (String prefix : WORKSPACE_PREFIXES) {
-            if (normalized.equals(prefix) || normalized.startsWith(prefix + "/")) {
+            if (rel.equals(prefix) || rel.startsWith(prefix + "/")) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Returns the workspace-relative portion of an absolute path that falls under
+     * {@link #workspaceRoot}, or {@code null} when {@code normalized} is relative or lives
+     * outside the workspace root.
+     */
+    private String workspaceRelative(String normalized) {
+        if (!Path.of(normalized).isAbsolute()) {
+            return null;
+        }
+        Path norm = Path.of(normalized).normalize();
+        if (!norm.startsWith(workspaceRoot)) {
+            return null;
+        }
+        String rel = workspaceRoot.relativize(norm).toString().replace('\\', '/');
+        return rel.isEmpty() ? null : rel;
+    }
+
+    /**
+     * Rewrites a workspace-rooted absolute path to its workspace-relative form so that writes
+     * routed to {@link #projectFs} land at the corresponding project location instead of being
+     * re-resolved against the workspace root. Non-workspace paths pass through unchanged.
+     */
+    private String toProjectTargetPath(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return filePath;
+        }
+        String rel = workspaceRelative(filePath.replace('\\', '/').strip());
+        return rel != null ? rel : filePath;
     }
 }
