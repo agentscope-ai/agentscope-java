@@ -3726,10 +3726,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public void clearContext(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        AgentState state = getAgentState(userId, sid);
-        state.contextMutable().clear();
-        state.setSummary("");
-        saveAgentState(userId, sid);
+        String slot = slotKey(userId, sid);
+        serializeOnKey(
+                        slot,
+                        Mono.fromRunnable(
+                                () -> {
+                                    AgentState agentState =
+                                            stateCache.computeIfPresent(
+                                                    slot,
+                                                    (key, current) -> {
+                                                        current.setSummary("");
+                                                        current.contextMutable().clear();
+                                                        return current;
+                                                    });
+                                    if (agentState == null) {
+                                        return;
+                                    }
+                                    saveAgentState(userId, sid);
+                                }))
+                .block();
     }
 
     /**

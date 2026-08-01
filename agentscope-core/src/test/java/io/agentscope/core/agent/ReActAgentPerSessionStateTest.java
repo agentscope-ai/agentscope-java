@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -48,6 +49,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -246,6 +248,48 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearContext waits for an in-flight call to the same session")
+    void clearContextWaitsForInFlightCall() throws Exception {
+        CountDownLatch modelStarted = new CountDownLatch(1);
+        CountDownLatch releaseModel = new CountDownLatch(1);
+        CountDownLatch clearStarted = new CountDownLatch(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new BlockingModel(modelStarted, releaseModel))
+                        .stateStore(new InMemoryAgentStateStore())
+                        .build();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        CompletableFuture<Msg> call =
+                agent.call(List.of(userMsg("in flight")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(modelStarted.await(5, TimeUnit.SECONDS), "model stream should start");
+
+        CompletableFuture<Void> clear =
+                CompletableFuture.runAsync(
+                        () -> {
+                            clearStarted.countDown();
+                            agent.clearContext("u1", "sessA");
+                        });
+        assertTrue(clearStarted.await(5, TimeUnit.SECONDS), "clearContext should start");
+        try {
+            assertThrows(
+                    TimeoutException.class,
+                    () -> clear.get(200, TimeUnit.MILLISECONDS),
+                    "clearContext should wait for the active same-session call");
+        } finally {
+            releaseModel.countDown();
+        }
+
+        call.get(5, TimeUnit.SECONDS);
+        clear.get(5, TimeUnit.SECONDS);
+        assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
+    }
+
+    @Test
     @DisplayName("replacePermissionContext updates and persists only the targeted slot")
     void replacePermissionContextUpdatesOnlyTargetSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
@@ -346,6 +390,39 @@ class ReActAgentPerSessionStateTest {
                                                 .build())
                                 .delaySubscription(Duration.ofMillis(200));
                     });
+        }
+    }
+
+    private static final class BlockingModel extends ChatModelBase {
+        private final CountDownLatch started;
+        private final CountDownLatch release;
+
+        private BlockingModel(CountDownLatch started, CountDownLatch release) {
+            this.started = started;
+            this.release = release;
+        }
+
+        @Override
+        public String getModelName() {
+            return "blocking";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Mono.fromCallable(
+                            () -> {
+                                started.countDown();
+                                if (!release.await(5, TimeUnit.SECONDS)) {
+                                    throw new IllegalStateException("model release timed out");
+                                }
+                                return ChatResponse.builder()
+                                        .content(
+                                                List.<ContentBlock>of(
+                                                        TextBlock.builder().text("ok").build()))
+                                        .build();
+                            })
+                    .flux();
         }
     }
 
