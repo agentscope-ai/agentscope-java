@@ -24,6 +24,9 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -169,6 +172,89 @@ class ProjectAwareOverlayTest {
         ReadResult r = overlay.read(rc, "AGENTS.md", 0, 0);
         assertTrue(r.isSuccess());
         assertEquals("workspace version", r.fileData().content());
+    }
+
+    @Test
+    void read_absoluteWorkspacePath_fallsBackToProjectDir() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "project impl", StandardCharsets.UTF_8);
+
+        String absPath = workspace.resolve("src/App.java").toAbsolutePath().toString();
+        ReadResult r = overlay.read(rc, absPath, 0, 0);
+        assertTrue(r.isSuccess(), () -> "read failed: " + r.error());
+        assertEquals("project impl", r.fileData().content());
+    }
+
+    @Test
+    void read_absoluteWorkspacePath_upperTakesPrecedence() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.createDirectories(workspace.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "project impl", StandardCharsets.UTF_8);
+        Files.writeString(
+                workspace.resolve("src/App.java"), "workspace impl", StandardCharsets.UTF_8);
+
+        String absPath = workspace.resolve("src/App.java").toAbsolutePath().toString();
+        ReadResult r = overlay.read(rc, absPath, 0, 0);
+        assertTrue(r.isSuccess());
+        assertEquals("workspace impl", r.fileData().content());
+    }
+
+    @Test
+    void exists_absoluteWorkspacePath_checksProjectFallback() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "impl", StandardCharsets.UTF_8);
+
+        String existing = workspace.resolve("src/App.java").toAbsolutePath().toString();
+        String missing = workspace.resolve("src/Missing.java").toAbsolutePath().toString();
+        assertTrue(overlay.exists(rc, existing));
+        assertFalse(overlay.exists(rc, missing));
+    }
+
+    @Test
+    void ls_absoluteWorkspacePath_listsProjectFiles() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "impl", StandardCharsets.UTF_8);
+
+        String absPath = workspace.resolve("src").toAbsolutePath().toString();
+        LsResult r = overlay.ls(rc, absPath);
+        assertTrue(r.isSuccess());
+        assertTrue(r.entries().stream().anyMatch(fi -> fi.path().endsWith("App.java")));
+    }
+
+    @Test
+    void glob_absoluteWorkspacePath_findsProjectFiles() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "impl", StandardCharsets.UTF_8);
+
+        String absPath = workspace.resolve("src").toAbsolutePath().toString();
+        GlobResult r = overlay.glob(rc, "**/*.java", absPath);
+        assertTrue(r.isSuccess());
+        assertTrue(r.matches().stream().anyMatch(fi -> fi.path().endsWith("App.java")));
+    }
+
+    @Test
+    void grep_absoluteWorkspacePath_findsProjectFiles() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/App.java"), "// TODO fix", StandardCharsets.UTF_8);
+
+        String absPath = workspace.resolve("src").toAbsolutePath().toString();
+        GrepResult r = overlay.grep(rc, "TODO", absPath, null);
+        assertTrue(r.isSuccess());
+        assertTrue(r.matches().stream().anyMatch(m -> m.line() == 1));
+    }
+
+    @Test
+    void move_absoluteWorkspaceSourcePath_copiesToWorkspace() throws IOException {
+        Files.createDirectories(project.resolve("src"));
+        Files.writeString(project.resolve("src/A.txt"), "data", StandardCharsets.UTF_8);
+
+        String fromAbs = workspace.resolve("src/A.txt").toAbsolutePath().toString();
+        String toAbs = workspace.resolve("src/B.txt").toAbsolutePath().toString();
+        WriteResult r = overlay.move(rc, fromAbs, toAbs);
+        assertTrue(r.isSuccess(), () -> "move failed: " + r.error());
+        assertTrue(Files.exists(workspace.resolve("src/B.txt")));
+        assertEquals(
+                "data", Files.readString(workspace.resolve("src/B.txt"), StandardCharsets.UTF_8));
     }
 
     // ==================== Delete routing ====================
