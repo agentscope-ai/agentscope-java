@@ -39,8 +39,8 @@ public final class SessionTurnGate {
 
     /**
      * Non-blocking check: returns {@code true} when a turn is currently held for the given key
-     * (i.e. a run is in progress). Used by {@link WakeupDispatcher} to skip sessions that are
-     * already active — their current run will drain the inbox naturally.
+     * (i.e. a run is in progress). Used by {@link WakeupDispatcher} for diagnostics before it
+     * submits a wakeup that will wait on this gate.
      */
     public boolean isRunning(String key) {
         Semaphore s = gates.get(key);
