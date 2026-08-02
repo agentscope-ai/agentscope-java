@@ -89,7 +89,7 @@ export default function AgentCreatePage() {
         defaultEnvironmentId: defaultEnvironmentId || undefined,
       };
       const created = await createAgent(req);
-      navigate(`/agents/${encodeURIComponent(created.id)}/chat`, { replace: true });
+      navigate(`/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to create');
     } finally {

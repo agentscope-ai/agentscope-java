@@ -10,7 +10,7 @@ import {
 import { Environment, listEnvironments } from '../api/environments';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { Vault, listVaults } from '../api/vaults';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import SessionEventTimeline from './SessionEventTimeline';
 
 const S: Record<string, React.CSSProperties> = {
@@ -20,11 +20,13 @@ const S: Record<string, React.CSSProperties> = {
   back: {
     background: '#ffffff', border: '1px solid #e2e8f0', color: '#475569',
     padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500,
+    textDecoration: 'none', display: 'inline-flex',
   },
   btn: {
     padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
     fontSize: '0.85rem', fontWeight: 500, border: '1px solid #cbd5e1',
     background: '#ffffff', color: '#475569',
+    textDecoration: 'none', display: 'inline-flex',
   },
   danger: { color: '#dc2626', borderColor: '#fca5a5' },
   primary: {
@@ -34,7 +36,6 @@ const S: Record<string, React.CSSProperties> = {
   },
   meta: { fontSize: '0.82rem', color: '#94a3b8', fontFamily: 'monospace', marginBottom: 22 },
   err: { color: '#dc2626', fontSize: '0.9rem' },
-  notice: { color: '#94a3b8', fontSize: '0.9rem' },
   panel: {
     background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12,
     padding: '16px 18px', marginBottom: 18,
@@ -55,9 +56,6 @@ const S: Record<string, React.CSSProperties> = {
   checkRow: { display: 'flex', gap: 10, alignItems: 'center', fontSize: '0.88rem', color: '#334155' },
 };
 
-/** Sentinel {@code sessionKey} used by callers linking directly to a managed session. */
-const MANAGED_ONLY_KEY = '_managed';
-
 function parseOverrides(raw: string | null | undefined): Record<string, unknown> {
   if (!raw) return {};
   try {
@@ -69,19 +67,20 @@ function parseOverrides(raw: string | null | undefined): Record<string, unknown>
 }
 
 /**
- * Managed session transcript (event timeline). The legacy per-agent gateway sessions
- * (`/api/agents/{id}/sessions/*`) were removed in the four-plane split.
+ * Managed session details: mounts, overrides, event timeline, archive/restore/delete.
  */
 export default function SessionTranscript({
   agentId,
-  sessionKey,
-  managedSessionId,
+  sessionId,
+  onDeleted,
+  embedded = false,
 }: {
   agentId: string;
-  sessionKey: string;
-  managedSessionId?: string;
+  sessionId: string;
+  onDeleted?: () => void;
+  /** When true (Details tab), hide outer back/title chrome. */
+  embedded?: boolean;
 }) {
-  const managedOnly = sessionKey === MANAGED_ONLY_KEY && !!managedSessionId;
   const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [vaults, setVaults] = useState<Vault[]>([]);
@@ -102,60 +101,58 @@ export default function SessionTranscript({
   async function reload() {
     setErr(null);
     try {
-      if (managedOnly && managedSessionId) {
-        const [sess, envs, vs, ms] = await Promise.all([
-          getManagedSession(managedSessionId),
-          listEnvironments().catch(() => [] as Environment[]),
-          listVaults().catch(() => [] as Vault[]),
-          listMemoryStores().catch(() => [] as MemoryStore[]),
-        ]);
-        setManagedSession(sess);
-        setEnvironments(envs.filter(e => !e.archivedAt));
-        setVaults(vs);
-        setMemoryStores(ms);
-        setEnvironmentId(sess.environmentId || '');
-        setVaultIds(sess.vaultIds ?? []);
-        setMemoryStoreIds(sess.memoryStoreIds ?? []);
-        const ov = parseOverrides(sess.agentOverridesJson);
-        setSystem(typeof ov.system === 'string' ? ov.system : '');
-        setModel(typeof ov.model === 'string' ? ov.model : '');
-        setMaxIters(ov.maxIters != null ? String(ov.maxIters) : '');
-      }
+      const [sess, envs, vs, ms] = await Promise.all([
+        getManagedSession(sessionId),
+        listEnvironments().catch(() => [] as Environment[]),
+        listVaults().catch(() => [] as Vault[]),
+        listMemoryStores().catch(() => [] as MemoryStore[]),
+      ]);
+      setManagedSession(sess);
+      setEnvironments(envs.filter(e => !e.archivedAt));
+      setVaults(vs);
+      setMemoryStores(ms);
+      setEnvironmentId(sess.environmentId || '');
+      setVaultIds(sess.vaultIds ?? []);
+      setMemoryStoreIds(sess.memoryStoreIds ?? []);
+      const ov = parseOverrides(sess.agentOverridesJson);
+      setSystem(typeof ov.system === 'string' ? ov.system : '');
+      setModel(typeof ov.model === 'string' ? ov.model : '');
+      setMaxIters(ov.maxIters != null ? String(ov.maxIters) : '');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
   }
 
   useEffect(() => {
-    reload();
+    void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, sessionKey, managedSessionId]);
+  }, [agentId, sessionId]);
 
   async function handleArchiveManaged() {
-    if (!managedSessionId || !confirm('Archive this managed session?')) return;
+    if (!confirm('Archive this managed session?')) return;
     try {
-      await archiveManagedSession(managedSessionId);
-      reload();
+      await archiveManagedSession(sessionId);
+      await reload();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
   }
 
   async function handleRestoreManaged() {
-    if (!managedSessionId) return;
     try {
-      await restoreManagedSession(managedSessionId);
-      reload();
+      await restoreManagedSession(sessionId);
+      await reload();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
   }
 
   async function handleDelete() {
-    if (!managedSessionId || !confirm('Delete this session entirely?')) return;
+    if (!confirm('Delete this session entirely?')) return;
     try {
-      await deleteManagedSession(managedSessionId);
-      navigate(`/agents/${encodeURIComponent(agentId)}/sessions`, { replace: true });
+      await deleteManagedSession(sessionId);
+      if (onDeleted) onDeleted();
+      else navigate(`/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -163,7 +160,7 @@ export default function SessionTranscript({
 
   async function handleSaveOverrides(e: React.FormEvent) {
     e.preventDefault();
-    if (!managedSessionId || archived) return;
+    if (archived) return;
     setSavingOverrides(true);
     setErr(null);
     try {
@@ -175,7 +172,7 @@ export default function SessionTranscript({
       if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
         throw new Error('maxIters must be a number');
       }
-      const updated = await updateManagedSession(managedSessionId, { agentOverrides });
+      const updated = await updateManagedSession(sessionId, { agentOverrides });
       setManagedSession(updated);
     } catch (ex: unknown) {
       setErr(ex instanceof Error ? ex.message : 'Failed to save overrides');
@@ -186,12 +183,12 @@ export default function SessionTranscript({
 
   async function handleSaveMounts(e: React.FormEvent) {
     e.preventDefault();
-    if (!managedSessionId || archived) return;
+    if (archived) return;
     setSavingMounts(true);
     setErr(null);
     try {
       if (!environmentId.trim()) throw new Error('environmentId is required');
-      const updated = await updateManagedSession(managedSessionId, {
+      const updated = await updateManagedSession(sessionId, {
         environmentId: environmentId.trim(),
         vaultIds,
         memoryStoreIds,
@@ -204,46 +201,43 @@ export default function SessionTranscript({
     }
   }
 
-  if (!managedOnly) {
-    return (
-      <div style={S.root}>
-        <div style={S.bar}>
-          <button style={S.back} onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions`)}>← Back</button>
-          <h2 style={S.title}>Transcript</h2>
-        </div>
-        <div style={S.notice}>
-          Legacy gateway sessions were removed in the four-plane split. Open a managed session from the sessions list instead.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={S.root}>
-      <div style={S.bar}>
-        <button style={S.back} onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions`)}>← Back</button>
-        <h2 style={S.title}>Transcript</h2>
-        <span style={{ flex: 1 }} />
-        {!archived && (
-          <button
-            style={{ ...S.btn, ...S.primary }}
-            onClick={() => navigate(
-              `/agents/${encodeURIComponent(agentId)}/chat?managed=${encodeURIComponent(managedSessionId!)}`,
-            )}
-            title="Resume this conversation in the Chat tab"
-          >
-            ▶ Continue in Chat
-          </button>
-        )}
-        {archived ? (
-          <button style={S.btn} onClick={handleRestoreManaged}>Restore</button>
-        ) : (
-          <button style={S.btn} onClick={handleArchiveManaged}>Archive</button>
-        )}
-        <button style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>Delete</button>
-      </div>
+      {!embedded && (
+        <div style={S.bar}>
+          <Link to={`/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
+          <h2 style={S.title}>Details</h2>
+          <span style={{ flex: 1 }} />
+          {!archived && (
+            <Link
+              to={`/sessions/${encodeURIComponent(sessionId)}`}
+              style={{ ...S.btn, ...S.primary }}
+              title="Open Chat for this session"
+            >
+              ▶ Open Chat
+            </Link>
+          )}
+          {archived ? (
+            <button type="button" style={S.btn} onClick={handleRestoreManaged}>Restore</button>
+          ) : (
+            <button type="button" style={S.btn} onClick={handleArchiveManaged}>Archive</button>
+          )}
+          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>Delete</button>
+        </div>
+      )}
+      {embedded && (
+        <div style={{ ...S.bar, marginBottom: 12 }}>
+          <span style={{ flex: 1 }} />
+          {archived ? (
+            <button type="button" style={S.btn} onClick={handleRestoreManaged}>Restore</button>
+          ) : (
+            <button type="button" style={S.btn} onClick={handleArchiveManaged}>Archive</button>
+          )}
+          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>Delete</button>
+        </div>
+      )}
       <div style={S.meta}>
-        {managedSessionId}
+        {sessionId}
         {managedSession && ` · ${managedSession.status}`}
         {archived && ' · archived'}
       </div>
@@ -353,7 +347,7 @@ export default function SessionTranscript({
         </form>
       </div>
 
-      {managedSessionId && <SessionEventTimeline managedSessionId={managedSessionId} />}
+      <SessionEventTimeline managedSessionId={sessionId} />
     </div>
   );
 }

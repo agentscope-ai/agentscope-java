@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ManagedSession,
   ManagedSessionListStatus,
@@ -7,13 +8,12 @@ import {
   listManagedSessions,
   restoreManagedSession,
 } from '../api/managedSessions';
+import { AgentDefinition, listAgents } from '../api/agents';
 import { Environment, listEnvironments } from '../api/environments';
-import { useNavigate, useParams } from 'react-router-dom';
-import NewManagedSessionForm from './NewManagedSessionForm';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1000 },
-  header: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 },
+  header: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' },
   title: { margin: 0, fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em', flex: 1 },
   tabs: { display: 'flex', gap: 6, marginBottom: 16 },
   tab: {
@@ -21,16 +21,20 @@ const S: Record<string, React.CSSProperties> = {
     background: '#ffffff', color: '#64748b', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500,
   },
   tabActive: { background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' },
+  filter: {
+    padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1',
+    fontSize: '0.88rem', background: '#ffffff', color: '#334155', minWidth: 200,
+  },
   primary: {
     padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600,
     background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
     color: '#ffffff', border: 'none',
     boxShadow: '0 2px 6px rgba(99,102,241,0.25)',
+    textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
   },
   empty: { padding: '60px 0', color: '#94a3b8', fontSize: '0.95rem', textAlign: 'center' },
   emptyLink: {
-    color: '#6366f1', cursor: 'pointer', fontWeight: 600, background: 'none',
-    border: 'none', fontSize: '0.95rem', padding: 0,
+    color: '#6366f1', fontWeight: 600, textDecoration: 'none', fontSize: '0.95rem',
   },
   card: {
     background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12,
@@ -49,6 +53,7 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   mounts: { fontSize: '0.78rem', color: '#64748b', marginTop: 8 },
+  agent: { fontSize: '0.82rem', color: '#4338ca', fontWeight: 500, marginTop: 6 },
   cardFooter: {
     display: 'flex', alignItems: 'center', gap: 10, marginTop: 12,
     fontSize: '0.78rem', color: '#94a3b8', flexWrap: 'wrap',
@@ -109,33 +114,43 @@ function mountSummary(s: ManagedSession, envNameById: Map<string, string>): stri
 }
 
 /**
- * Managed session list (`/api/sessions`). The legacy per-agent inbox
- * (`/api/agents/{id}/sessions/*`) was removed in the four-plane split.
+ * Top-level Managed Sessions hub (`/sessions`). Optional `?agentId=` filter.
  */
-export default function SessionInboxList({ agentId }: { agentId: string }) {
+export default function SessionsHubPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const agentFilter = searchParams.get('agentId') ?? '';
   const [tab, setTab] = useState<ManagedSessionListStatus>('active');
   const [managedEntries, setManagedEntries] = useState<ManagedSession[]>([]);
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [envNameById, setEnvNameById] = useState<Map<string, string>>(new Map());
   const [err, setErr] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
-  const aid = id ?? agentId;
+
+  const agentNameById = useMemo(
+    () => new Map(agents.map(a => [a.id, a.name])),
+    [agents],
+  );
+
+  const newSessionHref = agentFilter
+    ? `/sessions/new?agentId=${encodeURIComponent(agentFilter)}`
+    : '/sessions/new';
 
   const reload = useCallback(async () => {
     setErr(null);
     try {
-      const [list, envs] = await Promise.all([
-        listManagedSessions(agentId, tab),
+      const [list, envs, agentList] = await Promise.all([
+        listManagedSessions(agentFilter || undefined, tab),
         listEnvironments().catch(() => [] as Environment[]),
+        listAgents().catch(() => [] as AgentDefinition[]),
       ]);
       setManagedEntries(list);
       setEnvNameById(new Map(envs.map(e => [e.id, e.name])));
+      setAgents(agentList);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to load sessions');
     }
-  }, [agentId, tab]);
+  }, [agentFilter, tab]);
 
   useEffect(() => {
     void reload();
@@ -158,9 +173,22 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
     <div style={S.root}>
       <div style={S.header}>
         <h2 style={S.title}>Sessions</h2>
-        <button type="button" style={S.primary} onClick={() => setShowCreate(true)}>
-          New session
-        </button>
+        <select
+          style={S.filter}
+          value={agentFilter}
+          onChange={e => {
+            const next = new URLSearchParams(searchParams);
+            if (e.target.value) next.set('agentId', e.target.value);
+            else next.delete('agentId');
+            setSearchParams(next, { replace: true });
+          }}
+        >
+          <option value="">All agents</option>
+          {agents.map(a => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+        <Link to={newSessionHref} style={S.primary}>New session</Link>
       </div>
 
       <div style={S.tabs}>
@@ -188,10 +216,7 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
           ) : (
             <>
               No managed sessions yet —{' '}
-              <button type="button" style={S.emptyLink} onClick={() => setShowCreate(true)}>
-                create a new session
-              </button>
-              .
+              <Link to={newSessionHref} style={S.emptyLink}>create a new session</Link>.
             </>
           )}
         </div>
@@ -200,6 +225,7 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
       {managedEntries.map(s => {
         const reason = stopReasonSummary(s.stopReason);
         const archived = !!s.archivedAt;
+        const agentLabel = agentNameById.get(s.agentId) || s.agentId;
         return (
           <div key={s.id} style={S.card}>
             <div style={S.cardHeader}>
@@ -207,6 +233,7 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
               <span style={statusStyle(s.status)}>{s.status}</span>
               <span style={S.time}>{relTime(s.updatedAt)}</span>
             </div>
+            <div style={S.agent}>{agentLabel}</div>
             {reason && <div style={S.stopReason}>stop: {reason}</div>}
             <div style={S.mounts}>{mountSummary(s, envNameById)}</div>
             <div style={S.cardFooter}>
@@ -215,17 +242,17 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
                   type="button"
                   style={S.action}
                   disabled={busyId === s.id}
-                  onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/chat?managed=${encodeURIComponent(s.id)}`)}
+                  onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}`)}
                 >
-                  Resume
+                  Open chat
                 </button>
               )}
               <button
                 type="button"
                 style={S.action}
-                onClick={() => navigate(`/agents/${encodeURIComponent(aid)}/sessions/_managed?managed=${encodeURIComponent(s.id)}`)}
+                onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}?tab=details`)}
               >
-                View transcript
+                Details
               </button>
               {!archived ? (
                 <button
@@ -264,17 +291,6 @@ export default function SessionInboxList({ agentId }: { agentId: string }) {
           </div>
         );
       })}
-
-      {showCreate && (
-        <NewManagedSessionForm
-          agentId={agentId}
-          onCancel={() => setShowCreate(false)}
-          onCreated={session => {
-            setShowCreate(false);
-            navigate(`/agents/${encodeURIComponent(aid)}/chat?managed=${encodeURIComponent(session.id)}`);
-          }}
-        />
-      )}
     </div>
   );
 }

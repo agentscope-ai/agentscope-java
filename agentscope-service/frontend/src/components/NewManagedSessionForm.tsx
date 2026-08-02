@@ -163,8 +163,8 @@ export default function NewManagedSessionForm({
     <form onSubmit={handleSubmit} style={modal ? S.panel : undefined} onClick={ev => ev.stopPropagation()}>
       <h3 style={S.title}>New session</h3>
       <div style={S.hint}>
-        Choose environment, vaults, and memory stores for this session. Values are sent explicitly —
-        Agent session defaults are only used as the initial selection.
+        Create a session definition only — no turn starts until the first Chat message.
+        Choose environment, vaults, and memory stores. Agent session defaults prefill the form.
       </div>
       {err && <div style={S.err}>{err}</div>}
       {loading ? (

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Environment, listEnvironments } from '../api/environments';
-import { ManagedFile, createFile, listFiles } from '../api/files';
 import {
   EventStreamHandle,
   getManagedSession,
@@ -12,7 +11,6 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
-import NewManagedSessionForm from './NewManagedSessionForm';
 import ToolCallBlock from './ToolCallBlock';
 
 type Role = 'user' | 'assistant' | 'system';
@@ -52,6 +50,7 @@ const S: Record<string, React.CSSProperties> = {
   iconBtn: {
     background: '#ffffff', border: '1px solid #e2e8f0', color: '#475569',
     padding: '5px 12px', borderRadius: 7, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500,
+    textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
   },
   thread: { flex: 1, overflowY: 'auto', padding: '28px 36px', display: 'flex', flexDirection: 'column', gap: 18 },
   empty: { color: '#94a3b8', fontSize: '0.95rem', textAlign: 'center', marginTop: 100 },
@@ -109,9 +108,6 @@ const S: Record<string, React.CSSProperties> = {
 
 let counter = 0;
 const nextId = () => `m${Date.now().toString(36)}-${counter++}`;
-
-const MANAGED_STORAGE_PREFIX = 'claw_managed_session:';
-const managedStorageKey = (agentId: string) => `${MANAGED_STORAGE_PREFIX}${agentId}`;
 
 function payloadText(payload?: Record<string, unknown>): string {
   if (!payload) return '';
@@ -196,56 +192,39 @@ function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
 }
 
 /**
- * Managed-session chat panel. The legacy `/api/agents/{id}/chat/*` path was removed in the
- * four-plane split — this panel talks exclusively to the managed session API (`/api/sessions/*`).
+ * Chat bound to an existing Managed session. Does not create sessions —
+ * POST user.message is the only turn driver.
  */
-export default function ChatPanel({ agentId }: { agentId: string }) {
-  const [searchParams] = useSearchParams();
+export default function ChatPanel({
+  sessionId,
+  agentId,
+}: {
+  sessionId: string;
+  agentId: string;
+}) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(true);
-  const [managedSessionId, setManagedSessionId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
   const [envNameById, setEnvNameById] = useState<Map<string, string>>(new Map());
-  const [needsCreate, setNeedsCreate] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
-  const [files, setFiles] = useState<ManagedFile[]>([]);
-  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const streamHandleRef = useRef<EventStreamHandle | null>(null);
   const replyMsgIdRef = useRef<string | null>(null);
-
-  const persistManagedSession = useCallback((id: string | null) => {
-    if (id) {
-      try { localStorage.setItem(managedStorageKey(agentId), id); } catch { /* ignore */ }
-    } else {
-      try { localStorage.removeItem(managedStorageKey(agentId)); } catch { /* ignore */ }
-    }
-  }, [agentId]);
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
+  const lastSeqRef = useRef(0);
 
   useEffect(() => {
-    listFiles().then(setFiles).catch(() => setFiles([]));
     listEnvironments()
       .then((envs: Environment[]) => setEnvNameById(new Map(envs.map(e => [e.id, e.name]))))
       .catch(() => setEnvNameById(new Map()));
   }, []);
 
-  async function handleUploadFile(file: File) {
-    const content = await file.text();
-    const created = await createFile({ filename: file.name, content });
-    setFiles(prev => [created, ...prev]);
-    setSelectedFileIds(prev => prev.includes(created.id) ? prev : [...prev, created.id]);
-  }
-
-  const seenEventIdsRef = useRef<Set<string>>(new Set());
-  const lastSeqRef = useRef(0);
-
   const handleManagedEvent = useCallback((evt: SessionEvent) => {
-    // Preview frames have null id / seq=-1 — skip id dedupe, track by event_id in payload.
     if (evt.id) {
       if (seenEventIdsRef.current.has(evt.id)) return;
       seenEventIdsRef.current.add(evt.id);
@@ -297,7 +276,6 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           return [...prev, { id: eventId, role: 'assistant', text: delta, tools: [], pending: true }];
         });
       } else if (targetType === 'agent.tool_use') {
-        // Live tool-arg preview: show accumulating JSON on the latest assistant bubble.
         setMessages(prev => {
           const lastAssistantIdx = [...prev].map((m, i) => ({ m, i })).reverse()
             .find(x => x.m.role === 'assistant')?.i;
@@ -354,7 +332,6 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
         name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
         input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       };
-      // Prefer matching by preview event id when tool_use was streamed.
       const previewKey = evt.id;
       setMessages(prev => {
         let matched = false;
@@ -402,28 +379,26 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }, []);
 
-  const managedParam = searchParams.get('managed') ?? '';
-
-  const openSession = useCallback(async (
-    sessionId: string,
-    cancelled: () => boolean,
-    opts?: { syncUrl?: boolean },
-  ) => {
-    const sess = await getManagedSession(sessionId);
-    if (cancelled()) return;
-    setManagedSession(sess);
-    setManagedSessionId(sessionId);
-    setNeedsCreate(false);
-    setShowCreate(false);
-    persistManagedSession(sessionId);
-    if (opts?.syncUrl !== false) {
-      navigate(`/agents/${encodeURIComponent(agentId)}/chat?managed=${encodeURIComponent(sessionId)}`, { replace: true });
-    }
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([]);
+    setInput('');
+    setRestoring(true);
+    setLoadError(null);
+    setPendingConfirm(null);
+    setManagedSession(null);
     seenEventIdsRef.current = new Set();
     lastSeqRef.current = 0;
-    try {
-      const events = await listEvents(sessionId);
-      if (!cancelled()) {
+    streamHandleRef.current?.close();
+    streamHandleRef.current = null;
+
+    async function run() {
+      try {
+        const sess = await getManagedSession(sessionId);
+        if (cancelled) return;
+        setManagedSession(sess);
+        const events = await listEvents(sessionId);
+        if (cancelled) return;
         for (const e of events) {
           if (e.id) seenEventIdsRef.current.add(e.id);
           if (typeof e.seq === 'number' && e.seq > lastSeqRef.current) {
@@ -431,60 +406,22 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           }
         }
         setMessages(eventsToMessages(events));
-      }
-    } catch { /* empty */ }
-    if (cancelled()) return;
-    streamHandleRef.current?.close();
-    streamHandleRef.current = streamEvents(
-      sessionId,
-      evt => { if (!cancelled()) handleManagedEvent(evt); },
-      () => { /* stream ended */ },
-      {
-        after: lastSeqRef.current,
-        eventDeltas: ['agent.message', 'agent.thinking', 'agent.tool_use'],
-      },
-    );
-  }, [agentId, handleManagedEvent, navigate, persistManagedSession]);
-
-  // Managed session restore + SSE (no silent auto-create).
-  useEffect(() => {
-    let cancelled = false;
-    setMessages([]);
-    setInput('');
-    setRestoring(true);
-    setPendingConfirm(null);
-    setManagedSession(null);
-    setNeedsCreate(false);
-    streamHandleRef.current?.close();
-    streamHandleRef.current = null;
-
-    async function run() {
-      const stored = (() => { try { return localStorage.getItem(managedStorageKey(agentId)); } catch { return null; } })();
-      const sessionId = managedParam || stored;
-      try {
-        if (!sessionId) {
-          if (!cancelled) {
-            setManagedSessionId(null);
-            setNeedsCreate(true);
-            setShowCreate(true);
-            setRestoring(false);
-          }
-          return;
-        }
-        // URL already has the id when deep-linked; avoid a navigate→effect loop.
-        await openSession(sessionId, () => cancelled, { syncUrl: !managedParam });
+        streamHandleRef.current = streamEvents(
+          sessionId,
+          evt => { if (!cancelled) handleManagedEvent(evt); },
+          () => { /* stream ended */ },
+          {
+            after: lastSeqRef.current,
+            eventDeltas: ['agent.message', 'agent.thinking', 'agent.tool_use'],
+          },
+        );
       } catch (e: unknown) {
         if (!cancelled) {
-          persistManagedSession(null);
-          setManagedSessionId(null);
-          setNeedsCreate(true);
-          setShowCreate(true);
-          const msg = e instanceof Error ? e.message : 'failed to open managed session';
-          setMessages([{ id: nextId(), role: 'system', text: `[error] ${msg}`, tools: [] }]);
+          setLoadError(e instanceof Error ? e.message : 'Failed to open session');
         }
-        return;
+      } finally {
+        if (!cancelled) setRestoring(false);
       }
-      if (!cancelled) setRestoring(false);
     }
     void run();
     return () => {
@@ -492,15 +429,15 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
       streamHandleRef.current?.close();
       streamHandleRef.current = null;
     };
-  }, [agentId, managedParam, openSession, persistManagedSession]);
+  }, [sessionId, handleManagedEvent]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [messages, pendingConfirm]);
 
   const canSend = useMemo(
-    () => !busy && !restoring && !pendingConfirm && !needsCreate && input.trim().length > 0 && !!managedSessionId,
-    [busy, restoring, pendingConfirm, needsCreate, input, managedSessionId],
+    () => !busy && !restoring && !loadError && !pendingConfirm && input.trim().length > 0,
+    [busy, restoring, loadError, pendingConfirm, input],
   );
 
   const mountLabel = useMemo(() => {
@@ -512,7 +449,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
   }, [managedSession, envNameById]);
 
   async function handleSend() {
-    if (!canSend || !managedSessionId) return;
+    if (!canSend) return;
     const text = input.trim();
     setInput('');
     setBusy(true);
@@ -522,7 +459,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     setMessages(prev => [...prev, userMsg, replyMsg]);
 
     try {
-      await postUserMessage(managedSessionId, text);
+      await postUserMessage(sessionId, text);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'send failed';
       setMessages(prev => prev.map(m => m.id === replyMsg.id
@@ -536,11 +473,11 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
   }
 
   async function handleConfirmation(allow: boolean) {
-    if (!managedSessionId || !pendingConfirm) return;
+    if (!pendingConfirm) return;
     setBusy(true);
     try {
       await postToolConfirmation(
-        managedSessionId,
+        sessionId,
         pendingConfirm.toolUseId,
         allow,
         allow ? undefined : 'Denied by user',
@@ -569,133 +506,66 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
 
   function handleNewChat() {
     if (busy) return;
-    if (messages.length > 0 && !confirm('Start a new chat?')) return;
-    streamHandleRef.current?.close();
-    setMessages([]);
-    setPendingConfirm(null);
-    setManagedSession(null);
-    setManagedSessionId(null);
-    persistManagedSession(null);
-    setNeedsCreate(true);
-    setShowCreate(true);
-    setRestoring(false);
+    navigate(`/sessions/new?agentId=${encodeURIComponent(agentId)}`);
   }
 
-  async function handleSessionCreated(session: ManagedSession) {
-    setRestoring(true);
-    setMessages([{ id: nextId(), role: 'system', text: 'New managed session started.', tools: [] }]);
-    setSelectedFileIds([]);
-    try {
-      await openSession(session.id, () => false);
-    } catch (e: unknown) {
-      setMessages([{ id: nextId(), role: 'system', text: `[error] ${e instanceof Error ? e.message : 'failed'}`, tools: [] }]);
-    } finally {
-      setRestoring(false);
-    }
-  }
+  const sessionLabel = sessionId.slice(0, 24);
 
-  const sessionLabel = managedSessionId ? managedSessionId.slice(0, 24) : (needsCreate ? 'no session' : '…');
+  if (loadError) {
+    return (
+      <div style={S.root}>
+        <div style={S.empty}>
+          {loadError}
+          <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Sessions</Link>
+            <Link
+              to={`/sessions/new?agentId=${encodeURIComponent(agentId)}`}
+              style={{ ...S.iconBtn, color: '#6366f1' }}
+            >
+              New session
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={S.root}>
       <div style={S.header}>
         <span>Managed session</span>
-        <span style={S.sessionTag} title={managedSessionId ?? ''}>
-          {restoring ? 'resolving…' : sessionLabel}{sessionLabel.length >= 24 ? '…' : ''}
+        <span style={S.sessionTag} title={sessionId}>
+          {restoring ? 'resolving…' : sessionLabel}{sessionId.length > 24 ? '…' : ''}
         </span>
-        {mountLabel && managedSessionId && (
-          <button
-            type="button"
+        {mountLabel && (
+          <Link
+            to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
             style={{ ...S.iconBtn, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            title="View / edit mounts on the session transcript page"
-            onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions/_managed?managed=${encodeURIComponent(managedSessionId)}`)}
+            title="View / edit mounts on Details"
           >
             {mountLabel}
-          </button>
+          </Link>
         )}
         <span style={{ flex: 1 }} />
-        {files.length > 0 && (
-          <select
-            style={{ ...S.iconBtn, maxWidth: 180 }}
-            value=""
-            onChange={e => {
-              const id = e.target.value;
-              if (!id) return;
-              setSelectedFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
-            }}
-            title="Attach uploaded file to the next new session"
-          >
-            <option value="">Attach file…</option>
-            {files.map(f => (
-              <option key={f.id} value={f.id}>{f.filename}</option>
-            ))}
-          </select>
-        )}
-        {selectedFileIds.length > 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-            {selectedFileIds.length} file(s) for next session
-            <button
-              type="button"
-              style={{ ...S.iconBtn, marginLeft: 6, padding: '2px 8px' }}
-              onClick={() => setSelectedFileIds([])}
-            >
-              Clear
-            </button>
-          </span>
-        )}
-        <label style={{ ...S.iconBtn, cursor: 'pointer' }} title="Upload a text file (mounted on next new session)">
-          📎 Upload
-          <input
-            type="file"
-            accept=".md,.txt,.json,.csv,.yaml,.yml,.xml,.html,.js,.ts,.py,.go,.java"
-            style={{ display: 'none' }}
-            onChange={e => {
-              const f = e.target.files?.[0];
-              if (f) void handleUploadFile(f).catch(err => {
-                setMessages(prev => [...prev, {
-                  id: nextId(), role: 'system',
-                  text: `[error] ${err instanceof Error ? err.message : 'upload failed'}`,
-                  tools: [],
-                }]);
-              });
-              e.target.value = '';
-            }}
-          />
-        </label>
-        {managedSessionId && (
-          <button
-            type="button"
-            style={S.iconBtn}
-            onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions/_managed?managed=${encodeURIComponent(managedSessionId)}`)}
-            title="View managed session event timeline"
-          >
-            📊 Events
-          </button>
-        )}
-        <button
-          type="button"
+        <Link
+          to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
           style={S.iconBtn}
-          onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions`)}
+          title="Session details and event timeline"
         >
+          📊 Details
+        </Link>
+        <Link to="/sessions" style={S.iconBtn}>
           📋 All sessions
-        </button>
+        </Link>
         <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
-          ✨ New chat
+          ✨ New session
         </button>
       </div>
       <div style={S.thread} ref={threadRef}>
         {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
-        {!restoring && needsCreate && !showCreate && (
+        {!restoring && messages.length === 0 && (
           <div style={S.empty}>
-            No session selected.{' '}
-            <button type="button" style={{ ...S.iconBtn, color: '#6366f1' }} onClick={() => setShowCreate(true)}>
-              Create a new session
-            </button>
-          </div>
-        )}
-        {!restoring && !needsCreate && messages.length === 0 && (
-          <div style={S.empty}>
-            Managed session ready. Messages stream via the session event log.
+            Session ready. Send a message to start the first turn — events stay empty until then.
           </div>
         )}
         {messages.map(m => (
@@ -753,14 +623,6 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           {busy ? '…' : 'Send'}
         </button>
       </div>
-      {showCreate && (
-        <NewManagedSessionForm
-          agentId={agentId}
-          initialFileIds={selectedFileIds}
-          onCancel={needsCreate && !managedSessionId ? undefined : () => setShowCreate(false)}
-          onCreated={session => { void handleSessionCreated(session); }}
-        />
-      )}
     </div>
   );
 }

@@ -231,7 +231,7 @@ func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner s
 		`INSERT INTO sessions (session_id, owner_id, agent_id, agent_owner_id, agent_version, agent_ref_type,
 		 agent_overrides_json, environment_id, external_key, memory_store_ids_json, vault_ids_json,
 		 resources_json, status, version, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'active',1,$13,$13)`,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'idle',1,$13,$13)`,
 		id, owner, agentID, agentOwner, ver, refType, overridesJSON, envID, ext,
 		mustJSON(memIDs), mustJSON(vaultIDs), mustJSON(resources), now)
 	if err != nil {

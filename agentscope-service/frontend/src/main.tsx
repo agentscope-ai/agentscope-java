@@ -1,6 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './index.css';
 
@@ -13,10 +20,10 @@ import AgentsHubPage from './pages/AgentsHubPage';
 import AgentCreatePage from './pages/AgentCreatePage';
 import WorkspacesHubPage from './pages/WorkspacesHubPage';
 import WorkspaceDetailPage from './pages/WorkspaceDetailPage';
-import AgentChatPage from './pages/AgentChatPage';
+import SessionsHubPage from './pages/SessionsHubPage';
+import SessionCreatePage from './pages/SessionCreatePage';
+import SessionDetailPage from './pages/SessionDetailPage';
 import AgentWorkspacePage from './pages/AgentWorkspacePage';
-import AgentSessionsPage from './pages/AgentSessionsPage';
-import AgentSessionDetailPage from './pages/AgentSessionDetailPage';
 import AgentChannelsPage from './pages/AgentChannelsPage';
 import AgentSettingsPage from './pages/AgentSettingsPage';
 import AgentSkillsPage from './pages/AgentSkillsPage';
@@ -52,6 +59,32 @@ function OperateAgentDetailRoute() {
   return <OperateAgentDetailPage name={name} />;
 }
 
+/** Legacy Build Agent Chat → top-level Sessions. */
+function AgentChatRedirect() {
+  const { id = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const managed = searchParams.get('managed');
+  if (managed) {
+    return <Navigate to={`/sessions/${encodeURIComponent(managed)}`} replace />;
+  }
+  return <Navigate to={`/sessions?agentId=${encodeURIComponent(id)}`} replace />;
+}
+
+function AgentSessionsRedirect() {
+  const { id = '' } = useParams();
+  return <Navigate to={`/sessions?agentId=${encodeURIComponent(id)}`} replace />;
+}
+
+function AgentSessionDetailRedirect() {
+  const { id = '', key = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const managed = searchParams.get('managed');
+  if (key === '_managed' && managed) {
+    return <Navigate to={`/sessions/${encodeURIComponent(managed)}?tab=details`} replace />;
+  }
+  return <Navigate to={`/sessions?agentId=${encodeURIComponent(id)}`} replace />;
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -71,6 +104,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* Build workspace */}
             <Route path="/agents" element={<AgentsHubPage />} />
             <Route path="/agents/new" element={<AgentCreatePage />} />
+            <Route path="/sessions" element={<SessionsHubPage />} />
+            <Route path="/sessions/new" element={<SessionCreatePage />} />
+            <Route path="/sessions/:sessionId" element={<SessionDetailPage />} />
             <Route path="/workspaces" element={<WorkspacesHubPage />} />
             <Route path="/workspaces/:id" element={<WorkspaceDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
@@ -83,11 +119,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/channels/:channelId" element={<ChannelDetailPage />} />
 
             <Route path="/agents/:id" element={<AgentLayout />}>
-              <Route index element={<Navigate to="chat" replace />} />
-              <Route path="chat" element={<AgentChatPage />} />
+              <Route index element={<Navigate to="settings" replace />} />
+              <Route path="chat" element={<AgentChatRedirect />} />
               <Route path="workspace" element={<AgentWorkspacePage />} />
-              <Route path="sessions" element={<AgentSessionsPage />} />
-              <Route path="sessions/:key" element={<AgentSessionDetailPage />} />
+              <Route path="sessions" element={<AgentSessionsRedirect />} />
+              <Route path="sessions/:key" element={<AgentSessionDetailRedirect />} />
               <Route path="channels" element={<AgentChannelsPage />} />
               <Route path="skills" element={<AgentSkillsPage />} />
               <Route path="tools" element={<AgentToolsPage />} />

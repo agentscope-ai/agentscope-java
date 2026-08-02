@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     memory_store_ids_json TEXT,
     vault_ids_json        TEXT,
     resources_json        TEXT,
-    status                TEXT NOT NULL DEFAULT 'active',
+    status                TEXT NOT NULL DEFAULT 'idle',
     stop_reason_json      TEXT,
     version               INT NOT NULL DEFAULT 1,
     archived_at           BIGINT,

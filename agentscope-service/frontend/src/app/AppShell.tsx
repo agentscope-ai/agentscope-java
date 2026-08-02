@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 
 const buildNav = [
   { to: '/agents', label: 'Agents', icon: Bot },
+  { to: '/sessions', label: 'Sessions', icon: MessageSquare },
   { to: '/workspaces', label: 'Workspaces', icon: FolderOpen },
   { to: '/environments', label: 'Environments', icon: HardDrive },
   { to: '/memory-stores', label: 'Memory', icon: Database },

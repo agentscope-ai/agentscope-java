@@ -56,16 +56,16 @@ Managed Agents 在 Build 侧自建会话能力(独立于 Operate)。本阶段**�
 
 | 能力 | 落地要点 |
 |---|---|
-| **会话发起入口** | `NewManagedSessionForm`:Sessions 页 **New session**、Chat **New chat** 共用;显式提交 env / vault / memory(预填 Agent Session defaults) |
-| **Session 管理** | 列表 Active / Archived;`POST /api/sessions/:id/restore`;列表与详情均可 Archive / Restore / Delete |
-| **组件绑定可见可改** | 创建表单、详情 Mounts 面板、Chat 顶栏摘要;`PATCH /api/sessions/:id` 支持 `environmentId` / `vaultIds` / `memoryStoreIds` |
+| **会话发起入口** | Build 顶级 **Sessions**(`/sessions`):创建=`POST /api/sessions` 静态绑定(初始 `status=idle`);首条 `user.message` 才启动 turn。Agent 页不再嵌套 Chat/Sessions |
+| **Session 管理** | 列表 Active / Archived(按 `archived_at`);`POST /api/sessions/:id/restore`;详情 Details Tab 可 Archive / Restore / Delete |
+| **组件绑定可见可改** | 创建表单、Details Mounts 面板、Chat 顶栏摘要;`PATCH /api/sessions/:id` 支持 `environmentId` / `vaultIds` / `memoryStoreIds` |
 | **API 配套** | `GET /api/sessions?status=active\|archived\|all`;删除会话后 CP best-effort 调数据面 `DELETE /api/sessions/:id/events` 清理事件 |
 
 关键代码:
 
 - 控制面:`internal/product/handlers_sessions.go`
 - 数据面:`DataSessionApiController#deleteEvents`
-- 前端:`NewManagedSessionForm.tsx`、`SessionInboxList.tsx`、`SessionTranscript.tsx`、`ChatPanel.tsx`、`api/managedSessions.ts`
+- 前端:`SessionsHubPage`、`SessionCreatePage`、`SessionDetailPage`、`NewManagedSessionForm.tsx`、`SessionTranscript.tsx`、`ChatPanel.tsx`、`api/managedSessions.ts`
 
 ## 3. 可从 BYO 线复用的部分
 

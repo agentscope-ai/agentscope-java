@@ -6,12 +6,10 @@ import ShareAgentDialog from './ShareAgentDialog';
 type TierMin = ShareTier;
 
 const TABS: { key: string; label: string; icon: string; minTier: TierMin }[] = [
-  { key: 'chat',      label: 'Chat',      icon: '💬', minTier: 'RUN'  },
   { key: 'workspace', label: 'Workspace', icon: '📁', minTier: 'RUN'  },
   { key: 'skills',    label: 'Skills',    icon: '🧩', minTier: 'RUN'  },
   { key: 'tools',     label: 'Tools',     icon: '🛠️', minTier: 'RUN'  },
   { key: 'subagents', label: 'Subagents', icon: '🤝', minTier: 'RUN'  },
-  { key: 'sessions',  label: 'Sessions',  icon: '📋', minTier: 'EDIT' },
   { key: 'channels',  label: 'Channels',  icon: '📡', minTier: 'RUN'  },
   { key: 'settings',  label: 'Settings',  icon: '⚙️', minTier: 'RUN'  },
 ];
@@ -49,7 +47,7 @@ export default function AgentLayout() {
   const canEdit = !isGlobal && tier === 'EDIT';
 
   const activeTab =
-    TABS.find(t => location.pathname.startsWith(`/agents/${id}/${t.key}`))?.key ?? 'chat';
+    TABS.find(t => location.pathname.startsWith(`/agents/${id}/${t.key}`))?.key ?? 'settings';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
