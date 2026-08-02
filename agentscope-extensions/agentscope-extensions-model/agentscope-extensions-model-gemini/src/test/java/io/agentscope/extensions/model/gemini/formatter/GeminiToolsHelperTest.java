@@ -18,17 +18,20 @@ package io.agentscope.extensions.model.gemini.formatter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.Schema;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
 import com.google.genai.types.Type;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -178,6 +181,41 @@ class GeminiToolsHelperTest {
         List<FunctionDeclaration> funcDecls = tool.functionDeclarations().get();
         assertEquals("search", funcDecls.get(0).name().get());
         assertEquals("calculate", funcDecls.get(1).name().get());
+    }
+
+    @Test
+    void testMergeServerToolsPreservesExistingTools() {
+        Tool functionTool = Tool.builder().functionDeclarations(List.of()).build();
+        ToolConfig toolConfig = ToolConfig.builder().includeServerSideToolInvocations(true).build();
+        GenerateContentConfig original =
+                GenerateContentConfig.builder()
+                        .tools(List.of(functionTool))
+                        .toolConfig(toolConfig)
+                        .build();
+
+        GenerateContentConfig merged =
+                GeminiToolsHelper.mergeServerTools(
+                        original,
+                        List.of(
+                                GeminiServerTool.googleSearch().build(),
+                                GeminiServerTool.urlContext().build()));
+
+        assertEquals(1, original.tools().orElseThrow().size());
+        assertEquals(3, merged.tools().orElseThrow().size());
+        assertSame(functionTool, merged.tools().orElseThrow().get(0));
+        assertTrue(merged.tools().orElseThrow().get(1).googleSearch().isPresent());
+        assertTrue(merged.tools().orElseThrow().get(2).urlContext().isPresent());
+        assertTrue(
+                merged.toolConfig().orElseThrow().includeServerSideToolInvocations().isPresent());
+        assertTrue(merged.toolConfig().orElseThrow().includeServerSideToolInvocations().get());
+    }
+
+    @Test
+    void testMergeEmptyServerToolsReturnsOriginalConfig() {
+        GenerateContentConfig original = GenerateContentConfig.builder().build();
+
+        assertSame(original, GeminiToolsHelper.mergeServerTools(original, null));
+        assertSame(original, GeminiToolsHelper.mergeServerTools(original, List.of()));
     }
 
     @Test

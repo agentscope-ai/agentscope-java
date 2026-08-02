@@ -18,8 +18,10 @@ package io.agentscope.extensions.model.gemini;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
 import io.agentscope.core.model.GenerateOptions;
@@ -29,7 +31,9 @@ import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -128,6 +132,44 @@ class GeminiChatModelTest {
                 List.of(ModelTestUtils.createSimpleToolSchema("test_tool", "A test tool"));
 
         assertNotNull(tools, "Tool schemas should be created");
+    }
+
+    @Test
+    @DisplayName("Should combine function tools and Gemini server tools in request config")
+    void testBuildConfigCombinesFunctionAndServerTools() {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .serverTools(
+                                List.of(
+                                        GeminiServerTool.googleSearch().build(),
+                                        GeminiServerTool.urlContext().build()))
+                        .build();
+        ToolSchema functionTool =
+                ModelTestUtils.createSimpleToolSchema("test_tool", "A test function tool");
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(List.of(functionTool), null);
+
+        assertEquals(3, config.tools().orElseThrow().size());
+        assertTrue(config.tools().orElseThrow().get(0).functionDeclarations().isPresent());
+        assertTrue(config.tools().orElseThrow().get(1).googleSearch().isPresent());
+        assertTrue(config.tools().orElseThrow().get(2).urlContext().isPresent());
+    }
+
+    @Test
+    @DisplayName("Should defensively copy Gemini server tools from builder")
+    void testServerToolsAreDefensivelyCopied() {
+        List<GeminiServerTool> serverTools =
+                new ArrayList<>(List.of(GeminiServerTool.googleSearch().build()));
+        GeminiChatModel model =
+                GeminiChatModel.builder().apiKey(mockApiKey).serverTools(serverTools).build();
+
+        serverTools.clear();
+        GenerateContentConfig config = model.buildGenerateContentConfig(null, null);
+
+        assertEquals(1, config.tools().orElseThrow().size());
+        assertTrue(config.tools().orElseThrow().get(0).googleSearch().isPresent());
     }
 
     @Test

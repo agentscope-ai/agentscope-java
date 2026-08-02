@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,9 +28,14 @@ import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolCall;
+import com.google.genai.types.ToolResponse;
+import com.google.genai.types.ToolType;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -147,6 +153,7 @@ class GeminiResponseParserTest {
         assertEquals("call-123", toolUse.getId());
         assertEquals("get_weather", toolUse.getName());
         assertEquals("Tokyo", toolUse.getInput().get("city"));
+        assertFalse(toolUse.isServer());
     }
 
     @Test
@@ -437,5 +444,301 @@ class GeminiResponseParserTest {
         ToolUseBlock toolUse2 = (ToolUseBlock) chatResponse.getContent().get(1);
         assertEquals("call-2", toolUse2.getId());
         assertTrue(toolUse2.getMetadata().isEmpty());
+    }
+
+    @Test
+    void testParseServerToolCallResponse() {
+        // Build response with server-side (built-in) tool call
+        Map<String, Object> args = new HashMap<>();
+        args.put("queries", List.of("southernmost city in China"));
+
+        ToolCall toolCall =
+                ToolCall.builder()
+                        .id("tool-call-1")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .args(args)
+                        .build();
+
+        Part toolCallPart = Part.builder().toolCall(toolCall).build();
+
+        Content content = Content.builder().role("model").parts(List.of(toolCallPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-server-tool")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ContentBlock block = chatResponse.getContent().get(0);
+        assertInstanceOf(ToolUseBlock.class, block);
+
+        ToolUseBlock toolUse = (ToolUseBlock) block;
+        assertEquals("tool-call-1", toolUse.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", toolUse.getName());
+        assertEquals(List.of("southernmost city in China"), toolUse.getInput().get("queries"));
+        assertTrue(toolUse.isServer());
+    }
+
+    @Test
+    void testParseServerToolCallWithoutId() {
+        // Build server-side tool call without explicit ID
+        Map<String, Object> args = new HashMap<>();
+        args.put("queries", "test query");
+
+        ToolCall toolCall =
+                ToolCall.builder().toolType(ToolType.Known.GOOGLE_MAPS).args(args).build();
+
+        Part toolCallPart = Part.builder().toolCall(toolCall).build();
+
+        Content content = Content.builder().role("model").parts(List.of(toolCallPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-server-tool-no-id")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify - should generate ID
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertNotNull(toolUse.getId());
+        assertTrue(toolUse.getId().startsWith("tool_call_"));
+        assertEquals("GOOGLE_MAPS", toolUse.getName());
+        assertTrue(toolUse.isServer());
+    }
+
+    @Test
+    void testParseServerToolCallWithThoughtSignature() {
+        // Build server-side tool call with thought signature
+        Map<String, Object> args = new HashMap<>();
+        args.put("queries", "test query");
+
+        ToolCall toolCall =
+                ToolCall.builder()
+                        .id("tool-call-with-sig")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .args(args)
+                        .build();
+
+        byte[] thoughtSignature = "server-tool-sig".getBytes();
+        Part toolCallPart =
+                Part.builder().toolCall(toolCall).thoughtSignature(thoughtSignature).build();
+
+        Content content = Content.builder().role("model").parts(List.of(toolCallPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-server-tool-sig")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("tool-call-with-sig", toolUse.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", toolUse.getName());
+        assertTrue(toolUse.isServer());
+
+        // Verify thought signature is stored in metadata
+        assertNotNull(toolUse.getMetadata());
+        assertTrue(toolUse.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        byte[] extractedSig =
+                (byte[]) toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertArrayEquals(thoughtSignature, extractedSig);
+    }
+
+    @Test
+    void testParseServerToolResponse() {
+        // Build response with server-side (built-in) tool result
+        Map<String, Object> responseMap = new HashMap<>();
+        responseMap.put("search_suggestions", "southernmost city in China");
+
+        ToolResponse toolResponse =
+                ToolResponse.builder()
+                        .id("tool-response-1")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .response(responseMap)
+                        .build();
+
+        Part toolResponsePart = Part.builder().toolResponse(toolResponse).build();
+
+        Content content = Content.builder().role("model").parts(List.of(toolResponsePart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-server-result")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ContentBlock block = chatResponse.getContent().get(0);
+        assertInstanceOf(ToolResultBlock.class, block);
+
+        ToolResultBlock toolResult = (ToolResultBlock) block;
+        assertEquals("tool-response-1", toolResult.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", toolResult.getName());
+        assertTrue(toolResult.isServer());
+        assertEquals(ToolResultState.SUCCESS, toolResult.getState());
+
+        // Verify output is a TextBlock containing the serialized response JSON
+        assertEquals(1, toolResult.getOutput().size());
+        TextBlock output = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
+        assertTrue(output.getText().contains("southernmost city in China"));
+    }
+
+    @Test
+    void testParseServerToolResponseWithThoughtSignature() {
+        // Build server-side tool result with thought signature
+        Map<String, Object> responseMap = new HashMap<>();
+        responseMap.put("search_suggestions", "test");
+
+        ToolResponse toolResponse =
+                ToolResponse.builder()
+                        .id("tool-response-sig")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .response(responseMap)
+                        .build();
+
+        byte[] thoughtSignature = "tool-response-sig".getBytes();
+        Part toolResponsePart =
+                Part.builder()
+                        .toolResponse(toolResponse)
+                        .thoughtSignature(thoughtSignature)
+                        .build();
+
+        Content content = Content.builder().role("model").parts(List.of(toolResponsePart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-server-result-sig")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ToolResultBlock toolResult = (ToolResultBlock) chatResponse.getContent().get(0);
+        assertEquals("tool-response-sig", toolResult.getId());
+        assertTrue(toolResult.isServer());
+        assertEquals(ToolResultState.SUCCESS, toolResult.getState());
+
+        // Verify thought signature is stored in metadata
+        assertNotNull(toolResult.getMetadata());
+        assertTrue(toolResult.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        byte[] extractedSig =
+                (byte[]) toolResult.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertArrayEquals(thoughtSignature, extractedSig);
+    }
+
+    @Test
+    void testParseMixedServerAndLocalTools() {
+        // Build response mixing server-side tools and local function calls
+        Map<String, Object> searchArgs = new HashMap<>();
+        searchArgs.put("queries", List.of("southernmost city in China"));
+
+        ToolCall toolCall =
+                ToolCall.builder()
+                        .id("search-call")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .args(searchArgs)
+                        .build();
+        Part toolCallPart = Part.builder().toolCall(toolCall).build();
+
+        Map<String, Object> searchResult = new HashMap<>();
+        searchResult.put("search_suggestions", "Sansha");
+        ToolResponse toolResponse =
+                ToolResponse.builder()
+                        .id("search-call")
+                        .toolType(ToolType.Known.GOOGLE_SEARCH_WEB)
+                        .response(searchResult)
+                        .build();
+        Part toolResponsePart = Part.builder().toolResponse(toolResponse).build();
+
+        Map<String, Object> weatherArgs = new HashMap<>();
+        weatherArgs.put("location", "Sansha, China");
+        FunctionCall functionCall =
+                FunctionCall.builder()
+                        .id("weather-call")
+                        .name("getWeather")
+                        .args(weatherArgs)
+                        .build();
+        Part functionCallPart = Part.builder().functionCall(functionCall).build();
+
+        Content content =
+                Content.builder()
+                        .role("model")
+                        .parts(List.of(toolCallPart, toolResponsePart, functionCallPart))
+                        .build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-mixed-tools")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(3, chatResponse.getContent().size());
+
+        // First: server-side tool use
+        ToolUseBlock serverToolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("search-call", serverToolUse.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverToolUse.getName());
+        assertTrue(serverToolUse.isServer());
+
+        // Second: server-side tool result
+        ToolResultBlock serverToolResult = (ToolResultBlock) chatResponse.getContent().get(1);
+        assertEquals("search-call", serverToolResult.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverToolResult.getName());
+        assertTrue(serverToolResult.isServer());
+        assertEquals(ToolResultState.SUCCESS, serverToolResult.getState());
+
+        // Third: local function call
+        ToolUseBlock localToolUse = (ToolUseBlock) chatResponse.getContent().get(2);
+        assertEquals("weather-call", localToolUse.getId());
+        assertEquals("getWeather", localToolUse.getName());
+        assertFalse(localToolUse.isServer());
     }
 }

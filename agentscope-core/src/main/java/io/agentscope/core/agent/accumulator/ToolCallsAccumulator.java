@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
@@ -55,6 +56,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        ToolCallState state;
+        boolean server;
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -81,6 +84,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
                 this.metadata.putAll(block.getMetadata());
             }
+
+            this.state = block.getState();
+            this.server = this.server || block.isServer();
         }
 
         ToolUseBlock build() {
@@ -119,6 +125,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .input(finalArgs)
                     .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
+                    .state(state)
+                    .server(server)
                     .build();
         }
 

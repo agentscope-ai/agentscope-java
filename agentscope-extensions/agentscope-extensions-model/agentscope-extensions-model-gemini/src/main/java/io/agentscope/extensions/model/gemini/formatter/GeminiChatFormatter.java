@@ -45,7 +45,8 @@ import java.util.function.Function;
  * <p><b>Important Gemini API Behaviors:</b>
  * <ul>
  *   <li>System messages are converted to "user" role (Gemini doesn't support system role in contents)</li>
- *   <li>Tool results are independent "user" role Content objects</li>
+ *   <li>Local tool results are independent "user" role Content objects</li>
+ *   <li>Server tool results remain inline in the original "model" Content</li>
  *   <li>Thinking content uses the "thought" flag on Part objects</li>
  * </ul>
  */

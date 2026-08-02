@@ -37,6 +37,38 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
+## 服务端工具
+
+Gemini 内置工具由模型服务商执行，不会通过 AgentScope 本地 Toolkit 执行。使用显式 model
+builder 配置这些工具：
+
+```java
+import io.agentscope.extensions.model.gemini.GeminiChatModel;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
+import java.util.List;
+
+GeminiChatModel model = GeminiChatModel.builder()
+    .apiKey(System.getenv("GEMINI_API_KEY"))
+    .modelName("gemini-2.0-flash")
+    .serverTools(List.of(
+        GeminiServerTool.googleSearch()
+            .param("excludeDomains", List.of("example.com"))
+            .build(),
+        GeminiServerTool.urlContext().build()
+    ))
+    .build();
+```
+
+| 工具 | 配置方式和支持的参数 |
+| --- | --- |
+| Google Search | `GeminiServerTool.googleSearch()`；`searchTypes`、`blockingConfidence`、`excludeDomains`、`timeRangeFilter` |
+| Google Maps | `GeminiServerTool.googleMap()`；`authConfig`、`enableWidget` |
+| URL Context | `GeminiServerTool.urlContext()`；不支持参数 |
+| Code Execution | `GeminiServerTool.builder().type(GeminiServerTool.CODE_EXECUTION)`；不支持参数 |
+
+配置至少一个服务端工具后，AgentScope 会自动启用 Gemini 服务端调用上下文，并在对话历史中保留返回的
+工具调用和结果。服务端工具与本地 function tools 相互独立，因此可以在同一次请求中同时提供。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Gemini starter：

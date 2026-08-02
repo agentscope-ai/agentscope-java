@@ -173,6 +173,7 @@ class ToolExecutor {
      *
      * <p>This method handles:
      * <ul>
+     *   <li>Server-side tool calls short-circuit (never executed locally)</li>
      *   <li>Tool lookup and validation</li>
      *   <li>Group activation check</li>
      *   <li>Parameter merging (preset + input)</li>
@@ -183,6 +184,21 @@ class ToolExecutor {
      */
     private Mono<ToolResultBlock> executeCore(ToolCallParam param) {
         ToolUseBlock toolCall = param.getToolUseBlock();
+
+        // Server-side (built-in) tools are executed by the model provider itself and their
+        // results (if any) already arrive in the model response. Never dispatch them to the
+        // local toolkit, even if a local tool happens to share the same name.
+        if (toolCall.isServer()) {
+            return Mono.just(
+                    ToolResultBlock.suspended(
+                            toolCall,
+                            new ToolSuspendException(
+                                    "Server-side tool '"
+                                            + toolCall.getName()
+                                            + "' is executed by the model provider and cannot"
+                                            + " be dispatched locally")));
+        }
+
         AgentTool tool = toolRegistry.getTool(toolCall.getName());
 
         if (tool == null) {

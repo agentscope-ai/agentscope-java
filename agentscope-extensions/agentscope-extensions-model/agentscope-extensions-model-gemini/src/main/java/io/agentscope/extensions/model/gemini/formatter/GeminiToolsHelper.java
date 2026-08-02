@@ -18,12 +18,14 @@ package io.agentscope.extensions.model.gemini.formatter;
 import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.Schema;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
 import com.google.genai.types.Type;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,13 +34,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handles tool registration and configuration for Gemini API.
+ * Converts and combines tool configuration for the Gemini API.
  *
- * <p>This helper converts AgentScope tool schemas to Gemini's Tool and ToolConfig format:
+ * <p><b>Responsibilities:</b>
  * <ul>
- *   <li>Tool: Contains function declarations with JSON Schema parameters</li>
- *   <li>ToolConfig: Contains function calling mode configuration</li>
+ *   <li>Convert AgentScope {@link ToolSchema} definitions into a Gemini {@link Tool} containing
+ *       function declarations and JSON Schema parameters</li>
+ *   <li>Append provider-specific {@link GeminiServerTool} entries to {@link
+ *       GenerateContentConfig} while preserving existing function tools</li>
+ *   <li>Convert AgentScope {@link ToolChoice} into Gemini {@link ToolConfig} function-calling
+ *       policy</li>
  * </ul>
+ *
+ * <p>Function tools and Gemini server tools remain separate entries in {@code
+ * GenerateContentConfig.tools}; tool-choice policy applies to function calling only.
  *
  * <p><b>Tool Choice Mapping:</b>
  * <ul>
@@ -56,6 +65,33 @@ public class GeminiToolsHelper {
      * Creates a new GeminiToolsHelper.
      */
     public GeminiToolsHelper() {}
+
+    /**
+     * Append Gemini server tools to a content config without mutating its existing tool list.
+     *
+     * @param config      Existing content config
+     * @param serverTools Gemini server tools to append (may be null or empty)
+     * @return A config containing both existing and server tools, or {@code config} when there are
+     * no server tools
+     */
+    public static GenerateContentConfig mergeServerTools(
+            GenerateContentConfig config, List<GeminiServerTool> serverTools) {
+        if (serverTools == null || serverTools.isEmpty()) {
+            return config;
+        }
+        GenerateContentConfig.Builder updateConfigBuilder = config.toBuilder();
+        ToolConfig.Builder toolConfigBuilder =
+                config.toolConfig().map(ToolConfig::toBuilder).orElseGet(ToolConfig::builder);
+
+        List<Tool> mergedTools = new ArrayList<>(config.tools().orElseGet(List::of));
+        serverTools.stream().map(GeminiServerTool::toTool).forEach(mergedTools::add);
+        updateConfigBuilder
+                .tools(mergedTools)
+                // You must set the `include_server_side_tool_invocations` flag to `true` to enable
+                // tool context looping.
+                .toolConfig(toolConfigBuilder.includeServerSideToolInvocations(true).build());
+        return updateConfigBuilder.build();
+    }
 
     /**
      * Convert AgentScope ToolSchema list to Gemini Tool object.
