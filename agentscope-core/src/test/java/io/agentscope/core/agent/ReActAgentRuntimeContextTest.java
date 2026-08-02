@@ -239,8 +239,7 @@ class ReActAgentRuntimeContextTest {
                 return Mono.defer(
                         () -> {
                             if (preCount.getAndIncrement() == 0) {
-                                AgentBase a = (AgentBase) ((PreReasoningEvent) event).getAgent();
-                                RuntimeContext rc = a.getRuntimeContext();
+                                RuntimeContext rc = fromSetter.get();
                                 assertNotNull(rc);
                                 assertEquals("per-call-uid", rc.getUserId());
                                 assertEquals("from-initial-put", rc.get(SharedPojo.class).value);
