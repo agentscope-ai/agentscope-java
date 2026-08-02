@@ -1538,39 +1538,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
-                if (confirmResults.isEmpty()) {
-                    String pendingSummary =
-                            asking.stream()
-                                    .map(t -> t.getName() + " (id=" + t.getId() + ")")
-                                    .collect(Collectors.joining(", "));
-                    throw new IllegalStateException(
-                            "Agent is paused for human-in-the-loop confirmation: the following"
-                                    + " tool call(s) are in ASKING state and need your approval"
-                                    + " before the agent can continue: ["
-                                    + pendingSummary
-                                    + "]. This call supplied no confirmation, so it cannot"
-                                    + " proceed.\n"
-                                    + "To resume, send a follow-up message that carries a"
-                                    + " List<ConfirmResult> under the metadata key \""
-                                    + Msg.METADATA_CONFIRM_RESULTS
-                                    + "\", e.g.:\n"
-                                    + "    UserMessage.builder()\n"
-                                    + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
-                                    + "            List.of(new ConfirmResult(true, toolCall))))\n"
-                                    + "        .build();\n"
-                                    + "Tip: capture the ToolUseBlocks from the"
-                                    + " RequireUserConfirmEvent emitted when the agent paused.\n"
-                                    + "If you did NOT expect a pending confirmation here, a"
-                                    + " previous run most likely paused on one of these tool calls"
-                                    + " and persisted that state under the same (agentId,"
-                                    + " sessionId); start a fresh session, clear the persisted"
-                                    + " state, or use an in-memory state store to begin clean.");
-                }
                 List<ConfirmResult> normalizedResults =
-                        validateAndNormalizeConfirmResults(confirmResults, asking);
-                // Surface the accepted confirmation payload before mutating context or executing
-                // tools, so stream consumers can close the RequireUserConfirmEvent loop.
+                        validateAndNormalizeConfirmResults(msgs, asking);
                 publishEvent(
                         new UserConfirmResultEvent(
                                 resolvePendingConfirmRequestReplyId(), normalizedResults));
@@ -1633,22 +1602,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Validate the user-provided confirmation payload against the currently ASKING tool calls.
          *
-         * <p>Permission HITL resumes as a batch: every ASKING tool call must be covered exactly
-         * once, and no result may reference a stale or unrelated tool call. Returning a copied list
-         * gives downstream event emission and state mutation the same trusted payload.
+         * <p>Permission HITL resumes with one or more confirmations for currently ASKING tool
+         * calls. Confirmations may cover a subset of ASKING calls, but no result may reference a
+         * stale or unrelated tool call. Returning a copied list gives downstream event emission and
+         * state mutation the same trusted payload.
          */
         private List<ConfirmResult> validateAndNormalizeConfirmResults(
-                List<ConfirmResult> results, List<ToolUseBlock> asking) {
+                List<Msg> msgs, List<ToolUseBlock> asking) {
+            List<ConfirmResult> results = extractConfirmResults(msgs);
+            if (results.isEmpty()) {
+                String pendingSummary =
+                        asking.stream()
+                                .map(t -> t.getName() + " (id=" + t.getId() + ")")
+                                .collect(Collectors.joining(", "));
+                throw new IllegalStateException(
+                        "Agent is paused for human-in-the-loop confirmation: the following"
+                                + " tool call(s) are in ASKING state and need your approval"
+                                + " before the agent can continue: ["
+                                + pendingSummary
+                                + "]. This call supplied no confirmation, so it cannot"
+                                + " proceed.\n"
+                                + "To resume, send a follow-up message that carries a"
+                                + " List<ConfirmResult> under the metadata key \""
+                                + Msg.METADATA_CONFIRM_RESULTS
+                                + "\", e.g.:\n"
+                                + "    UserMessage.builder()\n"
+                                + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
+                                + "            List.of(new ConfirmResult(true, toolCall))))\n"
+                                + "        .build();\n"
+                                + "Tip: capture the ToolUseBlocks from the"
+                                + " RequireUserConfirmEvent emitted when the agent paused.\n"
+                                + "If you did NOT expect a pending confirmation here, a"
+                                + " previous run most likely paused on one of these tool calls"
+                                + " and persisted that state under the same (agentId,"
+                                + " sessionId); start a fresh session, clear the persisted"
+                                + " state, or use an in-memory state store to begin clean.");
+            }
+
             Set<String> expectedIds =
                     asking.stream()
                             .map(ToolUseBlock::getId)
                             .filter(Objects::nonNull)
                             .collect(Collectors.toCollection(LinkedHashSet::new));
 
-            Map<String, ToolUseBlock> askingById =
-                    asking.stream()
-                            .filter(t -> t.getId() != null)
-                            .collect(Collectors.toMap(ToolUseBlock::getId, Function.identity()));
             Set<String> providedIds = new LinkedHashSet<>();
             List<ConfirmResult> normalized = new ArrayList<>();
 
@@ -1675,19 +1671,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
                 normalized.add(result);
             }
-
-            if (!providedIds.equals(expectedIds)) {
-                Set<String> missing = new LinkedHashSet<>(expectedIds);
-                missing.removeAll(providedIds);
-                Set<String> unexpected = new LinkedHashSet<>(providedIds);
-                unexpected.removeAll(expectedIds);
-                throw new IllegalStateException(
-                        "ConfirmResults must cover all ASKING tool calls exactly once. Missing: "
-                                + missing
-                                + ", Unexpected: "
-                                + unexpected);
-            }
-
             return List.copyOf(normalized);
         }
 

@@ -319,7 +319,7 @@ class ReActAgentHitlTest {
     }
 
     @Test
-    void confirmResultsMustCoverEveryAskingToolCall() {
+    void confirmResultsMayCoverSomeAskingToolCalls() {
         ChatModelBase model =
                 new ScriptedModel(
                         List.of(
@@ -345,11 +345,16 @@ class ReActAgentHitlTest {
         List<ToolUseBlock> pending = first.getContentBlocks(ToolUseBlock.class);
         assertEquals(2, pending.size());
 
-        IllegalStateException error =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> agent.call(List.of(confirmMsg(true, pending.get(0)))).block());
-        assertTrue(error.getMessage().contains("cover all ASKING tool calls"));
+        Msg resumed = agent.call(List.of(confirmMsg(true, pending.get(0)))).block();
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.PERMISSION_ASKING, resumed.getGenerateReason());
+
+        List<ToolUseBlock> remaining =
+                resumed.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .toList();
+        assertEquals(1, remaining.size());
+        assertEquals("tc2", remaining.get(0).getId());
     }
 
     @Test
