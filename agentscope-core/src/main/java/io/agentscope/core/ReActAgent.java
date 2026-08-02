@@ -557,8 +557,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
-        RuntimeContext rc =
-                callExectution instanceof CallExecution ce ? ce.rc : null;
+        RuntimeContext rc = callExectution instanceof CallExecution ce ? ce.rc : null;
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         return applySystemPromptMiddlewares(base, rc)
                 .filter(prompt -> !prompt.isEmpty())
@@ -841,7 +840,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                     // Call runLifecycle directly — NOT call() — to avoid the
                                     // onAgent chain being applied a second time.
-                                    Mono<Msg> lifecycle = runLifecycle(input.msgs(), context, doCallFn);
+                                    Mono<Msg> lifecycle =
+                                            runLifecycle(input.msgs(), context, doCallFn);
                                     if (context != null) {
                                         lifecycle =
                                                 lifecycle.contextWrite(
