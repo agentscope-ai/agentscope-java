@@ -161,10 +161,18 @@ public class OpenAIChatModel extends ChatModelBase {
 
         // Make the API call
         if (stream) {
-            // Streaming mode
-            return client.stream(apiKey, baseUrl, request, effectiveOptions)
-                    .map(response -> formatter.parseResponse(response, start))
-                    .filter(Objects::nonNull);
+            // Streaming mode: defer creation so that retryWhen re-subscriptions re-issue
+            // the HTTP request. Without defer, transports whose stream() is tied to a
+            // single future (e.g. JdkHttpTransport) would replay the same failed stream.
+            return Flux.defer(
+                            () ->
+                                    client.stream(apiKey, baseUrl, request, effectiveOptions)
+                                            .map(
+                                                    response ->
+                                                            formatter.parseResponse(
+                                                                    response, start))
+                                            .filter(Objects::nonNull))
+                    .subscribeOn(Schedulers.boundedElastic());
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
