@@ -271,11 +271,11 @@ class ReActAgentPerSessionStateTest {
 
         defaultState.contextMutable().add(userMsg("clear through null context"));
         agent.clearContext((RuntimeContext) null);
-        assertTrue(defaultState.getContext().isEmpty());
+        assertTrue(agent.getAgentState(null, defaultSessionId).getContext().isEmpty());
 
         defaultState.contextMutable().add(userMsg("clear through blank session id"));
         agent.clearContext(null, " ");
-        assertTrue(defaultState.getContext().isEmpty());
+        assertTrue(agent.getAgentState(null, defaultSessionId).getContext().isEmpty());
     }
 
     @Test
