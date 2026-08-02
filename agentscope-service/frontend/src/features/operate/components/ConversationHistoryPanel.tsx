@@ -50,7 +50,13 @@ export function ConversationHistoryPanel({
   turnsLoading,
   messagesData,
   messagesLoading,
-  messagesUnavailableReason,
+  messagesError,
+  source,
+  total,
+  loadedCount,
+  hasEarlier,
+  loadingEarlier,
+  onLoadEarlier,
   sessionPending,
   selectedTurnIndex,
   deepLinkTurnIndex,
@@ -60,8 +66,14 @@ export function ConversationHistoryPanel({
   turnsLoading?: boolean;
   messagesData?: unknown;
   messagesLoading?: boolean;
-  messagesUnavailableReason?: string;
-  /** True while the parent session query has not resolved (capabilities unknown). */
+  messagesError?: string | null;
+  source?: string;
+  total?: number;
+  loadedCount?: number;
+  hasEarlier?: boolean;
+  loadingEarlier?: boolean;
+  onLoadEarlier?: () => void;
+  /** True while the parent session query has not resolved. */
   sessionPending?: boolean;
   selectedTurnIndex?: number | null;
   /** When set (e.g. from ?turn=), scroll to that turn header (still collapsed). */
@@ -83,14 +95,14 @@ export function ConversationHistoryPanel({
     [turns, historyMessages],
   );
 
-  // Scroll to deep-linked turn header without expanding it.
   useEffect(() => {
     if (density !== 'by-turn' || deepLinkTurnIndex == null) return;
     if (didScrollRef.current === deepLinkTurnIndex) return;
     const el = scrollTargetRef.current;
-    if (!el) return;
-    didScrollRef.current = deepLinkTurnIndex;
-    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (el) {
+      didScrollRef.current = deepLinkTurnIndex;
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }, [density, deepLinkTurnIndex, groups]);
 
   function toggle(key: string) {
@@ -108,13 +120,39 @@ export function ConversationHistoryPanel({
     (messagesLoading && historyMessages == null) ||
     (turnsLoading && turns.length === 0 && historyMessages == null);
 
+  const sourceLabel =
+    source === 'transcript' ? 'transcript store' : source === 'dataplane' ? 'live instance' : null;
+
+  const rangeLabel =
+    total != null && loadedCount != null && total > 0
+      ? `Showing ${loadedCount.toLocaleString()} of ${total.toLocaleString()}`
+      : null;
+
+  const pager = (
+    <div className="flex flex-wrap items-center gap-2 pb-2">
+      {hasEarlier && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!loadingEarlier}
+          onClick={() => onLoadEarlier?.()}
+        >
+          {loadingEarlier ? 'Loading…' : 'Load earlier'}
+        </Button>
+      )}
+      {rangeLabel && <span className="text-sm text-muted-foreground">{rangeLabel}</span>}
+      {sourceLabel && <Badge tone="info">{sourceLabel}</Badge>}
+    </div>
+  );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>Conversation history</CardTitle>
           <CardDescription>
-            Session transcript by turn (ops summary + messages) or as a flat message list.
+            Message-level transcript (tools structured). Prefer control-plane transcript; live
+            instance is fallback only.
           </CardDescription>
         </div>
         <div className="flex shrink-0 rounded-lg border border-border p-0.5">
@@ -137,105 +175,111 @@ export function ConversationHistoryPanel({
         </div>
       </CardHeader>
       <CardContent>
+        {messagesError && (
+          <p className="mb-3 text-sm text-red-600 whitespace-pre-wrap">{messagesError}</p>
+        )}
         {density === 'flat' ? (
           sessionPending ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <MessagesList
-              data={messagesData}
-              unavailableReason={messagesUnavailableReason}
-              loading={!!messagesLoading}
-              maxHeightClass="max-h-[70vh]"
-            />
+            <>
+              {pager}
+              <MessagesList
+                data={messagesData}
+                loading={!!messagesLoading}
+                maxHeightClass="max-h-[70vh]"
+              />
+            </>
           )
-        ) : messagesUnavailableReason ? (
-          <p className="text-sm text-muted-foreground">{messagesUnavailableReason}</p>
         ) : showLoading ? (
           <p className="text-sm text-muted-foreground">Loading conversation…</p>
-        ) : turnsEmpty && (!historyMessages || historyMessages.length === 0) ? (
+        ) : turnsEmpty && (!historyMessages || historyMessages.length === 0) && !messagesError ? (
           <p className="text-sm text-muted-foreground">
-            No turns or messages recorded yet. Turns open when phase becomes active; messages come
-            from message-query.
+            No turns or messages recorded yet. Messages come from the control-plane transcript (or
+            live message-query fallback). Turns open when phase becomes active.
           </p>
         ) : historyMessages == null && messagesData != null ? (
           <JsonViewer value={messagesData} className="max-h-[50vh]" />
         ) : (
-          <div className="max-h-[70vh] space-y-2 overflow-auto">
-            {groups.map((g) => {
-              if (g.kind === 'before') {
-                const key = 'before';
+          <>
+            {pager}
+            <div className="max-h-[70vh] space-y-2 overflow-auto">
+              {groups.map((g) => {
+                if (g.kind === 'before') {
+                  const key = 'before';
+                  const open = expanded.has(key);
+                  return (
+                    <div key={key} className="rounded-lg border border-border">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/40"
+                        onClick={() => toggle(key)}
+                      >
+                        <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
+                        <span className="font-medium">Before recorded turns</span>
+                        <span className="text-muted-foreground">
+                          {g.messages.length} msg{g.messages.length === 1 ? '' : 's'}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="border-t border-border px-4 py-3">
+                          <MessageItems messages={g.messages} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                const t = g.turn;
+                const key = `turn:${t.turnIndex}`;
                 const open = expanded.has(key);
+                const selected =
+                  selectedTurnIndex === t.turnIndex || deepLinkTurnIndex === t.turnIndex;
                 return (
-                  <div key={key} className="rounded-lg border border-border">
+                  <div
+                    key={t.id || t.turnIndex}
+                    ref={deepLinkTurnIndex === t.turnIndex ? scrollTargetRef : undefined}
+                    className={`rounded-lg border border-border ${selected ? 'ring-1 ring-ring' : ''}`}
+                  >
                     <button
                       type="button"
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/40"
-                      onClick={() => toggle(key)}
+                      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left text-sm hover:bg-muted/40"
+                      onClick={() => {
+                        toggle(key);
+                        onSelectTurn?.(t);
+                      }}
                     >
                       <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
-                      <span className="font-medium">Before recorded turns</span>
+                      <span className="font-mono tabular-nums font-medium">#{t.turnIndex}</span>
+                      <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+                      <span className="font-mono tabular-nums text-muted-foreground">
+                        {formatDuration(t.durationMs)}
+                      </span>
+                      <span className="text-muted-foreground">{formatTime(t.startedAt)}</span>
+                      <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                        {t.userPreview || '—'}
+                      </span>
                       <span className="text-muted-foreground">
                         {g.messages.length} msg{g.messages.length === 1 ? '' : 's'}
                       </span>
                     </button>
                     {open && (
                       <div className="border-t border-border px-4 py-3">
-                        <MessageItems messages={g.messages} />
+                        {messagesLoading && !historyMessages ? (
+                          <p className="text-sm text-muted-foreground">Loading messages…</p>
+                        ) : (
+                          <MessageItems
+                            messages={g.messages}
+                            emptyLabel="No messages attributed to this turn."
+                          />
+                        )}
                       </div>
                     )}
                   </div>
                 );
-              }
-
-              const t = g.turn;
-              const key = `turn:${t.turnIndex}`;
-              const open = expanded.has(key);
-              const selected =
-                selectedTurnIndex === t.turnIndex || deepLinkTurnIndex === t.turnIndex;
-              return (
-                <div
-                  key={t.id || t.turnIndex}
-                  ref={deepLinkTurnIndex === t.turnIndex ? scrollTargetRef : undefined}
-                  className={`rounded-lg border border-border ${selected ? 'ring-1 ring-ring' : ''}`}
-                >
-                  <button
-                    type="button"
-                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left text-sm hover:bg-muted/40"
-                    onClick={() => {
-                      toggle(key);
-                      onSelectTurn?.(t);
-                    }}
-                  >
-                    <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
-                    <span className="font-mono tabular-nums font-medium">#{t.turnIndex}</span>
-                    <Badge tone={statusTone(t.status)}>{t.status}</Badge>
-                    <span className="font-mono tabular-nums text-muted-foreground">
-                      {formatDuration(t.durationMs)}
-                    </span>
-                    <span className="text-muted-foreground">{formatTime(t.startedAt)}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      {t.userPreview || '—'}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {g.messages.length} msg{g.messages.length === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                  {open && (
-                    <div className="border-t border-border px-4 py-3">
-                      {messagesLoading && !historyMessages ? (
-                        <p className="text-sm text-muted-foreground">Loading messages…</p>
-                      ) : (
-                        <MessageItems
-                          messages={g.messages}
-                          emptyLabel="No messages attributed to this turn."
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+              })}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

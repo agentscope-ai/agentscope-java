@@ -23,6 +23,12 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("Commands", func(t *testing.T) { testCommands(t, ctx, s) })
 	t.Run("TeamMessages", func(t *testing.T) { testMessages(t, ctx, s) })
 	t.Run("TeamTasks", func(t *testing.T) { testTasks(t, ctx, s) })
+	t.Run("KV", func(t *testing.T) { testKV(t, ctx, s) })
+	t.Run("Locks", func(t *testing.T) { testLocks(t, ctx, s) })
+	t.Run("Snapshots", func(t *testing.T) { testSnapshots(t, ctx, s) })
+	t.Run("Bus", func(t *testing.T) { testBus(t, ctx, s) })
+	t.Run("AsyncTools", func(t *testing.T) { testAsyncTools(t, ctx, s) })
+	t.Run("DPTasks", func(t *testing.T) { testDPTasks(t, ctx, s) })
 }
 
 func testSessions(t *testing.T, ctx context.Context, s store.Store) {
@@ -510,5 +516,374 @@ func testTasks(t *testing.T, ctx context.Context, s store.Store) {
 	u3, err := s.TeamTasks().Unclaim(ctx, "ns", "team", c3.TaskID)
 	if err != nil || u3.State != store.TaskStatePending || u3.Owner != "" {
 		t.Fatalf("unclaim: %v %+v", err, u3)
+	}
+}
+
+func testKV(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-kv"
+	ns := store.JoinNamespacePath([]string{"a"})
+	child := store.JoinNamespacePath([]string{"a", "b"})
+	val := json.RawMessage(`{"x":1}`)
+
+	ver, err := s.KV().Put(ctx, tenant, ns, "k1", val)
+	if err != nil || ver != 1 {
+		t.Fatalf("put: ver=%d err=%v", ver, err)
+	}
+	got, err := s.KV().Get(ctx, tenant, ns, "k1")
+	if err != nil || got.Version != 1 || string(got.Value) != string(val) {
+		t.Fatalf("get: %+v err=%v", got, err)
+	}
+
+	ver, err = s.KV().Put(ctx, tenant, ns, "k1", json.RawMessage(`{"x":2}`))
+	if err != nil || ver != 2 {
+		t.Fatalf("put2: ver=%d err=%v", ver, err)
+	}
+
+	// create-if-absent: expectedVersion==0 conflicts when key exists
+	cur, written, err := s.KV().PutIfVersion(ctx, tenant, ns, "k1", json.RawMessage(`{}`), 0)
+	if err != nil || written || cur != 2 {
+		t.Fatalf("putIfVersion create conflict: cur=%d written=%v err=%v", cur, written, err)
+	}
+	// CAS success
+	cur, written, err = s.KV().PutIfVersion(ctx, tenant, ns, "k1", json.RawMessage(`{"x":3}`), 2)
+	if err != nil || !written || cur != 3 {
+		t.Fatalf("putIfVersion cas: cur=%d written=%v err=%v", cur, written, err)
+	}
+	// CAS conflict
+	cur, written, err = s.KV().PutIfVersion(ctx, tenant, ns, "k1", json.RawMessage(`{}`), 2)
+	if err != nil || written || cur != 3 {
+		t.Fatalf("putIfVersion stale: cur=%d written=%v err=%v", cur, written, err)
+	}
+	// create-if-absent success
+	cur, written, err = s.KV().PutIfVersion(ctx, tenant, ns, "k2", json.RawMessage(`{"n":1}`), 0)
+	if err != nil || !written || cur != 1 {
+		t.Fatalf("putIfVersion create: cur=%d written=%v err=%v", cur, written, err)
+	}
+
+	_, err = s.KV().Put(ctx, tenant, child, "child-k", json.RawMessage(`{"c":1}`))
+	if err != nil {
+		t.Fatalf("put child: %v", err)
+	}
+	// Sibling namespace must not match prefix search for "a"
+	sib := store.JoinNamespacePath([]string{"aa"})
+	_, _ = s.KV().Put(ctx, tenant, sib, "sib", json.RawMessage(`{}`))
+
+	items, err := s.KV().Search(ctx, tenant, ns, 50, 0)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	foundK1, foundChild, foundSib := false, false, false
+	for _, it := range items {
+		switch {
+		case it.Key == "k1" && it.NsPath == ns:
+			foundK1 = true
+		case it.Key == "child-k" && it.NsPath == child:
+			foundChild = true
+		case it.Key == "sib":
+			foundSib = true
+		}
+	}
+	if !foundK1 || !foundChild {
+		t.Fatalf("search missing recursive hits: %+v", items)
+	}
+	if foundSib {
+		t.Fatal("search must not match sibling ns_path aa")
+	}
+
+	if err := s.KV().Delete(ctx, tenant, ns, "k2"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err = s.KV().Get(ctx, tenant, ns, "k2")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+	// Delete is idempotent
+	if err := s.KV().Delete(ctx, tenant, ns, "k2"); err != nil {
+		t.Fatalf("delete idempotent: %v", err)
+	}
+}
+
+func testLocks(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-lock"
+	lk, err := s.Locks().Acquire(ctx, tenant, "crit", "tok-a", "holder-a", time.Second)
+	if err != nil || lk.OwnerToken != "tok-a" || lk.FencingToken < 1 {
+		t.Fatalf("acquire: %+v err=%v", lk, err)
+	}
+	fencing := lk.FencingToken
+
+	cur, err := s.Locks().Acquire(ctx, tenant, "crit", "tok-b", "holder-b", time.Second)
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if cur == nil || cur.OwnerToken != "tok-a" || cur.Holder != "holder-a" {
+		t.Fatalf("conflict lock: %+v", cur)
+	}
+
+	renewed, err := s.Locks().Renew(ctx, tenant, "crit", "tok-a", 2*time.Second)
+	if err != nil || renewed.OwnerToken != "tok-a" {
+		t.Fatalf("renew: %+v err=%v", renewed, err)
+	}
+	_, err = s.Locks().Renew(ctx, tenant, "crit", "tok-b", time.Second)
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("renew foreign: %v", err)
+	}
+
+	if err := s.Locks().Release(ctx, tenant, "crit", "tok-b"); err != nil {
+		t.Fatalf("release mismatch should be idempotent: %v", err)
+	}
+	if err := s.Locks().Release(ctx, tenant, "crit", "tok-a"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if err := s.Locks().Release(ctx, tenant, "crit", "tok-a"); err != nil {
+		t.Fatalf("release idempotent: %v", err)
+	}
+
+	// Re-acquire after release gets a new fencing token
+	lk2, err := s.Locks().Acquire(ctx, tenant, "crit", "tok-c", "holder-c", 50*time.Millisecond)
+	if err != nil || lk2.FencingToken <= fencing {
+		t.Fatalf("reacquire: %+v err=%v", lk2, err)
+	}
+
+	// Wait for expiry then take over
+	time.Sleep(80 * time.Millisecond)
+	lk3, err := s.Locks().Acquire(ctx, tenant, "crit", "tok-d", "holder-d", time.Second)
+	if err != nil || lk3.OwnerToken != "tok-d" {
+		t.Fatalf("acquire after expire: %+v err=%v", lk3, err)
+	}
+	_ = s.Locks().Release(ctx, tenant, "crit", "tok-d")
+
+	peeked, err := s.Locks().Peek(ctx, tenant, "crit")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("peek missing: err=%v lk=%+v", err, peeked)
+	}
+	lk4, err := s.Locks().Acquire(ctx, tenant, "crit", "tok-e", "holder-e", time.Second)
+	if err != nil {
+		t.Fatalf("acquire for peek: %v", err)
+	}
+	peeked, err = s.Locks().Peek(ctx, tenant, "crit")
+	if err != nil || peeked == nil || peeked.OwnerToken != lk4.OwnerToken {
+		t.Fatalf("peek held: err=%v lk=%+v", err, peeked)
+	}
+	_ = s.Locks().Release(ctx, tenant, "crit", "tok-e")
+}
+
+func testSnapshots(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-snap"
+	payload := []byte("sandbox-blob")
+	meta, err := s.Snapshots().Put(ctx, tenant, "snap-1", payload, store.SnapshotModeInline)
+	if err != nil || meta.SizeBytes != int64(len(payload)) || meta.StorageMode != store.SnapshotModeInline {
+		t.Fatalf("put: %+v err=%v", meta, err)
+	}
+	ok, err := s.Snapshots().Exists(ctx, tenant, "snap-1")
+	if err != nil || !ok {
+		t.Fatalf("exists: ok=%v err=%v", ok, err)
+	}
+	got, meta2, err := s.Snapshots().Get(ctx, tenant, "snap-1")
+	if err != nil || string(got) != string(payload) || meta2.SnapshotID != "snap-1" {
+		t.Fatalf("get: %q %+v err=%v", got, meta2, err)
+	}
+	if err := s.Snapshots().Touch(ctx, tenant, "snap-1"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	_, _, err = s.Snapshots().Get(ctx, tenant, "missing")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func testBus(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-bus"
+	id1, err := s.Bus().QueuePush(ctx, tenant, "q1", json.RawMessage(`{"n":1}`))
+	if err != nil || id1 == "" {
+		t.Fatalf("push1: id=%s err=%v", id1, err)
+	}
+	id2, err := s.Bus().QueuePush(ctx, tenant, "q1", json.RawMessage(`{"n":2}`))
+	if err != nil || id2 == "" || id2 == id1 {
+		t.Fatalf("push2: id=%s err=%v", id2, err)
+	}
+	peek, err := s.Bus().QueuePeek(ctx, tenant, "q1")
+	if err != nil || !peek {
+		t.Fatalf("peek: %v err=%v", peek, err)
+	}
+	drained, err := s.Bus().QueueDrain(ctx, tenant, "q1", 1)
+	if err != nil || len(drained) != 1 || drained[0].EntryID != id1 {
+		t.Fatalf("drain1: %+v err=%v", drained, err)
+	}
+	drained, err = s.Bus().QueueDrain(ctx, tenant, "q1", 10)
+	if err != nil || len(drained) != 1 || drained[0].EntryID != id2 {
+		t.Fatalf("drain2: %+v err=%v", drained, err)
+	}
+	peek, _ = s.Bus().QueuePeek(ctx, tenant, "q1")
+	if peek {
+		t.Fatal("queue should be empty")
+	}
+	_, _ = s.Bus().QueuePush(ctx, tenant, "q1", json.RawMessage(`{"n":3}`))
+	if err := s.Bus().QueueDelete(ctx, tenant, "q1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	peek, _ = s.Bus().QueuePeek(ctx, tenant, "q1")
+	if peek {
+		t.Fatal("queue should be empty after delete")
+	}
+
+	lid1, err := s.Bus().LogAppend(ctx, tenant, "log1", json.RawMessage(`{"a":1}`), 2)
+	if err != nil {
+		t.Fatalf("log append1: %v", err)
+	}
+	_, _ = s.Bus().LogAppend(ctx, tenant, "log1", json.RawMessage(`{"a":2}`), 2)
+	lid3, err := s.Bus().LogAppend(ctx, tenant, "log1", json.RawMessage(`{"a":3}`), 2)
+	if err != nil {
+		t.Fatalf("log append3: %v", err)
+	}
+	entries, err := s.Bus().LogRead(ctx, tenant, "log1", "0", 10)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("log read after trim: len=%d err=%v", len(entries), err)
+	}
+	if entries[len(entries)-1].EntryID != lid3 {
+		t.Fatalf("expected newest %s, got %+v", lid3, entries)
+	}
+	// since cursor
+	since := entries[0].EntryID
+	rest, err := s.Bus().LogRead(ctx, tenant, "log1", since, 10)
+	if err != nil || len(rest) != 1 || rest[0].EntryID != lid3 {
+		t.Fatalf("log read since: %+v err=%v", rest, err)
+	}
+	_ = lid1
+	if err := s.Bus().LogTrim(ctx, tenant, "log1"); err != nil {
+		t.Fatalf("log trim: %v", err)
+	}
+	entries, _ = s.Bus().LogRead(ctx, tenant, "log1", "0", 10)
+	if len(entries) != 0 {
+		t.Fatalf("expected empty log, got %d", len(entries))
+	}
+}
+
+func testAsyncTools(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-async"
+	rec := &store.AsyncToolRecord{
+		ID: "r1", Tenant: tenant, SessionID: "sess-async",
+		ToolName: "bash", ToolCallID: "tc-1", Status: store.AsyncToolRunning,
+		CreatedAt: time.Now().UTC().Add(-2 * time.Second),
+	}
+	if err := s.AsyncTools().Register(ctx, rec); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	stale, err := s.AsyncTools().FindStale(ctx, tenant, "sess-async", time.Second)
+	if err != nil || len(stale) != 1 || stale[0].ID != "r1" {
+		t.Fatalf("find stale: %+v err=%v", stale, err)
+	}
+	if err := s.AsyncTools().Complete(ctx, tenant, "r1", "ok"); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	stale, err = s.AsyncTools().FindStale(ctx, tenant, "sess-async", time.Second)
+	if err != nil || len(stale) != 0 {
+		t.Fatalf("stale after complete: %+v err=%v", stale, err)
+	}
+
+	rec2 := &store.AsyncToolRecord{
+		ID: "r2", Tenant: tenant, SessionID: "sess-async", Status: store.AsyncToolRunning,
+	}
+	_ = s.AsyncTools().Register(ctx, rec2)
+	if err := s.AsyncTools().Fail(ctx, tenant, "r2", "boom"); err != nil {
+		t.Fatalf("fail: %v", err)
+	}
+	rec3 := &store.AsyncToolRecord{
+		ID: "r3", Tenant: tenant, SessionID: "sess-async", Status: store.AsyncToolRunning,
+	}
+	_ = s.AsyncTools().Register(ctx, rec3)
+	if err := s.AsyncTools().MarkTimeout(ctx, tenant, "r3"); err != nil {
+		t.Fatalf("timeout: %v", err)
+	}
+	err = s.AsyncTools().Complete(ctx, tenant, "missing", "x")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func testDPTasks(t *testing.T, ctx context.Context, s store.Store) {
+	tenant := "default/agent-dptask"
+	parentAgent := "agent-dptask"
+	session := "sess-dp-1"
+
+	task := &store.DPTask{
+		Tenant: tenant, ParentAgentID: parentAgent, ParentSessionID: session,
+		TaskID: "t1", SubAgentID: "sub-a", Status: store.DPTaskStatusRunning,
+	}
+	got, err := s.Tasks().Upsert(ctx, task)
+	if err != nil || got.TaskID != "t1" || got.Version < 1 {
+		t.Fatalf("upsert: %+v err=%v", got, err)
+	}
+
+	read, err := s.Tasks().Get(ctx, tenant, parentAgent, session, "t1")
+	if err != nil || read.SubAgentID != "sub-a" {
+		t.Fatalf("get: %+v err=%v", read, err)
+	}
+
+	list, err := s.Tasks().List(ctx, tenant, parentAgent, session, "")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: len=%d err=%v", len(list), err)
+	}
+
+	before := read.LastUpdatedAt
+	time.Sleep(5 * time.Millisecond)
+	if err := s.Tasks().Heartbeat(ctx, tenant, parentAgent, []store.DPTaskRef{
+		{ParentSessionID: session, TaskID: "t1"},
+	}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	after, _ := s.Tasks().Get(ctx, tenant, parentAgent, session, "t1")
+	if !after.LastUpdatedAt.After(before) {
+		t.Fatalf("heartbeat should advance lastUpdatedAt: before=%v after=%v", before, after.LastUpdatedAt)
+	}
+
+	term := &store.DPTask{
+		Tenant: tenant, ParentAgentID: parentAgent, ParentSessionID: session,
+		TaskID: "t2", Status: store.DPTaskStatusCompleted, Terminal: true,
+	}
+	_, _ = s.Tasks().Upsert(ctx, term)
+	written, err := s.Tasks().MarkDelivered(ctx, tenant, parentAgent, session, "t2")
+	if err != nil || !written {
+		t.Fatalf("mark delivered first: written=%v err=%v", written, err)
+	}
+	written, err = s.Tasks().MarkDelivered(ctx, tenant, parentAgent, session, "t2")
+	if err != nil || written {
+		t.Fatalf("mark delivered idempotent: written=%v err=%v", written, err)
+	}
+
+	pending, err := s.Tasks().ListPendingDeliveries(ctx, tenant, parentAgent, session)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending after deliver: %+v err=%v", pending, err)
+	}
+
+	stale := &store.DPTask{
+		Tenant: tenant, ParentAgentID: parentAgent, ParentSessionID: session,
+		TaskID: "orphan-local", Status: store.DPTaskStatusRunning,
+	}
+	_, _ = s.Tasks().Upsert(ctx, stale)
+	remote := &store.DPTask{
+		Tenant: tenant, ParentAgentID: parentAgent, ParentSessionID: session,
+		TaskID: "orphan-remote", Status: store.DPTaskStatusRunning,
+		TransportType: "agent-protocol",
+	}
+	_, _ = s.Tasks().Upsert(ctx, remote)
+	time.Sleep(15 * time.Millisecond)
+
+	swept, err := s.Tasks().SweepOrphaned(ctx, 10*time.Millisecond, "orphaned")
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	sweptIDs := map[string]bool{}
+	for _, sw := range swept {
+		sweptIDs[sw.TaskID] = true
+	}
+	if !sweptIDs["orphan-local"] {
+		t.Fatalf("expected orphan-local swept, got %+v", swept)
+	}
+	if sweptIDs["orphan-remote"] {
+		t.Fatalf("agent-protocol task must not be swept: %+v", swept)
+	}
+	gotRemote, _ := s.Tasks().Get(ctx, tenant, parentAgent, session, "orphan-remote")
+	if gotRemote.Status != store.DPTaskStatusRunning {
+		t.Fatalf("remote task status=%s", gotRemote.Status)
 	}
 }

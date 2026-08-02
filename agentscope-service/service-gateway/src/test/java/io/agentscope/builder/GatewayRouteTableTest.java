@@ -55,9 +55,13 @@ class GatewayRouteTableTest {
                                     .isEqualTo(URI.create("http://control:8081"));
                             assertThat(find(routes, "scheduler-outbound").getUri())
                                     .isEqualTo(URI.create("http://scheduler:8083"));
+                            assertThat(find(routes, "scheduler-channel-callbacks").getUri())
+                                    .isEqualTo(URI.create("http://scheduler:8083"));
                             assertThat(find(routes, "reject-internal").getOrder())
                                     .isLessThan(find(routes, "data-session-turn").getOrder());
                             assertThat(find(routes, "data-session-turn").getOrder())
+                                    .isLessThan(find(routes, "control-api").getOrder());
+                            assertThat(find(routes, "scheduler-channel-callbacks").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
                         })
                 .verifyComplete();

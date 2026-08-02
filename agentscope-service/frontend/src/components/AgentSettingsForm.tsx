@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { AgentDefinition, AgentVersionEntry, archiveAgent, getAgent, listVersions, updateAgent, deleteAgent } from '../api/agents';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import ShareAgentDialog from './ShareAgentDialog';
+import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { Environment, listEnvironments } from '../api/environments';
+import { Vault, listVaults } from '../api/vaults';
+import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '32px 36px', maxWidth: 820 },
@@ -61,7 +65,13 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
-export default function AgentSettingsForm({ agent }: { agent: AgentDefinition }) {
+export default function AgentSettingsForm({
+  agent,
+  onSaved,
+}: {
+  agent: AgentDefinition;
+  onSaved?: () => void | Promise<unknown>;
+}) {
   const navigate = useNavigate();
   const isGlobal = agent.scope === 'global';
   const tier = agent.tierForCurrentUser;
@@ -74,6 +84,15 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
   const [description, setDescription] = useState(agent.description ?? '');
   const [system, setSystem] = useState(agent.system ?? '');
   const [maxIters, setMaxIters] = useState<string>(String(agent.maxIters ?? 12));
+  const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [linkedSummary, setLinkedSummary] = useState<WorkspaceSummary | null>(null);
+  const [defaultEnvironmentId, setDefaultEnvironmentId] = useState(agent.defaultEnvironmentId ?? '');
+  const [defaultVaultIds, setDefaultVaultIds] = useState<string[]>(agent.defaultVaultIds ?? []);
+  const [defaultMemoryStoreIds, setDefaultMemoryStoreIds] = useState<string[]>(agent.defaultMemoryStoreIds ?? []);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [vaults, setVaults] = useState<Vault[]>([]);
+  const [memoryStores, setMemoryStores] = useState<MemoryStore[]>([]);
   const [version, setVersion] = useState<number | undefined>(agent.version);
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(false);
@@ -87,8 +106,36 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
     setDescription(agent.description ?? '');
     setSystem(agent.system ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
+    setWorkspaceId(agent.workspaceId ?? '');
+    setDefaultEnvironmentId(agent.defaultEnvironmentId ?? '');
+    setDefaultVaultIds(agent.defaultVaultIds ?? []);
+    setDefaultMemoryStoreIds(agent.defaultMemoryStoreIds ?? []);
     setVersion(agent.version);
-  }, [agent.id, agent.version, agent.system, agent.name, agent.description, agent.maxIters]);
+  }, [
+    agent.id, agent.version, agent.system, agent.name, agent.description, agent.maxIters,
+    agent.workspaceId, agent.defaultEnvironmentId,
+    JSON.stringify(agent.defaultVaultIds ?? []),
+    JSON.stringify(agent.defaultMemoryStoreIds ?? []),
+  ]);
+
+  useEffect(() => {
+    listWorkspaces().then(setWorkspaces).catch(() => undefined);
+    listEnvironments().then(setEnvironments).catch(() => undefined);
+    listVaults().then(setVaults).catch(() => undefined);
+    listMemoryStores().then(setMemoryStores).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setLinkedSummary(null);
+      return;
+    }
+    let cancelled = false;
+    getWorkspace(workspaceId)
+      .then(w => { if (!cancelled) setLinkedSummary(w); })
+      .catch(() => { if (!cancelled) setLinkedSummary(null); });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   useEffect(() => {
     if (agent.scope === 'global' || !agent.ownerId) return;
@@ -111,10 +158,20 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
         description: description.trim() || undefined,
         system: system || undefined,
         maxIters: Number.isFinite(iters) && iters > 0 ? iters : undefined,
+        // Empty string unlinks; omitted would keep previous on some clients — always send.
+        workspaceId: workspaceId || '',
+        defaultEnvironmentId: defaultEnvironmentId || '',
+        defaultVaultIds,
+        defaultMemoryStoreIds,
         version,
       });
       setVersion(updated.version);
+      setWorkspaceId(updated.workspaceId ?? '');
+      setDefaultEnvironmentId(updated.defaultEnvironmentId ?? '');
+      setDefaultVaultIds(updated.defaultVaultIds ?? []);
+      setDefaultMemoryStoreIds(updated.defaultMemoryStoreIds ?? []);
       setOk(true);
+      await onSaved?.();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -207,6 +264,130 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
       </div>
 
       <div style={S.card}>
+        <span style={S.cardLabel}>Workspace</span>
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Linked workspace</label>
+          <select
+            style={S.input}
+            value={workspaceId}
+            onChange={e => setWorkspaceId(e.target.value)}
+            disabled={readOnly}
+          >
+            <option value="">None (agent-private skills/tools/files)</option>
+            {workspaces.map(w => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
+            Linking rematerializes tools/skills/AGENTS.md into this agent version. Edit shared content under Build → Workspaces.
+          </div>
+        </div>
+        {linkedSummary && (
+          <div style={{
+            padding: '12px 14px', borderRadius: 10, background: '#f8fafc',
+            border: '1px solid #e2e8f0', fontSize: '0.88rem', color: '#475569',
+          }}>
+            <div style={{ fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
+              {linkedSummary.name}{' '}
+              <Link to={`/workspaces/${encodeURIComponent(linkedSummary.id)}`} style={{ color: '#4338ca' }}>
+                Open →
+              </Link>
+            </div>
+            <div>
+              v{linkedSummary.version}
+              {linkedSummary.agentsMdExists ? ' · AGENTS.md' : ''}
+              {' · '}skills {linkedSummary.skillCount ?? 0}
+              {' · '}subagents {linkedSummary.subagentCount ?? 0}
+            </div>
+            {linkedSummary.description && (
+              <div style={{ marginTop: 6 }}>{linkedSummary.description}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
+        <span style={S.cardLabel}>Session defaults</span>
+        <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 14, lineHeight: 1.5 }}>
+          Prefills the New session form and is used when Channel / Deploy omit mounts.
+          Per-session mounts remain the runtime source of truth and can be edited later.
+        </div>
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Default environment</label>
+          <select
+            style={S.input}
+            value={defaultEnvironmentId}
+            onChange={e => setDefaultEnvironmentId(e.target.value)}
+            disabled={readOnly}
+          >
+            <option value="">None (use owner heuristic / ensure default)</option>
+            {environments.map(env => (
+              <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
+            ))}
+          </select>
+          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
+            Manage environments under Build → Environments.
+          </div>
+        </div>
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Default vaults</label>
+          {vaults.length === 0 ? (
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+              No vaults yet. Create one under Build → Vaults.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {vaults.map(v => {
+                const on = defaultVaultIds.includes(v.id);
+                return (
+                  <label key={v.id} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={readOnly}
+                      onChange={() => {
+                        setDefaultVaultIds(prev =>
+                          on ? prev.filter(id => id !== v.id) : [...prev, v.id]);
+                      }}
+                    />
+                    <span>{v.displayName}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Default memory stores</label>
+          {memoryStores.length === 0 ? (
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+              No memory stores yet. Create one under Build → Memory.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {memoryStores.map(m => {
+                const on = defaultMemoryStoreIds.includes(m.id);
+                return (
+                  <label key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={readOnly}
+                      onChange={() => {
+                        setDefaultMemoryStoreIds(prev =>
+                          on ? prev.filter(id => id !== m.id) : [...prev, m.id]);
+                      }}
+                    />
+                    <span>{m.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={S.card}>
         <span style={S.cardLabel}>Behavior</span>
 
         <div style={S.row}>
@@ -216,7 +397,7 @@ export default function AgentSettingsForm({ agent }: { agent: AgentDefinition })
             value={system}
             onChange={e => setSystem(e.target.value)}
             disabled={readOnly}
-            placeholder="High-level instructions. Workspace AGENTS.md still takes precedence at runtime."
+            placeholder="Optional override. When linked and empty, Workspace AGENTS.md is used on rematerialize."
           />
         </div>
 

@@ -46,34 +46,66 @@ func (r *eventRepo) Append(ctx context.Context, event *store.SessionEvent) error
 }
 
 func (r *eventRepo) List(ctx context.Context, sessionFK uuid.UUID, opts ...store.EventOption) ([]*store.SessionEvent, error) {
-	eventType, since, until, limit, offset := store.ApplyEventOptions(opts)
+	o := store.ResolveEventOptions(opts)
 	var (
 		conds = []string{"session_fk=$1"}
 		args  = []any{sessionFK}
 	)
-	if eventType != "" {
-		args = append(args, eventType)
+	if o.EventType != "" {
+		args = append(args, o.EventType)
 		conds = append(conds, fmt.Sprintf("event_type=$%d", len(args)))
 	}
-	if since != nil {
-		args = append(args, *since)
+	if o.Since != nil {
+		args = append(args, *o.Since)
 		conds = append(conds, fmt.Sprintf("occurred_at>=$%d", len(args)))
 	}
-	if until != nil {
-		args = append(args, *until)
+	if o.Until != nil {
+		args = append(args, *o.Until)
 		conds = append(conds, fmt.Sprintf("occurred_at<=$%d", len(args)))
 	}
+	if o.Before != nil {
+		args = append(args, *o.Before)
+		conds = append(conds, fmt.Sprintf("occurred_at<$%d", len(args)))
+	}
+	if o.BeforeSeq != nil {
+		args = append(args, *o.BeforeSeq)
+		conds = append(conds, fmt.Sprintf("seq<$%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	order := "ORDER BY seq ASC"
+	if o.NewestFirst && o.Limit > 0 {
+		// Newest page: DESC + LIMIT, then reverse to chronological ASC for callers.
+		q := `SELECT id, session_fk, seq, event_type, role, content, tool_name, tool_input,
+			tool_output, tokens_in, tokens_out, duration_ms, framework_meta, occurred_at
+			FROM session_events WHERE ` + where + ` ORDER BY seq DESC`
+		args = append(args, o.Limit)
+		q += fmt.Sprintf(" LIMIT $%d", len(args))
+		out, err := r.scanEvents(ctx, q, args)
+		if err != nil {
+			return nil, err
+		}
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+		return out, nil
+	}
+
 	q := `SELECT id, session_fk, seq, event_type, role, content, tool_name, tool_input,
 		tool_output, tokens_in, tokens_out, duration_ms, framework_meta, occurred_at
-		FROM session_events WHERE ` + strings.Join(conds, " AND ") + ` ORDER BY seq ASC`
-	if limit > 0 {
-		args = append(args, limit)
+		FROM session_events WHERE ` + where + ` ` + order
+	if o.Limit > 0 {
+		args = append(args, o.Limit)
 		q += fmt.Sprintf(" LIMIT $%d", len(args))
 	}
-	if offset > 0 {
-		args = append(args, offset)
+	if o.Offset > 0 {
+		args = append(args, o.Offset)
 		q += fmt.Sprintf(" OFFSET $%d", len(args))
 	}
+	return r.scanEvents(ctx, q, args)
+}
+
+func (r *eventRepo) scanEvents(ctx context.Context, q string, args []any) ([]*store.SessionEvent, error) {
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err

@@ -17,17 +17,32 @@ package io.agentscope.builder.web.managed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultState;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class SessionEventMapperTest {
 
-    private final SessionEventMapper mapper = new SessionEventMapper();
-    private final SessionEventMapper.PreviewIds previewIds = new SessionEventMapper.PreviewIds();
+    private SessionEventMapper mapper;
+    private SessionEventMapper.PreviewIds previewIds;
+
+    @BeforeEach
+    void setUp() {
+        mapper = new SessionEventMapper(new ObjectMapper());
+        previewIds = new SessionEventMapper.PreviewIds();
+    }
 
     @Test
     void thinkingBlockDeltaMapsToAgentThinkingPreviewOnly() {
@@ -42,29 +57,64 @@ class SessionEventMapperTest {
         assertThat(frame.streamType()).isEqualTo(SessionEventTypes.EVENT_DELTA);
         assertThat(frame.targetType()).isEqualTo(SessionEventTypes.AGENT_THINKING);
         assertThat(frame.delta()).isEqualTo("reasoning chunk");
+        assertThat(frame.eventId()).startsWith("evt_");
     }
 
     @Test
-    void agentResultMapsToPersistedAgentMessage() {
-        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("final answer").build();
+    void agentResultReusesPreviewMessageEventId() {
+        SessionEventMapper.MappingResult delta =
+                mapper.map(new TextBlockDeltaEvent("r", "b", "Hel"), previewIds);
+        String previewId = delta.preview().orElseThrow().eventId();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hello").build();
         SessionEventMapper.MappingResult result = mapper.map(new AgentResultEvent(msg), previewIds);
 
         assertThat(result.preview()).isEmpty();
         assertThat(result.persisted()).isPresent();
         SessionEventMapper.PersistedEvent persisted = result.persisted().get();
         assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_MESSAGE);
-        assertThat(persisted.payload().get("text")).isEqualTo("final answer");
+        assertThat(persisted.payload().get("text")).isEqualTo("Hello");
+        assertThat(persisted.eventId()).isEqualTo(previewId);
     }
 
     @Test
-    void toolCallDeltaIsPreviewOnlyNotPersisted() {
-        SessionEventMapper.MappingResult result =
+    void toolCallAccumulatesInputAndPersistsOnEnd() {
+        assertThat(mapper.map(new ToolCallStartEvent("r", "tool-1", "bash"), previewIds).preview())
+                .isPresent();
+
+        SessionEventMapper.MappingResult d1 =
+                mapper.map(new ToolCallDeltaEvent("r", "tool-1", "bash", "{\"cmd\":"), previewIds);
+        assertThat(d1.persisted()).isEmpty();
+        assertThat(d1.preview()).isPresent();
+
+        mapper.map(new ToolCallDeltaEvent("r", "tool-1", "bash", "\"ls\"}"), previewIds);
+
+        SessionEventMapper.MappingResult end =
+                mapper.map(new ToolCallEndEvent("r", "tool-1", "bash"), previewIds);
+        assertThat(end.persisted()).isPresent();
+        SessionEventMapper.PersistedEvent persisted = end.persisted().get();
+        assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_TOOL_USE);
+        assertThat(persisted.eventId()).isEqualTo(d1.preview().get().eventId());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> input = (Map<String, Object>) persisted.payload().get("input");
+        assertThat(input.get("cmd")).isEqualTo("ls");
+    }
+
+    @Test
+    void toolResultAccumulatesOutputAndPersistsOnEnd() {
+        mapper.map(new ToolResultTextDeltaEvent("r", "tool-1", "bash", "file1\n"), previewIds);
+        mapper.map(new ToolResultTextDeltaEvent("r", "tool-1", "bash", "file2\n"), previewIds);
+
+        SessionEventMapper.MappingResult end =
                 mapper.map(
-                        new ToolCallDeltaEvent("reply-1", "tool-1", "bash", "{\"cmd\":"),
+                        new ToolResultEndEvent("r", "tool-1", "bash", ToolResultState.SUCCESS),
                         previewIds);
 
-        assertThat(result.persisted()).isEmpty();
-        assertThat(result.preview()).isPresent();
-        assertThat(result.preview().get().targetType()).isEqualTo(SessionEventTypes.AGENT_TOOL_USE);
+        assertThat(end.persisted()).isPresent();
+        SessionEventMapper.PersistedEvent persisted = end.persisted().get();
+        assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_TOOL_RESULT);
+        assertThat(persisted.payload().get("output")).isEqualTo("file1\nfile2\n");
+        assertThat(persisted.payload().get("text")).isEqualTo("file1\nfile2\n");
+        assertThat(persisted.eventId()).startsWith("evt_");
     }
 }

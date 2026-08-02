@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,9 +16,18 @@ type Store interface {
 	Events() EventRepository
 	ContextSnapshots() ContextSnapshotRepository
 	Metrics() MetricsRepository
+	TranscriptIndex() TranscriptIndexRepository
 	TeamMessages() TeamMessageRepository
 	TeamTasks() TeamTaskRepository
 	Commands() SessionCommandRepository
+
+	// Hosted DistributedStore backends (data-plane coordination).
+	KV() KVRepository
+	Locks() LockRepository
+	Snapshots() SnapshotRepository
+	Bus() BusRepository
+	AsyncTools() AsyncToolRepository
+	Tasks() TaskRepository
 
 	// Migrate applies schema migrations. No-op for memory.
 	Migrate(ctx context.Context) error
@@ -82,6 +92,13 @@ type ContextSnapshotRepository interface {
 	// this session. Returns (true, nil) if a new row was inserted.
 	PutIfChanged(ctx context.Context, snapshot *ContextSnapshot) (bool, error)
 	Latest(ctx context.Context, sessionFK uuid.UUID) (*ContextSnapshot, error)
+}
+
+// TranscriptIndexRepository manages the narrow session_transcript_index table.
+type TranscriptIndexRepository interface {
+	// Upsert replaces aggregate counts for the session (absolute snapshot values).
+	Upsert(ctx context.Context, idx *SessionTranscriptIndex) error
+	Get(ctx context.Context, sessionFK uuid.UUID) (*SessionTranscriptIndex, error)
 }
 
 // MetricsRepository manages token_usage_metrics, session_snapshots, and agent_metrics.
@@ -151,8 +168,128 @@ type TeamTaskRepository interface {
 	DeleteByTeam(ctx context.Context, namespace, teamName string) error
 }
 
+// KVRepository is the hosted BaseStore backend (workspace KV + CAS).
+type KVRepository interface {
+	Get(ctx context.Context, tenant, nsPath, key string) (*KVItem, error)
+	// Put writes unconditionally and returns the new version.
+	Put(ctx context.Context, tenant, nsPath, key string, value json.RawMessage) (int64, error)
+	// PutIfVersion writes only when the stored version equals expectedVersion.
+	// expectedVersion == 0 means create-if-absent. Returns (newVersion, true, nil)
+	// on success, or (currentVersion, false, nil) on conflict.
+	PutIfVersion(ctx context.Context, tenant, nsPath, key string, value json.RawMessage, expectedVersion int64) (newVersion int64, written bool, err error)
+	Delete(ctx context.Context, tenant, nsPath, key string) error
+	// Search returns items whose ns_path equals nsPath or has nsPath as a
+	// prefix (recursive into child namespaces), ordered by key, paginated.
+	Search(ctx context.Context, tenant, nsPath string, limit, offset int) ([]*KVItem, error)
+}
+
+// LockRepository is the hosted SandboxExecutionGuard backend (TTL leases).
+type LockRepository interface {
+	// Acquire tries to take the lock. On success returns the held Lock.
+	// On conflict (held by another owner and not expired) returns ErrConflict
+	// and a Lock describing the current holder (may be partially filled).
+	Acquire(ctx context.Context, tenant, name, ownerToken, holder string, ttl time.Duration) (*Lock, error)
+	// Renew extends the lease if ownerToken matches. Returns ErrConflict if
+	// the lock is missing or owned by someone else.
+	Renew(ctx context.Context, tenant, name, ownerToken string, ttl time.Duration) (*Lock, error)
+	// Release deletes the lock if ownerToken matches. Idempotent: missing or
+	// mismatched token is not an error.
+	Release(ctx context.Context, tenant, name, ownerToken string) error
+	// Peek returns the current lock holder if held and not expired.
+	// Returns ErrNotFound when missing or expired.
+	Peek(ctx context.Context, tenant, name string) (*Lock, error)
+	// PurgeExpired deletes locks whose expires_at is older than olderThan.
+	PurgeExpired(ctx context.Context, olderThan time.Duration) (int64, error)
+}
+
+// SnapshotRepository is the hosted SandboxSnapshotSpec backend.
+type SnapshotRepository interface {
+	Put(ctx context.Context, tenant, snapshotID string, payload []byte, mode string) (*SnapshotMeta, error)
+	Get(ctx context.Context, tenant, snapshotID string) (payload []byte, meta *SnapshotMeta, err error)
+	Exists(ctx context.Context, tenant, snapshotID string) (bool, error)
+	// Touch updates accessed_at for retention.
+	Touch(ctx context.Context, tenant, snapshotID string) error
+}
+
+// Bus kind constants.
+const (
+	BusKindQueue int16 = 0
+	BusKindLog   int16 = 1
+)
+
+// BusRepository is the hosted MessageBus backend (queue + replay log).
+type BusRepository interface {
+	QueuePush(ctx context.Context, tenant, key string, payload json.RawMessage) (entryID string, err error)
+	// QueueDrain removes up to maxCount oldest queue entries and returns them
+	// (ack-on-read). Multi-replica safe via FOR UPDATE SKIP LOCKED.
+	QueueDrain(ctx context.Context, tenant, key string, maxCount int) ([]*BusEntry, error)
+	QueueDelete(ctx context.Context, tenant, key string) error
+	QueuePeek(ctx context.Context, tenant, key string) (bool, error)
+
+	LogAppend(ctx context.Context, tenant, key string, payload json.RawMessage, maxLen int) (entryID string, err error)
+	// LogRead returns entries with id > since (numeric), limited to maxCount.
+	LogRead(ctx context.Context, tenant, key, since string, maxCount int) ([]*BusEntry, error)
+	LogTrim(ctx context.Context, tenant, key string) error
+}
+
+// AsyncToolRepository is the hosted AsyncToolRegistry backend.
+type AsyncToolRepository interface {
+	Register(ctx context.Context, rec *AsyncToolRecord) error
+	Complete(ctx context.Context, tenant, recordID, result string) error
+	Fail(ctx context.Context, tenant, recordID, errMsg string) error
+	MarkTimeout(ctx context.Context, tenant, recordID string) error
+	FindStale(ctx context.Context, tenant, sessionID string, ttl time.Duration) ([]*AsyncToolRecord, error)
+}
+
+// TaskRepository is the hosted subagent background task backend.
+type TaskRepository interface {
+	Upsert(ctx context.Context, task *DPTask) (*DPTask, error)
+	Get(ctx context.Context, tenant, parentAgentID, parentSessionID, taskID string) (*DPTask, error)
+	List(ctx context.Context, tenant, parentAgentID, parentSessionID, status string) ([]*DPTask, error)
+	// Heartbeat refreshes last_updated_at for non-terminal tasks in the batch.
+	Heartbeat(ctx context.Context, tenant, parentAgentID string, refs []DPTaskRef) error
+	RequestCancel(ctx context.Context, tenant, parentAgentID, parentSessionID, taskID string) error
+	// MarkDelivered sets delivered_at on first write; returns true when this call wrote it.
+	MarkDelivered(ctx context.Context, tenant, parentAgentID, parentSessionID, taskID string) (bool, error)
+	ListPendingDeliveries(ctx context.Context, tenant, parentAgentID, parentSessionID string) ([]*DPTask, error)
+	Delete(ctx context.Context, tenant, parentAgentID, parentSessionID, taskID string) error
+	// SweepOrphaned marks stale non-terminal, non-agent-protocol tasks as FAILED.
+	SweepOrphaned(ctx context.Context, orphanTimeout time.Duration, errMsg string) ([]*DPTask, error)
+	PurgeTerminalOlderThan(ctx context.Context, olderThan time.Duration) (int64, error)
+}
+
 // ApplyEventOptions is exported for implementations in sub-packages.
+// Prefer ResolveEventOptions when before/newest-first reverse paging is needed.
 func ApplyEventOptions(opts []EventOption) (eventType string, since, until *time.Time, limit, offset int) {
 	o := applyEventOptions(opts)
 	return o.EventType, o.Since, o.Until, o.Limit, o.Offset
+}
+
+// ResolveEventOptions returns the full event list options including reverse-paging fields.
+func ResolveEventOptions(opts []EventOption) EventListOpts {
+	o := applyEventOptions(opts)
+	return EventListOpts{
+		EventType:   o.EventType,
+		Since:       o.Since,
+		Until:       o.Until,
+		Before:      o.Before,
+		BeforeSeq:   o.BeforeSeq,
+		Limit:       o.Limit,
+		Offset:      o.Offset,
+		NewestFirst: o.NewestFirst,
+	}
+}
+
+// UpsertTranscriptIndexFromSnapshot writes absolute Level-1 aggregates into the
+// narrow transcript index. Callers pass DP snapshot messageCount / token fields.
+func UpsertTranscriptIndexFromSnapshot(ctx context.Context, st Store, sessionFK uuid.UUID, entryCount int32, promptTokens, completionTokens int64) error {
+	if st == nil {
+		return nil
+	}
+	return st.TranscriptIndex().Upsert(ctx, &SessionTranscriptIndex{
+		SessionFK:        sessionFK,
+		EntryCount:       entryCount,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+	})
 }

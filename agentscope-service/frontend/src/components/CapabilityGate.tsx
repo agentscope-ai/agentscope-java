@@ -43,8 +43,13 @@ export function CapabilityGate({
       tip = tip || (!enabled ? 'Data plane must advertise context-query' : undefined);
       break;
     case 'messages':
+      // Live fallback only; transcript reads do not need this capability.
       enabled = canQueryMessages(capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise message-query' : undefined);
+      tip =
+        tip ||
+        (!enabled
+          ? 'Live message-query not advertised (control-plane transcript may still work)'
+          : undefined);
       break;
     case 'tasks':
       enabled = canQueryTasks(capabilities);

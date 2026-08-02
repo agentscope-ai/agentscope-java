@@ -179,13 +179,16 @@ type ContextSnapshot struct {
 
 // MessageItem is one full-content history entry (Level 3).
 type MessageItem struct {
-	Seq        int32  `json:"seq"`
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	ToolName   string `json:"toolName,omitempty"`
-	ToolInput  json.RawMessage `json:"toolInput,omitempty"`
-	ToolOutput string `json:"toolOutput,omitempty"`
-	OccurredAt string `json:"occurredAt,omitempty"`
+	Seq          int32           `json:"seq"`
+	Role         string          `json:"role"`
+	Content      string          `json:"content"`
+	ToolName     string          `json:"toolName,omitempty"`
+	ToolCallID   string          `json:"toolCallId,omitempty"`
+	ToolInput    json.RawMessage `json:"toolInput,omitempty"`
+	ToolOutput   string          `json:"toolOutput,omitempty"`
+	Truncated    bool            `json:"truncated,omitempty"`
+	OriginalSize int             `json:"originalSize,omitempty"`
+	OccurredAt   string          `json:"occurredAt,omitempty"`
 }
 
 // MessagePage is a paginated Level-3 full-history response from
@@ -196,6 +199,9 @@ type MessagePage struct {
 	Limit     int           `json:"limit"`
 	Total     int           `json:"total"`
 	Messages  []MessageItem `json:"messages"`
+	// Source is "transcript" when served from CP transcript storage, or
+	// "dataplane" when proxied to a live instance.
+	Source string `json:"source,omitempty"`
 }
 
 // SubagentInfo describes one subagent known to the data plane instance.

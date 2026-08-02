@@ -31,6 +31,17 @@ type Store struct {
 	history      []store.TeamTaskHistory
 	commands     []store.SessionCommand
 	turns        []store.SessionTurn
+	transcriptIndex map[uuid.UUID]store.SessionTranscriptIndex
+
+	// Hosted DistributedStore backends.
+	kv          map[string]*store.KVItem          // tenant+\x00+nsPath+\x00+itemKey
+	locks       map[string]*store.Lock            // tenant+\x00+lockName
+	dpSnapshots map[string]*memSnapshot           // tenant+\x00+snapshotID
+	busEntries  []memBusEntry
+	asyncTools  map[string]*store.AsyncToolRecord // tenant+\x00+recordID
+	dpTasks     map[string]*store.DPTask          // tenant+\x00+parentAgent+\x00+session+\x00+taskID
+	nextBusID   int64
+	nextFencing int64
 
 	nextSnapID int64
 	nextEvtID  int64
@@ -44,12 +55,31 @@ type Store struct {
 	retention store.RetentionConfig
 }
 
+type memSnapshot struct {
+	meta    store.SnapshotMeta
+	payload []byte
+}
+
+type memBusEntry struct {
+	id      int64
+	tenant  string
+	key     string
+	kind    int16
+	payload []byte
+	created time.Time
+}
+
 // Open creates a memory store.
 func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 	s := &Store{
 		sessions:     make(map[uuid.UUID]*store.Session),
 		sessKey:      make(map[string]uuid.UUID),
 		sessionLocks: newKeyedMutex(),
+		kv:           make(map[string]*store.KVItem),
+		locks:        make(map[string]*store.Lock),
+		dpSnapshots:  make(map[string]*memSnapshot),
+		asyncTools:   make(map[string]*store.AsyncToolRecord),
+		dpTasks:      make(map[string]*store.DPTask),
 		retention:    cfg.Retention,
 	}
 	return s, nil
@@ -60,9 +90,16 @@ func (s *Store) Turns() store.TurnRepository                       { return &tur
 func (s *Store) Events() store.EventRepository                     { return &eventRepo{s} }
 func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return &contextRepo{s} }
 func (s *Store) Metrics() store.MetricsRepository                  { return &metricsRepo{s} }
+func (s *Store) TranscriptIndex() store.TranscriptIndexRepository  { return &transcriptIndexRepo{s} }
 func (s *Store) TeamMessages() store.TeamMessageRepository         { return &messageRepo{s} }
 func (s *Store) TeamTasks() store.TeamTaskRepository               { return &taskRepo{s} }
 func (s *Store) Commands() store.SessionCommandRepository          { return &commandRepo{s} }
+func (s *Store) KV() store.KVRepository                             { return &kvRepo{s} }
+func (s *Store) Locks() store.LockRepository                       { return &lockRepo{s} }
+func (s *Store) Snapshots() store.SnapshotRepository               { return &snapshotRepo{s} }
+func (s *Store) Bus() store.BusRepository                           { return &busRepo{s} }
+func (s *Store) AsyncTools() store.AsyncToolRepository             { return &asyncToolRepo{s} }
+func (s *Store) Tasks() store.TaskRepository                       { return &dpTaskRepo{s} }
 
 func (s *Store) Migrate(context.Context) error { return nil }
 func (s *Store) Ping(context.Context) error    { return nil }
@@ -142,6 +179,63 @@ func (s *Store) PurgeOlderThan(_ context.Context, r store.RetentionConfig) (int6
 			keptA = append(keptA, e)
 		}
 		s.agents = keptA
+	}
+	// Hosted store retention — dp_kv is NEVER purged.
+	if r.BusQueue > 0 || r.BusLog > 0 {
+		kept := s.busEntries[:0]
+		for _, e := range s.busEntries {
+			var cut time.Time
+			switch e.kind {
+			case store.BusKindQueue:
+				if r.BusQueue > 0 {
+					cut = now.Add(-r.BusQueue)
+				}
+			case store.BusKindLog:
+				if r.BusLog > 0 {
+					cut = now.Add(-r.BusLog)
+				}
+			}
+			if !cut.IsZero() && e.created.Before(cut) {
+				n++
+				continue
+			}
+			kept = append(kept, e)
+		}
+		s.busEntries = kept
+	}
+	if r.AsyncTools > 0 {
+		cut := now.Add(-r.AsyncTools)
+		for k, rec := range s.asyncTools {
+			if rec.UpdatedAt.Before(cut) {
+				delete(s.asyncTools, k)
+				n++
+			}
+		}
+	}
+	if r.SandboxSnapshots > 0 {
+		cut := now.Add(-r.SandboxSnapshots)
+		for k, snap := range s.dpSnapshots {
+			if snap.meta.AccessedAt.Before(cut) {
+				delete(s.dpSnapshots, k)
+				n++
+			}
+		}
+	}
+	if r.Tasks > 0 {
+		cut := now.Add(-r.Tasks)
+		for k, t := range s.dpTasks {
+			if t.Terminal && t.LastUpdatedAt.Before(cut) {
+				delete(s.dpTasks, k)
+				n++
+			}
+		}
+	}
+	// Drop expired locks that have been expired for more than 1h.
+	for k, lk := range s.locks {
+		if lk.ExpiresAt.Before(now.Add(-time.Hour)) {
+			delete(s.locks, k)
+			n++
+		}
 	}
 	return n, nil
 }

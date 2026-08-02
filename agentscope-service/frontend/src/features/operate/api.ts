@@ -280,16 +280,83 @@ export function fetchRuntimeSession(
   );
 }
 
-export function fetchSessionEvents(id: string) {
-  return api.get<{ events: Array<Record<string, unknown>> }>(`/api/v1/sessions/${encodeURIComponent(id)}/events`);
+export type SessionMessageItem = {
+  seq: number;
+  role: string;
+  content?: string;
+  toolName?: string;
+  toolCallId?: string;
+  toolInput?: unknown;
+  toolOutput?: string;
+  truncated?: boolean;
+  originalSize?: number;
+  occurredAt?: string;
+};
+
+export type SessionMessagePage = {
+  sessionId: string;
+  offset: number;
+  limit: number;
+  total: number;
+  messages: SessionMessageItem[];
+  /** "transcript" | "dataplane" when provided by control plane */
+  source?: string;
+};
+
+export type SessionEventItem = {
+  id?: number;
+  seq?: number;
+  eventType?: string;
+  role?: string;
+  content?: string;
+  toolName?: string;
+  toolInput?: unknown;
+  toolOutput?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  durationMs?: number;
+  occurredAt?: string;
+  frameworkMeta?: unknown;
+};
+
+export function fetchSessionEvents(
+  id: string,
+  opts?: { limit?: number; before?: string | number; eventType?: string },
+) {
+  const q = new URLSearchParams();
+  if (opts?.limit != null) q.set('limit', String(opts.limit));
+  if (opts?.before != null && opts.before !== '') q.set('before', String(opts.before));
+  if (opts?.eventType) q.set('eventType', opts.eventType);
+  const qs = q.toString();
+  return api.get<{ events: SessionEventItem[] }>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`,
+  );
 }
 
 export function fetchSessionContext(id: string) {
   return api.get<Record<string, unknown>>(`/api/v1/sessions/${encodeURIComponent(id)}/context`);
 }
 
-export function fetchSessionMessages(id: string) {
-  return api.get<Record<string, unknown>>(`/api/v1/sessions/${encodeURIComponent(id)}/messages?limit=200`);
+export function fetchSessionMessages(
+  id: string,
+  opts?: {
+    offset?: number;
+    limit?: number;
+    fromEnd?: boolean;
+    agent?: string;
+    namespace?: string;
+  },
+) {
+  const q = new URLSearchParams();
+  if (opts?.offset != null) q.set('offset', String(opts.offset));
+  if (opts?.limit != null) q.set('limit', String(opts.limit));
+  if (opts?.fromEnd) q.set('fromEnd', 'true');
+  if (opts?.agent) q.set('agent', opts.agent);
+  if (opts?.namespace) q.set('namespace', opts.namespace);
+  const qs = q.toString();
+  return api.get<SessionMessagePage>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/messages${qs ? `?${qs}` : ''}`,
+  );
 }
 
 export function fetchSessionTasks(id: string) {

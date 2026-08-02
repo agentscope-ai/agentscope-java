@@ -85,22 +85,51 @@ public final class HarnessSessionHistorySource implements SessionHistorySource {
             List<MessagePage.MessageItem> items = new ArrayList<>();
             int seq = 0;
             for (SessionEntry entry : entries) {
-                if (!(entry instanceof SessionEntry.MessageEntry msg)) {
-                    continue;
-                }
-                seq++;
-                String role = mapRole(msg.getRole());
                 long occurred =
                         entry.getTimestamp() == null ? 0L : entry.getTimestamp().toEpochMilli();
-                items.add(
-                        new MessagePage.MessageItem(
-                                seq,
-                                role,
-                                msg.getContent() == null ? "" : msg.getContent(),
-                                "",
-                                null,
-                                "",
-                                occurred));
+                if (entry instanceof SessionEntry.MessageEntry msg) {
+                    seq++;
+                    String role = mapRole(msg.getRole());
+                    String content = msg.getContent() == null ? "" : msg.getContent();
+                    if ((content == null || content.isBlank())
+                            && msg.getBlockTypes() != null
+                            && !msg.getBlockTypes().isEmpty()) {
+                        content = "[blocks: " + String.join(",", msg.getBlockTypes()) + "]";
+                    }
+                    items.add(
+                            new MessagePage.MessageItem(
+                                    seq, role, content, "", null, "", occurred));
+                } else if (entry instanceof SessionEntry.ToolUseEntry use) {
+                    seq++;
+                    items.add(
+                            new MessagePage.MessageItem(
+                                    seq,
+                                    SessionEvent.ROLE_ASSISTANT,
+                                    "",
+                                    use.getName() == null ? "" : use.getName(),
+                                    use.getInput(),
+                                    "",
+                                    occurred));
+                } else if (entry instanceof SessionEntry.ToolResultEntry result) {
+                    seq++;
+                    String output = result.getOutput() == null ? "" : result.getOutput();
+                    if (result.isTruncated()) {
+                        output =
+                                output
+                                        + "...(truncated, originalSize="
+                                        + result.getOriginalSize()
+                                        + ")";
+                    }
+                    items.add(
+                            new MessagePage.MessageItem(
+                                    seq,
+                                    SessionEvent.ROLE_TOOL,
+                                    "",
+                                    result.getName() == null ? "" : result.getName(),
+                                    null,
+                                    output,
+                                    occurred));
+                }
             }
             return items.isEmpty() ? Optional.empty() : Optional.of(items);
         } catch (RuntimeException e) {

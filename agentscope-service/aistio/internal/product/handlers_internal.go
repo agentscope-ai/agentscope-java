@@ -3,8 +3,10 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +24,7 @@ func (s *Server) registerInternal(r gin.IRouter) {
 	r.GET("/api/internal/memory-stores/:id/mount", s.internalMemoryMount)
 	r.POST("/api/internal/deployments/:id/fire", s.internalFireDeployment)
 	r.GET("/api/internal/channels/config", s.internalChannelsConfig)
+	r.POST("/api/internal/channels/runtime", s.internalChannelRuntimeReport)
 }
 
 func (s *Server) internalListSessions(c *gin.Context) {
@@ -123,6 +126,24 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 		refType = "latest"
 	}
 
+	definitionFiles := map[string]string{}
+	workspaceID := ""
+	workspaceVersion := 0
+	if a, aerr := s.loadAgent(c.Request.Context(), agentOwner, sess.AgentID); aerr == nil {
+		scopeType, scopeID := a.resolveDefinitionScope()
+		if files, ferr := s.listWorkspaceFileContents(c.Request.Context(), agentOwner, scopeType, scopeID, ""); ferr == nil {
+			definitionFiles = files
+		}
+		if a.WorkspaceID != nil {
+			workspaceID = *a.WorkspaceID
+		}
+		if workspaceID != "" {
+			if w, werr := s.loadWorkspace(c.Request.Context(), agentOwner, workspaceID); werr == nil {
+				workspaceVersion = w.HeadVersion
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"session": gin.H{
 			"id":                 sess.SessionID,
@@ -139,11 +160,14 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 				parseJSONRaw(deref(sess.ResourcesJSON))),
 			"status": sess.Status,
 		},
-		"agentSnapshot":    snap,
-		"workspacePath":    workspace,
-		"environment":      env.toJSON(),
-		"vaultCredentials": creds,
-		"memoryMounts":     mounts,
+		"agentSnapshot":     snap,
+		"workspacePath":     workspace,
+		"workspaceId":       nullStr(workspaceID),
+		"workspaceVersion":  workspaceVersion,
+		"definitionFiles":   definitionFiles,
+		"environment":       env.toJSON(),
+		"vaultCredentials":  creds,
+		"memoryMounts":      mounts,
 	})
 }
 
@@ -154,11 +178,51 @@ type findOrCreateReq struct {
 	ExternalKey   string `json:"externalKey"`
 }
 
+func (s *Server) resolveDefaultEnvironmentID(ctx context.Context, ownerID, agentID string) (string, error) {
+	if a, err := s.loadAgent(ctx, ownerID, agentID); err == nil {
+		if id := strings.TrimSpace(deref(a.DefaultEnvironmentID)); id != "" {
+			return id, nil
+		}
+	}
+	var envID string
+	err := s.db.Pool.QueryRow(ctx,
+		`SELECT environment_id FROM deployments
+		 WHERE owner_id=$1 AND agent_id=$2 AND archived_at IS NULL
+		 ORDER BY updated_at DESC LIMIT 1`,
+		ownerID, agentID).Scan(&envID)
+	if err == nil && envID != "" {
+		return envID, nil
+	}
+	err = s.db.Pool.QueryRow(ctx,
+		`SELECT environment_id FROM environments
+		 WHERE owner_id=$1 AND archived_at IS NULL
+		 ORDER BY created_at ASC LIMIT 1`,
+		ownerID).Scan(&envID)
+	if err != nil {
+		return "", fmt.Errorf("no environment available for owner %s (create an environment or set agent.defaultEnvironmentId)", ownerID)
+	}
+	return envID, nil
+}
+
 func (s *Server) internalFindOrCreateSession(c *gin.Context) {
 	var req findOrCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil || req.OwnerID == "" || req.AgentID == "" || req.EnvironmentID == "" {
-		writeErr(c, http.StatusBadRequest, "ownerId, agentId, environmentId required")
+	if err := c.ShouldBindJSON(&req); err != nil || req.OwnerID == "" || req.AgentID == "" {
+		writeErr(c, http.StatusBadRequest, "ownerId, agentId required")
 		return
+	}
+	a, err := s.loadAgent(c.Request.Context(), req.OwnerID, req.AgentID)
+	if err != nil {
+		writeErr(c, http.StatusBadRequest, "agent not found")
+		return
+	}
+	envID := strings.TrimSpace(req.EnvironmentID)
+	if envID == "" {
+		resolved, err := s.resolveDefaultEnvironmentID(c.Request.Context(), req.OwnerID, req.AgentID)
+		if err != nil {
+			writeErr(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		envID = resolved
 	}
 	if req.ExternalKey != "" {
 		var id string
@@ -166,20 +230,16 @@ func (s *Server) internalFindOrCreateSession(c *gin.Context) {
 			`SELECT session_id FROM sessions
 			 WHERE owner_id=$1 AND agent_id=$2 AND environment_id=$3 AND external_key=$4
 			   AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-			req.OwnerID, req.AgentID, req.EnvironmentID, req.ExternalKey).Scan(&id)
+			req.OwnerID, req.AgentID, envID, req.ExternalKey).Scan(&id)
 		if err == nil {
 			sess, _ := s.loadSession(c.Request.Context(), id)
 			c.JSON(http.StatusOK, sess.toJSON())
 			return
 		}
 	}
-	a, err := s.loadAgent(c.Request.Context(), req.OwnerID, req.AgentID)
-	if err != nil {
-		writeErr(c, http.StatusBadRequest, "agent not found")
-		return
-	}
+	_, memIDs, vaultIDs := mergeSessionMounts(a, envID, nil, nil, false, false)
 	sess, err := s.insertSession(c.Request.Context(), req.OwnerID, req.AgentID, req.OwnerID,
-		a.HeadVersion, "latest", req.EnvironmentID, req.ExternalKey, nil, nil, nil, nil)
+		a.HeadVersion, "latest", envID, req.ExternalKey, memIDs, vaultIDs, nil, nil)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
@@ -369,4 +429,36 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 		out[ch.ChannelID] = cfg
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+type channelRuntimeReport struct {
+	Channels []struct {
+		ChannelID string  `json:"channelId"`
+		Started   bool    `json:"started"`
+		Error     *string `json:"error"`
+	} `json:"channels"`
+}
+
+func (s *Server) internalChannelRuntimeReport(c *gin.Context) {
+	var req channelRuntimeReport
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeErr(c, http.StatusBadRequest, "invalid body")
+		return
+	}
+	now := nowMillis()
+	for _, item := range req.Channels {
+		id := strings.TrimSpace(item.ChannelID)
+		if id == "" {
+			continue
+		}
+		var errVal any
+		if item.Error != nil && strings.TrimSpace(*item.Error) != "" {
+			errVal = strings.TrimSpace(*item.Error)
+		}
+		_, _ = s.db.Pool.Exec(c.Request.Context(),
+			`UPDATE channels SET runtime_started=$1, runtime_error=$2, runtime_updated_at=$3
+			 WHERE channel_id=$4`,
+			item.Started, errVal, now, id)
+	}
+	c.Status(http.StatusNoContent)
 }

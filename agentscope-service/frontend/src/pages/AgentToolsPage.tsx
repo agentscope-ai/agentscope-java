@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import ToolsActivePanel from '../components/ToolsActivePanel';
 import ToolsCatalogPanel from '../components/ToolsCatalogPanel';
+import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
+import type { AgentDefinition } from '../api/agents';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -50,29 +52,35 @@ const closeButtonStyle: React.CSSProperties = {
 };
 
 export default function AgentToolsPage() {
-  const { agentId } = useOutletContext<{ agentId: string }>();
+  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const linked = agent?.workspaceId;
 
   const bumpRefresh = () => setRefreshKey(k => k + 1);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={helpStyle}>
-        Tools and MCP servers are stored on the Agent definition (<code>tools</code> /{' '}
-        <code>mcpServers</code>) and create a new agent version on save. Changes apply to
-        the next Session. Use <b>Ask</b> on a built-in tool to pause for confirmation
-        before that tool runs (HITL).
-      </div>
+      {linked ? (
+        <LinkedWorkspaceBanner workspaceId={linked} resource="tools" />
+      ) : (
+        <div style={helpStyle}>
+          Tools and MCP servers are stored on the Agent definition (<code>tools</code> /{' '}
+          <code>mcpServers</code>) and create a new agent version on save. Changes apply to
+          the next Session. Use <b>Ask</b> on a built-in tool to pause for confirmation
+          before that tool runs (HITL). Link a Workspace to author a shared toolset.
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ToolsActivePanel
           agentId={agentId}
           refreshKey={refreshKey}
           onChange={bumpRefresh}
           onRequestBrowse={() => setBrowseOpen(true)}
+          readOnly={!!linked}
         />
       </div>
-      {browseOpen && (
+      {browseOpen && !linked && (
         <div style={modalOverlayStyle} onClick={() => setBrowseOpen(false)}>
           <div style={modalShellStyle} onClick={e => e.stopPropagation()}>
             <div style={modalHeaderStyle}>

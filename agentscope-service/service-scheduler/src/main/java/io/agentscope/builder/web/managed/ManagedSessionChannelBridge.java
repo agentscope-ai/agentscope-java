@@ -17,6 +17,7 @@ package io.agentscope.builder.web.managed;
 
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -45,7 +46,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>All calls authenticate with the shared internal token; the acting owner is carried in
  * {@code X-Builder-Internal-User} so the receiving plane attributes the operation to the channel
- * user. The bridge performs blocking polls on {@code boundedElastic} — one in-flight turn per
+ * tenant. The bridge performs blocking polls on {@code boundedElastic} — one in-flight turn per
  * channel conversation, so contention stays bounded by inbound message rate.
  */
 @Component
@@ -73,33 +74,41 @@ public class ManagedSessionChannelBridge {
     }
 
     /**
-     * Posts {@code text} as a user message on the found-or-created managed session for {@code
-     * (ownerId, agentId)} and waits for the turn to finish, returning the assistant reply text.
-     * Falls back to a short notice when the turn suspends for human action or the wait times out.
+     * Posts {@code text} as a user message on the found-or-created managed session and waits for
+     * the turn to finish, returning the assistant reply text.
+     *
+     * @param ownerId Builder tenant that owns the channel / agent (not the IM peer)
+     * @param agentId target managed agent id
+     * @param externalKey stable conversation key ({@link ChannelExternalKeys})
+     * @param text user message text
      */
-    public Mono<String> dispatchAndAwaitReply(String ownerId, String agentId, String text) {
-        return Mono.fromCallable(() -> doDispatch(ownerId, agentId, text))
+    public Mono<String> dispatchAndAwaitReply(
+            String ownerId, String agentId, String externalKey, String text) {
+        return Mono.fromCallable(() -> doDispatch(ownerId, agentId, externalKey, text))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private String doDispatch(String ownerId, String agentId, String text) {
-        ManagedSessionDto session = findOrCreateSession(ownerId, agentId);
+    /** @deprecated use {@link #dispatchAndAwaitReply(String, String, String, String)} */
+    @Deprecated
+    public Mono<String> dispatchAndAwaitReply(String ownerId, String agentId, String text) {
+        return dispatchAndAwaitReply(ownerId, agentId, null, text);
+    }
+
+    private String doDispatch(String ownerId, String agentId, String externalKey, String text) {
+        ManagedSessionDto session = findOrCreateSession(ownerId, agentId, externalKey);
         long after = postUserMessage(ownerId, session.id(), text);
         return awaitReply(ownerId, session.id(), after);
     }
 
     /** Resolves the active session for the conversation, creating one on first contact. */
-    private ManagedSessionDto findOrCreateSession(String ownerId, String agentId) {
-        Map<String, Object> body =
-                Map.of(
-                        "ownerId",
-                        ownerId,
-                        "agentId",
-                        agentId,
-                        "memoryStoreIds",
-                        List.of(),
-                        "vaultIds",
-                        List.of());
+    private ManagedSessionDto findOrCreateSession(
+            String ownerId, String agentId, String externalKey) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("ownerId", ownerId);
+        body.put("agentId", agentId);
+        if (externalKey != null && !externalKey.isBlank()) {
+            body.put("externalKey", externalKey);
+        }
         return controlPlane
                 .post()
                 .uri("/api/internal/sessions/find-or-create")

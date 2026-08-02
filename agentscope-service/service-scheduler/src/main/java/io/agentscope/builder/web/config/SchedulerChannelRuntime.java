@@ -29,7 +29,18 @@ import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,24 +51,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
- * Scheduler channel runtime: owns the live set of IM channel adapters.
- *
- * <p>Startup sequence (mirrors the monolith's bootstrap, with config now sourced from the
- * control plane instead of a local file):
- *
- * <ol>
- *   <li>register the bundled channel factories ({@code dingtalk}, {@code feishu}, {@code wecom},
- *       {@code github}, {@code gitlab}) into {@link ChannelTypeRegistry};
- *   <li>fetch the full channel configuration map from the control plane's internal API
- *       ({@code GET /api/internal/channels/config}), retrying while the control plane is still
- *       coming up;
- *   <li>instantiate each configured channel through its factory, register it on the {@link
- *       ChannelManager}, then {@code initAll(gateway)} + {@code startAll()}.
- * </ol>
- *
- * <p>When the control plane stays unreachable the runtime starts with zero channels — outbound
- * delivery then fails fast per request, and a restart re-attempts the fetch. (Dynamic
- * config-refresh is a later hardening step.)
+ * Scheduler channel runtime: owns the live set of IM channel adapters, refreshes config from the
+ * control plane on an interval, and reports per-channel started/error status.
  */
 @Component
 public class SchedulerChannelRuntime implements SmartLifecycle {
@@ -73,24 +68,42 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
     private final Gateway gateway;
     private final WebClient controlPlane;
     private final ObjectMapper objectMapper;
+    private final ChannelRuntimeCatalog catalog;
     private final int configFetchRetries;
     private final long configFetchBackoffMs;
+    private final long refreshIntervalMs;
+
+    private final ScheduledExecutorService refreshExecutor =
+            Executors.newSingleThreadScheduledExecutor(
+                    r -> {
+                        Thread t = new Thread(r, "channel-config-refresh");
+                        t.setDaemon(true);
+                        return t;
+                    });
+
+    private final Map<String, String> lastConfigFingerprints = new HashMap<>();
+    private final Map<String, String> lastErrors = new HashMap<>();
 
     private volatile boolean running;
+    private ScheduledFuture<?> refreshTask;
 
     public SchedulerChannelRuntime(
             ChannelManager channelManager,
             Gateway gateway,
             @Qualifier("controlPlaneWebClient") WebClient controlPlane,
             ObjectMapper objectMapper,
+            ChannelRuntimeCatalog catalog,
             @Value("${builder.scheduler.channel-config-retries:12}") int configFetchRetries,
-            @Value("${builder.scheduler.channel-config-backoff-ms:5000}") long backoffMs) {
+            @Value("${builder.scheduler.channel-config-backoff-ms:5000}") long backoffMs,
+            @Value("${builder.scheduler.channel-refresh-ms:15000}") long refreshIntervalMs) {
         this.channelManager = channelManager;
         this.gateway = gateway;
         this.controlPlane = controlPlane;
         this.objectMapper = objectMapper;
+        this.catalog = catalog;
         this.configFetchRetries = configFetchRetries;
         this.configFetchBackoffMs = backoffMs;
+        this.refreshIntervalMs = refreshIntervalMs;
     }
 
     /** Registers the bundled channel factories exactly once per JVM. */
@@ -112,16 +125,16 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             return;
         }
         registerChannelFactories();
-        Map<String, ChannelConfigEntry> configs = fetchChannelConfig();
-        for (Map.Entry<String, ChannelConfigEntry> e : configs.entrySet()) {
-            Channel channel = buildChannel(e.getKey(), e.getValue());
-            if (channel != null) {
-                channelManager.register(channel);
-            }
-        }
-        channelManager.initAll(gateway);
-        channelManager.startAll();
+        reconcile(fetchChannelConfigWithRetry());
         running = true;
+        if (refreshIntervalMs > 0) {
+            refreshTask =
+                    refreshExecutor.scheduleWithFixedDelay(
+                            this::refreshSafely,
+                            refreshIntervalMs,
+                            refreshIntervalMs,
+                            TimeUnit.MILLISECONDS);
+        }
         log.info(
                 "Scheduler channel runtime started: {} channel(s) active",
                 channelManager.channelIds().size());
@@ -132,11 +145,19 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
         if (!running) {
             return;
         }
+        if (refreshTask != null) {
+            refreshTask.cancel(false);
+            refreshTask = null;
+        }
         try {
             channelManager.stopAll();
         } catch (Exception ex) {
             log.warn("Channel stopAll failed: {}", ex.getMessage());
         }
+        channelManager.channelIds().forEach(channelManager::unregister);
+        lastConfigFingerprints.clear();
+        lastErrors.clear();
+        catalog.replaceAll(Map.of());
         running = false;
         log.info("Scheduler channel runtime stopped");
     }
@@ -146,10 +167,105 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
         return running;
     }
 
+    private void refreshSafely() {
+        try {
+            Map<String, ChannelConfigEntry> configs = fetchChannelConfigOnce();
+            if (configs != null) {
+                reconcile(configs);
+            }
+        } catch (Exception ex) {
+            log.warn("Channel config refresh failed: {}", ex.getMessage());
+        }
+    }
+
     /**
-     * Builds a channel from a config entry; returns {@code null} (with a warning) for entries
-     * that are chat-UI, untyped, unknown-typed, or fail construction.
+     * Diffs desired config against live adapters: starts new/changed channels, stops removed ones,
+     * then reports runtime status to the control plane.
      */
+    private synchronized void reconcile(Map<String, ChannelConfigEntry> desired) {
+        if (desired == null) {
+            desired = Map.of();
+        }
+        catalog.replaceAll(desired);
+
+        Set<String> desiredIds = new HashSet<>(desired.keySet());
+        for (String liveId : new ArrayList<>(channelManager.channelIds())) {
+            if (!desiredIds.contains(liveId)) {
+                channelManager.unregister(liveId);
+                lastConfigFingerprints.remove(liveId);
+                lastErrors.remove(liveId);
+                log.info("Channel '{}' removed (no longer in control-plane config)", liveId);
+            }
+        }
+
+        for (Map.Entry<String, ChannelConfigEntry> e : desired.entrySet()) {
+            String channelId = e.getKey();
+            ChannelConfigEntry entry = e.getValue();
+            if (entry != null && Boolean.TRUE.equals(entry.getDisabled())) {
+                channelManager.unregister(channelId);
+                lastConfigFingerprints.remove(channelId);
+                lastErrors.remove(channelId);
+                continue;
+            }
+            String fingerprint = fingerprint(entry);
+            if (Objects.equals(fingerprint, lastConfigFingerprints.get(channelId))
+                    && channelManager.getChannel(channelId).isPresent()) {
+                continue;
+            }
+            channelManager.unregister(channelId);
+            lastErrors.remove(channelId);
+            Channel channel = buildChannel(channelId, entry);
+            if (channel == null) {
+                lastConfigFingerprints.remove(channelId);
+                lastErrors.put(channelId, "failed to build channel");
+                continue;
+            }
+            try {
+                channelManager.register(channel);
+                channel.init(gateway);
+                channel.start();
+                lastConfigFingerprints.put(channelId, fingerprint);
+                lastErrors.remove(channelId);
+                log.info("Channel '{}' started (type={})", channelId, entry.getType());
+            } catch (Exception ex) {
+                channelManager.unregister(channelId);
+                lastConfigFingerprints.remove(channelId);
+                lastErrors.put(channelId, ex.getMessage());
+                log.warn("Failed to start channel '{}': {}", channelId, ex.getMessage());
+            }
+        }
+        reportRuntimeStatus();
+    }
+
+    private void reportRuntimeStatus() {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String id : catalog.snapshot().keySet()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("channelId", id);
+            boolean started =
+                    channelManager.getChannel(id).isPresent() && !lastErrors.containsKey(id);
+            item.put("started", started);
+            String err = lastErrors.get(id);
+            if (err != null) {
+                item.put("error", err);
+            }
+            items.add(item);
+        }
+        // Also clear status for channels that disappeared.
+        Map<String, Object> body = Map.of("channels", items);
+        try {
+            controlPlane
+                    .post()
+                    .uri("/api/internal/channels/runtime")
+                    .bodyValue(body)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block(Duration.ofSeconds(15));
+        } catch (Exception ex) {
+            log.debug("Channel runtime report failed: {}", ex.getMessage());
+        }
+    }
+
     private Channel buildChannel(String channelId, ChannelConfigEntry entry) {
         String type = entry != null ? entry.getType() : null;
         if (type == null || type.isBlank()) {
@@ -157,7 +273,6 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             return null;
         }
         if ("chatui".equals(type)) {
-            // The chat UI talks to the gateway/data plane directly; no adapter needed here.
             log.debug("Channel '{}' is chatui; not hosted by the scheduler.", channelId);
             return null;
         }
@@ -179,47 +294,23 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                     channelId,
                     type,
                     ex.getMessage());
+            lastErrors.put(channelId, ex.getMessage());
             return null;
         }
     }
 
-    /**
-     * Fetches the channel configuration map from the control plane, retrying while it is still
-     * coming up. Returns an empty map when all attempts fail.
-     */
-    private Map<String, ChannelConfigEntry> fetchChannelConfig() {
+    private Map<String, ChannelConfigEntry> fetchChannelConfigWithRetry() {
         for (int attempt = 1; attempt <= Math.max(1, configFetchRetries); attempt++) {
-            try {
-                String json =
-                        controlPlane
-                                .get()
-                                .uri("/api/internal/channels/config")
-                                .retrieve()
-                                .bodyToMono(String.class)
-                                .block(Duration.ofSeconds(30));
-                if (json == null || json.isBlank()) {
-                    return Map.of();
-                }
-                Map<String, ChannelConfigEntry> configs =
-                        objectMapper.readValue(json, CHANNEL_CONFIG_MAP);
-                log.info(
-                        "Fetched {} channel config(s) from control plane: {}",
-                        configs.size(),
-                        configs.keySet());
+            Map<String, ChannelConfigEntry> configs = fetchChannelConfigOnce();
+            if (configs != null) {
                 return configs;
-            } catch (Exception ex) {
-                log.warn(
-                        "Channel config fetch attempt {}/{} failed: {}",
-                        attempt,
-                        configFetchRetries,
-                        ex.getMessage());
-                if (attempt < configFetchRetries) {
-                    try {
-                        Thread.sleep(configFetchBackoffMs);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        return Map.of();
-                    }
+            }
+            if (attempt < configFetchRetries) {
+                try {
+                    Thread.sleep(configFetchBackoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return Map.of();
                 }
             }
         }
@@ -227,5 +318,39 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                 "Control plane unreachable after {} attempt(s); starting with zero channels.",
                 configFetchRetries);
         return Map.of();
+    }
+
+    /** @return config map, or {@code null} when the fetch failed */
+    private Map<String, ChannelConfigEntry> fetchChannelConfigOnce() {
+        try {
+            String json =
+                    controlPlane
+                            .get()
+                            .uri("/api/internal/channels/config")
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block(Duration.ofSeconds(30));
+            if (json == null || json.isBlank()) {
+                return Map.of();
+            }
+            Map<String, ChannelConfigEntry> configs =
+                    objectMapper.readValue(json, CHANNEL_CONFIG_MAP);
+            log.info(
+                    "Fetched {} channel config(s) from control plane: {}",
+                    configs.size(),
+                    configs.keySet());
+            return configs;
+        } catch (Exception ex) {
+            log.warn("Channel config fetch failed: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private String fingerprint(ChannelConfigEntry entry) {
+        try {
+            return objectMapper.writeValueAsString(entry);
+        } catch (Exception e) {
+            return String.valueOf(Objects.hashCode(entry));
+        }
     }
 }

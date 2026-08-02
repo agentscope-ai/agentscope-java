@@ -30,6 +30,9 @@ public record SessionResolveResult(
         ManagedSessionDto session,
         Map<String, Object> agentSnapshot,
         String workspacePath,
+        String workspaceId,
+        Integer workspaceVersion,
+        Map<String, String> definitionFiles,
         EnvironmentDto environment,
         List<Map<String, Object>> vaultCredentials,
         List<Map<String, Object>> memoryMounts) {}

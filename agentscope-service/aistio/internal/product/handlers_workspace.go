@@ -97,11 +97,44 @@ func (s *Server) workspaceSummary(c *gin.Context) {
 	agentsMd := fileExists(filepath.Join(ws, "AGENTS.md"))
 	memoryMd := fileExists(filepath.Join(ws, "MEMORY.md"))
 	skillCount := countDirs(filepath.Join(ws, "skills"))
-	subagentCount := countDirs(filepath.Join(ws, "agents"))
+	subagentCount := countFilesWithExt(filepath.Join(ws, "subagents"), ".md")
+	if subagentCount == 0 {
+		// Legacy layout fallback.
+		subagentCount = countDirs(filepath.Join(ws, "agents"))
+	}
 	dailyMemoryCount := countFilesWithExt(filepath.Join(ws, "memory"), ".md")
+	a, _ := s.loadAgent(c.Request.Context(), owner, c.Param("id"))
+	wsID := ""
+	if a.WorkspaceID != nil {
+		wsID = *a.WorkspaceID
+	}
+	if wsID != "" {
+		if content, ok, _ := s.getWorkspaceFile(c.Request.Context(), owner, scopeTypeWorkspace, wsID, "AGENTS.md"); ok && content != "" {
+			agentsMd = true
+		}
+		if paths, err := s.listWorkspaceFilePaths(c.Request.Context(), owner, scopeTypeWorkspace, wsID, "skills"); err == nil {
+			n := 0
+			for _, p := range paths {
+				if strings.HasSuffix(p, "/SKILL.md") {
+					n++
+				}
+			}
+			skillCount = n
+		}
+		if paths, err := s.listWorkspaceFilePaths(c.Request.Context(), owner, scopeTypeWorkspace, wsID, "subagents"); err == nil {
+			n := 0
+			for _, p := range paths {
+				if strings.HasSuffix(p, ".md") {
+					n++
+				}
+			}
+			subagentCount = n
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"agentId":          c.Param("id"),
 		"workspacePath":    ws,
+		"workspaceId":      nullStr(wsID),
 		"exists":           exists,
 		"agentsMdExists":   agentsMd,
 		"memoryMdExists":   memoryMd,
@@ -217,12 +250,24 @@ func buildFileTree(root, rel string, recursive bool) ([]*fileNode, error) {
 
 func (s *Server) workspaceReadFile(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	full, err := joinWorkspace(ws, c.Query("path"))
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	rel := c.Query("path")
+	scopeType, scopeID := a.resolveDefinitionScope()
+	if content, ok, _ := s.getWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID, rel); ok {
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(content))
+		return
+	}
+	full, err := joinWorkspace(ws, rel)
 	if err != nil {
 		writeTextErr(c, http.StatusBadRequest, "invalid path")
 		return
@@ -237,13 +282,19 @@ func (s *Server) workspaceReadFile(c *gin.Context) {
 
 func (s *Server) workspaceWriteFile(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	full, err := joinWorkspace(ws, c.Query("path"))
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	rel := c.Query("path")
+	if _, err := joinWorkspace(ws, rel); err != nil {
 		writeTextErr(c, http.StatusBadRequest, "invalid path")
 		return
 	}
@@ -254,13 +305,13 @@ func (s *Server) workspaceWriteFile(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "content required")
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+	scopeType, scopeID := a.resolveDefinitionScope()
+	if err := s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID, rel, req.Content, ws); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := os.WriteFile(full, []byte(req.Content), 0o644); err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
+	if scopeType == scopeTypeWorkspace {
+		_ = s.bumpWorkspaceVersion(c.Request.Context(), owner, scopeID)
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -395,75 +446,84 @@ func (s *Server) workspaceUpload(c *gin.Context) {
 
 func (s *Server) listSubagents(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	dir := filepath.Join(ws, "agents")
-	entries, err := os.ReadDir(dir)
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
-		c.JSON(http.StatusOK, []any{})
+		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
+	scopeType, scopeID := a.resolveDefinitionScope()
+	files, err := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "subagents")
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(files) == 0 {
+		// Migrate legacy agents/<name>/AGENT.md if present on disk.
+		legacyDir := filepath.Join(ws, "agents")
+		if entries, rerr := os.ReadDir(legacyDir); rerr == nil {
+			for _, e := range entries {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+					continue
+				}
+				mdPath := filepath.Join(legacyDir, e.Name(), "AGENT.md")
+				b, rerr := os.ReadFile(mdPath)
+				if rerr != nil {
+					continue
+				}
+				req := subagentUpsertReq{Description: e.Name(), InlineBody: string(b)}
+				md := buildSubagentMarkdown(req)
+				_ = s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
+					"subagents/"+e.Name()+".md", md, ws)
+			}
+			files, _ = s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "subagents")
+		}
+	}
 	list := []gin.H{}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+	for path, content := range files {
+		if !strings.HasPrefix(path, "subagents/") || !strings.HasSuffix(path, ".md") {
 			continue
 		}
-		desc := ""
-		mdPath := filepath.Join(dir, e.Name(), "AGENT.md")
-		if b, err := os.ReadFile(mdPath); err == nil {
-			desc = strings.TrimSpace(string(b))
-			if len(desc) > 200 {
-				desc = desc[:200]
-			}
-		}
-		list = append(list, gin.H{
-			"name":          e.Name(),
-			"description":   desc,
-			"workspaceMode": "isolated",
-			"hasInlineBody": fileExists(mdPath),
-		})
+		name := strings.TrimSuffix(strings.TrimPrefix(path, "subagents/"), ".md")
+		info := parseSubagentMarkdown(content)
+		info["name"] = name
+		list = append(list, info)
 	}
 	c.JSON(http.StatusOK, list)
 }
 
 func (s *Server) upsertSubagent(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
 	name := c.Param("name")
-	var req struct {
-		Description   string   `json:"description"`
-		Model         string   `json:"model"`
-		MaxIters      *int     `json:"maxIters"`
-		Tools         []string `json:"tools"`
-		WorkspaceMode string   `json:"workspaceMode"`
-		WorkspacePath string   `json:"workspacePath"`
-		InlineBody    string   `json:"inlineBody"`
-		SourceAgentID string   `json:"sourceAgentId"`
-	}
+	var req subagentUpsertReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeErr(c, http.StatusBadRequest, "invalid body")
 		return
 	}
-	dir := filepath.Join(ws, "agents", name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if req.Description == "" {
+		req.Description = name
+	}
+	md := buildSubagentMarkdown(req)
+	ws, _, _ := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
+	scopeType, scopeID := a.resolveDefinitionScope()
+	if err := s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
+		"subagents/"+name+".md", md, ws); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	body := req.InlineBody
-	if body == "" {
-		body = "# " + name + "\n\n" + req.Description + "\n"
-	}
-	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte(body), 0o644); err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
+	// Remove legacy path if present.
+	_ = os.RemoveAll(filepath.Join(ws, "agents", name))
 	mode := req.WorkspaceMode
 	if mode == "" {
 		mode = "isolated"
@@ -521,7 +581,8 @@ func (s *Server) subagentFromAgent(c *gin.Context) {
 
 func (s *Server) deleteSubagent(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -531,10 +592,9 @@ func (s *Server) deleteSubagent(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "invalid name")
 		return
 	}
-	dir := filepath.Join(ws, "agents", name)
-	if err := os.RemoveAll(dir); err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
+	ws, _, _ := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
+	scopeType, scopeID := a.resolveDefinitionScope()
+	_ = s.deleteWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID, "subagents/"+name+".md", ws)
+	_ = os.RemoveAll(filepath.Join(ws, "agents", name))
 	c.Status(http.StatusNoContent)
 }

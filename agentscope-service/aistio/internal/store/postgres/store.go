@@ -20,14 +20,21 @@ type Store struct {
 	pool      *pgxpool.Pool
 	retention store.RetentionConfig
 
-	sessions *sessionRepo
-	turns    *turnRepo
-	events   *eventRepo
-	contexts *contextRepo
-	metrics  *metricsRepo
-	messages *messageRepo
-	tasks    *taskRepo
-	commands *commandRepo
+	sessions         *sessionRepo
+	turns            *turnRepo
+	events           *eventRepo
+	contexts         *contextRepo
+	metrics          *metricsRepo
+	transcriptIndex  *transcriptIndexRepo
+	messages         *messageRepo
+	tasks            *taskRepo
+	commands         *commandRepo
+	kv               *kvRepo
+	locks            *lockRepo
+	snapshots        *snapshotRepo
+	bus              *busRepo
+	asyncTools       *asyncToolRepo
+	dpTasks          *dpTaskRepo
 }
 
 // Open creates a PostgreSQL store from cfg.
@@ -61,9 +68,16 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.events = &eventRepo{pool: pool}
 	s.contexts = &contextRepo{pool: pool}
 	s.metrics = &metricsRepo{pool: pool}
+	s.transcriptIndex = &transcriptIndexRepo{pool: pool}
 	s.messages = &messageRepo{pool: pool}
 	s.tasks = &taskRepo{pool: pool}
 	s.commands = &commandRepo{pool: pool}
+	s.kv = &kvRepo{pool: pool}
+	s.locks = &lockRepo{pool: pool}
+	s.snapshots = &snapshotRepo{pool: pool}
+	s.bus = &busRepo{pool: pool}
+	s.asyncTools = &asyncToolRepo{pool: pool}
+	s.dpTasks = &dpTaskRepo{pool: pool}
 	return s, nil
 }
 
@@ -72,9 +86,16 @@ func (s *Store) Turns() store.TurnRepository                       { return s.tu
 func (s *Store) Events() store.EventRepository                     { return s.events }
 func (s *Store) ContextSnapshots() store.ContextSnapshotRepository { return s.contexts }
 func (s *Store) Metrics() store.MetricsRepository                  { return s.metrics }
+func (s *Store) TranscriptIndex() store.TranscriptIndexRepository  { return s.transcriptIndex }
 func (s *Store) TeamMessages() store.TeamMessageRepository         { return s.messages }
 func (s *Store) TeamTasks() store.TeamTaskRepository               { return s.tasks }
 func (s *Store) Commands() store.SessionCommandRepository          { return s.commands }
+func (s *Store) KV() store.KVRepository                             { return s.kv }
+func (s *Store) Locks() store.LockRepository                       { return s.locks }
+func (s *Store) Snapshots() store.SnapshotRepository               { return s.snapshots }
+func (s *Store) Bus() store.BusRepository                           { return s.bus }
+func (s *Store) AsyncTools() store.AsyncToolRepository             { return s.asyncTools }
+func (s *Store) Tasks() store.TaskRepository                       { return s.dpTasks }
 
 func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
@@ -136,6 +157,11 @@ func (s *Store) PurgeOlderThan(ctx context.Context, r store.RetentionConfig) (in
 		{`DELETE FROM context_snapshots WHERE captured_at < $1`, r.ContextSnapshots},
 		{`DELETE FROM token_usage_metrics WHERE recorded_at < $1`, r.Metrics},
 		{`DELETE FROM agent_metrics WHERE recorded_at < $1`, r.Metrics},
+		// Hosted store — dp_kv is NEVER purged.
+		{`DELETE FROM dp_bus_entries WHERE kind=0 AND created_at < $1`, r.BusQueue},
+		{`DELETE FROM dp_bus_entries WHERE kind=1 AND created_at < $1`, r.BusLog},
+		{`DELETE FROM dp_async_tools WHERE updated_at < $1`, r.AsyncTools},
+		{`DELETE FROM dp_snapshots WHERE accessed_at < $1`, r.SandboxSnapshots},
 	}
 	for _, op := range ops {
 		if op.cut <= 0 {
@@ -146,6 +172,18 @@ func (s *Store) PurgeOlderThan(ctx context.Context, r store.RetentionConfig) (in
 			return total, fmt.Errorf("postgres: purge: %w", err)
 		}
 		total += tag.RowsAffected()
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM dp_locks WHERE expires_at < now() - interval '1 hour'`)
+	if err != nil {
+		return total, fmt.Errorf("postgres: purge locks: %w", err)
+	}
+	total += tag.RowsAffected()
+	if r.Tasks > 0 {
+		n, err := s.dpTasks.PurgeTerminalOlderThan(ctx, r.Tasks)
+		if err != nil {
+			return total, fmt.Errorf("postgres: purge dp_tasks: %w", err)
+		}
+		total += n
 	}
 	return total, nil
 }

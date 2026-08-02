@@ -100,34 +100,67 @@ func skillInfoFromDir(dir, dirName string) gin.H {
 
 func (s *Server) listWorkspaceSkills(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	dir := filepath.Join(ws, "skills")
-	entries, err := os.ReadDir(dir)
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
-		c.JSON(http.StatusOK, []any{})
+		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
+	scopeType, scopeID := a.resolveDefinitionScope()
+	files, _ := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "skills")
 	list := []gin.H{}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+	seen := map[string]bool{}
+	for path, content := range files {
+		parts := strings.Split(path, "/")
+		if len(parts) < 3 || parts[0] != "skills" || parts[2] != "SKILL.md" {
 			continue
 		}
-		skillPath := filepath.Join(dir, e.Name())
-		if !fileExists(filepath.Join(skillPath, "SKILL.md")) {
+		name := parts[1]
+		if seen[name] {
 			continue
 		}
-		list = append(list, skillInfoFromDir(skillPath, e.Name()))
+		seen[name] = true
+		display, desc := parseSkillFrontmatter(content)
+		if display == "" {
+			display = name
+		}
+		list = append(list, gin.H{
+			"dirName": name, "name": display, "description": nullStr(desc), "origin": "custom",
+		})
+	}
+	if len(list) == 0 {
+		dir := filepath.Join(ws, "skills")
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			for _, e := range entries {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+					continue
+				}
+				skillPath := filepath.Join(dir, e.Name())
+				if !fileExists(filepath.Join(skillPath, "SKILL.md")) {
+					continue
+				}
+				list = append(list, skillInfoFromDir(skillPath, e.Name()))
+			}
+		}
 	}
 	c.JSON(http.StatusOK, list)
 }
 
 func (s *Server) getWorkspaceSkill(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -137,45 +170,63 @@ func (s *Server) getWorkspaceSkill(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "invalid name")
 		return
 	}
-	dir := skillDir(ws, name)
-	mdPath := filepath.Join(dir, "SKILL.md")
-	b, err := os.ReadFile(mdPath)
-	if err != nil {
-		writeErr(c, http.StatusNotFound, "skill not found")
-		return
-	}
-	_, desc := parseSkillFrontmatter(string(b))
+	scopeType, scopeID := a.resolveDefinitionScope()
+	md, ok, _ := s.getWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID, "skills/"+name+"/SKILL.md")
 	resources := map[string]string{}
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	if ok {
+		files, _ := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "skills/"+name)
+		for path, content := range files {
+			rel := strings.TrimPrefix(path, "skills/"+name+"/")
+			if rel == "" || rel == "SKILL.md" || rel == path {
+				continue
+			}
+			resources[rel] = content
+		}
+	} else {
+		dir := skillDir(ws, name)
+		b, rerr := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+		if rerr != nil {
+			writeErr(c, http.StatusNotFound, "skill not found")
+			return
+		}
+		md = string(b)
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			rel, _ := filepath.Rel(dir, path)
+			rel = filepath.ToSlash(rel)
+			if rel == "SKILL.md" {
+				return nil
+			}
+			content, err := os.ReadFile(path)
+			if err == nil {
+				resources[rel] = string(content)
+			}
 			return nil
-		}
-		rel, _ := filepath.Rel(dir, path)
-		rel = filepath.ToSlash(rel)
-		if rel == "SKILL.md" {
-			return nil
-		}
-		content, err := os.ReadFile(path)
-		if err == nil {
-			resources[rel] = string(content)
-		}
-		return nil
-	})
-	displayName, _ := parseSkillFrontmatter(string(b))
+		})
+	}
+	displayName, desc := parseSkillFrontmatter(md)
 	if displayName == "" {
 		displayName = name
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"name":        displayName,
 		"description": nullStr(desc),
-		"markdown":    string(b),
+		"markdown":    md,
 		"resources":   resources,
 	})
 }
 
 func (s *Server) putWorkspaceSkill(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -193,12 +244,9 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "invalid body")
 		return
 	}
-	dir := skillDir(ws, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(req.Markdown), 0o644); err != nil {
+	scopeType, scopeID := a.resolveDefinitionScope()
+	if err := s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
+		"skills/"+name+"/SKILL.md", req.Markdown, ws); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -207,18 +255,21 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 		if err != nil || relClean == "" || relClean == "SKILL.md" {
 			continue
 		}
-		full := filepath.Join(dir, filepath.FromSlash(relClean))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			continue
-		}
-		_ = os.WriteFile(full, []byte(content), 0o644)
+		_ = s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
+			"skills/"+name+"/"+relClean, content, ws)
 	}
-	c.JSON(http.StatusOK, skillInfoFromDir(dir, name))
+	c.JSON(http.StatusOK, skillInfoFromDir(skillDir(ws, name), name))
 }
 
 func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
 	owner := currentUserID(c)
-	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -228,15 +279,32 @@ func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "invalid name")
 		return
 	}
-	if err := os.RemoveAll(skillDir(ws, name)); err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
+	scopeType, scopeID := a.resolveDefinitionScope()
+	_ = s.deleteWorkspaceFilePrefix(c.Request.Context(), owner, scopeType, scopeID, "skills/"+name, ws)
 	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) marketplaceInstallSkill(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"message": "marketplace removed"})
+	// Compatibility shim: install into the agent's linked workspace or agent scope.
+	owner := currentUserID(c)
+	agentID := c.Param("id")
+	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
+	if err != nil {
+		writeErr(c, http.StatusNotFound, "agent not found")
+		return
+	}
+	var req marketplaceInstallReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeErr(c, http.StatusBadRequest, "invalid body")
+		return
+	}
+	scopeType, scopeID := a.resolveDefinitionScope()
+	ws, _, _ := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
+	if err := s.installMarketplaceSkill(c.Request.Context(), owner, scopeType, scopeID, ws, req); err != nil {
+		writeErr(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"installed": req.SkillName, "origin": "marketplace"})
 }
 
 func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
@@ -244,12 +312,7 @@ func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
-	c.JSON(http.StatusOK, []gin.H{
-		{"id": "shell", "description": "Execute a shell command", "group": "filesystem"},
-		{"id": "read_file", "description": "Read a file from the workspace", "group": "filesystem"},
-		{"id": "write_file", "description": "Write a file in the workspace", "group": "filesystem"},
-		{"id": "list_dir", "description": "List directory contents", "group": "filesystem"},
-	})
+	c.JSON(http.StatusOK, builtinToolCatalog)
 }
 
 func (s *Server) toolsMcpCatalog(c *gin.Context) {
@@ -372,13 +435,21 @@ func (s *Server) cloneAgent(c *gin.Context) {
 	if src.MaxIters != nil {
 		maxIters = *src.MaxIters
 	}
+	wsID := ""
+	if src.WorkspaceID != nil {
+		wsID = *src.WorkspaceID
+	}
 	_, err = s.db.Pool.Exec(c.Request.Context(),
-		`INSERT INTO agents (owner_id, agent_id, workspace_path, name, description, sys_prompt, model,
-		 max_iters, tools_json, mcp_servers_json, skills_json, multiagent_json, head_version, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,$13,$13)`,
-		owner, newID, dstWS, name, src.Description, src.SysPrompt, src.Model,
+		`INSERT INTO agents (owner_id, agent_id, workspace_path, workspace_id, name, description, sys_prompt, model,
+		 max_iters, tools_json, mcp_servers_json, skills_json, multiagent_json,
+		 default_environment_id, default_vault_ids_json, default_memory_store_ids_json,
+		 head_version, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17,$17)`,
+		owner, newID, dstWS, nullStr(wsID), name, src.Description, src.SysPrompt, src.Model,
 		maxIters, deref(src.ToolsJSON), deref(src.McpServersJSON), deref(src.SkillsJSON),
-		deref(src.MultiagentJSON), now)
+		deref(src.MultiagentJSON),
+		src.DefaultEnvironmentID, src.DefaultVaultIDsJSON, src.DefaultMemoryStoreIDsJSON,
+		now)
 	if err != nil {
 		writeTextErr(c, http.StatusInternalServerError, err.Error())
 		return
@@ -391,13 +462,18 @@ func (s *Server) cloneAgent(c *gin.Context) {
 	if err != nil || snap == "" {
 		snap = mustJSON(s.agentSnapshot(owner, newID, name, deref(src.Description), deref(src.SysPrompt),
 			deref(src.Model), maxIters, parseJSONRaw(deref(src.ToolsJSON)), parseJSONRaw(deref(src.McpServersJSON)),
-			parseJSONRaw(deref(src.SkillsJSON)), parseJSONRaw(deref(src.MultiagentJSON)), dstWS, 1, now, now))
+			parseJSONRaw(deref(src.SkillsJSON)), parseJSONRaw(deref(src.MultiagentJSON)), dstWS, wsID,
+			deref(src.DefaultEnvironmentID),
+			parseStringSlice(deref(src.DefaultVaultIDsJSON)),
+			parseStringSlice(deref(src.DefaultMemoryStoreIDsJSON)),
+			1, now, now))
 	} else {
 		var m map[string]any
 		if jsonErr := jsonUnmarshal(snap, &m); jsonErr == nil {
 			m["id"] = newID
 			m["name"] = name
 			m["workspacePath"] = dstWS
+			m["workspaceId"] = nullStr(wsID)
 			m["version"] = 1
 			m["createdAt"] = now
 			m["updatedAt"] = now

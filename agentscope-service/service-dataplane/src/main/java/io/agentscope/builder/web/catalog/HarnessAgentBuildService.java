@@ -282,6 +282,10 @@ public class HarnessAgentBuildService {
             b.toolsConfig(resolved);
         }
 
+        // Sync control-plane workspace_files into DefinitionStore so skills/subagents are
+        // replica-safe (not bound to aistiod local disk).
+        syncDefinitionFilesFromControlPlane(session, buildOwnerId, agentId);
+
         // Skills: control-plane DefinitionStore + optional git/fs skillRepositories.
         // Do not rely on Hands primary filesystem Layer-4 workspace skills (sandbox would
         // look inside the sandbox, not the definition store).
@@ -393,6 +397,36 @@ public class HarnessAgentBuildService {
                     session.id(),
                     ex.getMessage());
             return null;
+        }
+    }
+
+    private void syncDefinitionFilesFromControlPlane(
+            ManagedSessionDto session, String buildOwnerId, String agentId) {
+        if (session == null || session.id() == null || definitionStore == null) {
+            return;
+        }
+        try {
+            SessionResolveResult resolved = controlPlaneClient.resolveSession(session.id());
+            Map<String, String> files = resolved.definitionFiles();
+            if (files == null || files.isEmpty()) {
+                return;
+            }
+            for (Map.Entry<String, String> e : files.entrySet()) {
+                if (e.getKey() == null || e.getKey().isBlank()) {
+                    continue;
+                }
+                definitionStore.putText(buildOwnerId, agentId, e.getKey(), e.getValue());
+            }
+            log.debug(
+                    "Synced {} definition files from control plane for {}/{}",
+                    files.size(),
+                    buildOwnerId,
+                    agentId);
+        } catch (Exception ex) {
+            log.warn(
+                    "Failed to sync definitionFiles for session {}: {}",
+                    session.id(),
+                    ex.getMessage());
         }
     }
 

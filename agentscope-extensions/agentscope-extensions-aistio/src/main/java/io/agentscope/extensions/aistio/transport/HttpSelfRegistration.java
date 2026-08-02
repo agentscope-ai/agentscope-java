@@ -16,12 +16,6 @@
 package io.agentscope.extensions.aistio.transport;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +37,9 @@ import java.util.logging.Logger;
 public final class HttpSelfRegistration implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(HttpSelfRegistration.class.getName());
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String INTERNAL_TOKEN_HEADER = "X-Builder-Internal-Token";
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
 
+    private final ControlPlaneHttpClient http;
     private final String controlPlaneHttp;
-    private final String internalToken;
     private final String agentName;
     private final String namespace;
     private final String instanceId;
@@ -59,7 +50,6 @@ public final class HttpSelfRegistration implements AutoCloseable {
     private final List<String> capabilities;
     private final long heartbeatIntervalMs;
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build();
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private ScheduledExecutorService scheduler;
 
@@ -75,13 +65,15 @@ public final class HttpSelfRegistration implements AutoCloseable {
             int contractLevel,
             List<String> capabilities,
             long heartbeatIntervalMs) {
-        this.controlPlaneHttp =
-                trimSlash(Objects.requireNonNull(controlPlaneHttp, "controlPlaneHttp"));
-        this.internalToken = Objects.requireNonNull(internalToken, "internalToken");
+        this.http =
+                new ControlPlaneHttpClient(
+                        Objects.requireNonNull(controlPlaneHttp, "controlPlaneHttp"),
+                        Objects.requireNonNull(internalToken, "internalToken"));
+        this.controlPlaneHttp = this.http.baseUrl();
         this.agentName = Objects.requireNonNull(agentName, "agentName");
         this.namespace = (namespace == null || namespace.isBlank()) ? "default" : namespace;
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
-        this.baseUrl = trimSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
+        this.baseUrl = ControlPlaneHttpClient.trimSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
         this.runtime = runtime == null || runtime.isBlank() ? "agentscope-java" : runtime;
         this.framework = framework == null || framework.isBlank() ? runtime : framework;
         this.contractLevel = contractLevel > 0 ? contractLevel : 3;
@@ -183,23 +175,11 @@ public final class HttpSelfRegistration implements AutoCloseable {
     }
 
     private int request(String method, String path, Object body) throws Exception {
-        HttpRequest.Builder b =
-                HttpRequest.newBuilder()
-                        .uri(URI.create(controlPlaneHttp + path))
-                        .timeout(HTTP_TIMEOUT)
-                        .header(INTERNAL_TOKEN_HEADER, internalToken);
-        if (body == null) {
-            b.method(method, HttpRequest.BodyPublishers.noBody());
-        } else {
-            byte[] json = MAPPER.writeValueAsBytes(body);
-            b.header("Content-Type", "application/json")
-                    .method(method, HttpRequest.BodyPublishers.ofByteArray(json));
-        }
-        HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
-        if (resp.statusCode() >= 200 && resp.statusCode() < 300 && resp.body() != null) {
+        ControlPlaneHttpClient.Response resp = http.send(method, path, body);
+        if (resp.status() >= 200 && resp.status() < 300 && resp.body() != null) {
             // Touch response for future heartbeatInterval parsing; ignore unknown shapes.
             try {
-                JsonNode node = MAPPER.readTree(resp.body());
+                JsonNode node = ControlPlaneHttpClient.mapper().readTree(resp.body());
                 if (node.has("heartbeatInterval")) {
                     // reserved for adaptive interval; fixed schedule is fine for now
                 }
@@ -207,14 +187,6 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 // ignore
             }
         }
-        return resp.statusCode();
-    }
-
-    private static String trimSlash(String url) {
-        String t = url.trim();
-        while (t.endsWith("/")) {
-            t = t.substring(0, t.length() - 1);
-        }
-        return t;
+        return resp.status();
     }
 }

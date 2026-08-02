@@ -10,14 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var channelTypes = []string{
-	"discord", "slack", "telegram", "dingtalk", "feishu", "whatsapp", "custom",
-}
-
 var channelSecretKeys = map[string]bool{
 	"appSecret": true, "clientSecret": true, "token": true, "botToken": true,
 	"webhookSecret": true, "signingSecret": true, "secret": true, "password": true,
-	"accessToken": true, "refreshToken": true, "apiKey": true,
+	"accessToken": true, "refreshToken": true, "apiKey": true, "webhookToken": true,
+	"encodingAesKey": true, "encryptKey": true, "verificationToken": true,
 }
 
 const secretMask = "********"
@@ -38,29 +35,41 @@ func (s *Server) registerChannels(r gin.IRouter) {
 	r.PUT("/api/agents/:id/bindings/:index", s.updateAgentBinding)
 	r.DELETE("/api/agents/:id/bindings/:index", s.deleteAgentBinding)
 	r.POST("/api/agents/:id/channels/:channelId/default", s.setChannelDefault)
+
+	r.GET("/api/agents/:id/presences", s.listAgentPresences)
+	r.POST("/api/agents/:id/presences", s.createAgentPresence)
+	r.GET("/api/agents/:id/presences/:channelId", s.getAgentPresence)
+	r.PUT("/api/agents/:id/presences/:channelId", s.updateAgentPresence)
+	r.DELETE("/api/agents/:id/presences/:channelId", s.deleteAgentPresence)
 }
 
 type channelRow struct {
-	ChannelID      string
-	OwnerID        string
-	Type           string
-	DmScope        *string
-	DefaultAgentID *string
-	Disabled       bool
-	PropertiesJSON *string
-	BindingsJSON   *string
-	CreatedAt      int64
-	UpdatedAt      int64
+	ChannelID       string
+	OwnerID         string
+	Type            string
+	DmScope         *string
+	DefaultAgentID  *string
+	Disabled        bool
+	PropertiesJSON  *string
+	BindingsJSON    *string
+	RuntimeStarted  bool
+	RuntimeError    *string
+	CreatedAt       int64
+	UpdatedAt       int64
 }
 
 const channelSelect = `SELECT channel_id, owner_id, type, dm_scope, default_agent_id, disabled,
-	properties_json, bindings_json, created_at, updated_at FROM channels`
+	properties_json, bindings_json,
+	COALESCE(runtime_started, FALSE), runtime_error,
+	created_at, updated_at FROM channels`
 
 func (s *Server) scanChannel(sc interface{ Scan(dest ...any) error }) (channelRow, error) {
 	var ch channelRow
 	err := sc.Scan(
 		&ch.ChannelID, &ch.OwnerID, &ch.Type, &ch.DmScope, &ch.DefaultAgentID, &ch.Disabled,
-		&ch.PropertiesJSON, &ch.BindingsJSON, &ch.CreatedAt, &ch.UpdatedAt,
+		&ch.PropertiesJSON, &ch.BindingsJSON,
+		&ch.RuntimeStarted, &ch.RuntimeError,
+		&ch.CreatedAt, &ch.UpdatedAt,
 	)
 	return ch, err
 }
@@ -76,7 +85,8 @@ func (ch channelRow) infoJSON() gin.H {
 		"dmScope":        nullStrPtr(ch.DmScope),
 		"defaultAgentId": nullStrPtr(ch.DefaultAgentID),
 		"disabled":       ch.Disabled,
-		"started":        false,
+		"started":        ch.RuntimeStarted,
+		"lastError":      nullStrPtr(ch.RuntimeError),
 	}
 }
 
@@ -92,7 +102,8 @@ func (ch channelRow) detailJSON(maskSecrets bool) gin.H {
 		"dmScope":        nullStrPtr(ch.DmScope),
 		"defaultAgentId": nullStrPtr(ch.DefaultAgentID),
 		"disabled":       ch.Disabled,
-		"started":        false,
+		"started":        ch.RuntimeStarted,
+		"lastError":      nullStrPtr(ch.RuntimeError),
 		"properties":     props,
 		"bindings":       bindings,
 	}
@@ -102,6 +113,7 @@ func (ch channelRow) fullConfigJSON() gin.H {
 	out := gin.H{
 		"channelId":      ch.ChannelID,
 		"type":           ch.Type,
+		"ownerId":        ch.OwnerID,
 		"dmScope":        nullStrPtr(ch.DmScope),
 		"defaultAgentId": nullStrPtr(ch.DefaultAgentID),
 		"disabled":       ch.Disabled,
@@ -146,15 +158,6 @@ func maskChannelProperties(v any) any {
 	return out
 }
 
-func knownChannelType(t string) bool {
-	for _, k := range channelTypes {
-		if k == t {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) listChannels(c *gin.Context) {
 	owner := currentUserID(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
@@ -177,7 +180,7 @@ func (s *Server) listChannels(c *gin.Context) {
 }
 
 func (s *Server) listChannelTypes(c *gin.Context) {
-	c.JSON(http.StatusOK, channelTypes)
+	c.JSON(http.StatusOK, supportedChannelTypes)
 }
 
 func (s *Server) getChannel(c *gin.Context) {
@@ -245,10 +248,27 @@ func (s *Server) createChannel(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "Unknown channel type: "+typ)
 		return
 	}
+	incomingProps := propsAsMap(req.Properties)
+	if missing, err := validateChannelProperties(typ, incomingProps, nil, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
+		return
+	}
 	owner := currentUserID(c)
 	disabled := false
 	if req.Disabled != nil {
 		disabled = *req.Disabled
+	}
+	dmScope := req.DmScope
+	if dmScope == nil || strings.TrimSpace(*dmScope) == "" {
+		def := "PER_PEER"
+		dmScope = &def
+	} else {
+		s := strings.ToUpper(strings.TrimSpace(*dmScope))
+		if s != "MAIN" && s != "PER_PEER" {
+			writeTextErr(c, http.StatusBadRequest, "dmScope must be MAIN or PER_PEER")
+			return
+		}
+		dmScope = &s
 	}
 	now := nowMillis()
 	props := mergeChannelProperties(nil, req.Properties)
@@ -260,7 +280,7 @@ func (s *Server) createChannel(c *gin.Context) {
 		`INSERT INTO channels (channel_id, owner_id, type, dm_scope, default_agent_id, disabled,
 		 properties_json, bindings_json, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
-		channelID, owner, typ, nullStrPtrVal(req.DmScope), nullStrPtrVal(req.DefaultAgentID),
+		channelID, owner, typ, nullStrPtrVal(dmScope), nullStrPtrVal(req.DefaultAgentID),
 		disabled, nullStr(props), bindings, now)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
@@ -306,9 +326,31 @@ func (s *Server) updateChannel(c *gin.Context) {
 			return
 		}
 	}
+	existingProps := propsAsMap(parseJSONRaw(deref(ch.PropertiesJSON)))
+	incomingProps := propsAsMap(req.Properties)
+	mergedForCheck := map[string]any{}
+	for k, v := range existingProps {
+		mergedForCheck[k] = v
+	}
+	for k, v := range incomingProps {
+		mergedForCheck[k] = v
+	}
+	if missing, err := validateChannelProperties(typ, mergedForCheck, existingProps, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
+		return
+	}
 	dmScope := ch.DmScope
 	if req.DmScope != nil {
-		dmScope = req.DmScope
+		sVal := strings.ToUpper(strings.TrimSpace(*req.DmScope))
+		if sVal != "" && sVal != "MAIN" && sVal != "PER_PEER" {
+			writeTextErr(c, http.StatusBadRequest, "dmScope must be MAIN or PER_PEER")
+			return
+		}
+		if sVal == "" {
+			dmScope = nil
+		} else {
+			dmScope = &sVal
+		}
 	}
 	defaultAgent := ch.DefaultAgentID
 	if req.DefaultAgentID != nil {

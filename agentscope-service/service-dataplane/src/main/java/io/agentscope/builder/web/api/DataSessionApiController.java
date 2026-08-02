@@ -18,6 +18,7 @@ package io.agentscope.builder.web.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.api.error.ApiException;
+import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.DataSessionService;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionEventDto;
@@ -39,6 +40,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -112,11 +114,15 @@ public class DataSessionApiController {
                 });
     }
 
-    /** Lists persisted session events, optionally after a sequence cursor. */
+    /**
+     * Lists persisted session events, optionally after a sequence cursor and/or filtered by {@code
+     * types} (repeatable query param, Claude Managed Agents {@code types[]} equivalent).
+     */
     @GetMapping("/{id}/events")
     public Mono<List<SessionEventDto>> listEvents(
             @PathVariable("id") String id,
             @RequestParam(value = "after", required = false) Long after,
+            @RequestParam(value = "types", required = false) List<String> types,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
@@ -124,10 +130,36 @@ public class DataSessionApiController {
                     ManagedSessionDto session = sessionService.get(userId, id);
                     guard.require(userId, session.agentId(), Tier.RUN);
                     if (after == null) {
-                        return eventLog.list(id);
+                        return eventLog.list(id, types);
                     }
-                    return eventLog.listAfter(id, after);
+                    return eventLog.listAfter(id, after, types);
                 });
+    }
+
+    /**
+     * Deletes all persisted events for a session. Used by the control plane after product session
+     * DELETE (best-effort cascade). Internal-token callers may delete without a live session row;
+     * user JWT callers must still own a resolvable session.
+     */
+    @DeleteMapping("/{id}/events")
+    public Mono<Void> deleteEvents(@PathVariable("id") String id, Authentication auth) {
+        String userId = (String) auth.getPrincipal();
+        boolean internal =
+                auth.getAuthorities().stream()
+                        .anyMatch(
+                                a ->
+                                        InternalTokenAuthFilter.ROLE_INTERNAL.equals(
+                                                a.getAuthority()));
+        return Mono.fromRunnable(
+                        () -> {
+                            if (!internal) {
+                                ManagedSessionDto session = sessionService.get(userId, id);
+                                guard.require(userId, session.agentId(), Tier.RUN);
+                            }
+                            eventLog.deleteBySessionId(id);
+                        })
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .then();
     }
 
     /** Returns hands (sandbox lease) acquire/release/timeout counters for this session. */
@@ -142,6 +174,13 @@ public class DataSessionApiController {
                     return handsMetrics.snapshot(id);
                 });
     }
+
+    /** Opt-in preview targets for {@code event_deltas=} (Claude: message + thinking; we also allow tool_use). */
+    private static final Set<String> ALLOWED_EVENT_DELTAS =
+            Set.of(
+                    SessionEventTypes.AGENT_MESSAGE,
+                    SessionEventTypes.AGENT_THINKING,
+                    SessionEventTypes.AGENT_TOOL_USE);
 
     /** Streams session events over SSE, optionally merging stream-only preview deltas. */
     @GetMapping(value = "/{id}/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -158,6 +197,19 @@ public class DataSessionApiController {
         Flux<SessionEventDto> persisted = eventLog.subscribe(id, afterSeq);
         if (eventDeltas == null || eventDeltas.isEmpty()) {
             return persisted.map(this::toSse);
+        }
+        if (eventDeltas.size() > 100) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "event_deltas accepts at most 100 values");
+        }
+        for (String t : eventDeltas) {
+            if (!ALLOWED_EVENT_DELTAS.contains(t)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "unsupported event_deltas value: "
+                                + t
+                                + " (allowed: agent.message, agent.thinking, agent.tool_use)");
+            }
         }
 
         Set<String> deltaTypes = new HashSet<>(eventDeltas);

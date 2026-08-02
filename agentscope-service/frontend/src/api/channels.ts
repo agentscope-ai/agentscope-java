@@ -7,6 +7,26 @@ export interface ChannelInfo {
   defaultAgentId: string | null;
   disabled?: boolean;
   started: boolean;
+  lastError?: string | null;
+}
+
+export interface ChannelFieldSpec {
+  key: string;
+  label: string;
+  required: boolean;
+  secret: boolean;
+  inputType: 'text' | 'password' | 'number' | string;
+  advanced?: boolean;
+  hint?: string;
+}
+
+export interface ChannelTypeSpec {
+  type: string;
+  label: string;
+  transport: 'stream' | 'callback' | 'webhook' | string;
+  callbackUrlTemplate?: string;
+  hint?: string;
+  fields: ChannelFieldSpec[];
 }
 
 export type BindingTier =
@@ -29,7 +49,7 @@ export interface AgentBinding {
   team?: string;
   account?: string;
   channel?: string;
-  sessionScope?: 'MAIN' | 'PER_PEER' | 'PER_CHANNEL_PEER' | 'PER_ACCOUNT_CHANNEL_PEER';
+  sessionScope?: 'MAIN' | 'PER_PEER';
 }
 
 export interface BindingCreateRequest {
@@ -64,6 +84,7 @@ export interface ChannelDetail {
   defaultAgentId: string | null;
   disabled: boolean;
   started: boolean;
+  lastError?: string | null;
   properties?: Record<string, unknown>;
   bindings: BindingConfigEntry[];
 }
@@ -76,6 +97,26 @@ export interface ChannelUpsertRequest {
   disabled?: boolean | null;
   properties?: Record<string, unknown> | null;
   bindings?: BindingConfigEntry[] | null;
+}
+
+/** Presence API — anthropomorphic IM identity on an agent. */
+export interface AgentPresence {
+  channelId: string;
+  platform: string;
+  isolation: 'per_person' | 'shared';
+  enabled: boolean;
+  started: boolean;
+  lastError?: string | null;
+  credentials: Record<string, unknown>;
+  callbackUrl?: string | null;
+}
+
+export interface PresenceUpsertRequest {
+  channelId?: string;
+  platform: string;
+  isolation?: 'per_person' | 'shared';
+  enabled?: boolean;
+  credentials: Record<string, unknown>;
 }
 
 function authHeaders(): Record<string, string> {
@@ -98,10 +139,20 @@ export async function listChannels(): Promise<ChannelInfo[]> {
   return res.json();
 }
 
-export async function listChannelTypes(): Promise<string[]> {
+export async function listChannelTypes(): Promise<ChannelTypeSpec[]> {
   const res = await fetch('/api/channels/types', { headers: authHeaders() });
   if (!res.ok) return failOn(res, 'Failed to load channel types');
-  return res.json();
+  const data = await res.json();
+  // Back-compat: older servers returned string[]
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'string') {
+    return (data as string[]).map((t) => ({
+      type: t,
+      label: t,
+      transport: 'stream',
+      fields: [],
+    }));
+  }
+  return data;
 }
 
 export async function getChannelDetail(channelId: string): Promise<ChannelDetail> {
@@ -215,4 +266,58 @@ export async function setChannelDefault(agentId: string, channelId: string): Pro
     { method: 'POST', headers: authHeaders() },
   );
   if (!res.ok) throw new Error('Failed to set channel default');
+}
+
+export async function listAgentPresences(agentId: string): Promise<AgentPresence[]> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/presences`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) return failOn(res, 'Failed to load presences');
+  return res.json();
+}
+
+export async function createAgentPresence(
+  agentId: string,
+  req: PresenceUpsertRequest,
+): Promise<AgentPresence> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/presences`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) return failOn(res, 'Failed to create presence');
+  return res.json();
+}
+
+export async function updateAgentPresence(
+  agentId: string,
+  channelId: string,
+  req: PresenceUpsertRequest,
+): Promise<AgentPresence> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/presences/${encodeURIComponent(channelId)}`,
+    { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify(req) },
+  );
+  if (!res.ok) return failOn(res, 'Failed to update presence');
+  return res.json();
+}
+
+export async function deleteAgentPresence(agentId: string, channelId: string): Promise<void> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/presences/${encodeURIComponent(channelId)}`,
+    { method: 'DELETE', headers: authHeaders() },
+  );
+  if (!res.ok && res.status !== 204) return failOn(res, 'Failed to delete presence');
+}
+
+export function resolveCallbackUrl(
+  spec: ChannelTypeSpec | undefined,
+  channelId: string,
+): string | null {
+  if (!spec?.callbackUrlTemplate) return null;
+  const path = spec.callbackUrlTemplate.replace('{channelId}', channelId);
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  return path;
 }

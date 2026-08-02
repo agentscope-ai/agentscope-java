@@ -171,6 +171,19 @@ type SessionSnapshot struct {
 	TaskSummary           json.RawMessage `json:"taskSummary,omitempty"`
 }
 
+// SessionTranscriptIndex is a narrow one-row-per-session aggregate for Operate
+// list/sort without scanning session_snapshots history or replaying events.
+// Write-time maintenance uses DP Level-1 snapshot fields (messageCount /
+// tokenUsage), not event recomputation.
+type SessionTranscriptIndex struct {
+	SessionFK        uuid.UUID `json:"sessionFk"`
+	EntryCount       int32     `json:"entryCount"`
+	PromptTokens     int64     `json:"promptTokens"`
+	CompletionTokens int64     `json:"completionTokens"`
+	ObjectPrefix     string    `json:"objectPrefix,omitempty"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
 // SessionEvent is a Level-2 event-stream entry.
 type SessionEvent struct {
 	ID            int64           `json:"id"`
@@ -280,4 +293,148 @@ type TeamTaskHistory struct {
 	ToState        string    `json:"toState"`
 	Owner          string    `json:"owner,omitempty"`
 	TransitionedAt time.Time `json:"transitionedAt"`
+}
+
+// NamespacePathSeparator joins BaseStore namespace segments for Postgres TEXT
+// storage. NUL (\x00) cannot be stored in Postgres TEXT; unit separator is
+// valid and unused in normal path components.
+const NamespacePathSeparator = "\x1f"
+
+// JoinNamespacePath joins namespace segments with NamespacePathSeparator.
+func JoinNamespacePath(segments []string) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	out := segments[0]
+	for i := 1; i < len(segments); i++ {
+		out += NamespacePathSeparator + segments[i]
+	}
+	return out
+}
+
+// SplitNamespacePath splits a ns_path produced by JoinNamespacePath.
+func SplitNamespacePath(nsPath string) []string {
+	if nsPath == "" {
+		return nil
+	}
+	parts := make([]string, 0)
+	start := 0
+	for i := 0; i < len(nsPath); i++ {
+		if nsPath[i] == NamespacePathSeparator[0] {
+			parts = append(parts, nsPath[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, nsPath[start:])
+	return parts
+}
+
+// KVItem is one hosted BaseStore entry.
+type KVItem struct {
+	Key     string          `json:"key"`
+	Value   json.RawMessage `json:"value"`
+	Version int64           `json:"version"`
+	NsPath  string          `json:"nsPath,omitempty"`
+}
+
+// Lock is a hosted TTL lease for SandboxExecutionGuard.
+type Lock struct {
+	Name         string    `json:"name"`
+	OwnerToken   string    `json:"ownerToken"`
+	FencingToken int64     `json:"fencingToken"`
+	Holder       string    `json:"holder,omitempty"`
+	ExpiresAt    time.Time `json:"expiresAt"`
+}
+
+// Snapshot storage modes.
+const (
+	SnapshotModeInline   = "inline"
+	SnapshotModeExternal = "external"
+)
+
+// SnapshotMeta describes a hosted sandbox snapshot (without payload bytes).
+type SnapshotMeta struct {
+	SnapshotID  string    `json:"snapshotId"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	StorageMode string    `json:"storageMode"`
+	ExternalURL string    `json:"externalUrl,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	AccessedAt  time.Time `json:"accessedAt"`
+}
+
+// BusEntry is one queue or log entry in the hosted MessageBus.
+type BusEntry struct {
+	EntryID string          `json:"entryId"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+// Async tool statuses (mirror Java AsyncToolRecord).
+const (
+	AsyncToolRunning   = "RUNNING"
+	AsyncToolCompleted = "COMPLETED"
+	AsyncToolFailed    = "FAILED"
+	AsyncToolTimeout   = "TIMEOUT"
+)
+
+// Hosted subagent task statuses (mirror Java TaskStatus).
+const (
+	DPTaskStatusPending   = "PENDING"
+	DPTaskStatusRunning   = "RUNNING"
+	DPTaskStatusCompleted = "COMPLETED"
+	DPTaskStatusFailed    = "FAILED"
+	DPTaskStatusCancelled = "CANCELLED"
+)
+
+// IsTerminalTaskStatus reports whether status is a final task state.
+func IsTerminalTaskStatus(status string) bool {
+	switch status {
+	case DPTaskStatusCompleted, DPTaskStatusFailed, DPTaskStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// DPTask is a hosted subagent background task record.
+type DPTask struct {
+	Tenant           string          `json:"tenant,omitempty"`
+	ParentAgentID    string          `json:"parentAgentId"`
+	ParentSessionID  string          `json:"parentSessionId"`
+	TaskID           string          `json:"taskId"`
+	SubAgentID       string          `json:"subAgentId,omitempty"`
+	SubSessionID     string          `json:"subSessionId,omitempty"`
+	Status           string          `json:"status"`
+	Terminal         bool            `json:"terminal"`
+	Result           string          `json:"result,omitempty"`
+	ErrorMessage     string          `json:"errorMessage,omitempty"`
+	CancelRequested  bool            `json:"cancelRequested"`
+	TransportType    string          `json:"transportType,omitempty"`
+	RemoteBaseURL    string          `json:"remoteBaseUrl,omitempty"`
+	RemoteHeaders    json.RawMessage `json:"remoteHeaders,omitempty"`
+	UserID           string          `json:"userId,omitempty"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	LastCheckedAt    *time.Time      `json:"lastCheckedAt,omitempty"`
+	LastUpdatedAt    time.Time       `json:"lastUpdatedAt"`
+	DeliveredAt      *time.Time      `json:"deliveredAt,omitempty"`
+	Version          int64           `json:"version"`
+}
+
+// DPTaskRef identifies a task for heartbeat batch updates.
+type DPTaskRef struct {
+	ParentSessionID string `json:"parentSessionId"`
+	TaskID          string `json:"taskId"`
+}
+
+// AsyncToolRecord tracks an async tool execution.
+type AsyncToolRecord struct {
+	ID         string    `json:"id"`
+	Tenant     string    `json:"tenant,omitempty"`
+	SessionID  string    `json:"sessionId"`
+	ToolName   string    `json:"toolName,omitempty"`
+	ToolCallID string    `json:"toolCallId,omitempty"`
+	Status     string    `json:"status"`
+	Result     string    `json:"result,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }

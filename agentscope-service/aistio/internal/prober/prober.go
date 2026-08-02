@@ -9,6 +9,34 @@ import (
 // session-scoped query (unknown session on the live instance).
 var ErrNotFoundOnDataPlane = errors.New("prober: not found on data plane")
 
+// MaxSessionsProbePage is the defensive upper bound for GET /agentscope/sessions.
+// When a probe returns this many (or more) sessions, ArchiveMissing must be
+// skipped — the list may be silently truncated and omitted sessions are not
+// actually gone from the data plane.
+const MaxSessionsProbePage = 500
+
+// SessionsProbeLikelyTruncated reports whether a sessions probe page size
+// suggests silent truncation.
+func SessionsProbeLikelyTruncated(n int) bool {
+	return n >= MaxSessionsProbePage
+}
+
+// SessionsProbeResult is an extended sessions probe response with truncation hints.
+type SessionsProbeResult struct {
+	Sessions  []SessionSnapshot
+	Truncated bool
+	HasMore   bool
+}
+
+// LikelyTruncated is true when the DP signaled truncation/hasMore or the
+// page size hit MaxSessionsProbePage.
+func (r SessionsProbeResult) LikelyTruncated() bool {
+	if r.Truncated || r.HasMore {
+		return true
+	}
+	return SessionsProbeLikelyTruncated(len(r.Sessions))
+}
+
 // DataPlaneProber encapsulates calls to the data plane contract HTTP API.
 // Used by DiscoveryController for initial probing and periodic health checks.
 type DataPlaneProber interface {

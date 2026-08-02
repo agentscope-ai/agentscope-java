@@ -72,12 +72,30 @@ func (r *SessionPollerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	probeStart := time.Now()
-	snapshots, err := r.Prober.ProbeSessions(ctx, endpoint)
-	metrics.RecordProbeLatency(agent.Namespace, agent.Name, "sessions", time.Since(probeStart))
-	if err != nil {
-		logger.Info("failed to poll sessions", "agent", agent.Name, "error", err)
-		metrics.RecordDataPlaneStatus(agent.Namespace, agent.Name, false, contractLevel)
-		return ctrl.Result{RequeueAfter: sessionPollInterval}, nil
+	var snapshots []prober.SessionSnapshot
+	var probeTruncated bool
+	if dp, ok := r.Prober.(interface {
+		ProbeSessionsDetailed(ctx context.Context, endpoint string) (prober.SessionsProbeResult, error)
+	}); ok {
+		res, err := dp.ProbeSessionsDetailed(ctx, endpoint)
+		metrics.RecordProbeLatency(agent.Namespace, agent.Name, "sessions", time.Since(probeStart))
+		if err != nil {
+			logger.Info("failed to poll sessions", "agent", agent.Name, "error", err)
+			metrics.RecordDataPlaneStatus(agent.Namespace, agent.Name, false, contractLevel)
+			return ctrl.Result{RequeueAfter: sessionPollInterval}, nil
+		}
+		snapshots = res.Sessions
+		probeTruncated = res.LikelyTruncated()
+	} else {
+		var err error
+		snapshots, err = r.Prober.ProbeSessions(ctx, endpoint)
+		metrics.RecordProbeLatency(agent.Namespace, agent.Name, "sessions", time.Since(probeStart))
+		if err != nil {
+			logger.Info("failed to poll sessions", "agent", agent.Name, "error", err)
+			metrics.RecordDataPlaneStatus(agent.Namespace, agent.Name, false, contractLevel)
+			return ctrl.Result{RequeueAfter: sessionPollInterval}, nil
+		}
+		probeTruncated = prober.SessionsProbeLikelyTruncated(len(snapshots))
 	}
 	metrics.RecordDataPlaneStatus(agent.Namespace, agent.Name, true, contractLevel)
 
@@ -90,7 +108,10 @@ func (r *SessionPollerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if r.Store != nil {
-		if _, err := r.Store.Sessions().ArchiveMissing(ctx, agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
+		if probeTruncated {
+			logger.Info("skipping ArchiveMissing: sessions probe appears truncated",
+				"agent", agent.Name, "count", len(snapshots), "maxPage", prober.MaxSessionsProbePage)
+		} else if _, err := r.Store.Sessions().ArchiveMissing(ctx, agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
 			logger.Error(err, "failed to archive sessions missing from data plane")
 		}
 	}

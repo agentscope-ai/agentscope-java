@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { isAdmin } from '../api/auth';
 import {
   ChannelInfo,
+  ChannelTypeSpec,
   ChannelUpsertRequest,
   createChannel,
   deleteChannel,
@@ -11,6 +12,10 @@ import {
   listChannelTypes,
   listChannels,
 } from '../api/channels';
+import PlatformCredentialsForm, {
+  credentialsFromProperties,
+  propertiesFromCredentials,
+} from '../components/PlatformCredentialsForm';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -51,7 +56,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
-const DM_SCOPES = ['MAIN', 'PER_PEER', 'PER_CHANNEL_PEER', 'PER_ACCOUNT_CHANNEL_PEER'];
+const DM_SCOPES = ['PER_PEER', 'MAIN'];
 
 function typeBadge(type: string): { bg: string; fg: string; bd: string } {
   switch (type) {
@@ -66,7 +71,7 @@ export default function ChannelsHubPage() {
   const admin = isAdmin();
   const navigate = useNavigate();
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
+  const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -124,9 +129,8 @@ export default function ChannelsHubPage() {
       </div>
 
       <p style={S.blurb}>
-        Channels are inbound surfaces (chatui, DingTalk, WeCom, …) registered in <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontSize: '0.92em' }}>agentscope.json</code>.
-        Each channel owns its bindings and routes incoming messages to agents. Changes apply immediately —
-        the channel is unregistered and re-registered in place.
+        Channels are IM identities (one bot account per channel). Prefer connecting from an Agent&apos;s
+        <strong> Connect IM </strong> page; this hub is the ops overview.
       </p>
 
       {loading && <div style={{ color: '#64748b', fontSize: '0.95rem' }}>Loading…</div>}
@@ -217,41 +221,40 @@ export default function ChannelsHubPage() {
 }
 
 interface CreateProps {
-  types: string[];
+  types: ChannelTypeSpec[];
   onClose: () => void;
   onCreated: (channelId: string) => void;
 }
 
 function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
   const [channelId, setChannelId] = useState('');
-  const [type, setType] = useState(types[0] ?? '');
-  const [dmScope, setDmScope] = useState<string>('');
+  const [type, setType] = useState(types[0]?.type ?? '');
+  const [dmScope, setDmScope] = useState('PER_PEER');
   const [defaultAgentId, setDefaultAgentId] = useState('');
-  const [propsJson, setPropsJson] = useState('{\n}');
+  const [creds, setCreds] = useState<Record<string, string>>(
+    () => credentialsFromProperties(types[0], undefined),
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const typeSpec = types.find((t) => t.type === type);
+
+  function onTypeChange(next: string) {
+    setType(next);
+    setCreds(credentialsFromProperties(types.find((t) => t.type === next), undefined));
+  }
 
   async function handleSave() {
     setErr(null);
     if (!channelId.trim()) { setErr('channelId is required'); return; }
-    if (!type) { setErr('type is required'); return; }
-    let parsed: Record<string, unknown> | null = null;
-    if (propsJson.trim().length > 0) {
-      try {
-        const v = JSON.parse(propsJson);
-        if (v && typeof v === 'object' && !Array.isArray(v)) parsed = v as Record<string, unknown>;
-        else throw new Error('properties must be a JSON object');
-      } catch (e: unknown) {
-        setErr(`properties JSON invalid: ${e instanceof Error ? e.message : String(e)}`);
-        return;
-      }
-    }
+    if (!type) { setErr('platform is required'); return; }
     const req: ChannelUpsertRequest = {
       channelId: channelId.trim(),
       type,
-      dmScope: dmScope || null,
+      dmScope: dmScope || 'PER_PEER',
       defaultAgentId: defaultAgentId.trim() || null,
-      properties: parsed,
+      properties: propertiesFromCredentials(typeSpec, creds, false),
     };
     setBusy(true);
     try {
@@ -271,7 +274,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
   };
   const modal: React.CSSProperties = {
     background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16,
-    padding: '28px 30px', width: 600, maxWidth: '92vw',
+    padding: '28px 30px', width: 680, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto',
     boxShadow: '0 24px 60px rgba(15,23,42,0.18), 0 4px 12px rgba(15,23,42,0.06)',
   };
 
@@ -279,7 +282,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
     <div style={scrim} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-          New channel
+          New IM identity
         </h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -289,25 +292,28 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
               style={S.input}
               value={channelId}
               onChange={e => setChannelId(e.target.value)}
-              placeholder="e.g. dingtalk-prod"
+              placeholder="e.g. dingtalk-sales"
             />
           </div>
           <div>
-            <label style={S.formField}>Type</label>
-            <select style={S.input} value={type} onChange={e => setType(e.target.value)}>
-              {types.length === 0 && <option value="">— no types registered —</option>}
-              {types.map(t => <option key={t} value={t}>{t}</option>)}
+            <label style={S.formField}>Platform</label>
+            <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
+              {types.length === 0 && <option value="">— no platforms —</option>}
+              {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
             </select>
           </div>
           <div>
-            <label style={S.formField}>DM scope (optional)</label>
+            <label style={S.formField}>Conversation isolation</label>
             <select style={S.input} value={dmScope} onChange={e => setDmScope(e.target.value)}>
-              <option value="">— default —</option>
-              {DM_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+              {DM_SCOPES.map(s => (
+                <option key={s} value={s}>
+                  {s === 'PER_PEER' ? 'Per person' : 'Shared inbox'}
+                </option>
+              ))}
             </select>
           </div>
           <div>
-            <label style={S.formField}>Default agent id (optional)</label>
+            <label style={S.formField}>Default agent id</label>
             <input
               style={S.input}
               value={defaultAgentId}
@@ -317,12 +323,14 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <label style={S.formField}>Properties (JSON object, type-specific)</label>
-          <textarea
-            style={{ ...S.input, fontFamily: 'monospace', minHeight: 140, resize: 'vertical' }}
-            value={propsJson}
-            onChange={e => setPropsJson(e.target.value)}
+        <div style={{ marginTop: 16 }}>
+          <label style={S.formField}>Credentials</label>
+          <PlatformCredentialsForm
+            spec={typeSpec}
+            values={creds}
+            onChange={setCreds}
+            showAdvanced={showAdvanced}
+            onToggleAdvanced={() => setShowAdvanced((v) => !v)}
           />
         </div>
 

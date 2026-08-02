@@ -11,6 +11,8 @@
 - [CR-001 Instance 模式 Session 持久化：Sidecar + 对象存储（方案 B）](#cr-001)
 - [CR-002 控制面存储架构：声明式核心（etcd）+ 运行时状态服务（DB）](#cr-002)
 - [CR-003 AgentScope 数据面深度托管：控制面即 DistributedStore 后端](#cr-003)
+- [CR-004 收窄托管范围：AgentStateStore 留在用户侧](#cr-004)
+- [CR-005 第二批协调元数据 + core 乐观并发](#cr-005)
 
 ---
 
@@ -206,7 +208,134 @@ etcd（CRD）  ←  期望状态：基数 = #agent / #config（有界），低�
 
 ### 后续待办（Open Items）
 
-- `ControlPlaneBaseStore` 的 namespace/CAS 语义与 DB schema。
-- Lock Service 的租约续期、fail-safe 降级策略。
-- SDK 断连本地 WAL 与回填的一致性设计。
+- `ControlPlaneBaseStore` 的 namespace/CAS 语义与 DB schema。→ 由 CR-004 落地
+- Lock Service 的租约续期、fail-safe 降级策略。→ 由 CR-004 落地
+- SDK 断连本地 WAL 与回填的一致性设计。→ CR-004 取消（`AgentStateStore` 不再托管，无需 WAL）
 - 取代 Nacos 的迁移路径与并存期方案。
+
+---
+
+<a id="cr-004"></a>
+
+## CR-004 收窄托管范围：AgentStateStore 留在用户侧
+
+**状态：** 已采纳（Accepted）
+**影响章节：** 修订 CR-003 与 `design.md` 6.6 的托管范围
+**详细设计：** [`../controlplane/hosted-store.md`](../controlplane/hosted-store.md)
+
+### 背景 / 问题
+
+CR-003 把 `DistributedStore` **全部六个组件**都纳入控制面托管，其中 `AgentStateStore` 是会话主数据的
+强一致读写热路径（`call()` 结束整体写、下一轮必须精确读回）。评审后发现三个问题：
+
+1. **没有可接受的降级方案**：CR-003 提出"控制面不可用时 SDK 本地落盘 + 重连回填"，但状态写一旦本地落盘，
+   多副本下会产生状态分叉，回填无法定序——这条链路与配置通道"用最后一份继续跑"的容错模型根本不同。
+2. **控制面成为会话能力的硬依赖**：控制面宕机等价于 agent 无法继续对话，可用性要求被抬到数据库级别。
+3. **与观测表模型不匹配**：`session_snapshots` / `context_snapshots` 是降采样、可丢、最终一致的旁路快照，
+   为 Dashboard 聚合优化；直接"合流"承载状态主数据会在读写模式上打架。
+
+### 决策
+
+**`AgentStateStore` 从托管范围中移除，由用户自备后端**（Redis / MySQL / PostgreSQL / OSS / COS）。
+控制面只托管其余五项协调能力：`BaseStore`、`SandboxExecutionGuard`、`SandboxSnapshotSpec`、
+`MessageBus`、`AsyncToolRegistry`——这五项都有可接受的降级路径。
+
+代价与收益：agent 的基础会话能力与控制面**完全解耦**（不装控制面或控制面宕机，会话照常），
+换来的是用户侧仍需一个状态后端。**最终形态是「控制面 + 一个状态后端」两个依赖，不是一个**，对外表述须写清。
+
+### 与 CR-003 的差异
+
+| 项 | CR-003 | CR-004 |
+|---|---|---|
+| `AgentStateStore` | 合流 `SessionStore` | **不托管**，用户自备 |
+| SDK 接入 | `ControlPlaneDistributedStore.fromEnv()` | `ControlPlaneStores.fromEnv().withAgentStateStore(...)`，状态后端**必填参数** |
+| `MessageBus` | 复用 Team Message Router | **新建 `dp_bus_entries`**（team outbox 是 team 域 + `delivered`/`attempts`，语义不符） |
+| `AsyncToolRegistry` | 复用 Team Task Store | **新建 `dp_async_tools`**（team task 带 `subject`/`blockedBy`/`claim`，语义不符） |
+| Lock 后端 | Redis | **PostgreSQL 租约表**（不引入 Redis 依赖；带 fencing token 与客户端续租） |
+| SDK 断连 | 本地落盘 + 回填 | 分能力降级，见 hosted-store.md §5；不做 WAL |
+| 鉴权 | 未展开 | 沿用共享 internal token，**tenant 由请求体归一化**；per-agent 凭证评估后降级（防不住 register 环节、不缩小泄露面、成本 1 人周），`tenant` 列先就位保证可逆 |
+
+### 关键设计点
+
+- **不改数据面一行代码**：`HarnessAgent.Builder#build()` 的自动接线是逐组件判空的，组件可自由混搭，
+  无"必须同源"校验；本方案纯新增 extension 实现。
+- **类型系统强制**：`DistributedStore.Builder#build()` 本就 `requireNonNull(agentStateStore)`，
+  因此把状态后端做成 `withAgentStateStore(...)` 的必填参数，排除动作显式化。
+- **既有校验形成护栏**：harness 已拒绝"`RemoteFilesystemSpec` + 本地 `AgentStateStore`"组合并抛异常，
+  用户不会踩到"以为共享了工作区其实没共享"的静默错误。
+- **锁语义不复用 `WithSessionLock`**：后者是控制面进程内、请求生命周期内的 `pg_advisory_lock`；
+  跨网络锁需要 TTL 租约表 + 客户端续租，两者形状不同。客户端续租让 TTL 从 Redis 实现的 30 分钟降到 60 秒。
+- **降级不一刀切**：`BaseStore` 失败必须抛异常（静默返回空会让 agent 误判记忆为空），
+  锁失败降级为进程内锁 + WARN，快照失败退化为冷启动。
+
+### 分期落地
+
+P0 基座 → P1 KV（`BaseStore`）→ P2 Lock Service → P3 Snapshot → P4 Bus + AsyncToolRegistry，
+约 7 人周。P1 完成即可对外宣布"共享工作区不再需要 Redis"。详见 hosted-store.md §6。
+
+### 后续待办（Open Items）
+
+- `BaseStore#search` 的递归语义在 `InMemoryStore`（`\0` 前缀匹配，会命中子 namespace）与 `RedisStore`
+  （`ZRANGEBYLEX`）之间未经验证，P1 首项工作用契约测试钉死。
+- 租户隔离当前只防误操作不防恶意（tenant 取自请求体）；真身份方案首选 K8s 投射 SA token + TokenReview，
+  未排期，`tenant` 列已就位使切换只需换中间件。
+- 对象存储直传（presigned URL）未排期。
+- `data_planes` 表在 migration 0002 已建但代码未使用（注册表纯进程内），本方案不依赖它；是否补持久化注册表属独立议题。
+
+---
+
+<a id="cr-005"></a>
+
+## CR-005 第二批协调元数据 + core 乐观并发
+
+**状态：** 已采纳（Accepted）
+**影响章节：** 扩展 CR-004 托管范围；core `AgentStateStore` 接口
+**详细设计：** [`../controlplane/hosted-store.md`](../controlplane/hosted-store.md) §0.1
+
+### 背景 / 问题
+
+CR-004 落地了 `DistributedStore` 的前五项协调能力，但多副本 harness 仍有若干协调点落在进程内或 workspace 文件上：
+
+- 子 agent **后台任务**（`TaskRepository`）默认走 `WorkspaceTaskRepository`，依赖共享工作区路径；纯沙箱文件系统模式下无法跨副本持久化任务状态，也无 leader-only orphan sweep。
+- **Gateway** 的 session→gateKey、session→route 映射、`PeriodicGate` 维护 claim、Skill 用量记录均为 JVM 本地或 workspace 文件，副本间不一致。
+- 并发 turn 的**状态正确性**此前无统一 CAS 语义；早期曾讨论用 turn lease 的 fencing token 防迟到写入，但与 harness 实际写路径不匹配。
+
+### 决策
+
+**范围扩展（控制面托管）：**
+
+| 组件 | 归属 | 存储 |
+|---|---|---|
+| `TaskRepository` | `ControlPlaneTaskRepository` | 新建 `dp_tasks`；`TaskSweepWorker` leader-only orphan sweep |
+| `SessionTurnGate` | `ControlPlaneSessionTurnGate` | 复用 `dp_locks`（per-session turn 租约） |
+| Gateway session/route 映射 | `HarnessGateway#setBaseStore` | `BaseStore` CAS |
+| `PeriodicGate` | `StoreBackedPeriodicGate` | `BaseStore` CAS |
+| Skill 用量 | `BaseStoreSkillUsageBackend` | `BaseStore` CAS |
+
+`ControlPlaneStores.withAgentStateStore(...)` 自动注入 `taskRepository()` 与 `sessionTurnGate()`。
+
+**重要设计变更（相对 fencing 方案）：** 并发 turn 的**正确性**来自 core **`AgentStateStore` CAS**（`getVersioned` / `saveIfVersion`，冲突策略 `ConflictPolicy`：`OVERWRITE` / `FAIL` / `APPEND_MERGE`），**不是** turn lease 上的 fencing token。Turn gate 仅防止多副本同时发起 LLM turn（减少浪费）；丢锁后迟到写入由 CAS 拒绝或按策略合并。
+
+**AgentStateStore 仍不托管：** versioning API 已在 InMemory / Redis / Postgres / MySQL 实现；JsonFile / OSS / COS / JPA 保持 last-writer-wins（`UNVERSIONED`）。`SessionSandboxStateStore` 刻意继续使用 `AgentStateStore`（沙箱会话状态键），不迁入控制面。
+
+Turn gate 与 `ConflictPolicy.FAIL` 为**可选**：多副本推荐启用以减少重复 turn；单副本或 LWW 后端可省略。
+
+### 与 CR-004 的差异
+
+| 项 | CR-004 | CR-005 |
+|---|---|---|
+| `TaskRepository` | 未托管；workspace 默认 | **`dp_tasks` + orphan sweep** |
+| `SessionTurnGate` | 进程内 `LocalSessionTurnGate` | **可选 `ControlPlaneSessionTurnGate`（`dp_locks`）** |
+| Gateway / PeriodicGate / SkillUsage | 本地或 workspace | **BaseStore CAS** |
+| 状态并发 | LWW | **core CAS API**；存储仍在用户侧 |
+| Fencing token | 锁表保留，供后续场景 | **不用于 turn 正确性** |
+
+### 分期落地
+
+随 CR-004 P0–P4 之后交付：`0006_hosted_tasks` migration、dp tasks HTTP API、`TaskSweepWorker`、Java 扩展类、core versioning 与各 store 适配、gateway / harness 接线。
+
+### 后续待办（Open Items）
+
+- JsonFile / OSS / COS / JPA 后端是否补 versioning（当前 LWW）。
+- Turn gate + `FAIL` 策略在生产环境的推荐组合与观测指标。
+- 对象存储直传（presigned URL）未排期。

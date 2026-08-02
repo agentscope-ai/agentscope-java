@@ -15,7 +15,7 @@ import {
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
-import { canPlanMode, canQueryContext, canQueryMessages, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
+import { canPlanMode, canQueryContext, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
 import {
   abortSession,
   archiveSession,
@@ -23,8 +23,6 @@ import {
   fetchRuntimeSession,
   fetchSessionCommands,
   fetchSessionContext,
-  fetchSessionEvents,
-  fetchSessionMessages,
   fetchSessionSubagentTasks,
   fetchSessionTasks,
   fetchSessionTurns,
@@ -36,7 +34,9 @@ import {
 import { CompressButton } from './components/CompressButton';
 import { ContextPanel, contextSummary } from './components/ContextPanel';
 import { ConversationHistoryPanel } from './components/ConversationHistoryPanel';
+import { SessionEventsPanel } from './components/SessionEventsPanel';
 import { StatusStrip } from './components/StatusStrip';
+import { useSessionMessages } from './lib/useSessionMessages';
 
 export default function OperateSessionDetailPage() {
   const { sessionId = '' } = useParams();
@@ -56,14 +56,6 @@ export default function OperateSessionDetailPage() {
     refetchIntervalInBackground: false,
   });
 
-  const events = useQuery({
-    queryKey: ['runtime-events', sessionId],
-    queryFn: () => fetchSessionEvents(sessionId),
-    enabled: !!sessionId,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
-  });
-
   const s = session.data;
   // Capabilities come from the session response (enriched by control plane) —
   // do NOT join against dataplanes[0].
@@ -77,10 +69,12 @@ export default function OperateSessionDetailPage() {
     enabled: sessionReady && canQueryContext(capabilities),
   });
 
-  const messages = useQuery({
-    queryKey: ['runtime-messages', sessionId],
-    queryFn: () => fetchSessionMessages(sessionId),
-    enabled: sessionReady && canQueryMessages(capabilities),
+  // Messages: always try CP transcript first (no message-query pre-gate).
+  const messages = useSessionMessages(sessionId, {
+    agent,
+    namespace,
+    enabled: !!sessionId && sessionReady,
+    pollMs: 5_000,
   });
 
   const tasks = useQuery({
@@ -319,7 +313,8 @@ export default function OperateSessionDetailPage() {
           <div>
             <CardTitle>Context</CardTitle>
             <CardDescription>
-              Effective AgentState for the next model call (sys prompt, tools, window) — not session history.
+              Effective AgentState for the next model call (sys prompt, tools, window occupancy) —
+              not lifetime API spend and not the full session transcript.
             </CardDescription>
           </div>
           <Button
@@ -359,33 +354,7 @@ export default function OperateSessionDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Events</CardTitle>
-        </CardHeader>
-        <CardContent className="max-h-80 space-y-2.5 overflow-auto">
-          {(events.data?.events || []).length === 0 ? (
-            <div className="space-y-1 text-sm text-muted-foreground">
-              <p>No Level-2 events in the control-plane store for this session.</p>
-              <p>
-                Events are pushed asynchronously (ASDP / event reporting). Paw defaults to{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-[12px]">claw.aistio.enable-events: false</code>
-                , so Operate shows Messages/Context via on-demand query instead. Enable event reporting on the
-                data plane if you need a live event timeline here.
-              </p>
-            </div>
-          ) : (
-            (events.data?.events || []).map((e, i) => (
-              <div key={i} className="rounded-lg border border-border px-4 py-3 text-sm">
-                <div className="font-medium">
-                  #{String(e.seq)} {String(e.eventType)}
-                </div>
-                <div className="mt-1 text-muted-foreground">{String(e.content || e.toolName || '')}</div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+      <SessionEventsPanel sessionId={sessionId} enabled={!!sessionId} />
 
       <Dialog open={contextOpen} onOpenChange={setContextOpen}>
         <DialogContent size="xl">
@@ -475,15 +444,15 @@ export default function OperateSessionDetailPage() {
       <ConversationHistoryPanel
         turns={turnList}
         turnsLoading={turns.isLoading}
-        messagesData={messages.data}
-        messagesLoading={messages.isLoading || (messages.isFetching && messages.data == null)}
-        messagesUnavailableReason={
-          !sessionReady
-            ? undefined
-            : !canQueryMessages(capabilities)
-              ? 'message-query not advertised by data plane.'
-              : undefined
-        }
+        messagesData={messages.page}
+        messagesLoading={messages.loading}
+        messagesError={messages.error}
+        source={messages.source}
+        total={messages.total}
+        loadedCount={messages.messages.length}
+        hasEarlier={messages.hasEarlier}
+        loadingEarlier={messages.loadingEarlier}
+        onLoadEarlier={() => void messages.loadEarlier()}
         sessionPending={!sessionReady && (session.isLoading || session.isFetching)}
         selectedTurnIndex={selectedTurnIndex}
         deepLinkTurnIndex={

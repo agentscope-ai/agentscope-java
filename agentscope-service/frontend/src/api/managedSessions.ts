@@ -32,7 +32,8 @@ export interface SessionEvent {
 
 export interface CreateManagedSessionRequest {
   agent: string | { type?: string; id: string; version?: number };
-  environmentId: string;
+  /** Optional when the agent has defaultEnvironmentId. */
+  environmentId?: string;
   memoryStoreIds?: string[];
   vaultIds?: string[];
   resources?: Array<{ type: string; fileId?: string; filename?: string; content?: string }>;
@@ -40,8 +41,13 @@ export interface CreateManagedSessionRequest {
 }
 
 export interface UpdateManagedSessionRequest {
-  agentOverrides: Record<string, unknown>;
+  agentOverrides?: Record<string, unknown>;
+  environmentId?: string;
+  memoryStoreIds?: string[];
+  vaultIds?: string[];
 }
+
+export type ManagedSessionListStatus = 'active' | 'archived' | 'all';
 
 export interface InboundEvent {
   type: string;
@@ -59,8 +65,16 @@ export async function createManagedSession(req: CreateManagedSessionRequest): Pr
   return res.json();
 }
 
-export async function listManagedSessions(agentId?: string): Promise<ManagedSession[]> {
-  const qs = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+export async function listManagedSessions(
+  agentId?: string,
+  status: ManagedSessionListStatus = 'active',
+): Promise<ManagedSession[]> {
+  const params = new URLSearchParams();
+  if (agentId) params.set('agentId', agentId);
+  if (status && status !== 'active') params.set('status', status);
+  // Always send status=active explicitly for clarity when listing active; server defaults match.
+  if (status === 'active') params.set('status', 'active');
+  const qs = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`/api/sessions${qs}`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
   return res.json();
@@ -94,6 +108,15 @@ export async function archiveManagedSession(id: string): Promise<ManagedSession>
   return res.json();
 }
 
+export async function restoreManagedSession(id: string): Promise<ManagedSession> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/restore`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to restore session');
+  return res.json();
+}
+
 export async function deleteManagedSession(id: string): Promise<void> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -112,10 +135,18 @@ export async function postEvents(sessionId: string, events: InboundEvent[]): Pro
   return res.json();
 }
 
-export async function listEvents(sessionId: string, after?: number): Promise<SessionEvent[]> {
-  const qs = after != null ? `?after=${after}` : '';
+export async function listEvents(
+  sessionId: string,
+  options?: { after?: number; types?: string[] },
+): Promise<SessionEvent[]> {
+  const params = new URLSearchParams();
+  if (options?.after != null) params.set('after', String(options.after));
+  for (const t of options?.types ?? []) {
+    params.append('types', t);
+  }
+  const qs = params.toString();
   const res = await fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/events${qs}`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ''}`,
     { headers: authHeaders() },
   );
   if (!res.ok) throw await readApiError(res, 'Failed to list events');
@@ -133,7 +164,7 @@ export function streamEvents(
   sessionId: string,
   onEvent: (event: SessionEvent) => void,
   onError?: (err: Error) => void,
-  options?: { eventDeltas?: string[] },
+  options?: { eventDeltas?: string[]; after?: number },
 ): EventStreamHandle {
   const token = getToken();
   const controller = new AbortController();
@@ -142,6 +173,9 @@ export function streamEvents(
   (async () => {
     try {
       const params = new URLSearchParams();
+      if (options?.after != null && options.after > 0) {
+        params.set('after', String(options.after));
+      }
       for (const t of options?.eventDeltas ?? []) {
         params.append('event_deltas', t);
       }

@@ -36,7 +36,7 @@ func (r *eventRepo) Append(_ context.Context, event *store.SessionEvent) error {
 }
 
 func (r *eventRepo) List(_ context.Context, sessionFK uuid.UUID, opts ...store.EventOption) ([]*store.SessionEvent, error) {
-	eventType, since, until, limit, offset := store.ApplyEventOptions(opts)
+	o := store.ResolveEventOptions(opts)
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	var out []*store.SessionEvent
@@ -45,13 +45,19 @@ func (r *eventRepo) List(_ context.Context, sessionFK uuid.UUID, opts ...store.E
 		if e.SessionFK != sessionFK {
 			continue
 		}
-		if eventType != "" && e.EventType != eventType {
+		if o.EventType != "" && e.EventType != o.EventType {
 			continue
 		}
-		if since != nil && e.OccurredAt.Before(*since) {
+		if o.Since != nil && e.OccurredAt.Before(*o.Since) {
 			continue
 		}
-		if until != nil && e.OccurredAt.After(*until) {
+		if o.Until != nil && e.OccurredAt.After(*o.Until) {
+			continue
+		}
+		if o.Before != nil && !e.OccurredAt.Before(*o.Before) {
+			continue
+		}
+		if o.BeforeSeq != nil && e.Seq >= *o.BeforeSeq {
 			continue
 		}
 		cp := e
@@ -65,14 +71,20 @@ func (r *eventRepo) List(_ context.Context, sessionFK uuid.UUID, opts ...store.E
 			}
 		}
 	}
-	if offset > 0 {
-		if offset >= len(out) {
+	if o.NewestFirst && o.Limit > 0 {
+		if len(out) > o.Limit {
+			out = out[len(out)-o.Limit:]
+		}
+		return out, nil
+	}
+	if o.Offset > 0 {
+		if o.Offset >= len(out) {
 			return nil, nil
 		}
-		out = out[offset:]
+		out = out[o.Offset:]
 	}
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
+	if o.Limit > 0 && len(out) > o.Limit {
+		out = out[:o.Limit]
 	}
 	return out, nil
 }

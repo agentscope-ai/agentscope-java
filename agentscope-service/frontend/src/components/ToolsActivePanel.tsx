@@ -17,6 +17,8 @@ interface Props {
   refreshKey: number;
   onChange: () => void;
   onRequestBrowse: () => void;
+  /** When true, show snapshot only — edits belong on the linked Workspace. */
+  readOnly?: boolean;
 }
 
 const S: Record<string, React.CSSProperties> = {
@@ -88,7 +90,13 @@ const S: Record<string, React.CSSProperties> = {
   err: { color: '#dc2626', fontSize: '0.85rem' },
 };
 
-export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequestBrowse }: Props) {
+export default function ToolsActivePanel({
+  agentId,
+  refreshKey,
+  onChange,
+  onRequestBrowse,
+  readOnly = false,
+}: Props) {
   const [data, setData] = useState<ActiveToolsResponse | null>(null);
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
   const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
@@ -160,15 +168,19 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
         <div style={{ flex: 1 }}>
           <div style={S.title}>Configured tools</div>
           <div style={S.sub}>
-            From Agent body (<code>tools</code> / <code>mcpServers</code>). Saves create a new agent version.
+            {readOnly
+              ? 'Snapshot materialized from the linked Workspace. Edit tools there to refresh linked agents.'
+              : <>From Agent body (<code>tools</code> / <code>mcpServers</code>). Saves create a new agent version.</>}
           </div>
         </div>
         <button style={S.refreshBtn} onClick={() => onChange()} disabled={loading}>
           {loading ? '…' : '↻ refresh'}
         </button>
-        <button style={S.primaryBtn} onClick={onRequestBrowse}>
-          + Add / configure
-        </button>
+        {!readOnly && (
+          <button style={S.primaryBtn} onClick={onRequestBrowse}>
+            + Add / configure
+          </button>
+        )}
       </div>
 
       {data?.warnings && data.warnings.length > 0 && (
@@ -200,7 +212,7 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
                     <div style={S.cardName}>{t.name}</div>
                     {t.description && <div style={S.cardDesc}>{t.description}</div>}
                   </div>
-                  {t.source === 'built-in' && (
+                  {!readOnly && t.source === 'built-in' && (
                     <select
                       style={S.policySelect}
                       value={policy}
@@ -211,13 +223,15 @@ export default function ToolsActivePanel({ agentId, refreshKey, onChange, onRequ
                       <option value="always_ask">Ask</option>
                     </select>
                   )}
-                  <button
-                    style={S.disableBtn}
-                    onClick={() => disableTool(t)}
-                    title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
-                  >
-                    Disable
-                  </button>
+                  {!readOnly && (
+                    <button
+                      style={S.disableBtn}
+                      onClick={() => disableTool(t)}
+                      title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
+                    >
+                      Disable
+                    </button>
+                  )}
                 </div>
               );
             })}

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import SkillsWorkspacePanel from '../components/SkillsWorkspacePanel';
+import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
+import type { AgentDefinition } from '../api/agents';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -11,20 +13,26 @@ const helpStyle: React.CSSProperties = {
 };
 
 export default function AgentSkillsPage() {
-  const { agentId } = useOutletContext<{ agentId: string }>();
+  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [refreshKey, setRefreshKey] = useState(0);
+  const linked = agent?.workspaceId;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={helpStyle}>
-        Manage skills under this agent's <code>workspace/skills/</code>. Marketplace install has
-        been removed from the control plane; add skill folders directly in the workspace.
-      </div>
+      {linked ? (
+        <LinkedWorkspaceBanner workspaceId={linked} resource="skills" />
+      ) : (
+        <div style={helpStyle}>
+          Manage skills under this agent&apos;s private workspace. For shared packs, create a Workspace
+          and link it in Settings.
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <SkillsWorkspacePanel
           agentId={agentId}
           refreshKey={refreshKey}
           onChange={() => setRefreshKey(k => k + 1)}
+          readOnly={!!linked}
         />
       </div>
     </div>

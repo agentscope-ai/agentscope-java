@@ -65,6 +65,13 @@ public class ChannelConfigEntry {
     private String type;
 
     /**
+     * Control-plane owner of this channel (Builder user id). Used by the scheduler bridge to
+     * attribute managed sessions to the tenant that configured the IM identity — not the IM peer.
+     */
+    @JsonProperty("ownerId")
+    private String ownerId;
+
+    /**
      * Type-specific provider properties (e.g. credentials, endpoints, signing secrets). Forwarded
      * as-is to {@link ChannelFactory#create(String, ChannelConfig, Map)}.
      */
@@ -108,6 +115,14 @@ public class ChannelConfigEntry {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public String getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(String ownerId) {
+        this.ownerId = ownerId;
     }
 
     public Map<String, Object> getProperties() {

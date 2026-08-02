@@ -70,27 +70,36 @@ type ServerOptions struct {
 	Registry *dataplane.Registry
 	// InternalToken authenticates POST /api/v1/dataplanes/register and heartbeats.
 	InternalToken string
+	// HostedStore enables the /api/v1/dp/* hosted DistributedStore API.
+	HostedStore bool
+	// TranscriptMessages optionally reads Level-3 message history from a
+	// control-plane transcript store (NAS / object storage). When it returns
+	// ok=true, getSessionMessages skips the live DP fallback and does not
+	// require the message-query capability.
+	TranscriptMessages TranscriptMessagesFunc
 }
 
 // Server is the REST API server for the control plane.
 type Server struct {
-	client        client.Client
-	store         store.Store
-	prober        prober.DataPlaneProber
-	router        *gin.Engine
-	httpServer    *http.Server
-	experimental  bool
-	authToken     string
-	tlsCertFile   string
-	tlsKeyFile    string
-	kubeClient    kubernetes.Interface
-	asdpCommands  SessionCommandSender
-	asdpInventory InventoryProvider
-	product       *product.Server
-	staticDir     string
-	registry      *dataplane.Registry
-	internalToken string
-	sessionOps    *sessionops.Router
+	client             client.Client
+	store              store.Store
+	prober             prober.DataPlaneProber
+	router             *gin.Engine
+	httpServer         *http.Server
+	experimental       bool
+	authToken          string
+	tlsCertFile        string
+	tlsKeyFile         string
+	kubeClient         kubernetes.Interface
+	asdpCommands       SessionCommandSender
+	asdpInventory      InventoryProvider
+	product            *product.Server
+	staticDir          string
+	registry           *dataplane.Registry
+	internalToken      string
+	hostedStore        bool
+	transcriptMessages TranscriptMessagesFunc
+	sessionOps         *sessionops.Router
 
 	// Experimental team coordination state (only initialized when experimental
 	// features are enabled). Store-backed and HA-safe across replicas.
@@ -106,27 +115,35 @@ func NewServer(opts ServerOptions) *Server {
 	router.Use(gin.Logger())
 
 	s := &Server{
-		client:        opts.Client,
-		store:         opts.Store,
-		prober:        opts.Prober,
-		router:        router,
-		experimental:  opts.Experimental,
-		authToken:     opts.AuthToken,
-		tlsCertFile:   opts.TLSCertFile,
-		tlsKeyFile:    opts.TLSKeyFile,
-		kubeClient:    opts.KubeClient,
-		asdpCommands:  opts.ASDPCommands,
-		asdpInventory: opts.ASDPInventory,
-		product:       opts.Product,
-		staticDir:     opts.StaticDir,
-		registry:      opts.Registry,
-		internalToken: opts.InternalToken,
+		client:             opts.Client,
+		store:              opts.Store,
+		prober:             opts.Prober,
+		router:             router,
+		experimental:       opts.Experimental,
+		authToken:          opts.AuthToken,
+		tlsCertFile:        opts.TLSCertFile,
+		tlsKeyFile:         opts.TLSKeyFile,
+		kubeClient:         opts.KubeClient,
+		asdpCommands:       opts.ASDPCommands,
+		asdpInventory:      opts.ASDPInventory,
+		product:            opts.Product,
+		staticDir:          opts.StaticDir,
+		registry:           opts.Registry,
+		internalToken:      opts.InternalToken,
+		hostedStore:        opts.HostedStore,
+		transcriptMessages: opts.TranscriptMessages,
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
+	}
+
+	if s.transcriptMessages == nil {
+		if root := strings.TrimSpace(os.Getenv("AISTIO_TRANSCRIPT_FS_ROOT")); root != "" {
+			s.transcriptMessages = FilesystemTranscriptMessages(root)
+		}
 	}
 
 	if opts.Store != nil && opts.Registry != nil {
@@ -296,6 +313,14 @@ func (s *Server) registerRoutes() {
 		dp.POST("/register", s.registerDataPlane)
 		dp.POST("/:instanceId/heartbeat", s.heartbeatDataPlane)
 		dp.DELETE("/:instanceId", s.deleteDataPlane)
+	}
+
+	// Hosted DistributedStore API for data-plane coordination (KV, locks,
+	// snapshots, bus, async tools). Same internal-token trust boundary.
+	if s.store != nil && s.hostedStore {
+		dpStore := s.router.Group("/api/v1/dp")
+		dpStore.Use(s.internalTokenMiddleware())
+		s.registerHostedStoreRoutes(dpStore)
 	}
 
 	if s.staticDir != "" {

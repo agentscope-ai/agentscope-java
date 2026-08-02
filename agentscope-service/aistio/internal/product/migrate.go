@@ -184,11 +184,28 @@ CREATE TABLE IF NOT EXISTS channels (
     disabled         BOOLEAN NOT NULL DEFAULT FALSE,
     properties_json  TEXT,
     bindings_json    TEXT,
+    runtime_started  BOOLEAN NOT NULL DEFAULT FALSE,
+    runtime_error    TEXT,
+    runtime_updated_at BIGINT,
     created_at       BIGINT NOT NULL,
     updated_at       BIGINT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_channels_owner ON channels (owner_id);
+
+CREATE TABLE IF NOT EXISTS agent_bindings (
+    row_id         BIGSERIAL PRIMARY KEY,
+    owner_id       TEXT NOT NULL,
+    agent_id       TEXT NOT NULL,
+    channel_id     TEXT NOT NULL,
+    binding_index  INT NOT NULL,
+    tier           TEXT NOT NULL,
+    payload_json   TEXT,
+    created_at     BIGINT NOT NULL,
+    UNIQUE (owner_id, agent_id, channel_id, binding_index)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_bindings_agent ON agent_bindings (owner_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_bindings_channel ON agent_bindings (owner_id, channel_id);
 
 CREATE TABLE IF NOT EXISTS files (
     row_id       BIGSERIAL PRIMARY KEY,
@@ -203,10 +220,69 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_owner ON files (owner_id);
 `
 
+const migrationAlterSQL = `
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_started BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_error TEXT;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_updated_at BIGINT;
+
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS workspace_id TEXT;
+
+CREATE TABLE IF NOT EXISTS workspaces (
+    row_id            BIGSERIAL PRIMARY KEY,
+    owner_id          TEXT NOT NULL,
+    workspace_id      TEXT NOT NULL,
+    name              TEXT NOT NULL,
+    description       TEXT,
+    tools_json        TEXT,
+    mcp_servers_json  TEXT,
+    skills_json       TEXT,
+    head_version      INT NOT NULL DEFAULT 1,
+    archived_at       BIGINT,
+    created_at        BIGINT NOT NULL,
+    updated_at        BIGINT NOT NULL,
+    UNIQUE (owner_id, workspace_id)
+);
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces (owner_id);
+
+CREATE TABLE IF NOT EXISTS workspace_files (
+    row_id       BIGSERIAL PRIMARY KEY,
+    owner_id     TEXT NOT NULL,
+    scope_type   TEXT NOT NULL,
+    scope_id     TEXT NOT NULL,
+    path         TEXT NOT NULL,
+    content      TEXT NOT NULL DEFAULT '',
+    updated_at   BIGINT NOT NULL,
+    UNIQUE (owner_id, scope_type, scope_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_files_scope ON workspace_files (owner_id, scope_type, scope_id);
+
+CREATE TABLE IF NOT EXISTS marketplaces (
+    row_id          BIGSERIAL PRIMARY KEY,
+    owner_id        TEXT NOT NULL,
+    marketplace_id  TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    type            TEXT NOT NULL,
+    config_json     TEXT,
+    enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      BIGINT NOT NULL,
+    updated_at      BIGINT NOT NULL,
+    UNIQUE (owner_id, marketplace_id)
+);
+CREATE INDEX IF NOT EXISTS idx_marketplaces_owner ON marketplaces (owner_id);
+
+-- Agent session-default mounts (merged when creating sessions if caller omits them).
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_environment_id TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_vault_ids_json TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_memory_store_ids_json TEXT;
+`
+
 func migrate(ctx context.Context, db *DB) error {
 	log.Printf("running cp schema migration")
 	if _, err := db.Pool.Exec(ctx, migrationSQL); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	if _, err := db.Pool.Exec(ctx, migrationAlterSQL); err != nil {
+		return fmt.Errorf("migrate alter: %w", err)
 	}
 	log.Printf("cp schema migration complete")
 	return nil

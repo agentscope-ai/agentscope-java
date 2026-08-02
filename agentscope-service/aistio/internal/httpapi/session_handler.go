@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strconv"
@@ -106,14 +107,33 @@ func (s *Server) getSessionContext(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
-// getSessionMessages handles GET /api/v1/sessions/:sessionId/messages by
-// forwarding to the data-plane Level-3 endpoint. Gated on the
-// `message-query` capability.
+// getSessionMessages handles GET /api/v1/sessions/:sessionId/messages.
+// Prefers a control-plane transcript reader when available; on miss, falls
+// back to live data-plane FetchMessages gated on the message-query capability.
+// Query: offset, limit, fromEnd (when true and offset omitted/0, return the
+// newest page so long sessions open on the tail).
 func (s *Server) getSessionMessages(c *gin.Context) {
 	sess, ok := s.resolveSession(c)
 	if !ok {
 		return
 	}
+	offset := parseOffset(c)
+	limit := parseLimit(c, 100)
+	fromEnd := parseTruthyQuery(c.Query("fromEnd"))
+
+	if s.transcriptMessages != nil {
+		page, hit, err := s.transcriptMessages(c.Request.Context(), sess.AgentName, sess.Namespace, sess.SessionID, offset, limit, fromEnd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to read transcript: " + err.Error()})
+			return
+		}
+		if hit {
+			c.JSON(http.StatusOK, page)
+			return
+		}
+	}
+
+	// Live DP fallback — message-query capability applies only here.
 	agent, ok := s.resolveSessionAgent(c, sess)
 	if !ok {
 		return
@@ -126,7 +146,7 @@ func (s *Server) getSessionMessages(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := s.prober.FetchMessages(c.Request.Context(), endpoint, sess.SessionID, parseOffset(c), parseLimit(c, 100))
+	page, err := s.fetchMessagesPage(c.Request.Context(), endpoint, sess.SessionID, offset, limit, fromEnd)
 	if err != nil {
 		if err == prober.ErrNotFoundOnDataPlane {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found on data plane"})
@@ -135,11 +155,60 @@ func (s *Server) getSessionMessages(c *gin.Context) {
 		}
 		return
 	}
+	if page != nil && page.Source == "" {
+		page.Source = "dataplane"
+	}
 	c.JSON(http.StatusOK, page)
+}
+
+func (s *Server) fetchMessagesPage(ctx context.Context, endpoint, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, error) {
+	if !fromEnd || offset > 0 {
+		page, err := s.prober.FetchMessages(ctx, endpoint, sessionID, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		if page != nil {
+			page.Source = "dataplane"
+		}
+		return page, nil
+	}
+	page, err := s.prober.FetchMessages(ctx, endpoint, sessionID, 0, limit)
+	if err != nil {
+		return nil, err
+	}
+	if page == nil {
+		return nil, nil
+	}
+	page.Source = "dataplane"
+	if page.Total > limit {
+		start := page.Total - limit
+		if start < 0 {
+			start = 0
+		}
+		tail, err := s.prober.FetchMessages(ctx, endpoint, sessionID, start, limit)
+		if err != nil {
+			return nil, err
+		}
+		if tail != nil {
+			tail.Source = "dataplane"
+		}
+		return tail, nil
+	}
+	return page, nil
+}
+
+func parseTruthyQuery(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // getSessionEvents handles GET /api/v1/sessions/:sessionId/events, returning
 // the Level-2 event stream for the session with optional filters.
+// Supports reverse paging via before (RFC3339 timestamp or integer seq) + limit.
 func (s *Server) getSessionEvents(c *gin.Context) {
 	sess, ok := s.resolveSession(c)
 	if !ok {
@@ -160,15 +229,33 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 			opts = append(opts, store.WithEventUntil(t))
 		}
 	}
+	beforeSet := false
+	if before := c.Query("before"); before != "" {
+		beforeSet = true
+		if t, err := time.Parse(time.RFC3339, before); err == nil {
+			opts = append(opts, store.WithEventBefore(t))
+		} else if seq, err := strconv.Atoi(before); err == nil {
+			opts = append(opts, store.WithEventBeforeSeq(seq))
+		} else {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid before (RFC3339 timestamp or integer seq)"})
+			return
+		}
+	}
 	opts = append(opts, store.WithEventLimit(parseLimit(c, 100)))
 	if offset := parseOffset(c); offset > 0 {
 		opts = append(opts, store.WithEventOffset(offset))
+	} else if !beforeSet {
+		// First page of reverse paging: newest N events in chronological order.
+		opts = append(opts, store.WithEventNewestFirst())
 	}
 
 	events, err := s.store.Events().List(c.Request.Context(), sess.ID, opts...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
+	}
+	if events == nil {
+		events = []*store.SessionEvent{}
 	}
 	c.JSON(http.StatusOK, gin.H{"events": events})
 }

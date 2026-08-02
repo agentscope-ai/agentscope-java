@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ensureDefaultEnvironment } from '../api/environments';
+import { Environment, listEnvironments } from '../api/environments';
 import { ManagedFile, createFile, listFiles } from '../api/files';
 import {
-  createManagedSession,
   EventStreamHandle,
   getManagedSession,
   listEvents,
+  ManagedSession,
   postToolConfirmation,
   postUserMessage,
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
+import NewManagedSessionForm from './NewManagedSessionForm';
 import ToolCallBlock from './ToolCallBlock';
 
 type Role = 'user' | 'assistant' | 'system';
@@ -123,7 +124,7 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
   for (const evt of events) {
     if (evt.type === 'user.message') {
       out.push({ id: evt.id, role: 'user', text: payloadText(evt.payload), tools: [] });
-    } else if (evt.type === 'agent.turn_stub' || evt.type.startsWith('agent.message')) {
+    } else if (evt.type === 'agent.turn_stub' || evt.type === 'agent.message') {
       out.push({ id: evt.id, role: 'assistant', text: payloadText(evt.payload) || '[agent response]', tools: [] });
     } else if (evt.type === 'agent.tool_use') {
       const tool: ToolEntry = {
@@ -136,6 +137,23 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
         last.tools = [...last.tools, tool];
       } else {
         out.push({ id: `${evt.id}-host`, role: 'assistant', text: '', tools: [tool] });
+      }
+    } else if (evt.type === 'agent.tool_result') {
+      const toolUseId = String(
+        evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
+      );
+      const output = evt.payload?.output != null
+        ? String(evt.payload.output)
+        : payloadText(evt.payload);
+      if (!toolUseId) continue;
+      for (let i = out.length - 1; i >= 0; i--) {
+        const m = out[i];
+        if (m.role !== 'assistant') continue;
+        const idx = m.tools.findIndex(t => t.id === toolUseId);
+        if (idx >= 0) {
+          m.tools = m.tools.map((t, j) => (j === idx ? { ...t, result: output } : t));
+          break;
+        }
       }
     }
   }
@@ -189,6 +207,10 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(true);
   const [managedSessionId, setManagedSessionId] = useState<string | null>(null);
+  const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
+  const [envNameById, setEnvNameById] = useState<Map<string, string>>(new Map());
+  const [needsCreate, setNeedsCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
   const [files, setFiles] = useState<ManagedFile[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -207,11 +229,10 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     listFiles().then(setFiles).catch(() => setFiles([]));
+    listEnvironments()
+      .then((envs: Environment[]) => setEnvNameById(new Map(envs.map(e => [e.id, e.name]))))
+      .catch(() => setEnvNameById(new Map()));
   }, []);
-
-  function sessionResources() {
-    return selectedFileIds.map(fileId => ({ type: 'file', fileId }));
-  }
 
   async function handleUploadFile(file: File) {
     const content = await file.text();
@@ -220,9 +241,87 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     setSelectedFileIds(prev => prev.includes(created.id) ? prev : [...prev, created.id]);
   }
 
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
+  const lastSeqRef = useRef(0);
+
   const handleManagedEvent = useCallback((evt: SessionEvent) => {
+    // Preview frames have null id / seq=-1 — skip id dedupe, track by event_id in payload.
+    if (evt.id) {
+      if (seenEventIdsRef.current.has(evt.id)) return;
+      seenEventIdsRef.current.add(evt.id);
+    }
+    if (typeof evt.seq === 'number' && evt.seq > lastSeqRef.current) {
+      lastSeqRef.current = evt.seq;
+    }
+
     const confirm = extractConfirmation(evt);
     if (confirm) setPendingConfirm(confirm);
+
+    if (evt.type === 'event_start') {
+      const targetType = String(evt.payload?.type ?? '');
+      const eventId = String(evt.payload?.event_id ?? '');
+      if (!eventId) return;
+      if (targetType === 'agent.message') {
+        const localReply = replyMsgIdRef.current;
+        replyMsgIdRef.current = eventId;
+        setMessages(prev => {
+          if (prev.some(m => m.id === eventId)) return prev;
+          if (localReply) {
+            return prev.map(m => (m.id === localReply ? { ...m, id: eventId, pending: true } : m));
+          }
+          return [...prev, { id: eventId, role: 'assistant', text: '', tools: [], pending: true }];
+        });
+      }
+      return;
+    }
+
+    if (evt.type === 'event_delta') {
+      const targetType = String(evt.payload?.type ?? '');
+      const eventId = String(evt.payload?.event_id ?? '');
+      const delta = evt.payload?.delta != null ? String(evt.payload.delta) : '';
+      if (!eventId || !delta) return;
+      if (targetType === 'agent.message') {
+        setMessages(prev => {
+          const exists = prev.some(m => m.id === eventId);
+          if (exists) {
+            replyMsgIdRef.current = eventId;
+            return prev.map(m => (m.id === eventId ? { ...m, text: m.text + delta, pending: true } : m));
+          }
+          const localReply = replyMsgIdRef.current;
+          if (localReply && localReply !== eventId && prev.some(m => m.id === localReply)) {
+            replyMsgIdRef.current = eventId;
+            return prev.map(m =>
+              m.id === localReply ? { ...m, id: eventId, text: m.text + delta, pending: true } : m);
+          }
+          replyMsgIdRef.current = eventId;
+          return [...prev, { id: eventId, role: 'assistant', text: delta, tools: [], pending: true }];
+        });
+      } else if (targetType === 'agent.tool_use') {
+        // Live tool-arg preview: show accumulating JSON on the latest assistant bubble.
+        setMessages(prev => {
+          const lastAssistantIdx = [...prev].map((m, i) => ({ m, i })).reverse()
+            .find(x => x.m.role === 'assistant')?.i;
+          if (lastAssistantIdx == null) {
+            return [...prev, {
+              id: `${eventId}-host`,
+              role: 'assistant',
+              text: '',
+              tools: [{ id: eventId, name: 'tool', input: delta }],
+              pending: true,
+            }];
+          }
+          return prev.map((m, i) => {
+            if (i !== lastAssistantIdx) return m;
+            const existing = m.tools.find(t => t.id === eventId);
+            const tools = existing
+              ? m.tools.map(t => (t.id === eventId ? { ...t, input: (t.input ?? '') + delta } : t))
+              : [...m.tools, { id: eventId, name: 'tool', input: delta }];
+            return { ...m, tools, pending: true };
+          });
+        });
+      }
+      return;
+    }
 
     if (evt.type === 'user.message') {
       const text = payloadText(evt.payload);
@@ -232,16 +331,22 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           return [...prev, { id: evt.id, role: 'user', text, tools: [] }];
         });
       }
-    } else if (evt.type === 'agent.turn_stub' || evt.type.startsWith('agent.message') || evt.type === 'agent.token') {
+    } else if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
       const text = payloadText(evt.payload);
-      const replyId = replyMsgIdRef.current;
-      if (replyId) {
-        setMessages(prev => prev.map(m => m.id === replyId
-          ? { ...m, text: m.text + (text || ''), pending: false }
-          : m));
-      } else {
-        setMessages(prev => [...prev, { id: evt.id, role: 'assistant', text: text || '[agent response]', tools: [] }]);
-      }
+      setMessages(prev => {
+        if (prev.some(m => m.id === evt.id)) {
+          return prev.map(m =>
+            m.id === evt.id ? { ...m, text: text || m.text || '[agent response]', pending: false } : m);
+        }
+        const replyId = replyMsgIdRef.current;
+        if (replyId && prev.some(m => m.id === replyId)) {
+          return prev.map(m =>
+            m.id === replyId
+              ? { ...m, id: evt.id, text: text || m.text || '[agent response]', pending: false }
+              : m);
+        }
+        return [...prev, { id: evt.id, role: 'assistant', text: text || '[agent response]', tools: [] }];
+      });
       replyMsgIdRef.current = null;
     } else if (evt.type === 'agent.tool_use') {
       const tool: ToolEntry = {
@@ -249,11 +354,44 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
         name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
         input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       };
-      const replyId = replyMsgIdRef.current;
+      // Prefer matching by preview event id when tool_use was streamed.
+      const previewKey = evt.id;
+      setMessages(prev => {
+        let matched = false;
+        const next = prev.map(m => {
+          if (m.role !== 'assistant') return m;
+          const tools = m.tools.map(t => {
+            if (t.id === previewKey || t.id === tool.id) {
+              matched = true;
+              return { ...tool, id: tool.id };
+            }
+            return t;
+          });
+          return matched ? { ...m, tools, pending: false } : m;
+        });
+        if (matched) return next;
+        const last = next[next.length - 1];
+        if (last?.role === 'assistant') {
+          return next.map((m, i) =>
+            i === next.length - 1 ? { ...m, tools: [...m.tools, tool], pending: false } : m);
+        }
+        return [...next, { id: `${evt.id}-host`, role: 'assistant', text: '', tools: [tool] }];
+      });
+    } else if (evt.type === 'agent.tool_result') {
+      const toolUseId = String(
+        evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
+      );
+      const output = evt.payload?.output != null
+        ? String(evt.payload.output)
+        : payloadText(evt.payload);
+      if (!toolUseId) return;
       setMessages(prev => prev.map(m => {
-        if (replyId && m.id !== replyId) return m;
-        if (!replyId && m.role !== 'assistant') return m;
-        return { ...m, tools: [...m.tools, tool], pending: false };
+        if (m.role !== 'assistant') return m;
+        if (!m.tools.some(t => t.id === toolUseId)) return m;
+        return {
+          ...m,
+          tools: m.tools.map(t => (t.id === toolUseId ? { ...t, result: output } : t)),
+        };
       }));
     } else if (evt.type === 'session.status_idle' && !confirm) {
       const replyId = replyMsgIdRef.current;
@@ -264,48 +402,83 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }, []);
 
-  // Managed session restore + SSE
+  const managedParam = searchParams.get('managed') ?? '';
+
+  const openSession = useCallback(async (
+    sessionId: string,
+    cancelled: () => boolean,
+    opts?: { syncUrl?: boolean },
+  ) => {
+    const sess = await getManagedSession(sessionId);
+    if (cancelled()) return;
+    setManagedSession(sess);
+    setManagedSessionId(sessionId);
+    setNeedsCreate(false);
+    setShowCreate(false);
+    persistManagedSession(sessionId);
+    if (opts?.syncUrl !== false) {
+      navigate(`/agents/${encodeURIComponent(agentId)}/chat?managed=${encodeURIComponent(sessionId)}`, { replace: true });
+    }
+    seenEventIdsRef.current = new Set();
+    lastSeqRef.current = 0;
+    try {
+      const events = await listEvents(sessionId);
+      if (!cancelled()) {
+        for (const e of events) {
+          if (e.id) seenEventIdsRef.current.add(e.id);
+          if (typeof e.seq === 'number' && e.seq > lastSeqRef.current) {
+            lastSeqRef.current = e.seq;
+          }
+        }
+        setMessages(eventsToMessages(events));
+      }
+    } catch { /* empty */ }
+    if (cancelled()) return;
+    streamHandleRef.current?.close();
+    streamHandleRef.current = streamEvents(
+      sessionId,
+      evt => { if (!cancelled()) handleManagedEvent(evt); },
+      () => { /* stream ended */ },
+      {
+        after: lastSeqRef.current,
+        eventDeltas: ['agent.message', 'agent.thinking', 'agent.tool_use'],
+      },
+    );
+  }, [agentId, handleManagedEvent, navigate, persistManagedSession]);
+
+  // Managed session restore + SSE (no silent auto-create).
   useEffect(() => {
     let cancelled = false;
     setMessages([]);
     setInput('');
     setRestoring(true);
     setPendingConfirm(null);
+    setManagedSession(null);
+    setNeedsCreate(false);
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
 
     async function run() {
-      const urlManagedId = searchParams.get('managed');
       const stored = (() => { try { return localStorage.getItem(managedStorageKey(agentId)); } catch { return null; } })();
-      let sessionId = urlManagedId || stored;
+      const sessionId = managedParam || stored;
       try {
         if (!sessionId) {
-          const env = await ensureDefaultEnvironment();
-          const session = await createManagedSession({
-            agent: agentId,
-            environmentId: env.id,
-            resources: sessionResources(),
-          });
-          sessionId = session.id;
-        } else if (urlManagedId) {
-          // Deep-linked from the inbox — verify it still exists before adopting it.
-          await getManagedSession(sessionId);
+          if (!cancelled) {
+            setManagedSessionId(null);
+            setNeedsCreate(true);
+            setShowCreate(true);
+            setRestoring(false);
+          }
+          return;
         }
-        persistManagedSession(sessionId);
-        if (cancelled) return;
-        setManagedSessionId(sessionId);
-        try {
-          const events = await listEvents(sessionId);
-          if (!cancelled) setMessages(eventsToMessages(events));
-        } catch { /* empty */ }
-        if (cancelled) return;
-        streamHandleRef.current = streamEvents(
-          sessionId,
-          evt => { if (!cancelled) handleManagedEvent(evt); },
-          () => { /* stream ended */ },
-        );
+        // URL already has the id when deep-linked; avoid a navigate→effect loop.
+        await openSession(sessionId, () => cancelled, { syncUrl: !managedParam });
       } catch (e: unknown) {
         if (!cancelled) {
+          persistManagedSession(null);
+          setManagedSessionId(null);
+          setNeedsCreate(true);
+          setShowCreate(true);
           const msg = e instanceof Error ? e.message : 'failed to open managed session';
           setMessages([{ id: nextId(), role: 'system', text: `[error] ${msg}`, tools: [] }]);
         }
@@ -313,22 +486,30 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
       }
       if (!cancelled) setRestoring(false);
     }
-    run();
+    void run();
     return () => {
       cancelled = true;
       streamHandleRef.current?.close();
       streamHandleRef.current = null;
     };
-  }, [agentId, handleManagedEvent, persistManagedSession]);
+  }, [agentId, managedParam, openSession, persistManagedSession]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [messages, pendingConfirm]);
 
   const canSend = useMemo(
-    () => !busy && !restoring && !pendingConfirm && input.trim().length > 0 && !!managedSessionId,
-    [busy, restoring, pendingConfirm, input, managedSessionId],
+    () => !busy && !restoring && !pendingConfirm && !needsCreate && input.trim().length > 0 && !!managedSessionId,
+    [busy, restoring, pendingConfirm, needsCreate, input, managedSessionId],
   );
+
+  const mountLabel = useMemo(() => {
+    if (!managedSession) return null;
+    const env = envNameById.get(managedSession.environmentId) || managedSession.environmentId || '—';
+    const vaults = managedSession.vaultIds?.length ?? 0;
+    const mems = managedSession.memoryStoreIds?.length ?? 0;
+    return `env: ${env} · vaults: ${vaults} · memory: ${mems}`;
+  }, [managedSession, envNameById]);
 
   async function handleSend() {
     if (!canSend || !managedSessionId) return;
@@ -386,26 +567,26 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }
 
-  async function handleNewChat() {
+  function handleNewChat() {
     if (busy) return;
     if (messages.length > 0 && !confirm('Start a new chat?')) return;
-
     streamHandleRef.current?.close();
-    setRestoring(true);
     setMessages([]);
     setPendingConfirm(null);
+    setManagedSession(null);
+    setManagedSessionId(null);
     persistManagedSession(null);
+    setNeedsCreate(true);
+    setShowCreate(true);
+    setRestoring(false);
+  }
+
+  async function handleSessionCreated(session: ManagedSession) {
+    setRestoring(true);
+    setMessages([{ id: nextId(), role: 'system', text: 'New managed session started.', tools: [] }]);
+    setSelectedFileIds([]);
     try {
-      const env = await ensureDefaultEnvironment();
-      const session = await createManagedSession({
-        agent: agentId,
-        environmentId: env.id,
-        resources: sessionResources(),
-      });
-      setManagedSessionId(session.id);
-      persistManagedSession(session.id);
-      streamHandleRef.current = streamEvents(session.id, handleManagedEvent);
-      setMessages([{ id: nextId(), role: 'system', text: 'New managed session started.', tools: [] }]);
+      await openSession(session.id, () => false);
     } catch (e: unknown) {
       setMessages([{ id: nextId(), role: 'system', text: `[error] ${e instanceof Error ? e.message : 'failed'}`, tools: [] }]);
     } finally {
@@ -413,7 +594,7 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
     }
   }
 
-  const sessionLabel = managedSessionId ? managedSessionId.slice(0, 24) : 'creating…';
+  const sessionLabel = managedSessionId ? managedSessionId.slice(0, 24) : (needsCreate ? 'no session' : '…');
 
   return (
     <div style={S.root}>
@@ -422,6 +603,16 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
         <span style={S.sessionTag} title={managedSessionId ?? ''}>
           {restoring ? 'resolving…' : sessionLabel}{sessionLabel.length >= 24 ? '…' : ''}
         </span>
+        {mountLabel && managedSessionId && (
+          <button
+            type="button"
+            style={{ ...S.iconBtn, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            title="View / edit mounts on the session transcript page"
+            onClick={() => navigate(`/agents/${encodeURIComponent(agentId)}/sessions/_managed?managed=${encodeURIComponent(managedSessionId)}`)}
+          >
+            {mountLabel}
+          </button>
+        )}
         <span style={{ flex: 1 }} />
         {files.length > 0 && (
           <select
@@ -494,7 +685,15 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
       </div>
       <div style={S.thread} ref={threadRef}>
         {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
-        {!restoring && messages.length === 0 && (
+        {!restoring && needsCreate && !showCreate && (
+          <div style={S.empty}>
+            No session selected.{' '}
+            <button type="button" style={{ ...S.iconBtn, color: '#6366f1' }} onClick={() => setShowCreate(true)}>
+              Create a new session
+            </button>
+          </div>
+        )}
+        {!restoring && !needsCreate && messages.length === 0 && (
           <div style={S.empty}>
             Managed session ready. Messages stream via the session event log.
           </div>
@@ -554,6 +753,14 @@ export default function ChatPanel({ agentId }: { agentId: string }) {
           {busy ? '…' : 'Send'}
         </button>
       </div>
+      {showCreate && (
+        <NewManagedSessionForm
+          agentId={agentId}
+          initialFileIds={selectedFileIds}
+          onCancel={needsCreate && !managedSessionId ? undefined : () => setShowCreate(false)}
+          onCreated={session => { void handleSessionCreated(session); }}
+        />
+      )}
     </div>
   );
 }

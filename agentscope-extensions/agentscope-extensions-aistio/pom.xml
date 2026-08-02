@@ -62,6 +62,12 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- ASDP upstream channel -->
         <dependency>
             <groupId>io.grpc</groupId>

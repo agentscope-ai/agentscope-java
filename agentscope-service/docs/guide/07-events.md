@@ -95,4 +95,10 @@ curl -s "$BASE/api/sessions/$SESSION_ID/events" -H "Authorization: Bearer $TOKEN
 
 # 游标
 curl -s "$BASE/api/sessions/$SESSION_ID/events?after=42" -H "Authorization: Bearer $TOKEN"
+
+# 按类型过滤（可重复 types=）
+curl -s "$BASE/api/sessions/$SESSION_ID/events?types=agent.tool_use&types=agent.tool_result" \
+  -H "Authorization: Bearer $TOKEN"
 ```
+
+重连建议：先 list 种下已见 `id` / 最大 `seq`，再 `GET …/events/stream?after=<seq>&event_deltas=agent.message`。

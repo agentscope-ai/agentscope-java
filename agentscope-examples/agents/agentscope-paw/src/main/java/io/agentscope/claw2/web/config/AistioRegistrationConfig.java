@@ -114,10 +114,23 @@ public class AistioRegistrationConfig {
         adapter.setRuntimeSource(new HarnessAgentRuntimeSource(main));
         bridges.add(bridge);
         log.info(
-                "claw.aistio: instrumented main agent as '{}' (contract :{}, control {})",
+                "claw.aistio: instrumented main agent as '{}' (agentId={}, contract :{}, control"
+                        + " {})",
                 agentName,
+                main.getAgentId(),
                 bridge.getContractPort(),
                 controlHttp);
+        if (main.getAgentId() != null
+                && !main.getAgentId().isBlank()
+                && !main.getAgentId().equals(agentName)) {
+            log.warn(
+                    "claw.aistio: registered agent-name '{}' != harness agentId '{}'. Transcript"
+                        + " segments are keyed by agentId; set claw.aistio.agent-name to '{}' (or"
+                        + " CLAW_AISTIO_AGENT_NAME) so Operate FS reads hit the same path.",
+                    agentName,
+                    main.getAgentId(),
+                    main.getAgentId());
+        }
         return bridge;
     }
 

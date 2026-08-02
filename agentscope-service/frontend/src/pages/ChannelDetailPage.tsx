@@ -4,17 +4,22 @@ import { isAdmin } from '../api/auth';
 import {
   BindingConfigEntry,
   ChannelDetail,
+  ChannelTypeSpec,
   ChannelUpsertRequest,
   deleteChannel,
   disableChannel,
   enableChannel,
   getChannelDetail,
   listChannelTypes,
+  resolveCallbackUrl,
   updateChannel,
 } from '../api/channels';
+import PlatformCredentialsForm, {
+  credentialsFromProperties,
+  propertiesFromCredentials,
+} from '../components/PlatformCredentialsForm';
 
-const DM_SCOPES = ['', 'MAIN', 'PER_PEER', 'PER_CHANNEL_PEER', 'PER_ACCOUNT_CHANNEL_PEER'];
-const SCOPES = DM_SCOPES.filter(Boolean);
+const DM_SCOPES = ['MAIN', 'PER_PEER'];
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '32px 36px', maxWidth: 1100 },
@@ -58,6 +63,10 @@ const S: Record<string, React.CSSProperties> = {
   },
   err: { color: '#dc2626', fontSize: '0.9rem', marginTop: 8 },
   ok: { color: '#16a34a', fontSize: '0.9rem', marginTop: 8 },
+  callout: {
+    marginTop: 14, padding: '12px 14px', borderRadius: 10,
+    background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: '0.86rem', color: '#334155',
+  },
 };
 
 function describe(b: BindingConfigEntry): string {
@@ -116,18 +125,25 @@ export default function ChannelDetailPage() {
   const { channelId = '' } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
-  const [types, setTypes] = useState<string[]>([]);
+  const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
   const [type, setType] = useState('');
-  const [dmScope, setDmScope] = useState('');
+  const [dmScope, setDmScope] = useState('PER_PEER');
   const [defaultAgentId, setDefaultAgentId] = useState('');
-  const [propsJson, setPropsJson] = useState('{\n}');
+  const [creds, setCreds] = useState<Record<string, string>>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [bindings, setBindings] = useState<BindingConfigEntry[]>([]);
 
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<BindingForm | null>(null);
+
+  const typeSpec = useMemo(() => types.find((t) => t.type === type), [types, type]);
+  const callbackUrl = useMemo(
+    () => resolveCallbackUrl(typeSpec, channelId),
+    [typeSpec, channelId],
+  );
 
   async function load() {
     setErr(null);
@@ -136,9 +152,10 @@ export default function ChannelDetailPage() {
       setDetail(d);
       setTypes(t);
       setType(d.type);
-      setDmScope(d.dmScope ?? '');
+      setDmScope(d.dmScope ?? 'PER_PEER');
       setDefaultAgentId(d.defaultAgentId ?? '');
-      setPropsJson(d.properties ? JSON.stringify(d.properties, null, 2) : '{\n}');
+      const spec = t.find((x) => x.type === d.type);
+      setCreds(credentialsFromProperties(spec, d.properties));
       setBindings(d.bindings ?? []);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -147,37 +164,35 @@ export default function ChannelDetailPage() {
 
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [channelId]);
 
+  function onTypeChange(next: string) {
+    if (next === type) return;
+    if (!confirm('Switching platform clears the credential form. Continue?')) return;
+    setType(next);
+    const spec = types.find((t) => t.type === next);
+    setCreds(credentialsFromProperties(spec, undefined));
+  }
+
   async function persist(overrides?: Partial<ChannelUpsertRequest>) {
     setErr(null);
     setInfo(null);
-    let parsedProps: Record<string, unknown> | null = null;
-    const body = (overrides?.properties as Record<string, unknown> | null | undefined) ?? undefined;
-    if (body === undefined) {
-      if (propsJson.trim().length > 0) {
-        try {
-          const v = JSON.parse(propsJson);
-          if (v && typeof v === 'object' && !Array.isArray(v)) parsedProps = v as Record<string, unknown>;
-          else throw new Error('properties must be a JSON object');
-        } catch (e: unknown) {
-          setErr(`properties JSON invalid: ${e instanceof Error ? e.message : String(e)}`);
-          return;
-        }
-      }
-    } else {
-      parsedProps = body;
-    }
+    const props = overrides?.properties
+      ?? propertiesFromCredentials(typeSpec, creds, true);
     const req: ChannelUpsertRequest = {
       type: overrides?.type ?? type,
-      dmScope: overrides?.dmScope !== undefined ? overrides.dmScope : (dmScope || null),
-      defaultAgentId: overrides?.defaultAgentId !== undefined ? overrides.defaultAgentId : (defaultAgentId.trim() || null),
-      properties: parsedProps,
+      dmScope: overrides?.dmScope !== undefined ? overrides.dmScope : (dmScope || 'PER_PEER'),
+      defaultAgentId: overrides?.defaultAgentId !== undefined
+        ? overrides.defaultAgentId
+        : (defaultAgentId.trim() || null),
+      properties: props,
       bindings: overrides?.bindings ?? bindings,
     };
     try {
       const updated = await updateChannel(channelId, req);
       setDetail(updated);
       setBindings(updated.bindings ?? []);
-      setInfo('Saved. Channel hot-reloaded.');
+      const spec = types.find((x) => x.type === updated.type);
+      setCreds(credentialsFromProperties(spec, updated.properties));
+      setInfo('Saved. Scheduler will pick up changes on the next refresh.');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -252,7 +267,7 @@ export default function ChannelDetailPage() {
     <div style={S.root}>
       <button style={S.backLink} onClick={() => navigate('/channels')}>← All channels</button>
       <h1 style={S.title}>{channelId}</h1>
-      <div style={S.subtle}>Channel-scoped configuration. Saving any field hot-reloads the channel in place.</div>
+      <div style={S.subtle}>IM identity configuration. Credentials switch with the selected platform.</div>
 
       {err && <div style={{ ...S.err, marginTop: 16 }}>{err}</div>}
       {info && <div style={{ ...S.ok, marginTop: 16 }}>{info}</div>}
@@ -263,6 +278,7 @@ export default function ChannelDetailPage() {
             <div style={S.sectionHead}>
               <h2 style={S.sectionTitle}>Configuration</h2>
               <span style={S.badge}>{status}</span>
+              {detail.lastError ? <span style={{ ...S.badge, color: '#dc2626' }}>{detail.lastError}</span> : null}
               <span style={{ flex: 1 }} />
               <button style={S.btn} onClick={toggleDisabled}>
                 {detail.disabled ? 'Enable' : 'Disable'}
@@ -273,20 +289,23 @@ export default function ChannelDetailPage() {
             </div>
             <div style={S.grid2}>
               <div>
-                <label style={S.field}>Type</label>
-                <select style={S.input} value={type} onChange={e => setType(e.target.value)}>
-                  {types.map(t => <option key={t} value={t}>{t}</option>)}
+                <label style={S.field}>Platform</label>
+                <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
+                  {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
                 </select>
               </div>
               <div>
-                <label style={S.field}>DM scope</label>
+                <label style={S.field}>Conversation isolation</label>
                 <select style={S.input} value={dmScope} onChange={e => setDmScope(e.target.value)}>
-                  <option value="">— default —</option>
-                  {SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {DM_SCOPES.map(s => (
+                    <option key={s} value={s}>
+                      {s === 'PER_PEER' ? 'Per person (PER_PEER)' : 'Shared inbox (MAIN)'}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div style={{ gridColumn: '1 / span 2' }}>
-                <label style={S.field}>Default agent id (used when no binding matches)</label>
+                <label style={S.field}>Default agent id</label>
                 <input
                   style={S.input}
                   value={defaultAgentId}
@@ -295,14 +314,23 @@ export default function ChannelDetailPage() {
                 />
               </div>
             </div>
-            <div style={{ marginTop: 14 }}>
-              <label style={S.field}>Properties (JSON object, type-specific)</label>
-              <textarea
-                style={{ ...S.input, fontFamily: 'monospace', minHeight: 180, resize: 'vertical' }}
-                value={propsJson}
-                onChange={e => setPropsJson(e.target.value)}
+            <div style={{ marginTop: 18 }}>
+              <h3 style={{ ...S.sectionTitle, fontSize: '0.95rem', marginBottom: 10 }}>Credentials</h3>
+              <PlatformCredentialsForm
+                spec={typeSpec}
+                values={creds}
+                onChange={setCreds}
+                showAdvanced={showAdvanced}
+                onToggleAdvanced={() => setShowAdvanced((v) => !v)}
               />
             </div>
+            {callbackUrl ? (
+              <div style={S.callout}>
+                <strong>Callback / webhook URL</strong>
+                <div style={{ fontFamily: 'monospace', marginTop: 6, wordBreak: 'break-all' }}>{callbackUrl}</div>
+                <div style={{ ...S.subtle, marginTop: 6 }}>Paste this into the platform developer console.</div>
+              </div>
+            ) : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
               <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => persist()}>Save configuration</button>
             </div>
@@ -310,14 +338,17 @@ export default function ChannelDetailPage() {
 
           <div style={S.section}>
             <div style={S.sectionHead}>
-              <h2 style={S.sectionTitle}>Bindings</h2>
+              <h2 style={S.sectionTitle}>Transfer rules</h2>
               <span style={S.subtle}>({bindings.length})</span>
               <span style={{ flex: 1 }} />
-              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={startAddBinding}>+ Add binding</button>
+              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={startAddBinding}>+ Add rule</button>
+            </div>
+            <div style={{ ...S.subtle, marginBottom: 12 }}>
+              Route specific peers / groups to another agent. Leave selectors blank for catch-all.
             </div>
             {bindings.length === 0 ? (
               <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                No bindings. Inbound messages will route to <code>defaultAgentId</code> if set.
+                No rules. Inbound messages route to <code>defaultAgentId</code>.
               </div>
             ) : bindings.map((b, i) => (
               <div key={i} style={S.bindingRow}>
@@ -376,16 +407,15 @@ function BindingDialog({ form, isNew, onChange, onCancel, onSave }: DialogProps)
     <div style={scrim} onClick={onCancel}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-          {isNew ? 'Add binding' : 'Edit binding'}
+          {isNew ? 'Add transfer rule' : 'Edit transfer rule'}
         </h3>
         <p style={{ ...S.subtle, margin: '0 0 14px' }}>
-          Fill the most-specific selector you need; leave others blank. Routing tries
-          peer → parentPeer → guild+roles → guild → team → account in that order.
+          Fill the most-specific selector (e.g. a DingTalk staff id as peer). Leave others blank.
         </p>
 
         <div style={S.grid2}>
           <div>
-            <label style={S.field}>Target agent id</label>
+            <label style={S.field}>Hand off to agent</label>
             <input
               style={S.input}
               value={form.agentId}
@@ -394,18 +424,18 @@ function BindingDialog({ form, isNew, onChange, onCancel, onSave }: DialogProps)
             />
           </div>
           <div>
-            <label style={S.field}>Session scope (optional)</label>
+            <label style={S.field}>Isolation override</label>
             <select
               style={S.input}
               value={form.sessionScope}
               onChange={e => onChange({ ...form, sessionScope: e.target.value })}
             >
               <option value="">— inherit channel —</option>
-              {SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+              {DM_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
-            <label style={S.field}>peer</label>
+            <label style={S.field}>peer (e.g. direct:staffId)</label>
             <input style={S.input} value={form.peer} onChange={e => onChange({ ...form, peer: e.target.value })} />
           </div>
           <div>

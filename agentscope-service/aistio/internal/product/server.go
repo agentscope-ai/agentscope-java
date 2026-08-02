@@ -67,6 +67,8 @@ func (s *Server) Register(r gin.IRouter) {
 	s.registerAgents(r)
 	s.registerAgentExtras(r)
 	s.registerWorkspace(r)
+	s.registerWorkspaces(r)
+	s.registerMarketplaces(r)
 	s.registerChannels(r)
 	s.registerAdmin(r)
 	s.registerEnvironments(r)

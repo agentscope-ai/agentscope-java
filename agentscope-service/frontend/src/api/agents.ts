@@ -77,6 +77,13 @@ export interface AgentDefinition {
   runAs?: string;
   forkOf?: string;
   workspacePath?: string;
+  workspaceId?: string | null;
+  /** Preferred environment for new sessions when caller omits environmentId. */
+  defaultEnvironmentId?: string | null;
+  /** Vaults auto-mounted on new sessions when caller omits vaultIds. */
+  defaultVaultIds?: string[];
+  /** Memory stores auto-mounted on new sessions when caller omits memoryStoreIds. */
+  defaultMemoryStoreIds?: string[];
   tierForCurrentUser?: ShareTier;
   version?: number;
   archivedAt?: number | null;
@@ -100,6 +107,11 @@ export interface AgentCreateRequest {
   mcpServers?: McpServerSpec[];
   skills?: SkillRef[];
   workspacePath?: string;
+  /** First-class Workspace to link (skills/tools/AGENTS.md source). */
+  workspaceId?: string;
+  defaultEnvironmentId?: string | null;
+  defaultVaultIds?: string[];
+  defaultMemoryStoreIds?: string[];
   /** Required on PUT for optimistic locking. */
   version?: number;
 }

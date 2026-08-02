@@ -19,6 +19,11 @@ export function canQueryContext(capabilities?: string[]): boolean {
   return hasCapability(capabilities, 'context-query');
 }
 
+/**
+ * Live data-plane message-query capability. Operate conversation history no
+ * longer pre-gates on this — control-plane transcript is tried first; this
+ * flag only describes whether live fallback can succeed.
+ */
 export function canQueryMessages(capabilities?: string[]): boolean {
   return hasCapability(capabilities, 'message-query');
 }

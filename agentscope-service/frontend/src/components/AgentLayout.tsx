@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
 import ShareAgentDialog from './ShareAgentDialog';
 
@@ -83,6 +83,19 @@ export default function AgentLayout() {
             }}>
               {agent.scope}
             </span>
+          )}
+          {agent?.workspaceId && (
+            <Link
+              to={`/workspaces/${encodeURIComponent(agent.workspaceId)}`}
+              style={{
+                marginLeft: 4, padding: '4px 12px', borderRadius: 999, fontSize: '0.74rem',
+                fontWeight: 600, letterSpacing: '0.02em', textDecoration: 'none',
+                background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0',
+              }}
+              title={agent.workspaceId}
+            >
+              📁 Workspace
+            </Link>
           )}
           {tier && tier !== 'EDIT' && agent && !isGlobal && (
             <span style={{
@@ -214,7 +227,11 @@ export default function AgentLayout() {
             </div>
           </div>
         ) : (
-          <Outlet context={{ agentId: id, agent }} />
+          <Outlet context={{
+            agentId: id,
+            agent,
+            refreshAgent: () => getAgent(id).then(setAgent).catch(() => undefined),
+          }} />
         )}
       </div>
 

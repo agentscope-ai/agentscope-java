@@ -53,7 +53,7 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func (p *Poller) pollOne(ctx context.Context, e *Entry) {
-	snaps, err := p.Prober.ProbeSessions(ctx, e.BaseURL)
+	snaps, truncated, err := probeSessions(ctx, p.Prober, e.BaseURL)
 	if err != nil {
 		log.Printf("dataplane poller: probe sessions %s (%s): %v", e.InstanceID, e.BaseURL, err)
 		return
@@ -127,6 +127,8 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 			ContextHash:           snap.ContextHash,
 			TaskSummary:           taskSummary,
 		})
+		// Narrow transcript index from Level-1 snapshot aggregates (not events).
+		_ = store.UpsertTranscriptIndexFromSnapshot(ctx, p.Store, stored.ID, snap.MessageCount, prompt, completion)
 		if dPrompt > 0 || dCompletion > 0 {
 			tok := &store.TokenUsageMetric{
 				SessionFK:        &stored.ID,
@@ -166,9 +168,36 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		TotalTokens:        intervalTokens,
 		AvgContextPressure: avgPressure,
 	})
-	_, _ = p.Store.Sessions().ArchiveMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+	// Skip ArchiveMissing when the probe page looks truncated — otherwise
+	// sessions omitted by a silent max page size would be mis-archived.
+	if truncated {
+		log.Printf("dataplane poller: skipping ArchiveMissing for %s/%s: probe returned %d sessions (truncated)",
+			e.Namespace, e.AgentName, len(snaps))
+	} else {
+		_, _ = p.Store.Sessions().ArchiveMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+	}
 	// TTL archive: idle sessions with no activity for 7d move to History (archived).
 	_, _ = p.Store.Sessions().ArchiveIdleOlderThan(ctx, 7*24*time.Hour)
+}
+
+// detailedSessionsProber is implemented by HTTPProber.
+type detailedSessionsProber interface {
+	ProbeSessionsDetailed(ctx context.Context, endpoint string) (prober.SessionsProbeResult, error)
+}
+
+func probeSessions(ctx context.Context, p prober.DataPlaneProber, endpoint string) ([]prober.SessionSnapshot, bool, error) {
+	if dp, ok := p.(detailedSessionsProber); ok {
+		res, err := dp.ProbeSessionsDetailed(ctx, endpoint)
+		if err != nil {
+			return nil, false, err
+		}
+		return res.Sessions, res.LikelyTruncated(), nil
+	}
+	snaps, err := p.ProbeSessions(ctx, endpoint)
+	if err != nil {
+		return nil, false, err
+	}
+	return snaps, prober.SessionsProbeLikelyTruncated(len(snaps)), nil
 }
 
 // deriveBusy implements the busy/phase resolution chain:

@@ -46,10 +46,18 @@ export function StatusStrip({ session }: { session?: RuntimeSession }) {
       </Card>
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Lifetime tokens</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">Lifetime usage</CardTitle>
         </CardHeader>
-        <CardContent className="font-mono text-sm tabular-nums text-foreground">
-          {(session?.snapshot?.totalTokens ?? 0).toLocaleString()}
+        <CardContent className="space-y-1">
+          <div className="font-mono text-sm tabular-nums text-foreground">
+            {(session?.snapshot?.totalTokens ?? 0).toLocaleString()}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Σ prompt+completion across turns — not the current context window
+            {session?.snapshot?.promptTokens != null || session?.snapshot?.completionTokens != null
+              ? ` · in ${(session?.snapshot?.promptTokens ?? 0).toLocaleString()} / out ${(session?.snapshot?.completionTokens ?? 0).toLocaleString()}`
+              : ''}
+          </p>
         </CardContent>
       </Card>
       <Card>

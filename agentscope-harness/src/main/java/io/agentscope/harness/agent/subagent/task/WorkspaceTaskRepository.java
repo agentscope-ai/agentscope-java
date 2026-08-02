@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -62,6 +64,11 @@ import org.slf4j.LoggerFactory;
  *       the originating node checks this flag before invoking the subagent for best-effort cancel.
  *   <li>Remote {@link TaskRunSpec.RemoteTaskRunSpec} tasks use {@link AgentProtocolTaskClient} and
  *       persist {@link TaskRecord#getRemoteBaseUrl()} for cross-node resume.
+ *   <li>Orphan sweeping is throttled via {@link PeriodicGate}: use {@link
+ *       io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate} for cross-replica
+ *       deduplication, or {@link LocalPeriodicGate} (the default) for single-process deployments.
+ *       Prefer a control-plane hosted {@link TaskRepository} when available — that path runs a
+ *       leader-only sweep and does not use this workspace repository at all.
  * </ul>
  */
 public class WorkspaceTaskRepository implements TaskRepository {
@@ -89,6 +96,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
     private final WorkspaceManager workspaceManager;
     private final String parentAgentId;
     private final AgentProtocolTaskClient protocolClient;
+    private final PeriodicGate periodicGate;
 
     /**
      * In-memory local task handles. Keyed by {@code "<sessionId>:<taskId>"} to provide session
@@ -116,6 +124,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
     private volatile TaskCompletionCallback completionCallback;
 
     public WorkspaceTaskRepository(WorkspaceManager workspaceManager, String parentAgentId) {
+        this(workspaceManager, parentAgentId, new LocalPeriodicGate());
+    }
+
+    /**
+     * Creates a repository with an explicit {@link PeriodicGate} for orphan-sweep throttling.
+     *
+     * <p>Pass a {@link io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate} when a
+     * shared {@code BaseStore} is available so only one replica sweeps per interval.
+     */
+    public WorkspaceTaskRepository(
+            WorkspaceManager workspaceManager, String parentAgentId, PeriodicGate periodicGate) {
         this(
                 workspaceManager,
                 parentAgentId,
@@ -127,12 +146,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             return t;
                         }),
                 true,
-                true);
+                true,
+                periodicGate);
     }
 
     public WorkspaceTaskRepository(
             WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
-        this(workspaceManager, parentAgentId, executor, false, true);
+        this(workspaceManager, parentAgentId, executor, false, true, new LocalPeriodicGate());
     }
 
     /**
@@ -141,7 +161,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
      * <p>Unit tests invoke {@link #heartbeat()} and {@link #sweepOrphanedTasks} directly; leaving
      * the maintenance scheduler enabled causes flaky races on slow CI hosts (notably Windows).
      */
-    static WorkspaceTaskRepository forTests(
+    public static WorkspaceTaskRepository forTests(
             WorkspaceManager workspaceManager, String parentAgentId) {
         ExecutorService testExecutor =
                 Executors.newCachedThreadPool(
@@ -152,12 +172,35 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         });
         // Test helper creates its own executor, so repository must own and shut it down.
         return new WorkspaceTaskRepository(
-                workspaceManager, parentAgentId, testExecutor, true, false);
+                workspaceManager,
+                parentAgentId,
+                testExecutor,
+                true,
+                false,
+                new LocalPeriodicGate());
     }
 
-    static WorkspaceTaskRepository forTests(
+    /**
+     * Test-only factory with a caller-supplied {@link PeriodicGate} and no maintenance threads.
+     */
+    public static WorkspaceTaskRepository forTests(
+            WorkspaceManager workspaceManager, String parentAgentId, PeriodicGate periodicGate) {
+        ExecutorService testExecutor =
+                Executors.newCachedThreadPool(
+                        r -> {
+                            Thread t = new Thread(r, "ws-task-test");
+                            t.setDaemon(true);
+                            return t;
+                        });
+        return new WorkspaceTaskRepository(
+                workspaceManager, parentAgentId, testExecutor, true, false, periodicGate);
+    }
+
+    /** Test-only factory with a caller-supplied executor and no maintenance threads. */
+    public static WorkspaceTaskRepository forTests(
             WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
-        return new WorkspaceTaskRepository(workspaceManager, parentAgentId, executor, false, false);
+        return new WorkspaceTaskRepository(
+                workspaceManager, parentAgentId, executor, false, false, new LocalPeriodicGate());
     }
 
     private WorkspaceTaskRepository(
@@ -165,12 +208,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String parentAgentId,
             ExecutorService executor,
             boolean ownsExecutor,
-            boolean enableMaintenance) {
+            boolean enableMaintenance,
+            PeriodicGate periodicGate) {
         this.workspaceManager = workspaceManager;
         this.parentAgentId = parentAgentId != null ? parentAgentId : "HarnessAgent";
         this.executor = executor;
         this.ownsExecutor = ownsExecutor;
         this.protocolClient = new AgentProtocolTaskClient();
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
         if (enableMaintenance) {
             ScheduledExecutorService scheduler =
                     Executors.newSingleThreadScheduledExecutor(
@@ -200,15 +245,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
-    /**
-     * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
-     * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
-     * to the session inbox and enqueue a wakeup signal. The {@code result} argument passed to the
-     * callback is {@code null} for failed tasks; callers that need the error message should read
-     * the persisted {@link TaskRecord} directly.
-     *
-     * <p>Only one callback is supported; a second call replaces the previous one.
-     */
+    @Override
     public void setCompletionCallback(TaskCompletionCallback callback) {
         this.completionCallback = callback;
     }
@@ -547,21 +584,6 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     @Override
-    public void removeTask(RuntimeContext rc, String sessionId, String taskId) {
-        String key = localKey(sessionId, taskId);
-        localTasks.remove(key);
-        localTaskSessionIds.remove(key);
-        localTaskContexts.remove(key);
-    }
-
-    @Override
-    public void clear() {
-        localTasks.clear();
-        localTaskSessionIds.clear();
-        localTaskContexts.clear();
-    }
-
-    /** Shuts down the maintenance scheduler and (if owned) the task executor. */
     public void shutdown() {
         if (maintenanceScheduler != null) {
             maintenanceScheduler.shutdown();
@@ -624,21 +646,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private void sweepOrphanedTasksDefault() {
-        // Maintenance scheduler runs without per-user context: tasks under user-isolated
-        // namespaces are reachable via the captured per-task RC; this sweep operates on the
-        // shared sweep marker (under empty RC) only.
-        RuntimeContext rc = RuntimeContext.empty();
-
-        // Best-effort distributed throttle: if another node already completed a sweep
-        // within the last SWEEP_INTERVAL_MINUTES, skip this cycle entirely.
-        // No locking — two nodes may occasionally both sweep, which is safe (idempotent).
         Duration sweepInterval = Duration.ofSeconds(SWEEP_INTERVAL_MINUTES * 60L);
-        Optional<Instant> lastSweep = workspaceManager.readSweepMarker(rc, parentAgentId);
-        if (lastSweep.isPresent() && lastSweep.get().isAfter(Instant.now().minus(sweepInterval))) {
-            log.debug(
-                    "Skipping orphan sweep for {} — another node swept at {}",
-                    parentAgentId,
-                    lastSweep.get());
+        // Throttle via PeriodicGate: LocalPeriodicGate for single-process, StoreBacked for
+        // cross-replica deduplication. Sweep itself is idempotent, so a lost claim is harmless.
+        if (!periodicGate.tryClaim("task-sweep:" + parentAgentId, sweepInterval)) {
+            log.debug("Skipping orphan sweep for {} — periodic gate denied claim", parentAgentId);
             return;
         }
 
@@ -649,9 +661,6 @@ public class WorkspaceTaskRepository implements TaskRepository {
         Duration orphanTimeout = Duration.ofMinutes(ORPHAN_TIMEOUT_MINUTES);
         Duration recentWindow = orphanTimeout.multipliedBy(2).plus(sweepInterval);
         sweepOrphanedTasks(orphanTimeout, recentWindow);
-
-        // Record completion so other nodes can skip their next scheduled cycle.
-        workspaceManager.writeSweepMarker(rc, parentAgentId);
     }
 
     /**
@@ -872,21 +881,5 @@ public class WorkspaceTaskRepository implements TaskRepository {
         } catch (Exception e) {
             log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
         }
-    }
-
-    /**
-     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
-     * Implementations typically push the result to the session inbox and enqueue a wakeup signal.
-     * {@code result} is {@code null} when the task failed; callers should read the persisted
-     * {@link TaskRecord} for the error message.
-     */
-    @FunctionalInterface
-    public interface TaskCompletionCallback {
-        void onCompleted(
-                RuntimeContext rc,
-                String taskId,
-                String subAgentId,
-                String sessionId,
-                String result);
     }
 }

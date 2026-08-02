@@ -33,6 +33,9 @@ public interface SessionEventEntityRepository extends JpaRepository<SessionEvent
     List<SessionEventEntity> findBySessionIdAndEventTypeInOrderBySeqAsc(
             String sessionId, Collection<String> eventTypes);
 
+    List<SessionEventEntity> findBySessionIdAndEventTypeInAndSeqGreaterThanOrderBySeqAsc(
+            String sessionId, Collection<String> eventTypes, long afterSeq);
+
     Optional<SessionEventEntity> findByEventId(String eventId);
 
     @Query("select coalesce(max(e.seq), 0) from SessionEventEntity e where e.sessionId = :sid")

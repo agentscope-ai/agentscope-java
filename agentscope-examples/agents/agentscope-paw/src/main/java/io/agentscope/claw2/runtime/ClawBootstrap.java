@@ -381,6 +381,8 @@ public final class ClawBootstrap {
                         ? e.getName()
                         : agentId;
         b.name(name);
+        // Stable catalog id — used for session JSONL paths and TranscriptRef agent segment.
+        b.agentId(agentId);
 
         if (e != null) {
             if (e.getDescription() != null) {

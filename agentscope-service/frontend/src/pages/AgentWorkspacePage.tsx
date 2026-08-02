@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceEditor from '../components/WorkspaceEditor';
+import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import { summary as fetchSummary, WorkspaceSummary } from '../api/workspace';
+import type { AgentDefinition } from '../api/agents';
 
 const pathBar: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8,
@@ -20,9 +22,10 @@ const pathValue: React.CSSProperties = {
 };
 
 export default function AgentWorkspacePage() {
-  const { agentId } = useOutletContext<{ agentId: string }>();
+  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [selected, setSelected] = useState<string | null>(null);
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
+  const linked = agent?.workspaceId;
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +46,7 @@ export default function AgentWorkspacePage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {linked && <LinkedWorkspaceBanner workspaceId={linked} resource="files" />}
       {summary?.workspacePath && (
         <div style={pathBar} title={summary.workspacePath}>
           <span style={pathLabel}>Path</span>

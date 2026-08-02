@@ -354,8 +354,9 @@ func (s *Server) fireDeployment(ctx context.Context, d deployRow, message string
 		ver = *d.AgentVersion
 		refType = "version"
 	}
+	_, memIDs, vaultIDs := mergeSessionMounts(a, d.EnvironmentID, nil, nil, false, false)
 	sess, err := s.insertSession(ctx, d.OwnerID, d.AgentID, d.OwnerID, ver, refType,
-		d.EnvironmentID, "", nil, nil, nil, nil)
+		d.EnvironmentID, "", memIDs, vaultIDs, nil, nil)
 	if err != nil {
 		return d, err
 	}

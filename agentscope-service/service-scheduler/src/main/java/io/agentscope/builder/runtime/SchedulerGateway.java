@@ -15,6 +15,8 @@
  */
 package io.agentscope.builder.runtime;
 
+import io.agentscope.builder.web.config.ChannelRuntimeCatalog;
+import io.agentscope.builder.web.managed.ChannelExternalKeys;
 import io.agentscope.builder.web.managed.ManagedSessionChannelBridge;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -37,7 +39,8 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li>target agent — {@code MsgContext.extra().get("agentId")}, resolved by the channel's own
  *       router from bindings / channel default before delivery;
- *   <li>session owner — {@link MsgContext#userId()} (the channel-mapped sender identity);
+ *   <li>session owner — Builder tenant from {@link ChannelRuntimeCatalog} (channel configurator);
+ *   <li>conversation slot — {@link ChannelExternalKeys} derived from dmScope + peer;
  *   <li>reply — the bridge posts the message as a {@code user.message} event and waits for the
  *       turn's terminal status, returning the final {@code agent.message} text.
  * </ul>
@@ -48,9 +51,11 @@ public class SchedulerGateway implements Gateway {
     private static final Logger log = LoggerFactory.getLogger(SchedulerGateway.class);
 
     private final ManagedSessionChannelBridge bridge;
+    private final ChannelRuntimeCatalog catalog;
 
-    public SchedulerGateway(ManagedSessionChannelBridge bridge) {
+    public SchedulerGateway(ManagedSessionChannelBridge bridge, ChannelRuntimeCatalog catalog) {
         this.bridge = bridge;
+        this.catalog = catalog;
     }
 
     /** No-op: the scheduler runs no local agents. */
@@ -73,19 +78,22 @@ public class SchedulerGateway implements Gateway {
                     new IllegalStateException(
                             "No agent bound for channel '" + ctx.channel() + "' inbound"));
         }
-        String ownerId = ctx.userId();
+        String ownerId = catalog.ownerId(ctx.channel());
         if (ownerId == null || ownerId.isBlank()) {
             return Mono.error(
                     new IllegalStateException(
-                            "Inbound on channel '"
+                            "No Builder owner for channel '"
                                     + ctx.channel()
-                                    + "' carries no sender identity"));
+                                    + "' — ensure the channel is registered in the control plane"));
         }
         String text = extractUserText(messages);
         if (text == null) {
             return Mono.empty();
         }
-        return bridge.dispatchAndAwaitReply(ownerId, agentId, text)
+        String externalKey =
+                ChannelExternalKeys.forInbound(
+                        ctx, outboundAddress, catalog.dmScope(ctx.channel()));
+        return bridge.dispatchAndAwaitReply(ownerId, agentId, externalKey, text)
                 .map(reply -> Msg.builder().role(MsgRole.ASSISTANT).textContent(reply).build());
     }
 

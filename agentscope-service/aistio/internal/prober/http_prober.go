@@ -71,35 +71,51 @@ func (p *HTTPProber) ProbeHealth(ctx context.Context, endpoint string) (bool, er
 }
 
 func (p *HTTPProber) ProbeSessions(ctx context.Context, endpoint string) ([]SessionSnapshot, error) {
+	result, err := p.ProbeSessionsDetailed(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return result.Sessions, nil
+}
+
+// ProbeSessionsDetailed parses truncation hints (truncated / hasMore) from the
+// sessions list response when the data plane provides them.
+func (p *HTTPProber) ProbeSessionsDetailed(ctx context.Context, endpoint string) (SessionsProbeResult, error) {
 	url := fmt.Sprintf("%s/agentscope/sessions", endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return SessionsProbeResult{}, fmt.Errorf("creating request: %w", err)
 	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching sessions: %w", err)
+		return SessionsProbeResult{}, fmt.Errorf("fetching sessions: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("sessions probe returned status %d", resp.StatusCode)
+		return SessionsProbeResult{}, fmt.Errorf("sessions probe returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+		return SessionsProbeResult{}, fmt.Errorf("reading response: %w", err)
 	}
 
-	var result struct {
-		Sessions []SessionSnapshot `json:"sessions"`
+	var parsed struct {
+		Sessions  []SessionSnapshot `json:"sessions"`
+		Truncated bool              `json:"truncated"`
+		HasMore   bool              `json:"hasMore"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parsing sessions response: %w", err)
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return SessionsProbeResult{}, fmt.Errorf("parsing sessions response: %w", err)
 	}
 
-	return result.Sessions, nil
+	return SessionsProbeResult{
+		Sessions:  parsed.Sessions,
+		Truncated: parsed.Truncated,
+		HasMore:   parsed.HasMore,
+	}, nil
 }
 
 func (p *HTTPProber) SendCompress(ctx context.Context, endpoint string, sessionID string) error {

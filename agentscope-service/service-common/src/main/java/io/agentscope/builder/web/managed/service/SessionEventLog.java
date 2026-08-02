@@ -19,6 +19,7 @@ import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntityRepository;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -70,10 +71,20 @@ public class SessionEventLog {
      * transaction so a constraint failure does not poison the outer transaction.
      */
     public SessionEventDto append(String sessionId, String type, Map<String, Object> payload) {
+        return append(sessionId, type, payload, null);
+    }
+
+    /**
+     * Appends an event, optionally reusing a pre-allocated {@code eventId} so stream previews can
+     * reconcile with the persisted row.
+     */
+    public SessionEventDto append(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
         RuntimeException lastConflict = null;
         for (int attempt = 0; attempt < MAX_SEQ_RETRIES; attempt++) {
             try {
-                return transactionTemplate.execute(status -> appendOnce(sessionId, type, payload));
+                return transactionTemplate.execute(
+                        status -> appendOnce(sessionId, type, payload, eventId));
             } catch (RuntimeException ex) {
                 if (!isSeqConflict(ex)) {
                     throw ex;
@@ -95,11 +106,15 @@ public class SessionEventLog {
                 lastConflict);
     }
 
-    private SessionEventDto appendOnce(String sessionId, String type, Map<String, Object> payload) {
+    private SessionEventDto appendOnce(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
         long now = System.currentTimeMillis();
         long seq = repository.maxSeq(sessionId) + 1;
         SessionEventEntity entity = new SessionEventEntity();
-        entity.setEventId("evt_" + UUID.randomUUID().toString().replace("-", ""));
+        entity.setEventId(
+                eventId != null && !eventId.isBlank()
+                        ? eventId
+                        : "evt_" + UUID.randomUUID().toString().replace("-", ""));
         entity.setSessionId(sessionId);
         entity.setSeq(seq);
         entity.setEventType(type);
@@ -134,7 +149,21 @@ public class SessionEventLog {
     /** Lists all events for a session in sequence order. */
     @Transactional(readOnly = true)
     public List<SessionEventDto> list(String sessionId) {
-        return repository.findBySessionIdOrderBySeqAsc(sessionId).stream()
+        return list(sessionId, null);
+    }
+
+    /**
+     * Lists events for a session, optionally restricted to {@code types}. When {@code types} is
+     * null or empty, all types are returned.
+     */
+    @Transactional(readOnly = true)
+    public List<SessionEventDto> list(String sessionId, Collection<String> types) {
+        if (types == null || types.isEmpty()) {
+            return repository.findBySessionIdOrderBySeqAsc(sessionId).stream()
+                    .map(this::toDto)
+                    .toList();
+        }
+        return repository.findBySessionIdAndEventTypeInOrderBySeqAsc(sessionId, types).stream()
                 .map(this::toDto)
                 .toList();
     }
@@ -142,8 +171,25 @@ public class SessionEventLog {
     /** Lists events with sequence strictly greater than {@code afterSeq}. */
     @Transactional(readOnly = true)
     public List<SessionEventDto> listAfter(String sessionId, long afterSeq) {
+        return listAfter(sessionId, afterSeq, null);
+    }
+
+    /**
+     * Lists events after {@code afterSeq}, optionally restricted to {@code types}.
+     */
+    @Transactional(readOnly = true)
+    public List<SessionEventDto> listAfter(
+            String sessionId, long afterSeq, Collection<String> types) {
+        if (types == null || types.isEmpty()) {
+            return repository
+                    .findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq)
+                    .stream()
+                    .map(this::toDto)
+                    .toList();
+        }
         return repository
-                .findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq)
+                .findBySessionIdAndEventTypeInAndSeqGreaterThanOrderBySeqAsc(
+                        sessionId, types, afterSeq)
                 .stream()
                 .map(this::toDto)
                 .toList();

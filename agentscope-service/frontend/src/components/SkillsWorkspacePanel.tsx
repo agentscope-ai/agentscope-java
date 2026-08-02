@@ -13,6 +13,7 @@ interface Props {
   refreshKey: number;
   onChange: () => void;
   onRequestBrowse?: () => void;
+  readOnly?: boolean;
 }
 
 const containerStyle: React.CSSProperties = {
@@ -114,6 +115,7 @@ export default function SkillsWorkspacePanel({
   refreshKey,
   onChange,
   onRequestBrowse,
+  readOnly = false,
 }: Props) {
   const [allSkills, setAllSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
@@ -224,7 +226,7 @@ export default function SkillsWorkspacePanel({
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a' }}>
             Installed Skills ({skills.length})
           </span>
-          {onRequestBrowse && (
+          {!readOnly && onRequestBrowse && (
             <button onClick={onRequestBrowse} style={buttonStyle} disabled={busy}>
               + Install
             </button>
@@ -340,29 +342,37 @@ export default function SkillsWorkspacePanel({
                 )
               )}
               <span style={{ flex: 1 }} />
-              {dirty && <span style={{ fontSize: '0.78rem', color: '#d97706' }}>unsaved</span>}
-              <button
-                onClick={handleSave}
-                style={{
-                  ...buttonStyle,
-                  background: dirty ? '#6366f1' : '#e0e7ff',
-                  color: dirty ? '#ffffff' : '#6366f1',
-                  border: dirty ? '1px solid #6366f1' : '1px solid #c7d2fe',
-                }}
-                disabled={!dirty || busy}
-              >
-                Save
-              </button>
-              <button onClick={handleDelete} style={dangerButtonStyle} disabled={busy}>
-                {selectedSkill?.origin === 'marketplace' ? 'Uninstall' : 'Delete'}
-              </button>
+              {!readOnly && dirty && (
+                <span style={{ fontSize: '0.78rem', color: '#d97706' }}>unsaved</span>
+              )}
+              {!readOnly && (
+                <>
+                  <button
+                    onClick={handleSave}
+                    style={{
+                      ...buttonStyle,
+                      background: dirty ? '#6366f1' : '#e0e7ff',
+                      color: dirty ? '#ffffff' : '#6366f1',
+                      border: dirty ? '1px solid #6366f1' : '1px solid #c7d2fe',
+                    }}
+                    disabled={!dirty || busy}
+                  >
+                    Save
+                  </button>
+                  <button onClick={handleDelete} style={dangerButtonStyle} disabled={busy}>
+                    {selectedSkill?.origin === 'marketplace' ? 'Uninstall' : 'Delete'}
+                  </button>
+                </>
+              )}
             </div>
             <textarea
               value={draft}
               onChange={e => {
+                if (readOnly) return;
                 setDraft(e.target.value);
                 setDirty(e.target.value !== detail.markdown);
               }}
+              readOnly={readOnly}
               style={editorStyle}
               spellCheck={false}
             />

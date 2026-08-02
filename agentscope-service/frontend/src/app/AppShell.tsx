@@ -3,6 +3,7 @@ import {
   Boxes,
   Bot,
   Database,
+  FolderOpen,
   HardDrive,
   KeyRound,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 
 const buildNav = [
   { to: '/agents', label: 'Agents', icon: Bot },
+  { to: '/workspaces', label: 'Workspaces', icon: FolderOpen },
   { to: '/environments', label: 'Environments', icon: HardDrive },
   { to: '/memory-stores', label: 'Memory', icon: Database },
   { to: '/vaults', label: 'Vaults', icon: KeyRound },

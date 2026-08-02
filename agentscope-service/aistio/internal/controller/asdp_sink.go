@@ -335,6 +335,8 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 	if err := st.Metrics().RecordSnapshot(ctx, snap); err != nil {
 		return nil, fmt.Errorf("recording snapshot for session %s: %w", o.ID, err)
 	}
+	// Narrow transcript index: absolute DP snapshot aggregates (not event recomputation).
+	_ = store.UpsertTranscriptIndexFromSnapshot(ctx, st, saved.ID, o.MessageCount, o.PromptTokens, o.CompletionTokens)
 
 	if dPrompt > 0 || dCompletion > 0 {
 		fk := saved.ID

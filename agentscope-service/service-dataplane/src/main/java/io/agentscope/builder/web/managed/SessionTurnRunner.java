@@ -334,13 +334,23 @@ public class SessionTurnRunner {
                                 previewBus.emitStart(
                                         sessionId, frame.targetType(), frame.eventId());
                             }
-                            previewBus.emitDelta(
-                                    sessionId, frame.targetType(), frame.eventId(), frame.delta());
+                            // null delta = start-only announcement (e.g. tool_use begin)
+                            if (frame.delta() != null) {
+                                previewBus.emitDelta(
+                                        sessionId,
+                                        frame.targetType(),
+                                        frame.eventId(),
+                                        frame.delta());
+                            }
                         });
         mapped.persisted()
                 .ifPresent(
                         persisted ->
-                                eventLog.append(sessionId, persisted.type(), persisted.payload()));
+                                eventLog.append(
+                                        sessionId,
+                                        persisted.type(),
+                                        persisted.payload(),
+                                        persisted.eventId()));
         return false;
     }
 

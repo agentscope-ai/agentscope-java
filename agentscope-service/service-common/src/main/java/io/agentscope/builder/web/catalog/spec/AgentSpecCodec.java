@@ -73,10 +73,11 @@ public final class AgentSpecCodec {
                                 continue;
                             }
                             boolean enabled = c.enabled() != null ? c.enabled() : defaultEnabled;
+                            String harnessName = toHarnessToolName(c.name());
                             if (enabled) {
-                                allow.add(c.name());
+                                allow.add(harnessName);
                             } else {
-                                deny.add(c.name());
+                                deny.add(harnessName);
                             }
                         }
                     }
@@ -127,12 +128,32 @@ public final class AgentSpecCodec {
                                     ? c.permissionPolicy().type()
                                     : defaultPolicy;
                     if (p != null) {
-                        out.put(c.name(), p);
+                        out.put(toHarnessToolName(c.name()), p);
                     }
                 }
             }
         }
         return out;
+    }
+
+    /**
+     * Maps product catalog tool ids (Claude-aligned names and legacy aliases) to Harness tool
+     * names.
+     */
+    public static String toHarnessToolName(String productName) {
+        if (productName == null || productName.isBlank()) {
+            return productName;
+        }
+        return switch (productName) {
+            case "bash", "shell" -> "execute";
+            case "read" -> "read_file";
+            case "write" -> "write_file";
+            case "edit" -> "edit_file";
+            case "glob" -> "glob_files";
+            case "grep" -> "grep_files";
+            case "list_dir" -> "list_files";
+            default -> productName;
+        };
     }
 
     /** Builds agent_toolset from a flat allow list (e.g. AI draft suggested tools). */
@@ -181,8 +202,15 @@ public final class AgentSpecCodec {
             if (s == null) {
                 continue;
             }
-            if (AgentSpecTypes.SKILL_WORKSPACE.equals(s.type()) && s.name() != null) {
-                out.add(s.name());
+            // Marketplace installs are materialized into workspace skills/; enable by name/id.
+            if (AgentSpecTypes.SKILL_WORKSPACE.equals(s.type())
+                    || AgentSpecTypes.SKILL_MARKETPLACE.equals(s.type())
+                    || s.type() == null
+                    || s.type().isBlank()) {
+                String n = s.name() != null && !s.name().isBlank() ? s.name() : s.id();
+                if (n != null && !n.isBlank()) {
+                    out.add(n);
+                }
             }
         }
         return out;

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AgentCreateRequest, createAgent } from '../api/agents';
+import { listEnvironments } from '../api/environments';
+import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '36px 40px', maxWidth: 880 },
@@ -46,9 +48,31 @@ export default function AgentCreatePage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [workspaceId, setWorkspaceId] = useState('');
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [preview, setPreview] = useState<WorkspaceSummary | null>(null);
+  const [defaultEnvironmentId, setDefaultEnvironmentId] = useState('');
+  const [environments, setEnvironments] = useState<{ id: string; name: string; type: string }[]>([]);
   const [sysPrompt, setSysPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    listWorkspaces().then(setWorkspaces).catch(() => undefined);
+    listEnvironments().then(setEnvironments).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    getWorkspace(workspaceId)
+      .then(w => { if (!cancelled) setPreview(w); })
+      .catch(() => { if (!cancelled) setPreview(null); });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   const canSubmit = !submitting && !!name.trim();
 
@@ -61,9 +85,11 @@ export default function AgentCreatePage() {
         description: description.trim() || undefined,
         system: sysPrompt.trim() || undefined,
         workspacePath: workspacePath.trim() || undefined,
+        workspaceId: workspaceId || undefined,
+        defaultEnvironmentId: defaultEnvironmentId || undefined,
       };
       const created = await createAgent(req);
-      navigate(`/agents/${encodeURIComponent(created.id)}/workspace`, { replace: true });
+      navigate(`/agents/${encodeURIComponent(created.id)}/chat`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to create');
     } finally {
@@ -75,7 +101,10 @@ export default function AgentCreatePage() {
     <div style={S.page}>
       <h1 style={S.title}>New agent</h1>
       <div style={S.card}>
-        <div style={S.tip}>Start from a blank agent — edit workspace, skills and tools after creation.</div>
+        <div style={S.tip}>
+          Prefer linking a Workspace so AGENTS.md / skills / tools / subagents are authored once and
+          rematerialized into this agent. Or leave Workspace empty for an agent-private definition.
+        </div>
 
         <div style={S.row}>
           <label style={S.fieldLabel}>Name *</label>
@@ -98,7 +127,53 @@ export default function AgentCreatePage() {
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Workspace path</label>
+          <label style={S.fieldLabel}>Workspace</label>
+          <select
+            style={S.input}
+            value={workspaceId}
+            onChange={e => setWorkspaceId(e.target.value)}
+          >
+            <option value="">None (agent-private files)</option>
+            {workspaces.map(w => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+          <div style={S.hint}>
+            Link a Workspace to inherit AGENTS.md, skills, tools and subagents. Manage workspaces from the Workspaces nav.
+          </div>
+          {preview && (
+            <div style={{
+              marginTop: 10, padding: '12px 14px', borderRadius: 10,
+              background: '#f8fafc', border: '1px solid #e2e8f0',
+              fontSize: '0.85rem', color: '#475569', lineHeight: 1.5,
+            }}>
+              Will inherit from <strong>{preview.name}</strong> (v{preview.version}):
+              {' '}{preview.agentsMdExists ? 'AGENTS.md · ' : ''}
+              skills {preview.skillCount ?? 0} · subagents {preview.subagentCount ?? 0}.
+              Leave system prompt blank to use the workspace AGENTS.md.
+            </div>
+          )}
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Default environment (optional)</label>
+          <select
+            style={S.input}
+            value={defaultEnvironmentId}
+            onChange={e => setDefaultEnvironmentId(e.target.value)}
+          >
+            <option value="">None — Chat will ensure a local default</option>
+            {environments.map(env => (
+              <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
+            ))}
+          </select>
+          <div style={S.hint}>
+            Used when opening Chat / Channel sessions. Vaults and memory stores can be attached later in Settings.
+          </div>
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Workspace path (optional override)</label>
           <input
             style={S.input}
             value={workspacePath}

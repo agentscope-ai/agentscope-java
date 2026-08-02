@@ -4,9 +4,13 @@ import { AgentDefinition } from '../api/agents';
 import AgentSettingsForm from '../components/AgentSettingsForm';
 
 export default function AgentSettingsPage() {
-  const { agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agent, refreshAgent } = useOutletContext<{
+    agentId: string;
+    agent: AgentDefinition | null;
+    refreshAgent?: () => void | Promise<unknown>;
+  }>();
   if (!agent) {
     return <div style={{ padding: '24px 28px', color: '#64748b' }}>Loading…</div>;
   }
-  return <AgentSettingsForm agent={agent} />;
+  return <AgentSettingsForm agent={agent} onSaved={refreshAgent} />;
 }

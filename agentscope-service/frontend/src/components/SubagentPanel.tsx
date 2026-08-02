@@ -13,6 +13,7 @@ import { readFile } from '../api/workspace';
 interface Props {
   agentId: string;
   onChanged?: () => void;
+  readOnly?: boolean;
 }
 
 const S: Record<string, React.CSSProperties> = {
@@ -141,7 +142,7 @@ function formFromInfo(info: SubagentInfo, body: string): FormState {
   };
 }
 
-export default function SubagentPanel({ agentId, onChanged }: Props) {
+export default function SubagentPanel({ agentId, onChanged, readOnly = false }: Props) {
   const [view, setView] = useState<View>('list');
   const [items, setItems] = useState<SubagentInfo[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -403,14 +404,16 @@ export default function SubagentPanel({ agentId, onChanged }: Props) {
           </div>
           {formErr && <div style={{ ...S.status, ...S.errText }}>{formErr}</div>}
           {formOk && <div style={{ ...S.status, ...S.ok }}>Saved</div>}
-          <div style={S.formActions}>
-            <button style={S.primaryBtn} onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            {!isNew && (
-              <button style={S.dangerBtn} onClick={handleDelete}>Delete</button>
-            )}
-          </div>
+          {!readOnly && (
+            <div style={S.formActions}>
+              <button style={S.primaryBtn} onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              {!isNew && (
+                <button style={S.dangerBtn} onClick={handleDelete}>Delete</button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -421,8 +424,12 @@ export default function SubagentPanel({ agentId, onChanged }: Props) {
     <div style={S.root}>
       <div style={S.header}>
         <span style={S.title}>Subagents</span>
-        <button style={S.btn} onClick={openPicker}>+ From agent</button>
-        <button style={S.primaryBtn} onClick={handleNew}>+ New</button>
+        {!readOnly && (
+          <>
+            <button style={S.btn} onClick={openPicker}>+ From agent</button>
+            <button style={S.primaryBtn} onClick={handleNew}>+ New</button>
+          </>
+        )}
       </div>
       <div style={S.scroll}>
         {err && <div style={S.err}>{err}</div>}

@@ -15,6 +15,8 @@
  */
 package io.agentscope.builder.web.managed;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -24,20 +26,40 @@ import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
  * Maps harness {@link AgentEvent}s onto persisted session event types / payloads and stream-only
- * preview frames. Streaming deltas are never persisted.
+ * preview frames.
+ *
+ * <p>Streaming token/arg deltas are never persisted as rows. Tool call input and tool result bodies
+ * are accumulated across delta events and persisted on End. Preview {@code event_id} values are
+ * stable {@code evt_*} ids reused when the matching buffered event is appended, so clients can
+ * reconcile typewriter previews with the authoritative record.
  */
 @Component
 public class SessionEventMapper {
+
+    private static final int MAX_TOOL_PAYLOAD_CHARS = 64 * 1024;
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+
+    private final ObjectMapper objectMapper;
+
+    public SessionEventMapper(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /** Outcome of mapping one harness event. */
     public record MappingResult(
@@ -47,9 +69,17 @@ public class SessionEventMapper {
             return new MappingResult(Optional.empty(), Optional.empty());
         }
 
+        public static MappingResult persist(PersistedEvent event) {
+            return new MappingResult(Optional.of(event), Optional.empty());
+        }
+
         public static MappingResult persist(String type, Map<String, Object> payload) {
-            return new MappingResult(
-                    Optional.of(new PersistedEvent(type, payload)), Optional.empty());
+            return persist(new PersistedEvent(type, payload, null));
+        }
+
+        public static MappingResult persist(
+                String type, Map<String, Object> payload, String eventId) {
+            return persist(new PersistedEvent(type, payload, eventId));
         }
 
         public static MappingResult previewOnly(PreviewFrame frame) {
@@ -61,15 +91,27 @@ public class SessionEventMapper {
         }
     }
 
-    public record PersistedEvent(String type, Map<String, Object> payload) {}
+    /**
+     * Persisted event. When {@code eventId} is non-null, {@link
+     * io.agentscope.builder.web.managed.service.SessionEventLog} must reuse it so previews reconcile.
+     */
+    public record PersistedEvent(String type, Map<String, Object> payload, String eventId) {
+        public PersistedEvent(String type, Map<String, Object> payload) {
+            this(type, payload, null);
+        }
+    }
 
-    /** Stream-only preview frame ({@code event_start} / {@code event_delta}). */
+    /**
+     * Stream-only preview frame ({@code event_start} / {@code event_delta}).
+     *
+     * <p>When {@code delta} is null, callers should emit start only (no delta frame).
+     */
     public record PreviewFrame(
             String streamType, String targetType, String eventId, String delta) {}
 
     /**
      * Maps a harness event. Text/thinking/tool deltas produce preview frames only; complete
-     * messages and tool boundaries produce persisted events.
+     * messages and tool End boundaries produce persisted events with full payloads.
      */
     public MappingResult map(AgentEvent event, PreviewIds previewIds) {
         if (event instanceof TextBlockDeltaEvent delta) {
@@ -104,22 +146,27 @@ public class SessionEventMapper {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("text", text);
             payload.put("content", List.of(Map.of("type", "text", "text", text)));
-            return MappingResult.persist(SessionEventTypes.AGENT_MESSAGE, payload);
+            // Reuse the preview id when deltas already streamed for this message.
+            String eventId = previewIds.consumeMessageEventId();
+            return MappingResult.persist(SessionEventTypes.AGENT_MESSAGE, payload, eventId);
         }
         if (event instanceof ToolCallStartEvent toolUse) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("id", toolUse.getToolCallId());
-            payload.put("name", toolUse.getToolCallName());
-            payload.put("input", Map.of());
-            // Compat aliases used by current ChatPanel.
-            payload.put("toolCallId", toolUse.getToolCallId());
-            payload.put("toolName", toolUse.getToolCallName());
-            return MappingResult.persist(SessionEventTypes.AGENT_TOOL_USE, payload);
+            previewIds.beginToolUse(toolUse.getToolCallId(), toolUse.getToolCallName());
+            String eventId = previewIds.toolUseEventId(toolUse.getToolCallId());
+            // Start announces the upcoming tool_use; args arrive via deltas and persist on End.
+            return MappingResult.previewOnly(
+                    new PreviewFrame(
+                            SessionEventTypes.EVENT_START,
+                            SessionEventTypes.AGENT_TOOL_USE,
+                            eventId,
+                            null));
         }
         if (event instanceof ToolCallDeltaEvent toolDelta) {
             if (toolDelta.getDelta() == null || toolDelta.getDelta().isEmpty()) {
                 return MappingResult.empty();
             }
+            previewIds.appendToolInput(
+                    toolDelta.getToolCallId(), toolDelta.getToolCallName(), toolDelta.getDelta());
             String eventId = previewIds.toolUseEventId(toolDelta.getToolCallId());
             return MappingResult.previewOnly(
                     new PreviewFrame(
@@ -128,7 +175,43 @@ public class SessionEventMapper {
                             eventId,
                             toolDelta.getDelta()));
         }
+        if (event instanceof ToolCallEndEvent toolEnd) {
+            ToolBuffers.ToolUseBuffer buf =
+                    previewIds.finishToolUse(toolEnd.getToolCallId(), toolEnd.getToolCallName());
+            Map<String, Object> input = parseToolInput(buf.inputJson());
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", toolEnd.getToolCallId());
+            payload.put("name", toolEnd.getToolCallName());
+            payload.put("input", input);
+            payload.put("toolCallId", toolEnd.getToolCallId());
+            payload.put("toolName", toolEnd.getToolCallName());
+            if (buf.truncated()) {
+                payload.put("truncated", true);
+                payload.put("originalSize", buf.originalInputSize());
+            }
+            return MappingResult.persist(SessionEventTypes.AGENT_TOOL_USE, payload, buf.eventId());
+        }
+        if (event instanceof ToolResultTextDeltaEvent textDelta) {
+            if (textDelta.getDelta() == null || textDelta.getDelta().isEmpty()) {
+                return MappingResult.empty();
+            }
+            previewIds.appendToolResultText(
+                    textDelta.getToolCallId(), textDelta.getToolCallName(), textDelta.getDelta());
+            return MappingResult.empty();
+        }
+        if (event instanceof ToolResultDataDeltaEvent dataDelta) {
+            String fragment = stringifyContentBlock(dataDelta.getData());
+            if (fragment == null || fragment.isEmpty()) {
+                return MappingResult.empty();
+            }
+            previewIds.appendToolResultText(
+                    dataDelta.getToolCallId(), dataDelta.getToolCallName(), fragment);
+            return MappingResult.empty();
+        }
         if (event instanceof ToolResultEndEvent toolResult) {
+            ToolBuffers.ToolResultBuffer buf =
+                    previewIds.finishToolResult(
+                            toolResult.getToolCallId(), toolResult.getToolCallName());
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("tool_use_id", toolResult.getToolCallId());
             payload.put("id", toolResult.getToolCallId());
@@ -138,7 +221,16 @@ public class SessionEventMapper {
             if (toolResult.getState() != null) {
                 payload.put("state", toolResult.getState().name());
             }
-            return MappingResult.persist(SessionEventTypes.AGENT_TOOL_RESULT, payload);
+            String output = buf.outputText();
+            payload.put("output", output);
+            payload.put("text", output);
+            payload.put("content", List.of(Map.of("type", "text", "text", output)));
+            if (buf.truncated()) {
+                payload.put("truncated", true);
+                payload.put("originalSize", buf.originalOutputSize());
+            }
+            return MappingResult.persist(
+                    SessionEventTypes.AGENT_TOOL_RESULT, payload, buf.eventId());
         }
         if (event instanceof ModelCallStartEvent) {
             return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_START, Map.of());
@@ -148,39 +240,115 @@ public class SessionEventMapper {
             if (modelEnd.getUsage() != null) {
                 payload.put("usage", modelEnd.getUsage());
             }
+            // Closing a model request also closes the message preview window for the next request.
+            previewIds.resetMessage();
+            previewIds.resetThinking();
             return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_END, payload);
         }
         if (event instanceof AgentStartEvent || event instanceof AgentEndEvent) {
-            // Folded into session.status_*; do not emit separate agent_start/end aliases.
             return MappingResult.empty();
         }
         return MappingResult.empty();
     }
 
-    /** Allocates stable preview event ids for a turn. */
+    private Map<String, Object> parseToolInput(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(raw, MAP_TYPE);
+            return parsed != null ? parsed : Map.of("_raw", raw);
+        } catch (Exception ex) {
+            return Map.of("_raw", raw);
+        }
+    }
+
+    private static String stringifyContentBlock(ContentBlock block) {
+        if (block == null) {
+            return null;
+        }
+        if (block instanceof TextBlock text) {
+            return text.getText();
+        }
+        return String.valueOf(block);
+    }
+
+    /** Allocates stable preview / persist event ids for a turn and accumulates tool buffers. */
     public static final class PreviewIds {
         private String messageId;
         private String thinkingId;
-        private final Map<String, String> toolUseIds = new LinkedHashMap<>();
+        private final Map<String, ToolBuffers.ToolUseBuffer> toolUses = new LinkedHashMap<>();
+        private final Map<String, ToolBuffers.ToolResultBuffer> toolResults = new LinkedHashMap<>();
 
         public String messageEventId() {
             if (messageId == null) {
-                messageId = "evt_preview_msg_" + System.nanoTime();
+                messageId = newEventId();
             }
             return messageId;
         }
 
+        /** Returns and clears the in-flight message preview id (null when no deltas streamed). */
+        public String consumeMessageEventId() {
+            String id = messageId;
+            messageId = null;
+            return id;
+        }
+
         public String thinkingEventId() {
             if (thinkingId == null) {
-                thinkingId = "evt_preview_think_" + System.nanoTime();
+                thinkingId = newEventId();
             }
             return thinkingId;
         }
 
         public String toolUseEventId(String toolCallId) {
-            return toolUseIds.computeIfAbsent(
-                    toolCallId == null ? "_" : toolCallId,
-                    id -> "evt_preview_tool_" + id + "_" + System.nanoTime());
+            return beginToolUse(toolCallId, null).eventId();
+        }
+
+        public ToolBuffers.ToolUseBuffer beginToolUse(String toolCallId, String toolName) {
+            String key = key(toolCallId);
+            return toolUses.computeIfAbsent(
+                    key, ignored -> new ToolBuffers.ToolUseBuffer(newEventId(), toolName));
+        }
+
+        public void appendToolInput(String toolCallId, String toolName, String delta) {
+            ToolBuffers.ToolUseBuffer buf = beginToolUse(toolCallId, toolName);
+            if (toolName != null) {
+                buf.setToolName(toolName);
+            }
+            buf.appendInput(delta, MAX_TOOL_PAYLOAD_CHARS);
+        }
+
+        public ToolBuffers.ToolUseBuffer finishToolUse(String toolCallId, String toolName) {
+            ToolBuffers.ToolUseBuffer buf = beginToolUse(toolCallId, toolName);
+            if (toolName != null) {
+                buf.setToolName(toolName);
+            }
+            toolUses.remove(key(toolCallId));
+            return buf;
+        }
+
+        public void appendToolResultText(String toolCallId, String toolName, String delta) {
+            ToolBuffers.ToolResultBuffer buf =
+                    toolResults.computeIfAbsent(
+                            key(toolCallId),
+                            ignored -> new ToolBuffers.ToolResultBuffer(newEventId(), toolName));
+            if (toolName != null) {
+                buf.setToolName(toolName);
+            }
+            buf.appendOutput(delta, MAX_TOOL_PAYLOAD_CHARS);
+        }
+
+        public ToolBuffers.ToolResultBuffer finishToolResult(String toolCallId, String toolName) {
+            ToolBuffers.ToolResultBuffer buf =
+                    toolResults.computeIfAbsent(
+                            key(toolCallId),
+                            ignored -> new ToolBuffers.ToolResultBuffer(newEventId(), toolName));
+            if (toolName != null) {
+                buf.setToolName(toolName);
+            }
+            toolResults.remove(key(toolCallId));
+            return buf;
         }
 
         public void resetMessage() {
@@ -189,6 +357,115 @@ public class SessionEventMapper {
 
         public void resetThinking() {
             thinkingId = null;
+        }
+
+        private static String key(String toolCallId) {
+            return toolCallId == null || toolCallId.isBlank() ? "_" : toolCallId;
+        }
+
+        private static String newEventId() {
+            return "evt_" + UUID.randomUUID().toString().replace("-", "");
+        }
+    }
+
+    /** Mutable accumulation buffers for tool input / output within a turn. */
+    static final class ToolBuffers {
+        private ToolBuffers() {}
+
+        static final class ToolUseBuffer {
+            private final String eventId;
+            private final StringBuilder input = new StringBuilder();
+            private String toolName;
+            private boolean truncated;
+            private int originalInputSize;
+
+            ToolUseBuffer(String eventId, String toolName) {
+                this.eventId = eventId;
+                this.toolName = toolName;
+            }
+
+            String eventId() {
+                return eventId;
+            }
+
+            String inputJson() {
+                return input.toString();
+            }
+
+            boolean truncated() {
+                return truncated;
+            }
+
+            int originalInputSize() {
+                return originalInputSize;
+            }
+
+            void setToolName(String toolName) {
+                this.toolName = toolName;
+            }
+
+            void appendInput(String delta, int maxChars) {
+                originalInputSize += delta.length();
+                if (input.length() >= maxChars) {
+                    truncated = true;
+                    return;
+                }
+                int remaining = maxChars - input.length();
+                if (delta.length() > remaining) {
+                    input.append(delta, 0, remaining);
+                    truncated = true;
+                } else {
+                    input.append(delta);
+                }
+            }
+        }
+
+        static final class ToolResultBuffer {
+            private final String eventId;
+            private final StringBuilder output = new StringBuilder();
+            private String toolName;
+            private boolean truncated;
+            private int originalOutputSize;
+
+            ToolResultBuffer(String eventId, String toolName) {
+                this.eventId = eventId;
+                this.toolName = toolName;
+            }
+
+            String eventId() {
+                return eventId;
+            }
+
+            String outputText() {
+                return output.toString();
+            }
+
+            boolean truncated() {
+                return truncated;
+            }
+
+            int originalOutputSize() {
+                return originalOutputSize;
+            }
+
+            void setToolName(String toolName) {
+                this.toolName = toolName;
+            }
+
+            void appendOutput(String delta, int maxChars) {
+                originalOutputSize += delta.length();
+                if (output.length() >= maxChars) {
+                    truncated = true;
+                    return;
+                }
+                int remaining = maxChars - output.length();
+                if (delta.length() > remaining) {
+                    output.append(delta, 0, remaining);
+                    truncated = true;
+                } else {
+                    output.append(delta);
+                }
+            }
         }
     }
 }

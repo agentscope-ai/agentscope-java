@@ -11,6 +11,8 @@ import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
 import AgentsHubPage from './pages/AgentsHubPage';
 import AgentCreatePage from './pages/AgentCreatePage';
+import WorkspacesHubPage from './pages/WorkspacesHubPage';
+import WorkspaceDetailPage from './pages/WorkspaceDetailPage';
 import AgentChatPage from './pages/AgentChatPage';
 import AgentWorkspacePage from './pages/AgentWorkspacePage';
 import AgentSessionsPage from './pages/AgentSessionsPage';
@@ -69,6 +71,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* Build workspace */}
             <Route path="/agents" element={<AgentsHubPage />} />
             <Route path="/agents/new" element={<AgentCreatePage />} />
+            <Route path="/workspaces" element={<WorkspacesHubPage />} />
+            <Route path="/workspaces/:id" element={<WorkspaceDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/environments" element={<EnvironmentsHubPage />} />

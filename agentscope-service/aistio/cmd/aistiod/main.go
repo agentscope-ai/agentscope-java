@@ -260,6 +260,14 @@ func main() {
 		retentionSnapshots     time.Duration
 		retentionContexts      time.Duration
 		retentionMetrics       time.Duration
+		enableHostedStore      bool
+		retentionBusQueue      time.Duration
+		retentionBusLog        time.Duration
+		retentionAsyncTools    time.Duration
+		retentionSandboxSnaps  time.Duration
+		retentionTasks         time.Duration
+		taskSweepInterval      time.Duration
+		taskOrphanTimeout      time.Duration
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -319,6 +327,15 @@ func main() {
 	flag.DurationVar(&retentionSnapshots, "retention-snapshots", defaultRetention.Snapshots, "Retention window for session snapshots and metrics.")
 	flag.DurationVar(&retentionContexts, "retention-context-snapshots", defaultRetention.ContextSnapshots, "Retention window for full context snapshots.")
 	flag.DurationVar(&retentionMetrics, "retention-metrics", defaultRetention.Metrics, "Retention window for token/agent metrics.")
+	flag.BoolVar(&enableHostedStore, "enable-hosted-store", envBool("AISTIO_ENABLE_HOSTED_STORE", false),
+		"Enable the hosted DistributedStore API (/api/v1/dp/*) for data-plane coordination.")
+	flag.DurationVar(&retentionBusQueue, "retention-bus-queue", defaultRetention.BusQueue, "Retention window for undrained hosted bus queue entries.")
+	flag.DurationVar(&retentionBusLog, "retention-bus-log", defaultRetention.BusLog, "Retention window for hosted bus replay log entries.")
+	flag.DurationVar(&retentionAsyncTools, "retention-async-tools", defaultRetention.AsyncTools, "Retention window for hosted async tool records.")
+	flag.DurationVar(&retentionSandboxSnaps, "retention-sandbox-snapshots", defaultRetention.SandboxSnapshots, "Retention window for hosted sandbox snapshot blobs.")
+	flag.DurationVar(&retentionTasks, "retention-tasks", defaultRetention.Tasks, "Retention window for terminal hosted subagent task records.")
+	flag.DurationVar(&taskSweepInterval, "task-sweep-interval", time.Minute, "Interval for hosted subagent task orphan sweeps.")
+	flag.DurationVar(&taskOrphanTimeout, "task-orphan-timeout", 10*time.Minute, "Mark non-terminal hosted tasks FAILED when last_updated_at is older than this.")
 	flag.Parse()
 
 	if showVersion {
@@ -370,6 +387,11 @@ func main() {
 			Snapshots:        retentionSnapshots,
 			ContextSnapshots: retentionContexts,
 			Metrics:          retentionMetrics,
+			BusQueue:         retentionBusQueue,
+			BusLog:           retentionBusLog,
+			AsyncTools:       retentionAsyncTools,
+			SandboxSnapshots: retentionSandboxSnaps,
+			Tasks:            retentionTasks,
 		},
 	}
 	runtimeStore, err := store.Open(context.Background(), storeCfg)
@@ -449,10 +471,13 @@ func main() {
 			enableASDP:         enableASDP,
 			enableExperimental: enableExperimental,
 			enableWebhook:      enableWebhook,
+			enableHostedStore:  enableHostedStore,
 			grpcAddr:           grpcAddr,
 			grpcTLSCert:        grpcTLSCert,
 			grpcTLSKey:         grpcTLSKey,
 			grpcTLSCA:          grpcTLSCA,
+			taskSweepInterval:  taskSweepInterval,
+			taskOrphanTimeout:  taskOrphanTimeout,
 		})
 	} else if enableASDP {
 		logger.Info("ASDP disabled: the data plane protocol requires a Kubernetes connection")
@@ -512,6 +537,7 @@ func main() {
 		StaticDir:     staticDir,
 		Registry:      dpRegistry,
 		InternalToken: productToken,
+		HostedStore:   enableHostedStore,
 	}
 	if mgr != nil {
 		apiOpts.Client = mgr.GetClient()
@@ -581,10 +607,13 @@ type kubeRuntime struct {
 	enableASDP         bool
 	enableExperimental bool
 	enableWebhook      bool
+	enableHostedStore  bool
 	grpcAddr           string
 	grpcTLSCert        string
 	grpcTLSKey         string
 	grpcTLSCA          string
+	taskSweepInterval  time.Duration
+	taskOrphanTimeout  time.Duration
 }
 
 // setupKubernetes registers the reconcilers, config delivery, admission
@@ -695,6 +724,18 @@ func setupKubernetes(k kubeRuntime) *asdp.Server {
 	}); err != nil {
 		logger.Error(err, "unable to add retention worker")
 		os.Exit(1)
+	}
+
+	if k.enableHostedStore {
+		if err := mgr.Add(&controller.TaskSweepWorker{
+			Store:         runtimeStore,
+			Interval:      k.taskSweepInterval,
+			OrphanTimeout: k.taskOrphanTimeout,
+			OnSwept:       httpapi.AddDPTasksSwept,
+		}); err != nil {
+			logger.Error(err, "unable to add task sweep worker")
+			os.Exit(1)
+		}
 	}
 
 	// ===== Config delivery (GA) =====

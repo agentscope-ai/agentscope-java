@@ -19,10 +19,8 @@ const TIERS: { value: BindingTier; label: string; field: keyof BindingCreateRequ
 ];
 
 const SCOPES: { value: NonNullable<BindingCreateRequest['sessionScope']>; label: string }[] = [
-  { value: 'MAIN',                       label: 'MAIN — single session per channel' },
-  { value: 'PER_PEER',                   label: 'PER_PEER — one per sender' },
-  { value: 'PER_CHANNEL_PEER',           label: 'PER_CHANNEL_PEER — one per channel+sender' },
-  { value: 'PER_ACCOUNT_CHANNEL_PEER',   label: 'PER_ACCOUNT_CHANNEL_PEER — most specific' },
+  { value: 'PER_PEER', label: 'Per person — one session per sender' },
+  { value: 'MAIN', label: 'Shared inbox — single session for all DMs' },
 ];
 
 const S: Record<string, React.CSSProperties> = {

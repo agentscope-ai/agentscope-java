@@ -78,6 +78,13 @@ Removed from public surface: `agent.reasoning`, `agent.tool_use_delta` (persiste
 
 ---
 
+## List filters (`GET …/events`)
+
+| Query | Meaning |
+|---|---|
+| `after` | Only events with `seq > after` |
+| `types` | Repeatable; only these event types (Claude `types[]` equivalent) |
+
 ## Stream-only (`GET …/events/stream?event_deltas=…`)
 
 Never appear in `GET …/events`.
@@ -85,8 +92,10 @@ Never appear in `GET …/events`.
 | `type` | Payload |
 |---|---|
 | `event_start` | `event_id`, `type` (target persisted type) |
-| `event_delta` | `event_id`, `type`, `delta` |
+| `event_delta` | `event_id`, `type`, `delta` (plain text fragment) |
 
-Supported delta targets (first cut): `agent.message`, `agent.thinking`, `agent.tool_use`.
+Supported `event_deltas` values: `agent.message`, `agent.thinking`, `agent.tool_use` (other values → 400).
+
+Preview `event_id` is a real `evt_*` id reused when the buffered event is persisted, so clients can reconcile typewriter previews with the authoritative row. Tool `input` / `output` are accumulated across harness deltas and written on End (not empty shells).
 
 Deltas are best-effort on the turn-owner JVM; persisted events remain the source of truth.

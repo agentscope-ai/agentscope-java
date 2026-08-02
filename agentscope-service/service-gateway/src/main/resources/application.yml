@@ -59,13 +59,20 @@ spring:
                 - Path=/api/hands/**
 
             # ------------------------------------------------------------------
-            # Scheduler plane — outbound channel send API.
+            # Scheduler plane — outbound send + IM platform callbacks/webhooks.
+            # Must be higher priority than control-api's /api/channels/** CRUD.
             # ------------------------------------------------------------------
             - id: scheduler-outbound
               uri: ${builder.scheduler-plane-url}
               order: 5
               predicates:
                 - Path=/api/outbound/**
+
+            - id: scheduler-channel-callbacks
+              uri: ${builder.scheduler-plane-url}
+              order: 6
+              predicates:
+                - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
             # ------------------------------------------------------------------
             # Control plane (aistiod) — Managed Agents APIs, the /api/v1
@@ -75,7 +82,7 @@ spring:
               uri: ${builder.control-plane-url}
               order: 10
               predicates:
-                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
+                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
               filters:
                 # Env-key auth is data-plane only; strip if a client spoofs it toward control.
                 - RemoveRequestHeader=X-Builder-Environment-Key

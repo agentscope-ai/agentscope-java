@@ -4,17 +4,8 @@ import "github.com/gin-gonic/gin"
 
 // builtinMcpCatalog lists curated remote MCP servers offered as starting points
 // in the console. Entries carry no credentials; secrets come from vaults at
-// session time.
+// session time via requiredEnv key names.
 var builtinMcpCatalog = []gin.H{
-	{
-		"id":          "mcp-everything",
-		"name":        "MCP Everything (reference)",
-		"description": "Reference remote server used to validate MCP wiring end-to-end.",
-		"transport":   "streamable-http",
-		"url":         "https://example.invalid/mcp",
-		"docsUrl":     "https://modelcontextprotocol.io",
-		"requiredEnv": []string{},
-	},
 	{
 		"id":          "github",
 		"name":        "GitHub",
@@ -25,23 +16,34 @@ var builtinMcpCatalog = []gin.H{
 		"requiredEnv": []string{"GITHUB_PERSONAL_ACCESS_TOKEN"},
 	},
 	{
-		"id":          "filesystem",
-		"name":        "Filesystem (stdio)",
-		"description": "Local filesystem tools via the official MCP filesystem server (stdio).",
-		"transport":   "stdio",
-		"command":     "npx",
-		"args":        []string{"-y", "@modelcontextprotocol/server-filesystem", "/workspace"},
-		"docsUrl":     "https://github.com/modelcontextprotocol/servers",
-		"requiredEnv": []string{},
-	},
-	{
 		"id":          "fetch",
-		"name":        "Fetch",
-		"description": "HTTP fetch helper for retrieving URL content into the agent context.",
+		"name":        "Fetch (HTTP)",
+		"description": "HTTP fetch helper for retrieving URL content (stdio MCP). Prefer builtin web_fetch when available.",
 		"transport":   "stdio",
 		"command":     "npx",
 		"args":        []string{"-y", "@modelcontextprotocol/server-fetch"},
 		"docsUrl":     "https://github.com/modelcontextprotocol/servers",
 		"requiredEnv": []string{},
+	},
+	{
+		"id":          "brave-search",
+		"name":        "Brave Search",
+		"description": "Web search via Brave Search MCP server.",
+		"transport":   "stdio",
+		"command":     "npx",
+		"args":        []string{"-y", "@modelcontextprotocol/server-brave-search"},
+		"docsUrl":     "https://github.com/modelcontextprotocol/servers",
+		"requiredEnv": []string{"BRAVE_API_KEY"},
+	},
+	{
+		"id":          "filesystem",
+		"name":        "Filesystem (stdio)",
+		"description": "Local filesystem tools via the official MCP filesystem server. Prefer builtin filesystem tools in sandboxed Environments.",
+		"transport":   "stdio",
+		"command":     "npx",
+		"args":        []string{"-y", "@modelcontextprotocol/server-filesystem", "/workspace"},
+		"docsUrl":     "https://github.com/modelcontextprotocol/servers",
+		"requiredEnv": []string{},
+		"environmentHint": "local",
 	},
 }
