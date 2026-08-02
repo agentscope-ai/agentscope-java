@@ -111,7 +111,7 @@ class ReActAgentNewLoopBuilderTest {
     }
 
     @Test
-    void middlewareOrderIsDescendingAndStableForTies() {
+    void builderMiddlewaresAreSortedDescendingAndStableForTies() {
         MiddlewareBase firstDefault = new OrderedMiddleware(1);
         MiddlewareBase lowerPriority = new OrderedMiddleware(-1);
         MiddlewareBase higherPriority = new OrderedMiddleware(2);

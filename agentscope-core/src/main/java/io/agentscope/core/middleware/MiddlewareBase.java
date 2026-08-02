@@ -64,7 +64,7 @@ public interface MiddlewareBase {
      * <p>A larger number means a higher priority and places the middleware closer to the outside
      * of the onion chain: for example, {@code 2} runs before {@code 1}, and {@code 0} runs after
      * {@code 1}. Middlewares with the same order retain their builder registration order. The
-     * default value keeps custom middlewares outside framework-provided middlewares.
+     * default value is {@code 1}.
      *
      * @return the execution order; higher values execute first before delegating to {@code next}
      */
