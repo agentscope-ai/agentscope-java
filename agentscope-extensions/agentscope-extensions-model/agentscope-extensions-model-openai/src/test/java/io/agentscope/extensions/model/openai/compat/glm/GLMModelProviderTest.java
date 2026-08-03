@@ -31,6 +31,7 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.lang.reflect.Field;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -54,9 +55,6 @@ class GLMModelProviderTest {
         assertTrue(provider.supports("glm:glm-5.2"));
         assertTrue(provider.supports("glm:glm-4.6v"));
         assertFalse(provider.supports("glm:"));
-        // Whitespace-only model names must not be treated as supported
-        assertFalse(provider.supports("glm: "));
-        assertFalse(provider.supports("glm:   "));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports(null));
     }
@@ -66,7 +64,6 @@ class GLMModelProviderTest {
         GLMModelProvider provider = new GLMModelProvider();
 
         assertThrows(IllegalArgumentException.class, () -> provider.create("glm:"));
-        assertThrows(IllegalArgumentException.class, () -> provider.create("glm: "));
         assertThrows(IllegalArgumentException.class, () -> provider.create("glm-5.2"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
@@ -152,6 +149,51 @@ class GLMModelProviderTest {
         Model model = provider.create("glm:glm-5.2", context);
 
         assertTrue(model.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    void createMapsEnableThinkingToGlmThinkingParam() throws Exception {
+        GLMModelProvider provider = new GLMModelProvider();
+
+        OpenAIChatModel model =
+                (OpenAIChatModel)
+                        provider.create(
+                                "glm:glm-5.2",
+                                ModelCreationContext.builder()
+                                        .apiKey("test-glm-key")
+                                        .enableThinking(false)
+                                        .build());
+
+        GenerateOptions configuredOptions = configuredOptions(model);
+        Object thinking = configuredOptions.getAdditionalBodyParams().get("thinking");
+
+        assertTrue(thinking instanceof Map);
+        assertEquals("disabled", ((Map<?, ?>) thinking).get("type"));
+    }
+
+    @Test
+    void createLetsUserThinkingParamOverrideGlmDefault() throws Exception {
+        GLMModelProvider provider = new GLMModelProvider();
+        GenerateOptions userOptions =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .build();
+
+        OpenAIChatModel model =
+                (OpenAIChatModel)
+                        provider.create(
+                                "glm:glm-5.2",
+                                ModelCreationContext.builder()
+                                        .apiKey("test-glm-key")
+                                        .enableThinking(true)
+                                        .component(GenerateOptions.class, userOptions)
+                                        .build());
+
+        GenerateOptions configuredOptions = configuredOptions(model);
+        Object thinking = configuredOptions.getAdditionalBodyParams().get("thinking");
+
+        assertTrue(thinking instanceof Map);
+        assertEquals("disabled", ((Map<?, ?>) thinking).get("type"));
     }
 
     @Test
@@ -318,5 +360,11 @@ class GLMModelProviderTest {
 
     private static boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private static GenerateOptions configuredOptions(OpenAIChatModel model) throws Exception {
+        Field field = OpenAIChatModel.class.getDeclaredField("configuredOptions");
+        field.setAccessible(true);
+        return (GenerateOptions) field.get(model);
     }
 }

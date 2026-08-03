@@ -287,13 +287,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * configured {@link SkillPromotionGate}.
      */
     public Mono<SkillPromoter.PromotionResult> promoteSkill(String name, String reviewerId) {
+        return promoteSkill(name, reviewerId, getRuntimeContext());
+    }
+
+    /**
+     * Promote a draft skill for the explicitly supplied request context.
+     *
+     * <p>Callers promoting skills outside an active {@code call(...)} must use this overload when
+     * the workspace is user- or session-scoped so the draft is resolved and moved within the
+     * correct namespace.
+     */
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(
+            String name, String reviewerId, RuntimeContext ctx) {
         if (skillPromoter == null) {
             return Mono.just(
                     SkillPromoter.PromotionResult.invalid(
                             "skill promoter not configured; call"
                                     + " enableSkillManageTool(...) on the builder"));
         }
-        return skillPromoter.promote(name, reviewerId, getRuntimeContext());
+        return skillPromoter.promote(name, reviewerId, ctx);
     }
 
     /**
