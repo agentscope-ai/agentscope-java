@@ -30,6 +30,7 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -40,6 +41,7 @@ import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -345,6 +347,84 @@ class ReActAgentPerSessionStateTest {
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("concurrent sessions preserve their own active tool groups")
+    void concurrentSessionsPreserveActiveToolGroups() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "u",
+                "session-a",
+                "agent_state",
+                AgentState.builder()
+                        .userId("u")
+                        .sessionId("session-a")
+                        .toolContext(
+                                ToolContextState.builder().addActivatedGroup("group-a").build())
+                        .build());
+        store.save(
+                "u",
+                "session-b",
+                "agent_state",
+                AgentState.builder()
+                        .userId("u")
+                        .sessionId("session-b")
+                        .toolContext(
+                                ToolContextState.builder().addActivatedGroup("group-b").build())
+                        .build());
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("group-a", "Session A tools", false);
+        toolkit.createToolGroup("group-b", "Session B tools", false);
+        CountDownLatch bothCallsActivated = new CountDownLatch(2);
+        MiddlewareBase activationBarrier =
+                new MiddlewareBase() {
+                    @Override
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                        return Mono.fromCallable(
+                                () -> {
+                                    bothCallsActivated.countDown();
+                                    assertTrue(
+                                            bothCallsActivated.await(5, TimeUnit.SECONDS),
+                                            "both calls should activate their session state");
+                                    return currentPrompt;
+                                });
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .middleware(activationBarrier)
+                        .build();
+
+        Mono<Msg> callA =
+                agent.call(
+                                List.of(userMsg("hello-a")),
+                                RuntimeContext.builder().userId("u").sessionId("session-a").build())
+                        .subscribeOn(Schedulers.parallel());
+        Mono<Msg> callB =
+                agent.call(
+                                List.of(userMsg("hello-b")),
+                                RuntimeContext.builder().userId("u").sessionId("session-b").build())
+                        .subscribeOn(Schedulers.parallel());
+
+        Mono.when(callA, callB).block(Duration.ofSeconds(10));
+
+        assertEquals(
+                List.of("group-a"),
+                agent.getAgentState("u", "session-a").getToolContext().getActivatedGroups());
+        assertEquals(
+                List.of("group-b"),
+                agent.getAgentState("u", "session-b").getToolContext().getActivatedGroups());
+        assertTrue(
+                agent.getToolkit().getActiveGroups().isEmpty(),
+                "session activation must not mutate the shared toolkit");
     }
 
     @Test
