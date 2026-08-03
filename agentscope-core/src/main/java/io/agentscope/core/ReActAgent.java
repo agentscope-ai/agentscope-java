@@ -174,7 +174,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.name,
                 builder.description,
                 builder.checkRunning,
-                new ArrayList<>(builder.hooks),
+                perInstanceHooks(builder),
                 agentToolkit,
                 builder.structuredOutputReminder);
 
@@ -191,6 +191,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
+    }
+
+    /**
+     * Builds the per-instance hook list, adding {@link PendingToolRecoveryHook} when enabled.
+     *
+     * <p>The hook is added here (per agent instance) rather than in {@code Builder.build()} so that
+     * {@code build()} stays read-only on the builder's state — concurrent {@code build()} calls on a
+     * shared builder (as the A2A server reuses a single builder bean) are then safe, and each agent
+     * gets exactly one recovery hook instead of accumulating one per build on the shared hooks set.
+     */
+    private static List<Hook> perInstanceHooks(Builder builder) {
+        List<Hook> hooks = new ArrayList<>(builder.hooks);
+        if (builder.enablePendingToolRecovery) {
+            hooks.add(new PendingToolRecoveryHook());
+        }
+        return hooks;
     }
 
     // ==================== RuntimeContext ====================
@@ -1701,10 +1717,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 agentToolkit.registerMetaTool();
             }
 
-            // Register PendingToolRecoveryHook if enabled
-            if (enablePendingToolRecovery) {
-                hooks.add(new PendingToolRecoveryHook());
-            }
+            // NOTE: PendingToolRecoveryHook is no longer added to `hooks` here. build() must stay
+            // read-only on the builder's state so concurrent build() on a shared builder is safe
+            // (the hooks set is a plain, non-thread-safe HashSet). The hook is added per agent
+            // instance in ReActAgent.<init> instead.
 
             // Configure long-term memory if provided
             if (longTermMemory != null) {
