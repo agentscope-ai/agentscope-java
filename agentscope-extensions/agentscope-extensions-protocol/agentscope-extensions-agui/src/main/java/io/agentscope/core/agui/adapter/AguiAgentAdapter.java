@@ -331,7 +331,7 @@ public class AguiAgentAdapter {
             if (context.isEmpty()) {
                 return;
             }
-            String anchorId = context.getLast().getId();
+            String anchorId = context.get(context.size() - 1).getId();
             for (int i = msgs.size() - 1; i >= 0; i--) {
                 if (anchorId.equals(msgs.get(i).getId())) {
                     msgs.subList(0, i + 1).clear();
