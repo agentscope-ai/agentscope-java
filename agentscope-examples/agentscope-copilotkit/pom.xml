@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-examples</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>agentscope-copilotkit</artifactId>
+    <packaging>jar</packaging>
+
+    <properties>
+        <google-genai.version>1.43.0</google-genai.version>
+        <a2ui-agent.version>0.1.0</a2ui-agent.version>
+        <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-agui-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <!-- Gemini is the preferred A2UI composer; DashScope is the fallback. -->
+        <dependency>
+            <groupId>com.google.genai</groupId>
+            <artifactId>google-genai</artifactId>
+            <version>${google-genai.version}</version>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!--
+          The A2UI agent SDK (com.google.a2ui:a2ui-agent) is not published to Maven Central; it
+          lives in the google/A2UI repository under kotlin/agent_sdk_legacy and is consumed via
+          Gradle composite builds. Install it locally with:
+
+              git clone https://github.com/google/A2UI
+              cd A2UI/kotlin/agent_sdk_legacy && ./gradlew publishToMavenLocal
+
+          Once the artifact is present in the local repository this profile activates itself and
+          compiles src/a2ui-sdk/java, which swaps the bundled A2UI grammar for the official schema
+          manager + validator. Without it the example still runs on the bundled implementation.
+        -->
+        <profile>
+            <id>a2ui-sdk</id>
+            <activation>
+                <file>
+                    <exists>${user.home}/.m2/repository/com/google/a2ui/a2ui-agent/${a2ui-agent.version}/a2ui-agent-${a2ui-agent.version}.jar</exists>
+                </file>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.google.a2ui</groupId>
+                    <artifactId>a2ui-agent</artifactId>
+                    <version>${a2ui-agent.version}</version>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>${build-helper-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>add-a2ui-sdk-source</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>add-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/a2ui-sdk/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>
