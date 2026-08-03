@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -52,7 +51,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -263,6 +261,46 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearContext can clear a persisted session not cached in this agent")
+    void clearContextClearsPersistedSessionWithoutLocalCache(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writerAgent = agent(store);
+        AgentState persistedState = writerAgent.getAgentState("u1", "sessA");
+        persistedState.contextMutable().add(userMsg("persisted context"));
+        persistedState.setSummary("persisted summary");
+        persistedState.getPlanModeContext().setPlanActive(true);
+        writerAgent.saveAgentState("u1", "sessA");
+
+        ReActAgent freshAgent = agent(store);
+        freshAgent.clearContext("u1", "sessA");
+
+        ReActAgent restoredAgent = agent(store);
+        AgentState restoredState = restoredAgent.getAgentState("u1", "sessA");
+        assertTrue(restoredState.getContext().isEmpty());
+        assertEquals("", restoredState.getSummary());
+        assertTrue(restoredState.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
+    @DisplayName("clearContext preserves in-memory non-conversation state without a store")
+    void clearContextPreservesInMemoryNonConversationStateWithoutStore() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.contextMutable().add(userMsg("forget this"));
+        state.setSummary("old summary");
+        state.getPlanModeContext().setPlanActive(true);
+
+        agent.clearContext("u1", "sessA");
+
+        AgentState restored = agent.getAgentState("u1", "sessA");
+        assertSame(state, restored);
+        assertTrue(restored.getContext().isEmpty());
+        assertEquals("", restored.getSummary());
+        assertTrue(restored.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
     @DisplayName("clearContext falls back to the default session for absent session identity")
     void clearContextFallsBackToDefaultSession() {
         ReActAgent agent = agent(new InMemoryAgentStateStore());
@@ -276,48 +314,6 @@ class ReActAgentPerSessionStateTest {
         defaultState.contextMutable().add(userMsg("clear through blank session id"));
         agent.clearContext(null, " ");
         assertTrue(agent.getAgentState(null, defaultSessionId).getContext().isEmpty());
-    }
-
-    @Test
-    @DisplayName("clearContext waits for an in-flight call to the same session")
-    void clearContextWaitsForInFlightCall() throws Exception {
-        CountDownLatch modelStarted = new CountDownLatch(1);
-        CountDownLatch releaseModel = new CountDownLatch(1);
-        CountDownLatch clearStarted = new CountDownLatch(1);
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("asst")
-                        .sysPrompt("hi")
-                        .model(new BlockingModel(modelStarted, releaseModel))
-                        .stateStore(new InMemoryAgentStateStore())
-                        .build();
-        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
-
-        CompletableFuture<Msg> call =
-                agent.call(List.of(userMsg("in flight")), ctx)
-                        .subscribeOn(Schedulers.parallel())
-                        .toFuture();
-        assertTrue(modelStarted.await(5, TimeUnit.SECONDS), "model stream should start");
-
-        CompletableFuture<Void> clear =
-                CompletableFuture.runAsync(
-                        () -> {
-                            clearStarted.countDown();
-                            agent.clearContext("u1", "sessA");
-                        });
-        assertTrue(clearStarted.await(5, TimeUnit.SECONDS), "clearContext should start");
-        try {
-            assertThrows(
-                    TimeoutException.class,
-                    () -> clear.get(200, TimeUnit.MILLISECONDS),
-                    "clearContext should wait for the active same-session call");
-        } finally {
-            releaseModel.countDown();
-        }
-
-        call.get(5, TimeUnit.SECONDS);
-        clear.get(5, TimeUnit.SECONDS);
-        assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
     }
 
     @Test
@@ -421,39 +417,6 @@ class ReActAgentPerSessionStateTest {
                                                 .build())
                                 .delaySubscription(Duration.ofMillis(200));
                     });
-        }
-    }
-
-    private static final class BlockingModel extends ChatModelBase {
-        private final CountDownLatch started;
-        private final CountDownLatch release;
-
-        private BlockingModel(CountDownLatch started, CountDownLatch release) {
-            this.started = started;
-            this.release = release;
-        }
-
-        @Override
-        public String getModelName() {
-            return "blocking";
-        }
-
-        @Override
-        protected Flux<ChatResponse> doStream(
-                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-            return Mono.fromCallable(
-                            () -> {
-                                started.countDown();
-                                if (!release.await(5, TimeUnit.SECONDS)) {
-                                    throw new IllegalStateException("model release timed out");
-                                }
-                                return ChatResponse.builder()
-                                        .content(
-                                                List.<ContentBlock>of(
-                                                        TextBlock.builder().text("ok").build()))
-                                        .build();
-                            })
-                    .flux();
         }
     }
 

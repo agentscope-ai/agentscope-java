@@ -3727,32 +3727,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void clearContext(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
         String slot = slotKey(userId, sid);
-        serializeOnKey(
-                        slot,
-                        Mono.fromRunnable(
-                                () -> {
-                                    AgentState agentState =
-                                            stateCache.computeIfPresent(
-                                                    slot,
-                                                    (key, current) -> {
-                                                        AgentState state =
-                                                                loadOrCreateAgentStateForSlot(
-                                                                        stateStore,
-                                                                        userId,
-                                                                        sid,
-                                                                        initialPermissionContext,
-                                                                        getAgentId(),
-                                                                        initialActiveToolGroups);
-                                                        state.setSummary("");
-                                                        state.contextMutable().clear();
-                                                        return state;
-                                                    });
-                                    if (agentState == null) {
-                                        return;
-                                    }
-                                    saveAgentState(userId, sid);
-                                }))
-                .block();
+        AgentState state;
+        if (stateStore != null) {
+            if (stateStore.exists(userId, sid)) {
+                state =
+                        loadOrCreateAgentStateForSlot(
+                                stateStore,
+                                userId,
+                                sid,
+                                initialPermissionContext,
+                                getAgentId(),
+                                initialActiveToolGroups);
+                stateCache.put(slot, state);
+            } else {
+                state = stateCache.get(slot);
+                if (state == null) {
+                    return;
+                }
+            }
+        } else {
+            state = stateCache.get(slot);
+            if (state == null) {
+                return;
+            }
+        }
+        state.contextMutable().clear();
+        state.setSummary("");
+        saveAgentState(userId, sid);
     }
 
     /**

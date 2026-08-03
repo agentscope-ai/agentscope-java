@@ -342,7 +342,7 @@ public abstract class AgentBase implements Agent {
      * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
      * cancel) so a failed/cancelled call never blocks the queue.
      */
-    protected final <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
