@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-27T09:42:39+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="DeepSeek Model" href="deepseek.html"><link rel="prev" title="Model Providers" href="index.html">
+    <meta property="article:modified_time" content="2026-08-03T10:55:39+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="DeepSeek Model" href="deepseek.html"><link rel="prev" title="Model Providers" href="index.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/model/openai.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -711,6 +711,7 @@
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">OpenAI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="deepseek.html">DeepSeek</a></li>
 <li class="toctree-l2"><a class="reference internal" href="glm.html">GLM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi.html">Kimi</a></li>
 <li class="toctree-l2"><a class="reference internal" href="minimax.html">MiniMax</a></li>
 <li class="toctree-l2"><a class="reference internal" href="dashscope.html">DashScope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="gemini.html">Gemini</a></li>
@@ -821,6 +822,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/openai.html">OpenAI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/deepseek.html">DeepSeek</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/glm.html">GLM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/kimi.html">Kimi</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/minimax.html">MiniMax</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/dashscope.html">DashScope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/model/gemini.html">Gemini</a></li>
@@ -927,7 +929,7 @@
         <article role="main" id="furo-main-content">
           <section id="openai-model">
 <h1>OpenAI Model<a class="headerlink" href="#openai-model" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code> integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, and similar services when their wire format follows the OpenAI API.</p>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-model-openai</span></code> integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, Kimi, MiniMax, and similar services when their wire format follows the OpenAI API.</p>
 <section id="add-the-dependency">
 <h2>Add the dependency<a class="headerlink" href="#add-the-dependency" title="Link to this heading">¶</a></h2>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
@@ -960,50 +962,6 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>For generic compatible endpoints, set <code class="docutils literal notranslate"><span class="pre">baseUrl(...)</span></code> and the model name expected by that service. For DeepSeek, prefer the dedicated <code class="docutils literal notranslate"><span class="pre">deepseek:&lt;model&gt;</span></code> registry id so AgentScope applies the DeepSeek base URL, <code class="docutils literal notranslate"><span class="pre">DEEPSEEK_API_KEY</span></code>, and DeepSeek formatter defaults. See <a class="reference internal" href="deepseek.html"><span class="std std-doc">DeepSeek</span></a>.</p>
-</section>
-<section id="glm-zhipu-ai">
-<h2>GLM (Zhipu AI)<a class="headerlink" href="#glm-zhipu-ai" title="Link to this heading">¶</a></h2>
-<p>GLM has a dedicated adapter in the <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai.compat.glm</span></code> package. It reuses <code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code> under the hood but is preconfigured for the Zhipu open platform endpoint (<code class="docutils literal notranslate"><span class="pre">https://open.bigmodel.cn/api/paas/v4</span></code>).</p>
-<p>Set <code class="docutils literal notranslate"><span class="pre">GLM_API_KEY</span></code> (or <code class="docutils literal notranslate"><span class="pre">ZHIPUAI_API_KEY</span></code>), then use the <code class="docutils literal notranslate"><span class="pre">glm:&lt;model&gt;</span></code> id:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;glm:glm-5.2&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Resolved by GLMModelProvider through ModelRegistry</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>Or build the model explicitly with a GLM formatter:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.openai.OpenAIChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.openai.compat.glm.GLMFormatter</span><span class="p">;</span>
-
-<span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GLM_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://open.bigmodel.cn/api/paas/v4&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;glm-5.2&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GLMFormatter</span><span class="p">())</span><span class="w"> </span><span class="c1">// or GLMMultiAgentFormatter for multi-agent prompts</span>
-<span class="w">    </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>The GLM formatters adapt requests to the latest Zhipu API:</p>
-<ul class="simple">
-<li><p>Ensure at least one user message exists (the API returns error 1214 otherwise).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tool_choice</span></code> only supports <code class="docutils literal notranslate"><span class="pre">auto</span></code>; other values are degraded to <code class="docutils literal notranslate"><span class="pre">auto</span></code>.</p></li>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">strict</span></code> parameter in tool definitions is not sent.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">frequency_penalty</span></code> / <code class="docutils literal notranslate"><span class="pre">presence_penalty</span></code> / <code class="docutils literal notranslate"><span class="pre">thinking_budget</span></code> are stripped from requests (not supported by GLM).</p></li>
-<li><p>GLM only supports <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code>: when only <code class="docutils literal notranslate"><span class="pre">max_completion_tokens</span></code> (the newer OpenAI style) is set, it is mapped to <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code> is clamped to the GLM range [0.0, 1.0] (OpenAI allows up to 2.0) and <code class="docutils literal notranslate"><span class="pre">top_p</span></code> to [0.01, 1.0]; per the official OpenAI compatibility guide, <code class="docutils literal notranslate"><span class="pre">temperature</span> <span class="pre">=</span> <span class="pre">0</span></code> is not applicable on the GLM endpoint and is translated to <code class="docutils literal notranslate"><span class="pre">do_sample</span> <span class="pre">=</span> <span class="pre">false</span></code> (deterministic decoding).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">GLMModelProvider</span></code> disables native structured output by default because GLM <code class="docutils literal notranslate"><span class="pre">response_format</span></code> only supports <code class="docutils literal notranslate"><span class="pre">json_object</span></code>; agents fall back to the <code class="docutils literal notranslate"><span class="pre">generate_response</span></code> tool. Re-enable it with the <code class="docutils literal notranslate"><span class="pre">nativeStructuredOutput</span></code> option in <code class="docutils literal notranslate"><span class="pre">ModelCreationContext</span></code> if needed.</p></li>
-</ul>
-<p>Thinking-related parameters:</p>
-<ul class="simple">
-<li><p>Thinking mode (GLM-4.5 and later) is controlled through an additional body parameter, e.g. <code class="docutils literal notranslate"><span class="pre">GenerateOptions.additionalBodyParam(&quot;thinking&quot;,</span> <span class="pre">Map.of(&quot;type&quot;,</span> <span class="pre">&quot;disabled&quot;))</span></code>; GLM-4.7 / GLM-5 series enable thinking by default.</p></li>
-<li><p>GLM-5.2 supports <code class="docutils literal notranslate"><span class="pre">reasoning_effort</span></code> (default <code class="docutils literal notranslate"><span class="pre">max</span></code>); use <code class="docutils literal notranslate"><span class="pre">GenerateOptions.reasoningEffort(&quot;max&quot;)</span></code>, which is passed through directly.</p></li>
-<li><p>GLM-5.2 streaming tool-call arguments (<code class="docutils literal notranslate"><span class="pre">tool_stream</span></code>) can be enabled via <code class="docutils literal notranslate"><span class="pre">GenerateOptions.additionalBodyParam(&quot;tool_stream&quot;,</span> <span class="pre">true)</span></code>.</p></li>
-</ul>
-<blockquote>
-<div><p>The old <code class="docutils literal notranslate"><span class="pre">io.agentscope.extensions.model.openai.formatter.GLMFormatter</span></code> and <code class="docutils literal notranslate"><span class="pre">GLMMultiAgentFormatter</span></code> classes are deprecated; they now extend the <code class="docutils literal notranslate"><span class="pre">compat.glm</span></code> implementations and will be removed in a future release.</p>
-</div></blockquote>
 </section>
 <section id="spring-boot">
 <h2>Spring Boot<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h2>
@@ -1072,7 +1030,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-27</div>
+              Last updated on 2026-08-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1111,7 +1069,6 @@
 <li><a class="reference internal" href="#add-the-dependency">Add the dependency</a></li>
 <li><a class="reference internal" href="#modelregistry">ModelRegistry</a></li>
 <li><a class="reference internal" href="#explicit-builder">Explicit builder</a></li>
-<li><a class="reference internal" href="#glm-zhipu-ai">GLM (Zhipu AI)</a></li>
 <li><a class="reference internal" href="#spring-boot">Spring Boot</a></li>
 </ul>
 </li>
