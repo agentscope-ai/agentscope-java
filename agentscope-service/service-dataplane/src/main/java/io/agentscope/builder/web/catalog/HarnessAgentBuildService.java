@@ -30,8 +30,6 @@ import io.agentscope.builder.web.managed.MemoryMountService;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
 import io.agentscope.builder.web.managed.SessionResourceMountService;
 import io.agentscope.builder.web.managed.VaultCredentialResolver;
-import io.agentscope.builder.web.managed.service.AgentVersionService;
-import io.agentscope.builder.web.persistence.jpa.AgentVersionEntity;
 import io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
@@ -40,6 +38,8 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.team.TeamClient;
+import io.agentscope.harness.agent.team.TeamContext;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -60,22 +60,19 @@ import org.springframework.web.server.ResponseStatusException;
  * Data-plane agent factory: instantiates (and caches) {@link HarnessAgent} instances for managed
  * sessions.
  *
- * <p>Every agent is built from the control-plane resolve {@code agentSnapshot} when available,
- * otherwise from the {@link AgentVersionEntity} snapshot pinned on the session, falling back to the
- * stored user-agent entry when neither can be loaded.
+ * <p>Managed session turns build exclusively from the control-plane ({@code aistiod}) session
+ * resolve payload — {@code agentSnapshot}, {@code workspacePath}, and {@code definitionFiles}.
+ * There is no JPA catalog fallback; resolve must succeed with a non-empty snapshot.
  *
  * <h2>Namespace rules</h2>
  *
  * <ul>
- *   <li><b>Version owner</b>: the agent owner's namespace for user-custom agents, {@link
- *       AgentVersionService#GLOBAL_OWNER} for global agents.
  *   <li><b>Build owner</b> (definition-store / memory / vault / resource mounts): the agent owner
  *       for user-custom agents; the session owner for global agents, mirroring the control-plane
  *       per-user overlay write path.
  * </ul>
  *
- * <p>There is no gateway: built agents are cached locally keyed by {@code
- * sessionOwner/agentId/spec.cacheSuffix()}.
+ * <p>Built agents are cached locally keyed by {@code sessionOwner/agentId/spec.cacheSuffix()}.
  */
 @Service
 public class HarnessAgentBuildService {
@@ -87,11 +84,9 @@ public class HarnessAgentBuildService {
 
     private static final ObjectMapper TOOLS_JSON_MAPPER = new ObjectMapper();
 
-    private final UserAgentDefinitionStore store;
     private final Model model;
     private final ToolEventBus toolEventBus;
     private final SharedWorkspacePaths sharedWorkspacePaths;
-    private final AgentVersionService versionService;
     private final EnvironmentSpecFactory environmentSpecFactory;
     private final ToolConfirmationMiddleware toolConfirmationMiddleware;
     private final MemoryMountService memoryMountService;
@@ -100,15 +95,14 @@ public class HarnessAgentBuildService {
     private final SessionResourceMountService sessionResourceMountService;
     private final DefinitionStore definitionStore;
     private final ControlPlaneClient controlPlaneClient;
+    private final Optional<TeamClient> teamClient;
 
     private final ConcurrentHashMap<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
 
     public HarnessAgentBuildService(
-            UserAgentDefinitionStore store,
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             SharedWorkspacePaths sharedWorkspacePaths,
-            AgentVersionService versionService,
             EnvironmentSpecFactory environmentSpecFactory,
             @Lazy ToolConfirmationMiddleware toolConfirmationMiddleware,
             MemoryMountService memoryMountService,
@@ -116,12 +110,11 @@ public class HarnessAgentBuildService {
             AgentStateStore agentStateStore,
             SessionResourceMountService sessionResourceMountService,
             DefinitionStore definitionStore,
-            ControlPlaneClient controlPlaneClient) {
-        this.store = store;
+            ControlPlaneClient controlPlaneClient,
+            Optional<TeamClient> teamClient) {
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.sharedWorkspacePaths = sharedWorkspacePaths;
-        this.versionService = versionService;
         this.environmentSpecFactory = environmentSpecFactory;
         this.toolConfirmationMiddleware = toolConfirmationMiddleware;
         this.memoryMountService = memoryMountService;
@@ -130,6 +123,7 @@ public class HarnessAgentBuildService {
         this.sessionResourceMountService = sessionResourceMountService;
         this.definitionStore = definitionStore;
         this.controlPlaneClient = controlPlaneClient;
+        this.teamClient = teamClient == null ? Optional.empty() : teamClient;
     }
 
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
@@ -144,67 +138,49 @@ public class HarnessAgentBuildService {
         agentCache.keySet().removeIf(k -> k.equals(prefix) || k.startsWith(prefix + "/"));
     }
 
-    /** Returns the workspace path used for a user-custom or global agent. */
+    /**
+     * Workspace path for definition-store staging. Product agents use the default agent-data
+     * layout under the shared root (CP {@code workspacePath} is applied when building a turn).
+     */
     public Path resolveAgentWorkspace(String agentOwnerId, String agentId) {
-        if (agentOwnerId == null) {
-            return sharedWorkspacePaths.resolveAgentDataPath(null, agentId);
-        }
-        UserAgentDefinitionStore.StoredEntry entry = requireEntry(agentOwnerId, agentId);
-        return sharedWorkspacePaths.resolveAgentDataPath(entry.workspacePath(), entry.id());
+        return sharedWorkspacePaths.resolveAgentDataPath(null, agentId);
     }
 
     private HarnessAgent build(ManagedSessionDto session, SessionAgentBuildSpec spec) {
         String agentId = session.agentId();
         String agentOwnerId = session.agentOwnerId();
         boolean global = agentOwnerId == null;
-        String versionOwner = global ? AgentVersionService.GLOBAL_OWNER : agentOwnerId;
         // Definition-store / memory / vault / resource mounts namespace: agent owner for
         // user-custom agents; session owner for global agents (per-user overlay, mirroring the
         // control-plane write path).
         String buildOwnerId = global ? session.ownerId() : agentOwnerId;
 
-        UserAgentDefinitionStore.StoredEntry entry =
-                global ? null : requireEntry(agentOwnerId, agentId);
+        SessionResolveResult resolved = resolveSession(session);
+        AgentVersionSnapshot snapshot = snapshotFromResolve(resolved);
+        if (snapshot == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Agent snapshot missing from control-plane resolve for session "
+                            + session.id()
+                            + " (agentId="
+                            + agentId
+                            + ")");
+        }
+
+        String cpWorkspace =
+                resolved.workspacePath() != null ? resolved.workspacePath().trim() : "";
         Path workspace =
                 global
                         ? sharedWorkspacePaths.resolveAgentDataPath(null, agentId)
                         : sharedWorkspacePaths.resolveAgentDataPath(
-                                entry.workspacePath(), entry.id());
+                                cpWorkspace.isEmpty() ? null : cpWorkspace, agentId);
 
-        AgentVersionSnapshot snapshot = loadSnapshotFromControlPlane(session);
-        if (snapshot == null && spec.version() != null) {
-            try {
-                AgentVersionEntity versionEntity =
-                        versionService.getVersion(versionOwner, agentId, spec.version());
-                snapshot = versionService.fromJson(versionEntity.getSnapshotJson());
-            } catch (Exception ex) {
-                log.warn(
-                        "Failed to load agent version {}/{}@{}: {}",
-                        versionOwner,
-                        agentId,
-                        spec.version(),
-                        ex.getMessage());
-            }
-        }
-
-        String name =
-                snapshot != null && snapshot.name() != null
-                        ? snapshot.name()
-                        : (entry != null && entry.name() != null ? entry.name() : agentId);
-        String description =
-                snapshot != null
-                        ? snapshot.description()
-                        : entry != null ? entry.description() : null;
-        String sysPrompt =
-                snapshot != null ? snapshot.system() : entry != null ? entry.system() : null;
-        String modelName =
-                snapshot != null ? snapshot.model() : entry != null ? entry.model() : null;
-        Integer maxIters =
-                snapshot != null ? snapshot.maxIters() : entry != null ? entry.maxIters() : null;
-        var skillRepos =
-                snapshot != null
-                        ? snapshot.skillRepositories()
-                        : entry != null ? entry.skillRepositories() : null;
+        String name = snapshot.name() != null ? snapshot.name() : agentId;
+        String description = snapshot.description();
+        String sysPrompt = snapshot.system();
+        String modelName = snapshot.model();
+        Integer maxIters = snapshot.maxIters();
+        var skillRepos = snapshot.skillRepositories();
 
         if (spec.overridesJson() != null && !spec.overridesJson().isBlank()) {
             Map<String, Object> overrides = parseOverrides(spec.overridesJson());
@@ -260,35 +236,22 @@ public class HarnessAgentBuildService {
         b.workspace(workspace);
         b.stateStore(agentStateStore);
 
-        // Tools / MCP: version snapshot (or head entry) is authoritative — inject ToolsConfig
-        // so HarnessAgent.build does not depend on a node-local tools.json. Global agents may
-        // still declare a workspace tools.json when the snapshot carries no toolset.
-        List<AgentToolset> tools =
-                snapshot != null ? snapshot.tools() : entry != null ? entry.tools() : null;
-        List<McpServerSpec> mcpServers =
-                snapshot != null
-                        ? snapshot.mcpServers()
-                        : entry != null ? entry.mcpServers() : null;
-        List<SkillRef> skillRefs =
-                snapshot != null ? snapshot.skills() : entry != null ? entry.skills() : null;
+        List<AgentToolset> tools = snapshot.tools();
+        List<McpServerSpec> mcpServers = snapshot.mcpServers();
+        List<SkillRef> skillRefs = snapshot.skills();
         ToolsConfig toolsConfig = AgentSpecCodec.toToolsConfig(tools, mcpServers);
         if (toolsConfig == null && global) {
             toolsConfig = readOptionalToolsJson(workspace);
         }
-        ToolsConfig resolved =
+        ToolsConfig resolvedTools =
                 vaultCredentialResolver.resolveToolsConfig(
                         buildOwnerId, toolsConfig, spec.vaultIds());
-        if (resolved != null) {
-            b.toolsConfig(resolved);
+        if (resolvedTools != null) {
+            b.toolsConfig(resolvedTools);
         }
 
-        // Sync control-plane workspace_files into DefinitionStore so skills/subagents are
-        // replica-safe (not bound to aistiod local disk).
-        syncDefinitionFilesFromControlPlane(session, buildOwnerId, agentId);
+        syncDefinitionFilesFromResolve(resolved, buildOwnerId, agentId);
 
-        // Skills: control-plane DefinitionStore + optional git/fs skillRepositories.
-        // Do not rely on Hands primary filesystem Layer-4 workspace skills (sandbox would
-        // look inside the sandbox, not the definition store).
         List<AgentSkillRepository> skillReposList = new ArrayList<>();
         skillReposList.add(
                 new DefinitionStoreSkillRepository(definitionStore, buildOwnerId, agentId));
@@ -302,15 +265,16 @@ public class HarnessAgentBuildService {
             b.enableSkills(workspaceSkillNames.toArray(String[]::new));
         }
 
-        // Tool event + confirmation middlewares (data-plane local bus; no gateway fan-out).
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
 
         applyManagedSessionBuildOptions(b, buildOwnerId, agentId, workspace, spec, sysPrompt);
+        attachTeamsMiddlewareIfPresent(b, session);
 
         HarnessAgent agent = b.build();
         log.info(
-                "Built data-plane agent: sessionOwner={}, agentId={}, instanceId={}, version={}",
+                "Built data-plane agent from control-plane snapshot: sessionOwner={}, agentId={},"
+                        + " instanceId={}, version={}",
                 session.ownerId(),
                 agentId,
                 instanceId,
@@ -352,6 +316,36 @@ public class HarnessAgentBuildService {
                 definitionStore, buildOwnerId, agentId, spec.resources());
     }
 
+    private void attachTeamsMiddlewareIfPresent(HarnessAgent.Builder b, ManagedSessionDto session) {
+        TeamClient client = teamClient.orElse(null);
+        if (client == null) {
+            return;
+        }
+        SessionResolveResult resolved;
+        try {
+            resolved = controlPlaneClient.resolveSession(session.id());
+        } catch (RuntimeException ex) {
+            log.debug(
+                    "skip teams middleware: resolve failed for {}: {}",
+                    session.id(),
+                    ex.toString());
+            return;
+        }
+        if (resolved == null
+                || resolved.teamContext() == null
+                || resolved.teamContext().isEmpty()) {
+            return;
+        }
+        TeamContext teamContext =
+                TOOLS_JSON_MAPPER.convertValue(resolved.teamContext(), TeamContext.class);
+        b.teamsMode(client, teamContext, session.id());
+        log.info(
+                "Enabled teamsMode for session {} team={} role={}",
+                session.id(),
+                teamContext.teamName(),
+                teamContext.myRole());
+    }
+
     /**
      * Extracts a {@code storeId -> "read_only"|"read_write"} map from {@code
      * environment.config().memoryAccess}, if present, so a session's environment can pin some
@@ -376,66 +370,47 @@ public class HarnessAgentBuildService {
         return result;
     }
 
-    /**
-     * Prefers the agent snapshot returned by control-plane session resolve. Falls back to null so
-     * the caller can load a pinned version from JPA or the user-agent definition store.
-     */
-    private AgentVersionSnapshot loadSnapshotFromControlPlane(ManagedSessionDto session) {
+    private SessionResolveResult resolveSession(ManagedSessionDto session) {
         if (session == null || session.id() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Managed session id is required to build an agent");
+        }
+        return controlPlaneClient.resolveSession(session.id());
+    }
+
+    private AgentVersionSnapshot snapshotFromResolve(SessionResolveResult resolved) {
+        if (resolved.agentSnapshot() == null || resolved.agentSnapshot().isEmpty()) {
             return null;
         }
         try {
-            SessionResolveResult resolved = controlPlaneClient.resolveSession(session.id());
-            Map<String, Object> agentSnapshot = resolved.agentSnapshot();
-            if (agentSnapshot == null || agentSnapshot.isEmpty()) {
-                return null;
-            }
-            return versionService.fromJson(TOOLS_JSON_MAPPER.writeValueAsString(agentSnapshot));
+            return TOOLS_JSON_MAPPER.convertValue(
+                    resolved.agentSnapshot(), AgentVersionSnapshot.class);
         } catch (Exception ex) {
-            log.debug(
-                    "Control-plane agentSnapshot unavailable for session {}: {}",
-                    session.id(),
-                    ex.getMessage());
+            log.warn("Failed to parse control-plane agentSnapshot: {}", ex.toString());
             return null;
         }
     }
 
-    private void syncDefinitionFilesFromControlPlane(
-            ManagedSessionDto session, String buildOwnerId, String agentId) {
-        if (session == null || session.id() == null || definitionStore == null) {
+    private void syncDefinitionFilesFromResolve(
+            SessionResolveResult resolved, String buildOwnerId, String agentId) {
+        if (resolved == null || definitionStore == null) {
             return;
         }
-        try {
-            SessionResolveResult resolved = controlPlaneClient.resolveSession(session.id());
-            Map<String, String> files = resolved.definitionFiles();
-            if (files == null || files.isEmpty()) {
-                return;
-            }
-            for (Map.Entry<String, String> e : files.entrySet()) {
-                if (e.getKey() == null || e.getKey().isBlank()) {
-                    continue;
-                }
-                definitionStore.putText(buildOwnerId, agentId, e.getKey(), e.getValue());
-            }
-            log.debug(
-                    "Synced {} definition files from control plane for {}/{}",
-                    files.size(),
-                    buildOwnerId,
-                    agentId);
-        } catch (Exception ex) {
-            log.warn(
-                    "Failed to sync definitionFiles for session {}: {}",
-                    session.id(),
-                    ex.getMessage());
+        Map<String, String> files = resolved.definitionFiles();
+        if (files == null || files.isEmpty()) {
+            return;
         }
-    }
-
-    private UserAgentDefinitionStore.StoredEntry requireEntry(String ownerId, String agentId) {
-        return store.findById(ownerId, agentId)
-                .orElseThrow(
-                        () ->
-                                new ResponseStatusException(
-                                        HttpStatus.NOT_FOUND, "Agent not found: " + agentId));
+        for (Map.Entry<String, String> e : files.entrySet()) {
+            if (e.getKey() == null || e.getKey().isBlank()) {
+                continue;
+            }
+            definitionStore.putText(buildOwnerId, agentId, e.getKey(), e.getValue());
+        }
+        log.debug(
+                "Synced {} definition files from control plane for {}/{}",
+                files.size(),
+                buildOwnerId,
+                agentId);
     }
 
     /** Optional read of a local tools.json cache (global agents / operator inspection). */

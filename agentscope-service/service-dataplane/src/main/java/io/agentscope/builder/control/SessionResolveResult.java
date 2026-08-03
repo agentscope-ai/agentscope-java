@@ -35,4 +35,5 @@ public record SessionResolveResult(
         Map<String, String> definitionFiles,
         EnvironmentDto environment,
         List<Map<String, Object>> vaultCredentials,
-        List<Map<String, Object>> memoryMounts) {}
+        List<Map<String, Object>> memoryMounts,
+        Map<String, Object> teamContext) {}

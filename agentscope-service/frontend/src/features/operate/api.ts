@@ -100,6 +100,8 @@ export interface OrphanSession {
 
 export interface FleetOverview {
   agentCount: number;
+  offlineAgentCount?: number;
+  historicalAgentCount?: number;
   instanceCount: number;
   healthyInstanceCount?: number;
   staleInstanceCount?: number;
@@ -126,6 +128,9 @@ export interface ManagedAgentSummary {
   replicas?: string;
   activeSessions?: number;
   revision?: number;
+  presence?: 'live' | 'offline' | 'historical';
+  healthyCount?: number;
+  instanceCount?: number;
 }
 
 export interface DataPlaneEntry {
@@ -452,8 +457,12 @@ export function phaseHint(phase?: string): string {
   }
 }
 
-export function fetchManagedAgents() {
-  return api.get<{ items: ManagedAgentSummary[] }>('/api/v1/agents');
+export type AgentPresence = 'live' | 'offline' | 'historical' | 'all';
+
+export function fetchManagedAgents(opts?: { presence?: AgentPresence }) {
+  const presence = opts?.presence ?? 'live';
+  const qs = new URLSearchParams({ presence });
+  return api.get<{ items: ManagedAgentSummary[] }>(`/api/v1/agents?${qs}`);
 }
 
 export function fetchManagedAgent(name: string, namespace = 'default') {

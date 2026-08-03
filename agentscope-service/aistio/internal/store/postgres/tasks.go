@@ -17,7 +17,7 @@ type taskRepo struct {
 	pool *pgxpool.Pool
 }
 
-func (r *taskRepo) Create(ctx context.Context, namespace, teamName, subject, description string, blockedBy []string) (*store.TeamTask, error) {
+func (r *taskRepo) Create(ctx context.Context, namespace, teamName, subject, description string, blockedBy []string, owner string) (*store.TeamTask, error) {
 	now := time.Now().UTC()
 	var blockedJSON []byte
 	if len(blockedBy) > 0 {
@@ -42,16 +42,20 @@ func (r *taskRepo) Create(ctx context.Context, namespace, teamName, subject, des
 	taskID := fmt.Sprintf("task-%d", next)
 	t, err := r.scanOne(ctx, `
 		INSERT INTO team_tasks (
-			task_id, team_name, namespace, subject, description, state, blocked_by,
+			task_id, team_name, namespace, subject, description, state, owner, blocked_by,
 			version, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$8)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$9)
 		RETURNING id, task_id, team_name, namespace, subject, description, state, owner,
 			blocked_by, result, version, created_at, updated_at, completed_at`,
 		taskID, teamName, namespace, subject, nullStr(description), store.TaskStatePending,
-		nullJSON(blockedJSON), now)
+		nullStr(owner), nullJSON(blockedJSON), now)
 	if err != nil {
 		return nil, fmt.Errorf("postgres tasks create: %w", err)
 	}
+	_, _ = r.pool.Exec(ctx, `
+		INSERT INTO team_task_history (task_fk, team_name, namespace, from_state, to_state, owner)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, teamName, namespace, "", store.TaskStatePending, owner)
 	return t, nil
 }
 
@@ -76,14 +80,65 @@ func (r *taskRepo) List(ctx context.Context, namespace, teamName string) ([]*sto
 	return scanTasks(rows)
 }
 
+func (r *taskRepo) Assign(ctx context.Context, namespace, teamName, taskID, owner string, expectedVersion int64) (*store.TeamTask, error) {
+	if owner == "" {
+		return nil, fmt.Errorf("postgres tasks assign: owner required")
+	}
+	now := time.Now().UTC()
+	t := &store.TeamTask{}
+	var prevOwner, desc, result *string
+	err := r.pool.QueryRow(ctx, `
+		UPDATE team_tasks
+		SET owner=$5, version=version+1, updated_at=$6
+		WHERE namespace=$1 AND team_name=$2 AND task_id=$3 AND version=$4 AND state=$7
+		RETURNING id, task_id, team_name, namespace, subject, description, state, owner,
+			blocked_by, result, version, created_at, updated_at, completed_at`,
+		namespace, teamName, taskID, expectedVersion, owner, now, store.TaskStatePending,
+	).Scan(
+		&t.ID, &t.TaskID, &t.TeamName, &t.Namespace, &t.Subject, &desc, &t.State, &prevOwner,
+		&t.BlockedBy, &result, &t.Version, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, store.ErrConflict
+		}
+		return nil, err
+	}
+	t.Owner = deref(prevOwner)
+	t.Description = deref(desc)
+	t.Result = deref(result)
+	_, _ = r.pool.Exec(ctx, `
+		INSERT INTO team_task_history (task_fk, team_name, namespace, from_state, to_state, owner)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, teamName, namespace, store.TaskStatePending, store.TaskStatePending, owner)
+	return t, nil
+}
+
 func (r *taskRepo) Claim(ctx context.Context, namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*store.TeamTask, error) {
+	cur, err := r.Get(ctx, namespace, teamName, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Version != expectedVersion || cur.State != store.TaskStatePending {
+		return nil, store.ErrConflict
+	}
+	if cur.Owner != "" && cur.Owner != claimedBy {
+		return nil, store.ErrConflict
+	}
+	if blocked, err := r.isBlocked(ctx, namespace, teamName, cur); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, store.ErrConflict
+	}
+
 	now := time.Now().UTC()
 	t := &store.TeamTask{}
 	var owner, desc, result *string
-	err := r.pool.QueryRow(ctx, `
+	err = r.pool.QueryRow(ctx, `
 		UPDATE team_tasks
 		SET state=$5, owner=$6, version=version+1, updated_at=$7
 		WHERE namespace=$1 AND team_name=$2 AND task_id=$3 AND version=$4 AND state=$8
+			AND (owner IS NULL OR owner='' OR owner=$6)
 		RETURNING id, task_id, team_name, namespace, subject, description, state, owner,
 			blocked_by, result, version, created_at, updated_at, completed_at`,
 		namespace, teamName, taskID, expectedVersion, store.TaskStateInProgress, claimedBy, now,
@@ -163,6 +218,10 @@ func (r *taskRepo) Unclaim(ctx context.Context, namespace, teamName, taskID stri
 	t.Owner = deref(owner)
 	t.Description = deref(desc)
 	t.Result = deref(res)
+	_, _ = r.pool.Exec(ctx, `
+		INSERT INTO team_task_history (task_fk, team_name, namespace, from_state, to_state, owner)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, teamName, namespace, store.TaskStateInProgress, store.TaskStatePending, "")
 	return t, nil
 }
 
@@ -179,7 +238,7 @@ func (r *taskRepo) GetUnblockedPending(ctx context.Context, namespace, teamName 
 	}
 	var out []*store.TeamTask
 	for _, t := range tasks {
-		if t.State != store.TaskStatePending {
+		if t.State != store.TaskStatePending || t.Owner != "" {
 			continue
 		}
 		var blocked []string
@@ -198,6 +257,34 @@ func (r *taskRepo) GetUnblockedPending(ctx context.Context, namespace, teamName 
 		}
 	}
 	return out, nil
+}
+
+func (r *taskRepo) isBlocked(ctx context.Context, namespace, teamName string, task *store.TeamTask) (bool, error) {
+	var blocked []string
+	if len(task.BlockedBy) > 0 {
+		if err := json.Unmarshal(task.BlockedBy, &blocked); err != nil {
+			return false, err
+		}
+	}
+	if len(blocked) == 0 {
+		return false, nil
+	}
+	tasks, err := r.List(ctx, namespace, teamName)
+	if err != nil {
+		return false, err
+	}
+	completed := map[string]bool{}
+	for _, t := range tasks {
+		if t.State == store.TaskStateCompleted {
+			completed[t.TaskID] = true
+		}
+	}
+	for _, b := range blocked {
+		if !completed[b] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *taskRepo) GetSummary(ctx context.Context, namespace, teamName string) (total, pending, inProgress, completed int32, err error) {

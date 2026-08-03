@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder.web.managed;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
@@ -26,8 +27,13 @@ import java.util.List;
 /**
  * Immutable snapshot of versioned agent configuration fields persisted in {@link
  * io.agentscope.builder.web.persistence.jpa.AgentVersionEntity}.
+ *
+ * <p>Unknown properties are ignored: the control-plane ({@code aistiod}) snapshot payload is a
+ * superset carrying envelope fields such as {@code id} / {@code ownerId} / {@code workspacePath} /
+ * {@code version} that are resolved separately.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AgentVersionSnapshot(
         String name,
         String description,

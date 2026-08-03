@@ -87,12 +87,12 @@ export default function FleetOverviewPage() {
           <Stat
             label="Healthy instances"
             value={healthy}
-            to="/operate/agents?health=healthy"
+            to="/operate/agents?presence=live"
           />
           <Stat
             label="Stale instances"
             value={stale}
-            to="/operate/agents?health=stale"
+            to="/operate/agents?presence=offline"
           />
           <Stat
             label="Active sessions"
@@ -107,6 +107,28 @@ export default function FleetOverviewPage() {
           <Stat label="Tokens (24h, Δ)" value={o.tokenUsage24h.toLocaleString()} />
           <Stat label="Errors (24h)" value={o.errorCount24h ?? 0} />
         </div>
+      )}
+
+      {o && ((o.offlineAgentCount ?? 0) > 0 || (o.historicalAgentCount ?? 0) > 0) && (
+        <p className="text-sm text-muted-foreground">
+          Agents counts live instances only.
+          {(o.offlineAgentCount ?? 0) > 0 && (
+            <>
+              {' '}
+              <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=offline">
+                {o.offlineAgentCount} offline
+              </Link>
+            </>
+          )}
+          {(o.historicalAgentCount ?? 0) > 0 && (
+            <>
+              {(o.offlineAgentCount ?? 0) > 0 ? ' · ' : ' '}
+              <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=historical">
+                {o.historicalAgentCount} historical
+              </Link>
+            </>
+          )}
+        </p>
       )}
 
       <TokenTrend

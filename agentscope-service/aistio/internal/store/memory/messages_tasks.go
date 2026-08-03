@@ -122,7 +122,7 @@ func (r *messageRepo) DeleteByTeam(_ context.Context, teamName, namespace string
 
 type taskRepo struct{ s *Store }
 
-func (r *taskRepo) Create(_ context.Context, namespace, teamName, subject, description string, blockedBy []string) (*store.TeamTask, error) {
+func (r *taskRepo) Create(_ context.Context, namespace, teamName, subject, description string, blockedBy []string, owner string) (*store.TeamTask, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	var maxSeq int64
@@ -147,12 +147,18 @@ func (r *taskRepo) Create(_ context.Context, namespace, teamName, subject, descr
 		Subject:     subject,
 		Description: description,
 		State:       store.TaskStatePending,
+		Owner:       owner,
 		BlockedBy:   blockedJSON,
 		Version:     1,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	r.s.tasks = append(r.s.tasks, t)
+	r.s.history = append(r.s.history, store.TeamTaskHistory{
+		ID: nextID(&r.s.nextHistID), TaskFK: t.ID, TeamName: teamName, Namespace: namespace,
+		FromState: "", ToState: store.TaskStatePending, Owner: owner,
+		TransitionedAt: now,
+	})
 	cp := t
 	return &cp, nil
 }
@@ -184,6 +190,35 @@ func (r *taskRepo) List(_ context.Context, namespace, teamName string) ([]*store
 	return out, nil
 }
 
+func (r *taskRepo) Assign(_ context.Context, namespace, teamName, taskID, owner string, expectedVersion int64) (*store.TeamTask, error) {
+	if owner == "" {
+		return nil, fmt.Errorf("memory tasks assign: owner required")
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	for i := range r.s.tasks {
+		t := &r.s.tasks[i]
+		if t.Namespace != namespace || t.TeamName != teamName || t.TaskID != taskID {
+			continue
+		}
+		if t.Version != expectedVersion || t.State != store.TaskStatePending {
+			return nil, store.ErrConflict
+		}
+		now := time.Now().UTC()
+		t.Owner = owner
+		t.Version++
+		t.UpdatedAt = now
+		r.s.history = append(r.s.history, store.TeamTaskHistory{
+			ID: nextID(&r.s.nextHistID), TaskFK: t.ID, TeamName: teamName, Namespace: namespace,
+			FromState: store.TaskStatePending, ToState: store.TaskStatePending, Owner: owner,
+			TransitionedAt: now,
+		})
+		cp := *t
+		return &cp, nil
+	}
+	return nil, store.ErrNotFound
+}
+
 func (r *taskRepo) Claim(_ context.Context, namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*store.TeamTask, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -195,14 +230,21 @@ func (r *taskRepo) Claim(_ context.Context, namespace, teamName, taskID, claimed
 		if t.Version != expectedVersion || t.State != store.TaskStatePending {
 			return nil, store.ErrConflict
 		}
+		if t.Owner != "" && t.Owner != claimedBy {
+			return nil, store.ErrConflict
+		}
+		if isTaskBlockedLocked(r.s.tasks, namespace, teamName, t) {
+			return nil, store.ErrConflict
+		}
+		now := time.Now().UTC()
 		t.State = store.TaskStateInProgress
 		t.Owner = claimedBy
 		t.Version++
-		t.UpdatedAt = time.Now().UTC()
+		t.UpdatedAt = now
 		r.s.history = append(r.s.history, store.TeamTaskHistory{
 			ID: nextID(&r.s.nextHistID), TaskFK: t.ID, TeamName: teamName, Namespace: namespace,
 			FromState: store.TaskStatePending, ToState: store.TaskStateInProgress, Owner: claimedBy,
-			TransitionedAt: time.Now().UTC(),
+			TransitionedAt: now,
 		})
 		cp := *t
 		return &cp, nil
@@ -244,10 +286,16 @@ func (r *taskRepo) Unclaim(_ context.Context, namespace, teamName, taskID string
 		if t.State != store.TaskStateInProgress {
 			return nil, store.ErrNotFound
 		}
+		now := time.Now().UTC()
 		t.State = store.TaskStatePending
 		t.Owner = ""
 		t.Version++
-		t.UpdatedAt = time.Now().UTC()
+		t.UpdatedAt = now
+		r.s.history = append(r.s.history, store.TeamTaskHistory{
+			ID: nextID(&r.s.nextHistID), TaskFK: t.ID, TeamName: teamName, Namespace: namespace,
+			FromState: store.TaskStateInProgress, ToState: store.TaskStatePending, Owner: "",
+			TransitionedAt: now,
+		})
 		cp := *t
 		return &cp, nil
 	}
@@ -267,7 +315,7 @@ func (r *taskRepo) GetUnblockedPending(ctx context.Context, namespace, teamName 
 	}
 	var out []*store.TeamTask
 	for _, t := range tasks {
-		if t.State != store.TaskStatePending {
+		if t.State != store.TaskStatePending || t.Owner != "" {
 			continue
 		}
 		var blocked []string
@@ -286,6 +334,28 @@ func (r *taskRepo) GetUnblockedPending(ctx context.Context, namespace, teamName 
 		}
 	}
 	return out, nil
+}
+
+func isTaskBlockedLocked(tasks []store.TeamTask, namespace, teamName string, task *store.TeamTask) bool {
+	var blocked []string
+	if len(task.BlockedBy) > 0 {
+		_ = json.Unmarshal(task.BlockedBy, &blocked)
+	}
+	if len(blocked) == 0 {
+		return false
+	}
+	completed := map[string]bool{}
+	for _, t := range tasks {
+		if t.Namespace == namespace && t.TeamName == teamName && t.State == store.TaskStateCompleted {
+			completed[t.TaskID] = true
+		}
+	}
+	for _, b := range blocked {
+		if !completed[b] {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *taskRepo) GetSummary(_ context.Context, namespace, teamName string) (total, pending, inProgress, completed int32, err error) {

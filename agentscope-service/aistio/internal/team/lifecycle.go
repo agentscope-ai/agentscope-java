@@ -5,32 +5,26 @@ import (
 	"fmt"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
-// EXPERIMENTAL: distributed AgentTeam coordination is NOT wired into v0.1.
-// Lifecycle/SessionSpawner are reference implementations exercised only when
-// --enable-experimental is set and a future AgentTeamController adopts them.
-
-// Lifecycle manages team creation, completion, timeout, and cleanup.
+// Lifecycle manages team creation, completion, timeout, and cleanup against
+// the store-backed Team repository. Optional CRD projection is handled by the
+// controller via convert.go — this layer never imports the CRD client.
 type Lifecycle struct {
-	client    client.Client
 	store     store.Store
 	taskStore *TaskStore
 	router    *MessageRouter
 	spawner   *SessionSpawner
+	activator *Activator
 }
 
-// NewLifecycle creates a new team Lifecycle manager.
-func NewLifecycle(c client.Client, st store.Store, ts *TaskStore, mr *MessageRouter, ss *SessionSpawner) *Lifecycle {
+// NewLifecycle creates a store-backed team Lifecycle manager.
+func NewLifecycle(st store.Store, ts *TaskStore, mr *MessageRouter, ss *SessionSpawner) *Lifecycle {
 	return &Lifecycle{
-		client:    c,
 		store:     st,
 		taskStore: ts,
 		router:    mr,
@@ -38,55 +32,50 @@ func NewLifecycle(c client.Client, st store.Store, ts *TaskStore, mr *MessageRou
 	}
 }
 
+// SetActivator wires optional data-plane wakeup after session allocation.
+func (l *Lifecycle) SetActivator(a *Activator) {
+	l.activator = a
+}
+
 // StartTeam initializes a team: creates sessions for lead and static members.
-func (l *Lifecycle) StartTeam(ctx context.Context, team *v1alpha1.AgentTeam) error {
+func (l *Lifecycle) StartTeam(ctx context.Context, team *store.Team) error {
 	logger := log.FromContext(ctx)
 	logger.Info("starting team", "name", team.Name)
 
-	// Spawn lead session
-	leadSession, err := l.spawner.SpawnLeadSession(ctx, team)
+	members, err := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
 	if err != nil {
-		return fmt.Errorf("spawning lead session: %w", err)
+		return fmt.Errorf("listing members: %w", err)
+	}
+	if len(members) == 0 {
+		return fmt.Errorf("team %s has no members", team.Name)
 	}
 
-	team.Status.Phase = v1alpha1.TeamPhaseRunning
-	team.Status.StartedAt = time.Now().Format(time.RFC3339)
-	team.Status.Lead = &v1alpha1.TeamMemberStatus{
-		Name:      "lead",
-		AgentRef:  team.Spec.Lead.AgentRef.Name,
-		SessionID: leadSession.SessionID,
-		Phase:     v1alpha1.MemberPhaseWorking,
-	}
-
-	// Spawn static members
-	team.Status.Members = make([]v1alpha1.TeamMemberStatus, 0, len(team.Spec.Members))
-	for _, member := range team.Spec.Members {
-		sess, err := l.spawner.SpawnMemberSession(ctx, team, member)
-		memberStatus := v1alpha1.TeamMemberStatus{
-			Name:     member.Name,
-			Origin:   v1alpha1.MemberOriginStatic,
-			AgentRef: member.AgentRef.Name,
-			Phase:    v1alpha1.MemberPhaseJoining,
-		}
+	for _, member := range members {
+		teamCtx := l.spawner.buildTeamContext(team, member.MemberName, member.MemberName == "lead", members, nil)
+		sess, err := l.startMember(ctx, team, member, members, teamCtx)
 		if err != nil {
-			logger.Error(err, "failed to spawn member session", "member", member.Name)
-			memberStatus.Phase = v1alpha1.MemberPhaseFailed
-		} else {
-			memberStatus.SessionID = sess.SessionID
-			memberStatus.Phase = v1alpha1.MemberPhaseWorking
+			logger.Error(err, "failed to start member", "member", member.MemberName)
+			_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, member.MemberName, store.MemberPhaseFailed)
+			continue
 		}
-		team.Status.Members = append(team.Status.Members, memberStatus)
+		_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, member.MemberName, store.MemberPhaseWorking)
+		l.router.RegisterMember(team.Name, &MemberLocation{
+			MemberName: member.MemberName,
+			AgentName:  member.AgentRef,
+			SessionID:  sess.SessionID,
+			Connected:  true,
+		})
 	}
 
-	team.Status.Tasks = &v1alpha1.TeamTaskSummary{}
-
-	if err := l.client.Status().Update(ctx, team); err != nil {
+	if err := l.store.Teams().UpdatePhase(ctx, team.Namespace, team.Name, store.TeamPhaseRunning); err != nil {
 		return err
 	}
+	team.Phase = store.TeamPhaseRunning
 
 	activeCount := 0
-	for _, m := range team.Status.Members {
-		if m.Phase == v1alpha1.MemberPhaseWorking {
+	fresh, _ := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
+	for _, m := range fresh {
+		if m.Phase == store.MemberPhaseWorking {
 			activeCount++
 		}
 	}
@@ -94,175 +83,178 @@ func (l *Lifecycle) StartTeam(ctx context.Context, team *v1alpha1.AgentTeam) err
 	return nil
 }
 
+// startMember allocates a session and activates the data plane for one member.
+// Managed: find-or-create + store bind + wake event (Activator.ActivateManaged).
+// BYO: UUID store session + team_join.
+func (l *Lifecycle) startMember(
+	ctx context.Context,
+	team *store.Team,
+	member *store.TeamMember,
+	roster []*store.TeamMember,
+	teamCtx *TeamContext,
+) (*store.Session, error) {
+	logger := log.FromContext(ctx)
+
+	if member.DeployMode == store.MemberDeployManaged {
+		if l.activator == nil {
+			return nil, fmt.Errorf("managed activator not configured")
+		}
+		return l.activator.ActivateManaged(ctx, team, member, teamCtx)
+	}
+
+	sess, err := l.spawner.SpawnMemberSession(ctx, team, member, roster, nil)
+	if err != nil {
+		return nil, err
+	}
+	_ = l.store.Teams().BindMemberSession(ctx, team.Namespace, team.Name, member.MemberName,
+		sess.SessionID, member.ManagedSessionID, "")
+	member.SessionID = sess.SessionID
+	if l.activator != nil {
+		if err := l.activator.ActivateMember(ctx, team, member, teamCtx); err != nil {
+			logger.Error(err, "failed to activate BYO member", "member", member.MemberName)
+			return sess, err
+		}
+	}
+	return sess, nil
+}
+
 // CompleteTeam marks a team as completed and initiates cleanup.
-func (l *Lifecycle) CompleteTeam(ctx context.Context, team *v1alpha1.AgentTeam) error {
+func (l *Lifecycle) CompleteTeam(ctx context.Context, team *store.Team) error {
 	logger := log.FromContext(ctx)
 	logger.Info("completing team", "name", team.Name)
 
-	team.Status.Phase = v1alpha1.TeamPhaseCompleted
-
-	// Terminate all member sessions
+	if err := l.store.Teams().UpdatePhase(ctx, team.Namespace, team.Name, store.TeamPhaseCompleted); err != nil {
+		return err
+	}
+	team.Phase = store.TeamPhaseCompleted
 	l.terminateAllSessions(ctx, team)
-
-	// Clean up routing
 	l.router.DeleteTeam(team.Name, team.Namespace)
-
-	return l.client.Status().Update(ctx, team)
+	return nil
 }
 
 // FailTeam marks a team as failed.
-func (l *Lifecycle) FailTeam(ctx context.Context, team *v1alpha1.AgentTeam, reason string) error {
-	team.Status.Phase = v1alpha1.TeamPhaseFailed
+func (l *Lifecycle) FailTeam(ctx context.Context, team *store.Team, reason string) error {
+	logger := log.FromContext(ctx)
+	logger.Info("failing team", "name", team.Name, "reason", reason)
 
-	cond := v1alpha1.Condition{
-		Type:               v1alpha1.ConditionReady,
-		Status:             metav1.ConditionFalse,
-		LastTransitionTime: metav1.Now(),
-		Reason:             "TeamFailed",
-		Message:            reason,
+	if err := l.store.Teams().UpdatePhase(ctx, team.Namespace, team.Name, store.TeamPhaseFailed); err != nil {
+		return err
 	}
-	setTeamCondition(&team.Status.Conditions, cond)
-
+	team.Phase = store.TeamPhaseFailed
 	l.terminateAllSessions(ctx, team)
 	l.router.DeleteTeam(team.Name, team.Namespace)
-
-	return l.client.Status().Update(ctx, team)
+	return nil
 }
 
-// CleanupTeamState removes a team's persistent task/message/session state
-// from the store and clears in-memory routing. Called on finalize so cleanup
-// is immediate rather than relying solely on retention purges.
-func (l *Lifecycle) CleanupTeamState(ctx context.Context, team *v1alpha1.AgentTeam) {
+// CleanupTeamState removes a team's persistent task/message/session/member state.
+func (l *Lifecycle) CleanupTeamState(ctx context.Context, team *store.Team) {
 	l.taskStore.DeleteTeam(team.Namespace, team.Name)
 	l.router.DeleteTeam(team.Name, team.Namespace)
 	if l.store != nil {
 		_ = l.store.Sessions().DeleteByTeam(ctx, team.Name, team.Namespace)
+		_ = l.store.Teams().Delete(ctx, team.Namespace, team.Name)
 	}
 }
 
 // CheckTimeout returns true if the team has exceeded its maxDuration.
-func (l *Lifecycle) CheckTimeout(team *v1alpha1.AgentTeam) bool {
-	if team.Spec.Lifecycle == nil || team.Spec.Lifecycle.MaxDuration == "" {
+func (l *Lifecycle) CheckTimeout(team *store.Team) bool {
+	extra := ParseSpecExtra(team)
+	if extra.Lifecycle == nil || extra.Lifecycle.MaxDuration == "" || team.StartedAt == nil {
 		return false
 	}
-
-	maxDur, err := time.ParseDuration(team.Spec.Lifecycle.MaxDuration)
+	maxDur, err := time.ParseDuration(extra.Lifecycle.MaxDuration)
 	if err != nil {
 		return false
 	}
-
-	startedAt, err := time.Parse(time.RFC3339, team.Status.StartedAt)
-	if err != nil {
-		return false
-	}
-
-	return time.Since(startedAt) > maxDur
+	return time.Since(*team.StartedAt) > maxDur
 }
 
-// CheckAllComplete returns true if all tasks are completed (for all-complete shutdown policy).
-func (l *Lifecycle) CheckAllComplete(team *v1alpha1.AgentTeam) bool {
-	if team.Status.Tasks == nil {
-		return false
-	}
-	return team.Status.Tasks.Total > 0 && team.Status.Tasks.Completed == team.Status.Tasks.Total
+// CheckAllComplete returns true if all tasks are completed.
+func (l *Lifecycle) CheckAllComplete(team *store.Team) bool {
+	total, _, _, completed := l.taskStore.GetSummary(team.Namespace, team.Name)
+	return total > 0 && completed == total
 }
 
-// ShouldCleanup checks if the team CRD should be garbage collected based on TTL.
-func (l *Lifecycle) ShouldCleanup(team *v1alpha1.AgentTeam) bool {
-	if team.Spec.Lifecycle == nil {
+// ShouldCleanup checks if the team should be garbage collected based on TTL.
+func (l *Lifecycle) ShouldCleanup(team *store.Team) bool {
+	extra := ParseSpecExtra(team)
+	if extra.Lifecycle == nil || team.StartedAt == nil {
 		return false
 	}
-
 	var ttlStr string
-	switch team.Status.Phase {
-	case v1alpha1.TeamPhaseCompleted:
-		ttlStr = team.Spec.Lifecycle.TTLAfterCompleted
-	case v1alpha1.TeamPhaseFailed:
-		ttlStr = team.Spec.Lifecycle.TTLAfterFailed
+	switch team.Phase {
+	case store.TeamPhaseCompleted:
+		ttlStr = extra.Lifecycle.TTLAfterCompleted
+	case store.TeamPhaseFailed:
+		ttlStr = extra.Lifecycle.TTLAfterFailed
 	default:
 		return false
 	}
-
 	if ttlStr == "" {
 		return false
 	}
-
 	ttl, err := time.ParseDuration(ttlStr)
 	if err != nil {
 		return false
 	}
-
-	startedAt, err := time.Parse(time.RFC3339, team.Status.StartedAt)
-	if err != nil {
-		return false
-	}
-
-	return time.Since(startedAt) > ttl
+	return time.Since(*team.StartedAt) > ttl
 }
 
-// HandleMemberFailure processes a member pod failure and triggers recovery.
-func (l *Lifecycle) HandleMemberFailure(ctx context.Context, team *v1alpha1.AgentTeam, memberName string, reason string) error {
+// HandleMemberFailure processes a member failure and triggers recovery.
+func (l *Lifecycle) HandleMemberFailure(ctx context.Context, team *store.Team, memberName, reason string) error {
 	logger := log.FromContext(ctx)
 	logger.Info("handling member failure", "team", team.Name, "member", memberName, "reason", reason)
 
-	// Find the member in status
-	for i, m := range team.Status.Members {
-		if m.Name != memberName {
-			continue
-		}
-
-		team.Status.Members[i].Phase = v1alpha1.MemberPhaseLost
-		team.Status.Members[i].LastRestartReason = reason
-
-		// Check recovery policy
-		if team.Spec.Recovery == nil || team.Spec.Recovery.ReschedulePolicy == "None" {
-			metrics.RecordTeamRecovery(team.Namespace, team.Name, "no_policy")
-			return l.client.Status().Update(ctx, team)
-		}
-
-		// Check max restarts
-		maxRestarts := int32(3)
-		if team.Spec.Recovery.MaxRestarts > 0 {
-			maxRestarts = team.Spec.Recovery.MaxRestarts
-		}
-		if m.RestartCount >= maxRestarts {
-			team.Status.Members[i].Phase = v1alpha1.MemberPhaseFailed
-			logger.Info("member exceeded max restarts", "member", memberName, "restarts", m.RestartCount)
-			metrics.RecordTeamRecovery(team.Namespace, team.Name, "exhausted")
-			return l.client.Status().Update(ctx, team)
-		}
-
-		// Auto reschedule
-		if team.Spec.Recovery.ReschedulePolicy == "Auto" {
-			metrics.RecordTeamRecovery(team.Namespace, team.Name, "attempted")
-			return l.reschedMember(ctx, team, i, memberName)
-		}
-
-		return l.client.Status().Update(ctx, team)
+	m, err := l.store.Teams().GetMember(ctx, team.Namespace, team.Name, memberName)
+	if err != nil {
+		return fmt.Errorf("member %s not found in team %s: %w", memberName, team.Name, err)
 	}
 
-	return fmt.Errorf("member %s not found in team %s", memberName, team.Name)
+	_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, memberName, store.MemberPhaseLost)
+	m.Phase = store.MemberPhaseLost
+	m.LastRestartReason = reason
+
+	extra := ParseSpecExtra(team)
+	if extra.Recovery == nil || extra.Recovery.ReschedulePolicy == "None" {
+		metrics.RecordTeamRecovery(team.Namespace, team.Name, "no_policy")
+		return nil
+	}
+
+	maxRestarts := int32(3)
+	if extra.Recovery.MaxRestarts > 0 {
+		maxRestarts = extra.Recovery.MaxRestarts
+	}
+	if m.RestartCount >= maxRestarts {
+		_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, memberName, store.MemberPhaseFailed)
+		metrics.RecordTeamRecovery(team.Namespace, team.Name, "exhausted")
+		return nil
+	}
+
+	if extra.Recovery.ReschedulePolicy == "Auto" {
+		metrics.RecordTeamRecovery(team.Namespace, team.Name, "attempted")
+		return l.rescheduleMember(ctx, team, m)
+	}
+	return nil
 }
 
-// SpawnDynamicMember validates the request against team spec and spawns a member.
-func (l *Lifecycle) SpawnDynamicMember(ctx context.Context, team *v1alpha1.AgentTeam, name, agentRef, prompt string) error {
+// SpawnDynamicMember validates the request against team policy and spawns a member.
+func (l *Lifecycle) SpawnDynamicMember(ctx context.Context, team *store.Team, name, agentRef, prompt string) error {
 	logger := log.FromContext(ctx)
-
-	// Check dynamicMembers.enabled
-	if team.Spec.DynamicMembers == nil || !team.Spec.DynamicMembers.Enabled {
+	extra := ParseSpecExtra(team)
+	if extra.DynamicMembers == nil || !extra.DynamicMembers.Enabled {
 		return fmt.Errorf("dynamic members not enabled for team %s", team.Name)
 	}
 
-	// Check maxTotal
-	currentCount := len(team.Status.Members) + 1 // +1 for lead
-	if team.Spec.DynamicMembers.MaxTotal > 0 && int32(currentCount) >= team.Spec.DynamicMembers.MaxTotal {
-		return fmt.Errorf("team %s reached maxTotal %d", team.Name, team.Spec.DynamicMembers.MaxTotal)
+	members, err := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
+	if err != nil {
+		return err
 	}
-
-	// Check allowedAgentRefs
-	if len(team.Spec.DynamicMembers.AllowedAgentRefs) > 0 {
+	if extra.DynamicMembers.MaxTotal > 0 && int32(len(members)) >= extra.DynamicMembers.MaxTotal {
+		return fmt.Errorf("team %s reached maxTotal %d", team.Name, extra.DynamicMembers.MaxTotal)
+	}
+	if len(extra.DynamicMembers.AllowedAgentRefs) > 0 {
 		allowed := false
-		for _, ref := range team.Spec.DynamicMembers.AllowedAgentRefs {
+		for _, ref := range extra.DynamicMembers.AllowedAgentRefs {
 			if ref.Name == agentRef {
 				allowed = true
 				break
@@ -273,98 +265,171 @@ func (l *Lifecycle) SpawnDynamicMember(ctx context.Context, team *v1alpha1.Agent
 		}
 	}
 
-	// Create member spec and spawn
-	member := v1alpha1.TeamMemberSpec{
-		Name:     name,
-		AgentRef: v1alpha1.ObjectReference{Name: agentRef},
-		Prompt:   prompt,
+	member, err := l.store.Teams().UpsertMember(ctx, &store.TeamMember{
+		TeamName:   team.Name,
+		Namespace:  team.Namespace,
+		MemberName: name,
+		AgentRef:   agentRef,
+		Prompt:     prompt,
+		Origin:     store.MemberOriginDynamic,
+		DeployMode: store.MemberDeployBYO,
+		Phase:      store.MemberPhaseJoining,
+	})
+	if err != nil {
+		return err
 	}
-	sess, err := l.spawner.SpawnMemberSession(ctx, team, member)
+
+	roster, _ := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
+	teamCtx := l.spawner.buildTeamContext(team, name, false, roster, nil)
+	sess, err := l.startMember(ctx, team, member, roster, teamCtx)
 	if err != nil {
 		return fmt.Errorf("spawning dynamic member: %w", err)
 	}
-
-	// Add to team status
-	team.Status.Members = append(team.Status.Members, v1alpha1.TeamMemberStatus{
-		Name:      name,
-		Origin:    v1alpha1.MemberOriginDynamic,
-		AgentRef:  agentRef,
-		SessionID: sess.SessionID,
-		Phase:     v1alpha1.MemberPhaseWorking,
-		AddedAt:   time.Now().Format(time.RFC3339),
+	_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, name, store.MemberPhaseWorking)
+	l.router.RegisterMember(team.Name, &MemberLocation{
+		MemberName: name,
+		AgentName:  agentRef,
+		SessionID:  sess.SessionID,
+		Connected:  true,
 	})
 
 	logger.Info("dynamic member spawned", "team", team.Name, "member", name, "agent", agentRef)
-	return l.client.Status().Update(ctx, team)
+	return nil
 }
 
-func (l *Lifecycle) reschedMember(ctx context.Context, team *v1alpha1.AgentTeam, idx int, memberName string) error {
-	m := &team.Status.Members[idx]
+// ShutdownMember retires one member: asks its runtime to leave the team, flips
+// the member phase to Shutdown, drops it from the router, and terminates the
+// member's store session. Data-plane deactivation is best-effort — a member
+// whose instance is already gone still gets fully shut down.
+func (l *Lifecycle) ShutdownMember(ctx context.Context, team *store.Team, memberName string) error {
+	logger := log.FromContext(ctx)
+	if team == nil || memberName == "" {
+		return fmt.Errorf("team and memberName required")
+	}
 
-	// Build recovery context from completed tasks
+	m, err := l.store.Teams().GetMember(ctx, team.Namespace, team.Name, memberName)
+	if err != nil {
+		return err
+	}
+
+	if l.activator != nil {
+		if err := l.activator.DeactivateMember(ctx, team, m); err != nil {
+			logger.Info("team_leave failed, continuing shutdown",
+				"team", team.Name, "member", memberName, "err", err)
+		}
+	}
+
+	if err := l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, memberName, store.MemberPhaseShutdown); err != nil {
+		return err
+	}
+	l.router.UnregisterMember(team.Name, memberName)
+	l.terminateMemberSessions(ctx, team, memberName)
+
+	logger.Info("member shut down", "team", team.Name, "member", memberName)
+	return nil
+}
+
+func (l *Lifecycle) terminateMemberSessions(ctx context.Context, team *store.Team, memberName string) {
+	logger := log.FromContext(ctx)
+	if l.store == nil {
+		return
+	}
+	sessions, err := l.store.Sessions().List(ctx, store.SessionFilter{
+		Namespace: team.Namespace,
+		TeamID:    team.Name,
+		TeamRole:  memberName,
+	})
+	if err != nil {
+		logger.Error(err, "failed to list member sessions", "member", memberName)
+		return
+	}
+	for _, sess := range sessions {
+		if err := l.store.Sessions().UpdatePhase(ctx, sess.ID, store.SessionPhaseTerminated); err != nil {
+			logger.Error(err, "failed to terminate member session", "session", sess.SessionID)
+		}
+	}
+}
+
+func (l *Lifecycle) rescheduleMember(ctx context.Context, team *store.Team, m *store.TeamMember) error {
 	recovery := &RecoveryContext{
 		PreviousSessionID: m.SessionID,
 		RestartCount:      m.RestartCount + 1,
 	}
 
-	// Gather completed tasks by this member from task store
 	tasks := l.taskStore.List(team.Namespace, team.Name)
 	for _, t := range tasks {
-		if t.Owner == memberName && t.State == store.TaskStateCompleted {
+		if t.Owner == m.MemberName && t.State == store.TaskStateCompleted {
 			recovery.CompletedTasks = append(recovery.CompletedTasks, CompletedTask{
-				ID:      t.TaskID,
-				Subject: t.Subject,
-				Result:  t.Result,
+				ID: t.TaskID, Subject: t.Subject, Result: t.Result,
 			})
 		}
-		if t.Owner == memberName && t.State == store.TaskStateInProgress {
+		if t.Owner == m.MemberName && t.State == store.TaskStateInProgress {
 			recovery.InterruptedTask = &InterruptedTask{
-				ID:      t.TaskID,
-				Subject: t.Subject,
-				Note:    "Rolled back to pending due to member failure",
+				ID: t.TaskID, Subject: t.Subject,
+				Note: "Rolled back to pending due to member failure",
 			}
-			// Unclaim the interrupted task
 			l.taskStore.Unclaim(team.Namespace, team.Name, t.TaskID)
 		}
 	}
 
-	// Gather recent messages
 	msgs := l.router.GetMessageHistory(team.Namespace, team.Name, 10)
 	for _, msg := range msgs {
-		if msg.ToMember == memberName || msg.FromMember == memberName {
+		if msg.ToMember == m.MemberName || msg.FromMember == m.MemberName {
 			recovery.RecentMessages = append(recovery.RecentMessages, RecentMessage{
-				From:      msg.FromMember,
-				Content:   msg.Content,
+				From: msg.FromMember, Content: msg.Content,
 				Timestamp: msg.CreatedAt.Format(time.RFC3339),
 			})
 		}
 	}
 
-	// Spawn recovery session
-	sess, err := l.spawner.SpawnRecoverySession(ctx, team, memberName, m.AgentRef, recovery)
+	roster, _ := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
+	teamCtx := l.spawner.buildTeamContext(team, m.MemberName, m.MemberName == "lead", roster, recovery)
+
+	var sess *store.Session
+	var err error
+	if m.DeployMode == store.MemberDeployManaged {
+		if l.activator == nil {
+			metrics.RecordTeamRecovery(team.Namespace, team.Name, "failed")
+			return fmt.Errorf("managed activator not configured")
+		}
+		sess, err = l.activator.ActivateManaged(ctx, team, m, teamCtx)
+	} else {
+		sess, err = l.spawner.SpawnMemberSession(ctx, team, m, roster, recovery)
+		if err == nil {
+			_ = l.store.Teams().BindMemberSession(ctx, team.Namespace, team.Name, m.MemberName, sess.SessionID, "", "")
+			m.SessionID = sess.SessionID
+			if l.activator != nil {
+				_ = l.activator.ActivateMember(ctx, team, m, teamCtx)
+			}
+		}
+	}
 	if err != nil {
 		metrics.RecordTeamRecovery(team.Namespace, team.Name, "failed")
 		return fmt.Errorf("spawning recovery session: %w", err)
 	}
 
+	now := time.Now().UTC()
 	m.SessionID = sess.SessionID
-	m.Phase = v1alpha1.MemberPhaseWorking
+	if m.DeployMode == store.MemberDeployManaged {
+		m.ManagedSessionID = sess.SessionID
+	}
+	m.Phase = store.MemberPhaseWorking
 	m.RestartCount++
-	m.LastRestartAt = time.Now().Format(time.RFC3339)
-
+	m.LastRestartAt = &now
+	_, err = l.store.Teams().UpsertMember(ctx, m)
+	if err != nil {
+		metrics.RecordTeamRecovery(team.Namespace, team.Name, "failed")
+		return err
+	}
 	metrics.RecordTeamRecovery(team.Namespace, team.Name, "success")
-	return l.client.Status().Update(ctx, team)
+	return nil
 }
 
-// terminateAllSessions marks all of a team's sessions as terminated in the
-// store. Best-effort: does not attempt live delivery of a terminate command
-// to the data plane (see httpapi session terminate for that flow).
-func (l *Lifecycle) terminateAllSessions(ctx context.Context, team *v1alpha1.AgentTeam) {
+func (l *Lifecycle) terminateAllSessions(ctx context.Context, team *store.Team) {
 	logger := log.FromContext(ctx)
 	if l.store == nil {
 		return
 	}
-
 	sessions, err := l.store.Sessions().List(ctx, store.SessionFilter{
 		Namespace: team.Namespace,
 		TeamID:    team.Name,
@@ -373,20 +438,9 @@ func (l *Lifecycle) terminateAllSessions(ctx context.Context, team *v1alpha1.Age
 		logger.Error(err, "failed to list team sessions")
 		return
 	}
-
 	for _, sess := range sessions {
 		if err := l.store.Sessions().UpdatePhase(ctx, sess.ID, store.SessionPhaseTerminated); err != nil {
 			logger.Error(err, "failed to terminate session", "session", sess.SessionID)
 		}
 	}
-}
-
-func setTeamCondition(conditions *[]v1alpha1.Condition, cond v1alpha1.Condition) {
-	for i, c := range *conditions {
-		if c.Type == cond.Type {
-			(*conditions)[i] = cond
-			return
-		}
-	}
-	*conditions = append(*conditions, cond)
 }

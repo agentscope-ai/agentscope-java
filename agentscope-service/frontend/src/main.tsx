@@ -45,6 +45,12 @@ import OperateSessionsPage from './features/operate/OperateSessionsPage';
 import OperateSessionDetailPage from './features/operate/OperateSessionDetailPage';
 import GovernancePage from './features/operate/GovernancePage';
 
+import TeamsOverviewPage from './features/teams/TeamsOverviewPage';
+import TeamsHubPage from './features/teams/TeamsHubPage';
+import TeamCreatePage from './features/teams/TeamCreatePage';
+import TeamDetailPage from './features/teams/TeamDetailPage';
+import TeamsTemplatesPage from './features/teams/TeamsTemplatesPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -138,6 +144,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/operate/sessions" element={<OperateSessionsPage />} />
             <Route path="/operate/sessions/:sessionId" element={<OperateSessionDetailPage />} />
             <Route path="/operate/governance" element={<GovernancePage />} />
+
+            {/* Teams workspace */}
+            <Route path="/teams" element={<TeamsOverviewPage />} />
+            <Route path="/teams/list" element={<TeamsHubPage />} />
+            <Route path="/teams/new" element={<TeamCreatePage />} />
+            <Route path="/teams/templates" element={<TeamsTemplatesPage />} />
+            <Route path="/teams/:teamName" element={<TeamDetailPage />} />
 
             <Route path="*" element={<Navigate to="/agents" replace />} />
           </Route>

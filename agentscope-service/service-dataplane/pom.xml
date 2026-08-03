@@ -43,6 +43,12 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <!-- ControlPlaneTeamClient for Managed AgentTeams -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-aistio</artifactId>
+        </dependency>
+
         <!-- Managed Environment type=sandbox → E2B cloud -->
         <dependency>
             <groupId>io.agentscope</groupId>

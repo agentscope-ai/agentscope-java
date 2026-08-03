@@ -2,14 +2,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -23,7 +22,8 @@ import (
 
 const teamFinalizer = "agentscope.io/team-finalizer"
 
-// AgentTeamReconciler manages team lifecycle, session creation, and member coordination.
+// AgentTeamReconciler projects AgentTeam CRDs into the store-backed Team
+// repository and drives lifecycle from that authority.
 type AgentTeamReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
@@ -49,15 +49,14 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// Handle deletion with finalizer
 	if !at.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&at, teamFinalizer) {
 			r.Recorder.Eventf(&at, corev1.EventTypeNormal, "CleanupStarted",
 				"cascading cleanup for team %s", at.Name)
-			if r.Lifecycle != nil {
-				r.Lifecycle.CompleteTeam(ctx, &at)
+			if storeTeam, err := r.ensureStoreTeam(ctx, &at); err == nil && r.Lifecycle != nil {
+				_ = r.Lifecycle.CompleteTeam(ctx, storeTeam)
+				r.Lifecycle.CleanupTeamState(ctx, storeTeam)
 			}
-			r.cleanupTeamTasks(ctx, &at)
 			controllerutil.RemoveFinalizer(&at, teamFinalizer)
 			if err := r.Update(ctx, &at); err != nil {
 				metrics.RecordReconcileError("agentteam", "finalizer_update_failed")
@@ -68,7 +67,6 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure finalizer
 	if !controllerutil.ContainsFinalizer(&at, teamFinalizer) {
 		controllerutil.AddFinalizer(&at, teamFinalizer)
 		if err := r.Update(ctx, &at); err != nil {
@@ -92,151 +90,126 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
+func (r *AgentTeamReconciler) ensureStoreTeam(ctx context.Context, at *v1alpha1.AgentTeam) (*store.Team, error) {
+	if r.Store == nil {
+		return nil, store.ErrNotFound
+	}
+	desired, err := team.FromCRD(at)
+	if err != nil {
+		return nil, err
+	}
+	cur, err := r.Store.Teams().Get(ctx, at.Namespace, at.Name)
+	if err == store.ErrNotFound {
+		created, err := r.Store.Teams().Create(ctx, desired)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range team.MembersFromCRD(at) {
+			if _, err := r.Store.Teams().UpsertMember(ctx, m); err != nil {
+				return nil, err
+			}
+		}
+		return created, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	desired.ID = cur.ID
+	desired.CreatedAt = cur.CreatedAt
+	desired.StartedAt = cur.StartedAt
+	if cur.Phase != "" && desired.Phase == store.TeamPhasePending {
+		desired.Phase = cur.Phase
+	}
+	return r.Store.Teams().Update(ctx, desired)
+}
+
+func (r *AgentTeamReconciler) syncCRDStatus(ctx context.Context, at *v1alpha1.AgentTeam, storeTeam *store.Team) error {
+	members, err := r.Store.Teams().ListMembers(ctx, storeTeam.Namespace, storeTeam.Name)
+	if err != nil {
+		return err
+	}
+	var summary *v1alpha1.TeamTaskSummary
+	if r.Store != nil {
+		total, pending, inProgress, completed, _ := r.Store.TeamTasks().GetSummary(ctx, storeTeam.Namespace, storeTeam.Name)
+		if total > 0 {
+			summary = &v1alpha1.TeamTaskSummary{
+				Total: total, Pending: pending, InProgress: inProgress, Completed: completed,
+			}
+		}
+	}
+	team.ApplyStoreStatusToCRD(at, storeTeam, members, summary)
+	return r.Status().Update(ctx, at)
+}
+
 func (r *AgentTeamReconciler) handlePending(ctx context.Context, at *v1alpha1.AgentTeam) (ctrl.Result, error) {
+	storeTeam, err := r.ensureStoreTeam(ctx, at)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
+	}
+
 	if r.Lifecycle == nil {
-		return r.legacyHandlePending(ctx, at)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("team lifecycle not configured")
 	}
 
 	r.Recorder.Eventf(at, corev1.EventTypeNormal, "TeamStarting",
 		"spawning lead and %d member sessions", len(at.Spec.Members))
 
-	if err := r.Lifecycle.StartTeam(ctx, at); err != nil {
+	if err := r.Lifecycle.StartTeam(ctx, storeTeam); err != nil {
 		r.Recorder.Eventf(at, corev1.EventTypeWarning, "StartFailed",
 			"failed to start team: %v", err)
 		metrics.RecordReconcileError("agentteam", "start_failed")
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
 	}
 
+	fresh, _ := r.Store.Teams().Get(ctx, storeTeam.Namespace, storeTeam.Name)
+	if err := r.syncCRDStatus(ctx, at, fresh); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	r.Recorder.Eventf(at, corev1.EventTypeNormal, "TeamStarted",
-		"team %s started with lead + %d members", at.Name, len(at.Status.Members))
-
-	// Lifecycle.StartTeam already updates status -- re-read to avoid stale conflict
+		"team %s started", at.Name)
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-}
-
-// legacyHandlePending handles the pending phase without Lifecycle (backward compat).
-func (r *AgentTeamReconciler) legacyHandlePending(ctx context.Context, at *v1alpha1.AgentTeam) (ctrl.Result, error) {
-	at.Status.Phase = v1alpha1.TeamPhaseRunning
-	at.Status.StartedAt = time.Now().Format(time.RFC3339)
-
-	at.Status.Lead = &v1alpha1.TeamMemberStatus{
-		Name:     "lead",
-		AgentRef: at.Spec.Lead.AgentRef.Name,
-		Phase:    v1alpha1.MemberPhaseWorking,
-	}
-
-	at.Status.Members = make([]v1alpha1.TeamMemberStatus, 0, len(at.Spec.Members))
-	for _, m := range at.Spec.Members {
-		at.Status.Members = append(at.Status.Members, v1alpha1.TeamMemberStatus{
-			Name:     m.Name,
-			Origin:   v1alpha1.MemberOriginStatic,
-			AgentRef: m.AgentRef.Name,
-			Phase:    v1alpha1.MemberPhaseJoining,
-		})
-	}
-
-	at.Status.Tasks = &v1alpha1.TeamTaskSummary{}
-
-	setConditionInList(&at.Status.Conditions, v1alpha1.Condition{
-		Type:               v1alpha1.ConditionReady,
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             "TeamStarted",
-		Message:            "Team initialized and running",
-	})
-
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, at)
 }
 
 func (r *AgentTeamReconciler) handleRunning(ctx context.Context, at *v1alpha1.AgentTeam) (ctrl.Result, error) {
-	// Check timeout
-	if r.Lifecycle != nil && r.Lifecycle.CheckTimeout(at) {
-		r.Recorder.Eventf(at, corev1.EventTypeWarning, "Timeout",
-			"team %s exceeded maxDuration", at.Name)
-		return ctrl.Result{}, retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var fresh v1alpha1.AgentTeam
-			if err := r.Get(ctx, client.ObjectKeyFromObject(at), &fresh); err != nil {
-				return err
+	// Timeout / all-complete / member health / store TTL are owned by the shared
+	// TeamSweeper. This reconciler only projects CRD ↔ store status.
+	storeTeam, err := r.ensureStoreTeam(ctx, at)
+	if err != nil && r.Lifecycle != nil {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, err
+	}
+
+	if storeTeam != nil && r.Store != nil {
+		members, _ := r.Store.Teams().ListMembers(ctx, storeTeam.Namespace, storeTeam.Name)
+		phaseCounts := map[string]int{}
+		for _, m := range members {
+			if m.MemberName == "lead" {
+				continue
 			}
-			fresh.Status.Phase = v1alpha1.TeamPhaseFailed
-			setConditionInList(&fresh.Status.Conditions, v1alpha1.Condition{
-				Type:               v1alpha1.ConditionReady,
-				Status:             metav1.ConditionFalse,
-				LastTransitionTime: metav1.Now(),
-				Reason:             "Timeout",
-				Message:            "Team exceeded maxDuration",
-			})
-			return r.Status().Update(ctx, &fresh)
-		})
-	}
-
-	// Check all-complete
-	if r.Lifecycle != nil && r.Lifecycle.CheckAllComplete(at) {
-		r.Recorder.Eventf(at, corev1.EventTypeNormal, "AllComplete",
-			"all tasks completed, shutting down team")
-		if err := r.Lifecycle.CompleteTeam(ctx, at); err != nil {
-			return ctrl.Result{}, err
+			phaseCounts[m.Phase]++
 		}
-		return ctrl.Result{}, nil
-	}
-
-	// Fallback: inline timeout + all-complete checks when Lifecycle is nil
-	if r.Lifecycle == nil {
-		return r.legacyHandleRunning(ctx, at)
-	}
-
-	// Check member session health
-	r.checkMemberHealth(ctx, at)
-
-	// Aggregate member phase metrics
-	phaseCounts := map[string]int{}
-	for _, m := range at.Status.Members {
-		phaseCounts[string(m.Phase)]++
-	}
-	for phase, count := range phaseCounts {
-		metrics.RecordTeamMembers(at.Namespace, at.Name, phase, count)
-	}
-	if at.Status.Tasks != nil {
-		metrics.RecordTeamTasks(at.Namespace, at.Name, "pending", int(at.Status.Tasks.Pending))
-		metrics.RecordTeamTasks(at.Namespace, at.Name, "in_progress", int(at.Status.Tasks.InProgress))
-		metrics.RecordTeamTasks(at.Namespace, at.Name, "completed", int(at.Status.Tasks.Completed))
-	}
-
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-}
-
-// legacyHandleRunning preserves the original inline timeout/all-complete logic.
-func (r *AgentTeamReconciler) legacyHandleRunning(ctx context.Context, at *v1alpha1.AgentTeam) (ctrl.Result, error) {
-	if at.Spec.Lifecycle != nil && at.Spec.Lifecycle.MaxDuration != "" {
-		maxDur, err := time.ParseDuration(at.Spec.Lifecycle.MaxDuration)
-		if err == nil {
-			startedAt, err := time.Parse(time.RFC3339, at.Status.StartedAt)
-			if err == nil && time.Since(startedAt) > maxDur {
-				at.Status.Phase = v1alpha1.TeamPhaseFailed
-				setConditionInList(&at.Status.Conditions, v1alpha1.Condition{
-					Type:               v1alpha1.ConditionReady,
-					Status:             metav1.ConditionFalse,
-					LastTransitionTime: metav1.Now(),
-					Reason:             "Timeout",
-					Message:            "Team exceeded maxDuration",
-				})
-				return ctrl.Result{}, r.Status().Update(ctx, at)
-			}
+		for phase, count := range phaseCounts {
+			metrics.RecordTeamMembers(at.Namespace, at.Name, phase, count)
 		}
-	}
-
-	if at.Spec.Config != nil && at.Spec.Config.ShutdownPolicy == "all-complete" {
-		if at.Status.Tasks != nil && at.Status.Tasks.Total > 0 &&
-			at.Status.Tasks.Completed == at.Status.Tasks.Total {
-			at.Status.Phase = v1alpha1.TeamPhaseCompleted
-			return ctrl.Result{}, r.Status().Update(ctx, at)
-		}
+		total, pending, inProgress, completed, _ := r.Store.TeamTasks().GetSummary(ctx, storeTeam.Namespace, storeTeam.Name)
+		metrics.RecordTeamTasks(at.Namespace, at.Name, "pending", int(pending))
+		metrics.RecordTeamTasks(at.Namespace, at.Name, "in_progress", int(inProgress))
+		metrics.RecordTeamTasks(at.Namespace, at.Name, "completed", int(completed))
+		_ = total
+		_ = r.syncCRDStatus(ctx, at, storeTeam)
 	}
 
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
 func (r *AgentTeamReconciler) handleTerminal(ctx context.Context, at *v1alpha1.AgentTeam) (ctrl.Result, error) {
+	// Store-side CleanupTeamState is owned by TeamSweeper. Here we only GC the CRD
+	// once the store team is gone or past TTL (status projection).
+	storeTeam, err := r.ensureStoreTeam(ctx, at)
+	if err == nil && r.Lifecycle != nil && r.Lifecycle.ShouldCleanup(storeTeam) {
+		return ctrl.Result{}, r.Delete(ctx, at)
+	}
+
 	var ttl string
 	if at.Spec.Lifecycle != nil {
 		switch at.Status.Phase {
@@ -246,7 +219,6 @@ func (r *AgentTeamReconciler) handleTerminal(ctx context.Context, at *v1alpha1.A
 			ttl = at.Spec.Lifecycle.TTLAfterFailed
 		}
 	}
-
 	if ttl != "" {
 		ttlDur, err := time.ParseDuration(ttl)
 		if err == nil {
@@ -257,50 +229,7 @@ func (r *AgentTeamReconciler) handleTerminal(ctx context.Context, at *v1alpha1.A
 			return ctrl.Result{RequeueAfter: ttlDur}, nil
 		}
 	}
-
 	return ctrl.Result{}, nil
-}
-
-// checkMemberHealth detects failed or missing member sessions.
-func (r *AgentTeamReconciler) checkMemberHealth(ctx context.Context, at *v1alpha1.AgentTeam) {
-	if r.Store == nil {
-		return
-	}
-	for _, m := range at.Status.Members {
-		if m.Phase == v1alpha1.MemberPhaseLost || m.Phase == v1alpha1.MemberPhaseFailed {
-			continue
-		}
-		if m.SessionID == "" {
-			continue
-		}
-		sess, err := r.Store.Sessions().Get(ctx, m.AgentRef, at.Namespace, m.SessionID)
-		if err != nil {
-			if err == store.ErrNotFound {
-				r.Recorder.Eventf(at, corev1.EventTypeWarning, "MemberLost",
-					"member %s session %s not found", m.Name, m.SessionID)
-				r.Lifecycle.HandleMemberFailure(ctx, at, m.Name, "SessionNotFound")
-			}
-			continue
-		}
-		if sess.Phase == store.SessionPhaseTerminated {
-			r.Recorder.Eventf(at, corev1.EventTypeWarning, "MemberTerminated",
-				"member %s session terminated", m.Name)
-			r.Lifecycle.HandleMemberFailure(ctx, at, m.Name, "SessionTerminated")
-		}
-	}
-}
-
-// cleanupTeamTasks removes the team's persistent task/message/session state
-// from the store. Called on finalize so cleanup is immediate rather than
-// relying solely on retention purges.
-func (r *AgentTeamReconciler) cleanupTeamTasks(ctx context.Context, at *v1alpha1.AgentTeam) {
-	logger := log.FromContext(ctx)
-	logger.Info("cleaning up team resources", "team", at.Name)
-	if r.Lifecycle != nil {
-		r.Lifecycle.CleanupTeamState(ctx, at)
-		return
-	}
-	// No lifecycle wired (legacy/test mode) -- nothing store-backed to clean up.
 }
 
 func (r *AgentTeamReconciler) SetupWithManager(mgr ctrl.Manager) error {

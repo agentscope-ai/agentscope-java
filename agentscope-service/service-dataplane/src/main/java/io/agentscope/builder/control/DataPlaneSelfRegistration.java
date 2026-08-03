@@ -32,15 +32,19 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Self-registers this Java data plane with aistiod and heartbeats so the control plane can poll
- * {@code /agentscope/*} without Kubernetes discovery.
+ * Optionally self-registers this Java data plane with aistiod and heartbeats so the control plane
+ * can poll {@code /agentscope/*} without Kubernetes discovery.
+ *
+ * <p>Disabled by default: the dataplane hosts Managed agent runs and should not appear as an Operate
+ * agent. Enable with {@code builder.dataplane.register-enabled=true} / {@code
+ * BUILDER_DATAPLANE_REGISTER=true} when that Operate visibility is intentionally desired.
  */
 @Component
 @ConditionalOnProperty(
         prefix = "builder.dataplane",
         name = "register-enabled",
         havingValue = "true",
-        matchIfMissing = true)
+        matchIfMissing = false)
 public class DataPlaneSelfRegistration implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataPlaneSelfRegistration.class);

@@ -30,6 +30,10 @@ var resourceMapping = map[string]struct {
 // a Kubernetes identity.
 const ctxConsoleAuth = "consoleAuth"
 
+// ctxInternalAuth marks a request authenticated by X-Builder-Internal-Token
+// (data-plane trust boundary).
+const ctxInternalAuth = "internalAuth"
+
 // authzMiddleware performs SubjectAccessReview-based authorization.
 // It runs after authMiddleware and expects the "username" key to be set in the
 // Gin context. When kubeClient is nil (static token mode), authorization is
@@ -44,6 +48,11 @@ func (s *Server) authzMiddleware() gin.HandlerFunc {
 		if ok, _ := c.Get(ctxConsoleAuth); ok == true {
 			// Console users are not Kubernetes subjects; the product control
 			// plane owns their authorization model.
+			c.Next()
+			return
+		}
+		if ok, _ := c.Get(ctxInternalAuth); ok == true {
+			// Data-plane callers use the shared internal token; not K8s subjects.
 			c.Next()
 			return
 		}

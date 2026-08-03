@@ -88,11 +88,13 @@ public final class RedisStateVersionSupport {
         return Long.parseLong(versionValue);
     }
 
-    public static List<String> saveScriptKeys(String payloadKey, String versionKey, String keysKey) {
+    public static List<String> saveScriptKeys(
+            String payloadKey, String versionKey, String keysKey) {
         return List.of(payloadKey, versionKey, keysKey);
     }
 
-    public static List<String> saveScriptArgs(String payload, long expectedVersion, String keyMember) {
+    public static List<String> saveScriptArgs(
+            String payload, long expectedVersion, String keyMember) {
         return List.of(payload, Long.toString(expectedVersion), keyMember);
     }
 

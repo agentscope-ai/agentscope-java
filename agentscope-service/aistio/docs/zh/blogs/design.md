@@ -1694,7 +1694,29 @@ public interface TeamClient {
 | 故障处理 | 进程挂了就没了 | 自动调度替代者 + 注入前任工作成果恢复执行 |
 | Crash recovery | 无 | graceWindow 等待 → 自动调度 → 状态注入 |
 | CRD 生命周期 | 无（纯运行时） | TTL 自动清理（completed 1h / failed 24h） |
-| 团队定义 | 纯运行时 | CRD 声明（静态/动态/混合） |
+| 团队定义 | 纯运行时 | CRD 声明（静态/动态/混合）|
+
+##### 4.12 Store-backed Teams（Claude 对等落地，当前主路径）
+
+CRD 仍可作为 GitOps 投影；**权威运行时态在 DB store**（`teams` / `team_members` / tasks / messages）。Standalone 无 kube 也可 `POST /api/v1/teams`。
+
+**双入口、一套语义：**
+
+- 入口 A：Console Teams 区（`/teams`）或 REST 编排
+- 入口 B：`HarnessAgent.teamsMode(TeamClient, TeamContext)`（本地 `LocalTeamClient` 或 `ControlPlaneTeamClient`）
+
+**任务板：** Lead `assign` 与 worker `self-claim` 并存（`owner==''` 或 assignee 开始）；乐观 `version`。
+
+**激活：**
+
+| 成员 | Session id | 起跑 |
+|---|---|---|
+| Managed | product `find-or-create`（`externalKey=team\|{ns}/{team}\|{member}`） | resolve 注入 `teamContext` + `POST /api/sessions/{id}/events` |
+| BYO | CP UUID | ASDP / HTTP `team_join` → `registerExternalSession` → wakeup |
+
+**人机对话：** 复用 Managed session 的 events + SSE；BYO 在 Console **只观测**（不做 `session-input`）。中间产物走共享 workspace / 对象存储引用，mailbox 只传短文本 + refs。
+
+样例与脚本见 [`examples/agentteam`](../../../examples/agentteam/)。
 
 ---
 

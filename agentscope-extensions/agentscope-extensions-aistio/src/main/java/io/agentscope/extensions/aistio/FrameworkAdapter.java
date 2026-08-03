@@ -49,10 +49,13 @@ public interface FrameworkAdapter {
     String CAP_SUBAGENT_TASK_QUERY = "subagent-task-query";
     String CAP_SUBAGENT_TASK_COMMAND = "subagent-task-command";
     String CAP_PLAN_MODE = "plan-mode";
+    String CAP_TEAM_COORDINATION = "team-coordination";
 
     String COMMAND_COMPRESS = "compress";
     String COMMAND_TERMINATE = "terminate";
     String COMMAND_ABORT = "abort";
+    String COMMAND_TEAM_JOIN = "team_join";
+    String COMMAND_TEAM_LEAVE = "team_leave";
 
     /** Framework identifier reported on every snapshot, e.g. {@code agentscope-java}. */
     String frameworkName();

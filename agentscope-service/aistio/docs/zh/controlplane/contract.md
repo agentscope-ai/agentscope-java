@@ -658,6 +658,36 @@ go test ./test/mock/ ./internal/sessionops/ -count=1
 | `session-command` | 接收 compress / terminate 控制指令 | HTTP `POST .../compress\|terminate`；ASDP `SessionCommand` 下行 |
 | `subagent-inventory` | subagent 运行时清单上报与查询 | ASDP `InventoryReport`；HTTP `GET /agentscope/subagents` |
 | `workspace-inventory` | workspace 运行时清单上报与查询 | ASDP `InventoryReport`；HTTP `GET /agentscope/workspaces` |
+| `team-coordination` | 加入/离开 AgentTeam（`team_join` / `team_leave`）并参与共享任务板 | ASDP `SessionCommand{command=team_join\|team_leave, params=TeamContext}`；HTTP `POST /agentscope/teams/join`；上行 `TeamEventReport` |
+
+### AgentTeams：`team_join` / `team_leave`
+
+控制面为 BYO 成员分配运行时 `sessionId` 与 `TeamContext` 后，向具备 `team-coordination` 的健康实例下发：
+
+```json
+{
+  "sessionId": "<cp-allocated-id>",
+  "command": "team_join",
+  "params": {
+    "teamName": "research",
+    "objective": "...",
+    "myRole": "worker-1",
+    "isLead": false,
+    "members": [{"name": "lead", "agentRef": "a", "status": "working"}],
+    "availableActions": ["listTasks", "claimTask", "completeTask", "sendMessage", "broadcastMessage", "listMembers"]
+  }
+}
+```
+
+数据面收到后应：
+
+1. `registerExternalSession(sessionId, gateKey)`（或等价映射），使后续 `runWakeup` 可命中该 id；
+2. 挂载 `TeamsMiddleware`（按 `isLead` 裁剪工具面）并启动首轮 wakeup；
+3. （可选）经 ASDP 上报 `TeamEventReport{event_type=member_joined}`。
+
+`team_leave` 对称：停止团队工具、解除外部 session 映射，可选上报 `member_left`。
+
+**Managed 成员不走 `team_join`。** 控制面调用 product `POST /api/internal/sessions/find-or-create`（`externalKey=team|{ns}/{team}|{member}`），把返回的 `sessionId` 写入 runtime `store.Session`（含 `teamContext`），经 `GET /api/internal/sessions/{id}/resolve` 的 `teamContext` 字段下发到数据面构建链路，再 `POST /api/sessions/{id}/events` 投起跑 `user.message`。
 
 ### 新增词汇（BYO Console）
 

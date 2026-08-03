@@ -1,12 +1,16 @@
 package product
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -144,7 +148,7 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	out := gin.H{
 		"session": gin.H{
 			"id":                 sess.SessionID,
 			"ownerId":            sess.OwnerID,
@@ -160,15 +164,26 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 				parseJSONRaw(deref(sess.ResourcesJSON))),
 			"status": sess.Status,
 		},
-		"agentSnapshot":     snap,
-		"workspacePath":     workspace,
-		"workspaceId":       nullStr(workspaceID),
-		"workspaceVersion":  workspaceVersion,
-		"definitionFiles":   definitionFiles,
-		"environment":       env.toJSON(),
-		"vaultCredentials":  creds,
-		"memoryMounts":      mounts,
-	})
+		"agentSnapshot":    snap,
+		"workspacePath":    workspace,
+		"workspaceId":      nullStr(workspaceID),
+		"workspaceVersion": workspaceVersion,
+		"definitionFiles":  definitionFiles,
+		"environment":      env.toJSON(),
+		"vaultCredentials": creds,
+		"memoryMounts":     mounts,
+	}
+	if s.teamContextLookup != nil {
+		if tc := s.teamContextLookup(c.Request.Context(), sess.SessionID); len(tc) > 0 {
+			var parsed any
+			if err := json.Unmarshal(tc, &parsed); err == nil {
+				out["teamContext"] = parsed
+			} else {
+				out["teamContext"] = json.RawMessage(tc)
+			}
+		}
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 type findOrCreateReq struct {
@@ -210,41 +225,98 @@ func (s *Server) internalFindOrCreateSession(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "ownerId, agentId required")
 		return
 	}
-	a, err := s.loadAgent(c.Request.Context(), req.OwnerID, req.AgentID)
+	sess, err := s.FindOrCreateSession(c.Request.Context(), req.OwnerID, req.AgentID, req.EnvironmentID, req.ExternalKey)
 	if err != nil {
-		writeErr(c, http.StatusBadRequest, "agent not found")
-		return
-	}
-	envID := strings.TrimSpace(req.EnvironmentID)
-	if envID == "" {
-		resolved, err := s.resolveDefaultEnvironmentID(c.Request.Context(), req.OwnerID, req.AgentID)
-		if err != nil {
-			writeErr(c, http.StatusBadRequest, err.Error())
-			return
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "agent not found") || strings.Contains(err.Error(), "no environment") {
+			status = http.StatusBadRequest
 		}
-		envID = resolved
-	}
-	if req.ExternalKey != "" {
-		var id string
-		err := s.db.Pool.QueryRow(c.Request.Context(),
-			`SELECT session_id FROM sessions
-			 WHERE owner_id=$1 AND agent_id=$2 AND environment_id=$3 AND external_key=$4
-			   AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-			req.OwnerID, req.AgentID, envID, req.ExternalKey).Scan(&id)
-		if err == nil {
-			sess, _ := s.loadSession(c.Request.Context(), id)
-			c.JSON(http.StatusOK, sess.toJSON())
-			return
-		}
-	}
-	_, memIDs, vaultIDs := mergeSessionMounts(a, envID, nil, nil, false, false)
-	sess, err := s.insertSession(c.Request.Context(), req.OwnerID, req.AgentID, req.OwnerID,
-		a.HeadVersion, "latest", envID, req.ExternalKey, memIDs, vaultIDs, nil, nil)
-	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, status, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, sess.toJSON())
+}
+
+// FindOrCreateSession is the in-process form of POST /api/internal/sessions/find-or-create.
+// Empty environmentID resolves via agent default / latest deployment / first owner env.
+func (s *Server) FindOrCreateSession(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (sessionRow, error) {
+	a, err := s.loadAgent(ctx, ownerID, agentID)
+	if err != nil {
+		return sessionRow{}, fmt.Errorf("agent not found")
+	}
+	envID := strings.TrimSpace(environmentID)
+	if envID == "" {
+		resolved, err := s.resolveDefaultEnvironmentID(ctx, ownerID, agentID)
+		if err != nil {
+			return sessionRow{}, err
+		}
+		envID = resolved
+	}
+	if externalKey != "" {
+		var id string
+		err := s.db.Pool.QueryRow(ctx,
+			`SELECT session_id FROM sessions
+			 WHERE owner_id=$1 AND agent_id=$2 AND environment_id=$3 AND external_key=$4
+			   AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+			ownerID, agentID, envID, externalKey).Scan(&id)
+		if err == nil {
+			return s.loadSession(ctx, id)
+		}
+	}
+	_, memIDs, vaultIDs := mergeSessionMounts(a, envID, nil, nil, false, false)
+	return s.insertSession(ctx, ownerID, agentID, ownerID,
+		a.HeadVersion, "latest", envID, externalKey, memIDs, vaultIDs, nil, nil)
+}
+
+// FindOrCreateSessionID returns only the session id (implements team.ManagedSessionAPI).
+func (s *Server) FindOrCreateSessionID(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (string, error) {
+	sess, err := s.FindOrCreateSession(ctx, ownerID, agentID, environmentID, externalKey)
+	if err != nil {
+		return "", err
+	}
+	return sess.SessionID, nil
+}
+
+// PostSessionWakeEvent posts a user.message to the data plane to start a managed turn.
+// Implements team.ManagedSessionAPI. Requires BUILDER_DATA_URL and InternalToken.
+func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error {
+	if s.cfg.DataURL == "" {
+		return fmt.Errorf("BUILDER_DATA_URL not configured")
+	}
+	if text == "" {
+		text = "Team session started."
+	}
+	payload := map[string]any{
+		"events": []map[string]any{
+			{"type": "user.message", "payload": map[string]any{"text": text}},
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	url := strings.TrimRight(s.cfg.DataURL, "/") + "/api/sessions/" + sessionID + "/events"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
+	if ownerID != "" {
+		req.Header.Set("X-Builder-Internal-User", ownerID)
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("wake event %s: %s", resp.Status, string(msg))
+	}
+	log.Printf("team managed wake posted session=%s status=%d", sessionID, resp.StatusCode)
+	return nil
 }
 
 func (s *Server) internalPatchSessionRuntime(c *gin.Context) {

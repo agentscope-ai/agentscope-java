@@ -8,13 +8,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
 // TeamContext is injected into each teammate session at startup.
 type TeamContext struct {
 	TeamName         string           `json:"teamName"`
+	Namespace        string           `json:"namespace,omitempty"`
 	Objective        string           `json:"objective"`
 	MyRole           string           `json:"myRole"`
 	IsLead           bool             `json:"isLead"`
@@ -61,9 +61,8 @@ type RecentMessage struct {
 }
 
 // SessionSpawner registers store-backed sessions for team members with
-// injected team context. The actual runtime process is expected to look up
-// its assigned SessionID (e.g. via an injected env var or the framework's
-// own bootstrap flow) and report activity back through the same SessionID.
+// injected team context. Activation of the remote data plane is handled by
+// the Activator (see activator.go); this layer only allocates session rows.
 type SessionSpawner struct {
 	store store.Store
 }
@@ -73,76 +72,67 @@ func NewSessionSpawner(st store.Store) *SessionSpawner {
 	return &SessionSpawner{store: st}
 }
 
-// SpawnLeadSession registers the lead's session with team context.
-func (s *SessionSpawner) SpawnLeadSession(ctx context.Context, team *v1alpha1.AgentTeam) (*store.Session, error) {
-	teamCtx := s.buildTeamContext(team, "lead", true, nil)
-	return s.createSession(ctx, team, team.Spec.Lead.AgentRef.Name, "lead", teamCtx)
-}
-
-// SpawnMemberSession registers a member's session with team context.
-func (s *SessionSpawner) SpawnMemberSession(ctx context.Context, team *v1alpha1.AgentTeam, member v1alpha1.TeamMemberSpec) (*store.Session, error) {
-	teamCtx := s.buildTeamContext(team, member.Name, false, nil)
-	return s.createSession(ctx, team, member.AgentRef.Name, member.Name, teamCtx)
-}
-
-// SpawnRecoverySession registers a replacement session with recovery context.
-func (s *SessionSpawner) SpawnRecoverySession(
+// SpawnMemberSession registers a BYO member's session with a new UUID and team context.
+func (s *SessionSpawner) SpawnMemberSession(
 	ctx context.Context,
-	team *v1alpha1.AgentTeam,
-	memberName, agentRef string,
+	team *store.Team,
+	member *store.TeamMember,
+	roster []*store.TeamMember,
 	recovery *RecoveryContext,
 ) (*store.Session, error) {
-	teamCtx := s.buildTeamContext(team, memberName, false, recovery)
-	return s.createSession(ctx, team, agentRef, memberName, teamCtx)
+	isLead := member.MemberName == "lead"
+	teamCtx := s.buildTeamContext(team, member.MemberName, isLead, roster, recovery)
+	return s.CreateMemberSession(ctx, team, member.AgentRef, member.MemberName, teamCtx, "")
+}
+
+// CreateMemberSession upserts a store session with TeamContext.
+// When sessionID is empty a new UUID is allocated (BYO); Managed callers pass the
+// product find-or-create id so resolve can look up the same row by session_id.
+func (s *SessionSpawner) CreateMemberSession(
+	ctx context.Context,
+	team *store.Team,
+	agentRef, memberName string,
+	teamCtx *TeamContext,
+	sessionID string,
+) (*store.Session, error) {
+	return s.createSession(ctx, team, agentRef, memberName, teamCtx, sessionID)
 }
 
 func (s *SessionSpawner) buildTeamContext(
-	team *v1alpha1.AgentTeam,
+	team *store.Team,
 	myRole string,
 	isLead bool,
+	roster []*store.TeamMember,
 	recovery *RecoveryContext,
 ) *TeamContext {
-	members := make([]MemberInfo, 0)
-
-	// Add lead
-	members = append(members, MemberInfo{
-		Name:     "lead",
-		AgentRef: team.Spec.Lead.AgentRef.Name,
-		Status:   "working",
-	})
-
-	// Add static members
-	for _, m := range team.Spec.Members {
-		status := "joining"
-		if team.Status.Members != nil {
-			for _, ms := range team.Status.Members {
-				if ms.Name == m.Name {
-					status = string(ms.Phase)
-					break
-				}
-			}
+	members := make([]MemberInfo, 0, len(roster))
+	for _, m := range roster {
+		status := m.Phase
+		if status == "" {
+			status = store.MemberPhaseJoining
 		}
 		members = append(members, MemberInfo{
-			Name:     m.Name,
-			AgentRef: m.AgentRef.Name,
+			Name:     m.MemberName,
+			AgentRef: m.AgentRef,
 			Status:   status,
 		})
 	}
 
 	actions := []string{
-		"listTasks", "claimTask", "completeTask",
-		"sendMessage", "broadcastMessage", "listMembers",
+		"listTasks", "claimTask", "unclaimTask", "completeTask",
+		"sendMessage", "broadcastMessage", "listMembers", "submitPlan",
 	}
 	if isLead {
 		actions = append(actions,
-			"createTask", "spawnMember", "shutdownMember",
+			"createTask", "assignTask", "spawnMember", "shutdownMember",
 			"approvePlan", "rejectPlan", "completeTeam",
 		)
 	}
 
 	return &TeamContext{
 		TeamName:         team.Name,
-		Objective:        team.Spec.Objective,
+		Namespace:        team.Namespace,
+		Objective:        team.Objective,
 		MyRole:           myRole,
 		IsLead:           isLead,
 		Members:          members,
@@ -153,18 +143,22 @@ func (s *SessionSpawner) buildTeamContext(
 
 func (s *SessionSpawner) createSession(
 	ctx context.Context,
-	team *v1alpha1.AgentTeam,
+	team *store.Team,
 	agentRef, memberName string,
 	teamCtx *TeamContext,
+	sessionID string,
 ) (*store.Session, error) {
 	contextJSON, err := json.Marshal(teamCtx)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling team context: %w", err)
 	}
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
 
 	now := time.Now().UTC()
 	sess := &store.Session{
-		SessionID:    uuid.NewString(),
+		SessionID:    sessionID,
 		AgentName:    agentRef,
 		Namespace:    team.Namespace,
 		Phase:        store.SessionPhaseActive,

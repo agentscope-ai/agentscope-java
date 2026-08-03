@@ -39,8 +39,9 @@ import org.springframework.web.server.ResponseStatusException;
  * metadata live in the CP schema; the data plane must not SELECT those tables directly.
  *
  * <p>Authenticates with {@code X-Builder-Internal-Token}; optional {@code
- * X-Builder-Internal-User} attributes the call to an acting owner. Calls block for simplicity —
- * the dataplane already mixes blocking and reactive paths.
+ * X-Builder-Internal-User} attributes the call to an acting owner. Methods currently {@code
+ * block()} for simplicity — callers on WebFlux handlers must schedule onto {@code
+ * Schedulers.boundedElastic()} (see {@code DataSessionApiController}).
  */
 @Service
 public class ControlPlaneClient {

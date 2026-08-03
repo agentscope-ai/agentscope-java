@@ -19,6 +19,7 @@ type Store interface {
 	TranscriptIndex() TranscriptIndexRepository
 	TeamMessages() TeamMessageRepository
 	TeamTasks() TeamTaskRepository
+	Teams() TeamRepository
 	Commands() SessionCommandRepository
 
 	// Hosted DistributedStore backends (data-plane coordination).
@@ -154,15 +155,39 @@ type TeamMessageRepository interface {
 	DeleteByTeam(ctx context.Context, teamName, namespace string) error
 }
 
+// TeamRepository manages store-backed teams and their members.
+type TeamRepository interface {
+	Create(ctx context.Context, team *Team) (*Team, error)
+	Get(ctx context.Context, namespace, name string) (*Team, error)
+	List(ctx context.Context, namespace string) ([]*Team, error)
+	UpdatePhase(ctx context.Context, namespace, name, phase string) error
+	Update(ctx context.Context, team *Team) (*Team, error)
+	Delete(ctx context.Context, namespace, name string) error
+
+	UpsertMember(ctx context.Context, m *TeamMember) (*TeamMember, error)
+	GetMember(ctx context.Context, namespace, teamName, memberName string) (*TeamMember, error)
+	ListMembers(ctx context.Context, namespace, teamName string) ([]*TeamMember, error)
+	RemoveMember(ctx context.Context, namespace, teamName, memberName string) error
+	BindMemberSession(ctx context.Context, namespace, teamName, memberName, sessionID, managedSessionID, instanceRef string) error
+	UpdateMemberPhase(ctx context.Context, namespace, teamName, memberName, phase string) error
+}
+
 // TeamTaskRepository manages team_tasks. Method signatures align with the
 // previous TaskStoreInterface so callers can switch with minimal changes.
 type TeamTaskRepository interface {
-	Create(ctx context.Context, namespace, teamName, subject, description string, blockedBy []string) (*TeamTask, error)
+	// Create inserts a pending task. owner may be empty (unassigned) or a member name.
+	Create(ctx context.Context, namespace, teamName, subject, description string, blockedBy []string, owner string) (*TeamTask, error)
 	Get(ctx context.Context, namespace, teamName, taskID string) (*TeamTask, error)
 	List(ctx context.Context, namespace, teamName string) ([]*TeamTask, error)
+	// Assign sets owner on a pending task (lead-assign). Stays pending.
+	Assign(ctx context.Context, namespace, teamName, taskID, owner string, expectedVersion int64) (*TeamTask, error)
+	// Claim moves a pending unblocked task to in_progress when owner is empty
+	// (self-claim) or already equals claimedBy (assignee starts assigned work).
 	Claim(ctx context.Context, namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*TeamTask, error)
 	Complete(ctx context.Context, namespace, teamName, taskID, result string) (*TeamTask, error)
 	Unclaim(ctx context.Context, namespace, teamName, taskID string) (*TeamTask, error)
+	// GetUnblockedPending returns pending tasks whose blockers are completed
+	// and owner is empty (self-claim candidates).
 	GetUnblockedPending(ctx context.Context, namespace, teamName string) ([]*TeamTask, error)
 	GetSummary(ctx context.Context, namespace, teamName string) (total, pending, inProgress, completed int32, err error)
 	DeleteByTeam(ctx context.Context, namespace, teamName string) error

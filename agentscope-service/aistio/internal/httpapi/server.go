@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -77,6 +78,11 @@ type ServerOptions struct {
 	// ok=true, getSessionMessages skips the live DP fallback and does not
 	// require the message-query capability.
 	TranscriptMessages TranscriptMessagesFunc
+	// Pre-built shared Team runtime (optional). When nil and Store is set,
+	// NewServer constructs Lifecycle/MessageRouter/TaskStore itself.
+	TeamLifecycle *team.Lifecycle
+	TeamTaskStore *team.TaskStore
+	TeamRouter    *team.MessageRouter
 }
 
 // Server is the REST API server for the control plane.
@@ -101,10 +107,10 @@ type Server struct {
 	transcriptMessages TranscriptMessagesFunc
 	sessionOps         *sessionops.Router
 
-	// Experimental team coordination state (only initialized when experimental
-	// features are enabled). Store-backed and HA-safe across replicas.
-	taskStore     *team.TaskStore
-	messageRouter *team.MessageRouter
+	// Team coordination state (store-backed; available whenever Store is set).
+	taskStore      *team.TaskStore
+	messageRouter  *team.MessageRouter
+	teamLifecycle  *team.Lifecycle
 }
 
 // NewServer creates a new API server.
@@ -154,9 +160,34 @@ func NewServer(opts ServerOptions) *Server {
 		ctrl.Log.WithName("httpapi").Info("authorization disabled: no kube client configured (static token mode does not support authorization)")
 	}
 
-	if opts.Experimental && opts.Store != nil {
-		s.taskStore = team.NewTaskStore(opts.Store.TeamTasks())
-		s.messageRouter = team.NewMessageRouter(opts.Store.TeamMessages(), opts.Store.Sessions())
+	if opts.Store != nil {
+		if opts.TeamLifecycle != nil && opts.TeamTaskStore != nil && opts.TeamRouter != nil {
+			s.teamLifecycle = opts.TeamLifecycle
+			s.taskStore = opts.TeamTaskStore
+			s.messageRouter = opts.TeamRouter
+		} else {
+			s.taskStore = team.NewTaskStore(opts.Store.TeamTasks())
+			s.messageRouter = team.NewMessageRouter(opts.Store.TeamMessages(), opts.Store.Sessions())
+			spawner := team.NewSessionSpawner(opts.Store)
+			s.teamLifecycle = team.NewLifecycle(opts.Store, s.taskStore, s.messageRouter, spawner)
+			var commander team.SessionCommander
+			if c, ok := opts.ASDPCommands.(team.SessionCommander); ok {
+				commander = c
+			}
+			act := team.NewActivator(opts.Store, opts.Registry, commander)
+			if opts.Product != nil {
+				act.SetManagedSessionAPI(opts.Product)
+				st := opts.Store
+				opts.Product.SetTeamContextLookup(func(ctx context.Context, sessionID string) json.RawMessage {
+					list, err := st.Sessions().List(ctx, store.SessionFilter{SessionID: sessionID, Limit: 1})
+					if err != nil || len(list) == 0 {
+						return nil
+					}
+					return list[0].TeamContext
+				})
+			}
+			s.teamLifecycle.SetActivator(act)
+		}
 	}
 
 	s.registerRoutes()
@@ -167,6 +198,21 @@ func NewServer(opts ServerOptions) *Server {
 // are unavailable.
 func (s *Server) SessionOps() *sessionops.Router {
 	return s.sessionOps
+}
+
+// TeamLifecycle returns the shared store-backed team lifecycle, or nil.
+func (s *Server) TeamLifecycle() *team.Lifecycle {
+	return s.teamLifecycle
+}
+
+// TeamMessageRouter returns the shared team mailbox router, or nil.
+func (s *Server) TeamMessageRouter() *team.MessageRouter {
+	return s.messageRouter
+}
+
+// TeamTaskStore returns the shared team task store, or nil.
+func (s *Server) TeamTaskStore() *team.TaskStore {
+	return s.taskStore
 }
 
 func (s *Server) registerRoutes() {
@@ -276,25 +322,7 @@ func (s *Server) registerRoutes() {
 			}
 		}
 
-		// Experimental: Teams + Sandbox (only when enabled)
 		if s.experimental && s.client != nil {
-			teams := v1.Group("/teams")
-			{
-				teams.POST("", s.createTeam)
-				teams.GET("", s.listTeams)
-				teams.GET("/:team", s.getTeam)
-				teams.DELETE("/:team", s.deleteTeam)
-				teams.POST("/:team/members", s.addTeamMember)
-				teams.DELETE("/:team/members/:memberName", s.removeTeamMember)
-				teams.GET("/:team/members", s.listTeamMembers)
-				teams.POST("/:team/tasks", s.createTeamTask)
-				teams.GET("/:team/tasks", s.listTeamTasks)
-				teams.POST("/:team/tasks/:taskId/claim", s.claimTeamTask)
-				teams.POST("/:team/tasks/:taskId/complete", s.completeTeamTask)
-				teams.POST("/:team/messages", s.sendTeamMessage)
-				teams.GET("/:team/messages", s.listTeamMessages)
-			}
-
 			sandboxes := v1.Group("/sandboxes")
 			{
 				sandboxes.POST("", s.createSandbox)
@@ -302,6 +330,36 @@ func (s *Server) registerRoutes() {
 				sandboxes.GET("/:name", s.getSandbox)
 				sandboxes.DELETE("/:name", s.deleteSandbox)
 			}
+		}
+	}
+
+	// Teams: store-backed (standalone-safe). Accept console JWT OR internal token
+	// so ControlPlaneTeamClient (X-Builder-Internal-Token) can call teamsMode tools.
+	if s.store != nil {
+		teams := s.router.Group("/api/v1/teams")
+		teams.Use(s.teamsAuthMiddleware())
+		teams.Use(s.authzMiddleware())
+		{
+			teams.POST("", s.createTeam)
+			teams.GET("", s.listTeams)
+			teams.GET("/:team", s.getTeam)
+			teams.POST("/:team/complete", s.completeTeam)
+			teams.DELETE("/:team", s.deleteTeam)
+			teams.POST("/:team/members", s.addTeamMember)
+			teams.DELETE("/:team/members/:memberName", s.removeTeamMember)
+			teams.GET("/:team/members", s.listTeamMembers)
+			teams.POST("/:team/members/:memberName/plan", s.submitTeamMemberPlan)
+			teams.POST("/:team/members/:memberName/plan/approve", s.approveTeamMemberPlan)
+			teams.POST("/:team/members/:memberName/plan/reject", s.rejectTeamMemberPlan)
+			teams.POST("/:team/tasks", s.createTeamTask)
+			teams.GET("/:team/tasks", s.listTeamTasks)
+			teams.POST("/:team/tasks/:taskId/assign", s.assignTeamTask)
+			teams.POST("/:team/tasks/:taskId/claim", s.claimTeamTask)
+			teams.POST("/:team/tasks/:taskId/unclaim", s.unclaimTeamTask)
+			teams.POST("/:team/tasks/:taskId/complete", s.completeTeamTask)
+			teams.POST("/:team/messages", s.sendTeamMessage)
+			teams.GET("/:team/messages", s.listTeamMessages)
+			teams.GET("/:team/events", s.listTeamEvents)
 		}
 	}
 
@@ -385,6 +443,21 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// teamsAuthMiddleware accepts either the shared internal token (data plane)
+// or the normal console/JWT/kube auth chain.
+func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s.internalToken != "" {
+			if tok := c.GetHeader("X-Builder-Internal-Token"); tok != "" && tok == s.internalToken {
+				c.Set(ctxInternalAuth, true)
+				c.Next()
+				return
+			}
+		}
+		s.authMiddleware()(c)
 	}
 }
 

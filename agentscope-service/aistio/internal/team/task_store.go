@@ -20,7 +20,11 @@ func NewTaskStore(repo store.TeamTaskRepository) *TaskStore {
 }
 
 func (s *TaskStore) Create(namespace, teamName, subject, description string, blockedBy []string) (*store.TeamTask, error) {
-	return s.Repo.Create(context.Background(), namespace, teamName, subject, description, blockedBy)
+	return s.Repo.Create(context.Background(), namespace, teamName, subject, description, blockedBy, "")
+}
+
+func (s *TaskStore) CreateWithOwner(namespace, teamName, subject, description string, blockedBy []string, owner string) (*store.TeamTask, error) {
+	return s.Repo.Create(context.Background(), namespace, teamName, subject, description, blockedBy, owner)
 }
 
 func (s *TaskStore) Get(namespace, teamName, taskID string) (*store.TeamTask, error) {
@@ -30,6 +34,10 @@ func (s *TaskStore) Get(namespace, teamName, taskID string) (*store.TeamTask, er
 func (s *TaskStore) List(namespace, teamName string) []*store.TeamTask {
 	tasks, _ := s.Repo.List(context.Background(), namespace, teamName)
 	return tasks
+}
+
+func (s *TaskStore) Assign(namespace, teamName, taskID, owner string, expectedVersion int64) (*store.TeamTask, error) {
+	return s.Repo.Assign(context.Background(), namespace, teamName, taskID, owner, expectedVersion)
 }
 
 func (s *TaskStore) Claim(namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*store.TeamTask, error) {

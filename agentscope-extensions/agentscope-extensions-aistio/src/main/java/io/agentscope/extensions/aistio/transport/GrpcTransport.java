@@ -62,6 +62,13 @@ public final class GrpcTransport implements AutoCloseable {
         void onCommand(String sessionId, String command, byte[] params);
     }
 
+    /** Receives downstream {@code TeamEvent} notifications from the control plane. */
+    @FunctionalInterface
+    public interface TeamEventHandler {
+        void onTeamEvent(
+                String teamId, String eventType, String memberName, String taskId, byte[] payload);
+    }
+
     private final String target;
     private final String agentName;
     private final String namespace;
@@ -86,6 +93,7 @@ public final class GrpcTransport implements AutoCloseable {
 
     private volatile ManagedChannel channel;
     private volatile SessionCommandHandler commandHandler;
+    private volatile TeamEventHandler teamEventHandler;
 
     public GrpcTransport(
             String target,
@@ -108,6 +116,10 @@ public final class GrpcTransport implements AutoCloseable {
 
     public void setSessionCommandHandler(SessionCommandHandler handler) {
         this.commandHandler = handler;
+    }
+
+    public void setTeamEventHandler(TeamEventHandler handler) {
+        this.teamEventHandler = handler;
     }
 
     public boolean isConnected() {
@@ -280,6 +292,22 @@ public final class GrpcTransport implements AutoCloseable {
                             message.getSessionCmd().getParams().toByteArray());
                 } catch (RuntimeException e) {
                     LOG.log(Level.FINE, "aistio: session command handler failed", e);
+                }
+            } else if (message.hasTeamEvent()) {
+                TeamEventHandler handler = teamEventHandler;
+                if (handler == null) {
+                    return;
+                }
+                try {
+                    var ev = message.getTeamEvent();
+                    handler.onTeamEvent(
+                            ev.getTeamId(),
+                            ev.getEventType(),
+                            ev.getMemberName(),
+                            ev.getTaskId(),
+                            ev.getPayload().toByteArray());
+                } catch (RuntimeException e) {
+                    LOG.log(Level.FINE, "aistio: team event handler failed", e);
                 }
             } else if (message.hasConnectAck() && !message.getConnectAck().getAccepted()) {
                 LOG.log(

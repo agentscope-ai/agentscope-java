@@ -32,6 +32,8 @@ type Store struct {
 	commands     []store.SessionCommand
 	turns        []store.SessionTurn
 	transcriptIndex map[uuid.UUID]store.SessionTranscriptIndex
+	teams        map[string]*store.Team // namespace/name
+	teamMembers  []store.TeamMember
 
 	// Hosted DistributedStore backends.
 	kv          map[string]*store.KVItem          // tenant+\x00+nsPath+\x00+itemKey
@@ -51,6 +53,8 @@ type Store struct {
 	nextMsgID  int64
 	nextTaskID int64
 	nextHistID int64
+	nextTeamID int64
+	nextMemberID int64
 
 	retention store.RetentionConfig
 }
@@ -75,6 +79,7 @@ func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 		sessions:     make(map[uuid.UUID]*store.Session),
 		sessKey:      make(map[string]uuid.UUID),
 		sessionLocks: newKeyedMutex(),
+		teams:        make(map[string]*store.Team),
 		kv:           make(map[string]*store.KVItem),
 		locks:        make(map[string]*store.Lock),
 		dpSnapshots:  make(map[string]*memSnapshot),
@@ -93,6 +98,7 @@ func (s *Store) Metrics() store.MetricsRepository                  { return &met
 func (s *Store) TranscriptIndex() store.TranscriptIndexRepository  { return &transcriptIndexRepo{s} }
 func (s *Store) TeamMessages() store.TeamMessageRepository         { return &messageRepo{s} }
 func (s *Store) TeamTasks() store.TeamTaskRepository               { return &taskRepo{s} }
+func (s *Store) Teams() store.TeamRepository                       { return &teamRepo{s} }
 func (s *Store) Commands() store.SessionCommandRepository          { return &commandRepo{s} }
 func (s *Store) KV() store.KVRepository                             { return &kvRepo{s} }
 func (s *Store) Locks() store.LockRepository                       { return &lockRepo{s} }

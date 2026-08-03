@@ -48,7 +48,7 @@ Token / 参数 delta 仍只走 PreviewBus;`event_start` / `event_delta` 的 `eve
 - `GET …/events?types=` 重复参数过滤已支持(Claude `types[]` 等价)
 - `event_deltas` 非法值返回 400
 - Thread 级 stream、`user.define_outcome` 完整语义、SSE 退役改轮询 — **仍未做**
-- `DataPlaneSelfRegistration` 去留仍待确认(Operate 可见性)
+- `DataPlaneSelfRegistration` 默认关闭(`BUILDER_DATAPLANE_REGISTER=false`):数据面托管 Managed runs,不应伪装成 Operate Agent;需要可见性时显式打开
 
 ## 2. 会话管理能力(已落地)
 
@@ -66,6 +66,14 @@ Managed Agents 在 Build 侧自建会话能力(独立于 Operate)。本阶段**�
 - 控制面:`internal/product/handlers_sessions.go`
 - 数据面:`DataSessionApiController#deleteEvents`
 - 前端:`SessionsHubPage`、`SessionCreatePage`、`SessionDetailPage`、`NewManagedSessionForm.tsx`、`SessionTranscript.tsx`、`ChatPanel.tsx`、`api/managedSessions.ts`
+
+## 2b. AgentTeams 人机入口（已落地）
+
+Teams **不**新开聊天通道。Managed 成员建队时走 `POST /api/internal/sessions/find-or-create`，`sessionId` 即成员会话；Console Teams 详情深链 `/sessions/{managedSessionId}` 复用 Build Chat（events + SSE）。`GET /api/internal/sessions/{id}/resolve` 可返回 `teamContext`，数据面 `HarnessAgentBuildService` 挂 `TeamsMiddleware`。
+
+BYO 成员经 `team_join` 入队；Console 标注「只观测」，对话由其自有应用负责。
+
+相关：`internal/team/activator.go`、前端 `features/teams/*`、样例 `aistio/examples/agentteam/`。
 
 ## 3. 可从 BYO 线复用的部分
 

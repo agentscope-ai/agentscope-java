@@ -120,34 +120,92 @@ func (s *Server) listDataPlanes(c *gin.Context) {
 }
 
 // listAgentsFromRegistry serves GET /api/v1/agents when no Kubernetes client
-// is configured.
+// is configured. Defaults to presence=live (at least one healthy instance).
 func (s *Server) listAgentsFromRegistry(c *gin.Context) {
-	if s.registry == nil {
+	presence, ok := parsePresence(c.DefaultQuery("presence", dataplane.PresenceLive))
+	if !ok {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "presence must be live, offline, historical, or all"})
+		return
+	}
+	if s.registry == nil && presence != dataplane.PresenceHistorical && presence != dataplane.PresenceAll {
 		c.JSON(http.StatusOK, AgentListResponse{Items: []AgentSummary{}})
 		return
 	}
-	summaries := s.registry.AggregateAgents()
+
 	nsFilter := c.Query("namespace")
-	items := make([]AgentSummary, 0, len(summaries))
-	for _, a := range summaries {
-		if nsFilter != "" && a.Namespace != nsFilter {
-			continue
-		}
-		var active int32
-		if s.store != nil {
-			n, _ := s.store.Sessions().CountActive(c.Request.Context(), a.Name, a.Namespace)
-			active = n
-		}
-		items = append(items, AgentSummary{
-			Name:           a.Name,
-			Namespace:      a.Namespace,
-			Type:           "BYO",
-			Runtime:        a.Runtime,
-			DisplayName:    a.Name,
-			Replicas:       a.Replicas,
-			ActiveSessions: active,
-		})
+	_, _, registryKeys, summaries := registryAgentBuckets(s.registry)
+	if summaries == nil {
+		summaries = []dataplane.AgentSummary{}
 	}
+
+	items := make([]AgentSummary, 0)
+
+	includeRegistry := func(want string) {
+		filtered := dataplane.FilterAgentsByPresence(summaries, want)
+		for _, a := range filtered {
+			if nsFilter != "" && a.Namespace != nsFilter {
+				continue
+			}
+			var active int32
+			if s.store != nil {
+				n, _ := s.store.Sessions().CountActive(c.Request.Context(), a.Name, a.Namespace)
+				active = n
+			}
+			p := dataplane.ClassifyPresence(a.HealthyCount, a.InstanceCount)
+			items = append(items, AgentSummary{
+				Name:           a.Name,
+				Namespace:      a.Namespace,
+				Type:           "BYO",
+				Runtime:        a.Runtime,
+				DisplayName:    a.Name,
+				Replicas:       a.Replicas,
+				ActiveSessions: active,
+				Presence:       p,
+				HealthyCount:   a.HealthyCount,
+				InstanceCount:  a.InstanceCount,
+			})
+		}
+	}
+
+	includeHistorical := func() {
+		sessions := listSessionsForPresence(c.Request.Context(), s.store)
+		hist := historicalAgentKeys(sessions, registryKeys)
+		for key := range hist {
+			ns, name := splitAgentKey(key)
+			if nsFilter != "" && ns != nsFilter {
+				continue
+			}
+			var active int32
+			if s.store != nil {
+				n, _ := s.store.Sessions().CountActive(c.Request.Context(), name, ns)
+				active = n
+			}
+			items = append(items, AgentSummary{
+				Name:           name,
+				Namespace:      ns,
+				Type:           "BYO",
+				DisplayName:    name,
+				Replicas:       "0/0",
+				ActiveSessions: active,
+				Presence:       dataplane.PresenceHistorical,
+				HealthyCount:   0,
+				InstanceCount:  0,
+			})
+		}
+	}
+
+	switch presence {
+	case dataplane.PresenceLive:
+		includeRegistry(dataplane.PresenceLive)
+	case dataplane.PresenceOffline:
+		includeRegistry(dataplane.PresenceOffline)
+	case dataplane.PresenceHistorical:
+		includeHistorical()
+	case dataplane.PresenceAll:
+		includeRegistry(dataplane.PresenceAll)
+		includeHistorical()
+	}
+
 	c.JSON(http.StatusOK, AgentListResponse{Items: items})
 }
 

@@ -27,8 +27,6 @@ import io.agentscope.builder.web.managed.SessionEventTypes;
 import io.agentscope.builder.web.managed.SessionTurnRunner;
 import io.agentscope.builder.web.managed.service.HandsMetrics;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
-import io.agentscope.builder.web.share.AgentAccessGuard;
-import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.HashSet;
@@ -51,6 +49,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Data-plane session API: inbound user events (message / interrupt / tool confirmation / tool
@@ -58,15 +58,22 @@ import reactor.core.publisher.Mono;
  *
  * <p>Session lifecycle (create / list / get / archive / delete) is owned by the control plane
  * under the same {@code /api/sessions} path prefix; the gateway routes those calls there.
+ *
+ * <p>Authorization is <b>session ownership</b> via {@link DataSessionService#get}: the control
+ * plane resolve payload's {@code ownerId} must match the JWT user. Product agents now live in
+ * aistiod's schema, so a dataplane JPA {@code AgentAccessGuard} lookup would 404 even for valid
+ * sessions; agent RUN/EDIT was already enforced when the session was created.
  */
 @RestController
 @RequestMapping("/api/sessions")
 public class DataSessionApiController {
 
+    /** Hosts blocking CP resolve off the Netty event loop. */
+    private static final Scheduler BLOCKING = Schedulers.boundedElastic();
+
     private final DataSessionService sessionService;
     private final SessionEventLog eventLog;
     private final SessionEventPreviewBus previewBus;
-    private final AgentAccessGuard guard;
     private final ToolConfirmationCoordinator confirmationCoordinator;
     private final SessionTurnRunner turnRunner;
     private final ObjectMapper objectMapper;
@@ -76,7 +83,6 @@ public class DataSessionApiController {
             DataSessionService sessionService,
             SessionEventLog eventLog,
             SessionEventPreviewBus previewBus,
-            AgentAccessGuard guard,
             ToolConfirmationCoordinator confirmationCoordinator,
             SessionTurnRunner turnRunner,
             ObjectMapper objectMapper,
@@ -84,7 +90,6 @@ public class DataSessionApiController {
         this.sessionService = sessionService;
         this.eventLog = eventLog;
         this.previewBus = previewBus;
-        this.guard = guard;
         this.confirmationCoordinator = confirmationCoordinator;
         this.turnRunner = turnRunner;
         this.objectMapper = objectMapper;
@@ -99,19 +104,19 @@ public class DataSessionApiController {
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
-                () -> {
-                    ManagedSessionDto session = sessionService.get(userId, id);
-                    guard.require(userId, session.agentId(), Tier.RUN);
-                    if (body.events() == null || body.events().isEmpty()) {
-                        throw new ResponseStatusException(
-                                HttpStatus.BAD_REQUEST, "events is required");
-                    }
-                    List<SessionEventDto> recorded = new java.util.ArrayList<>();
-                    for (InboundEvent event : body.events()) {
-                        recorded.add(handleInboundEvent(userId, id, event));
-                    }
-                    return recorded;
-                });
+                        () -> {
+                            sessionService.get(userId, id);
+                            if (body.events() == null || body.events().isEmpty()) {
+                                throw new ResponseStatusException(
+                                        HttpStatus.BAD_REQUEST, "events is required");
+                            }
+                            List<SessionEventDto> recorded = new java.util.ArrayList<>();
+                            for (InboundEvent event : body.events()) {
+                                recorded.add(handleInboundEvent(userId, id, event));
+                            }
+                            return recorded;
+                        })
+                .subscribeOn(BLOCKING);
     }
 
     /**
@@ -126,14 +131,14 @@ public class DataSessionApiController {
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
-                () -> {
-                    ManagedSessionDto session = sessionService.get(userId, id);
-                    guard.require(userId, session.agentId(), Tier.RUN);
-                    if (after == null) {
-                        return eventLog.list(id, types);
-                    }
-                    return eventLog.listAfter(id, after, types);
-                });
+                        () -> {
+                            sessionService.get(userId, id);
+                            if (after == null) {
+                                return eventLog.list(id, types);
+                            }
+                            return eventLog.listAfter(id, after, types);
+                        })
+                .subscribeOn(BLOCKING);
     }
 
     /**
@@ -153,12 +158,11 @@ public class DataSessionApiController {
         return Mono.fromRunnable(
                         () -> {
                             if (!internal) {
-                                ManagedSessionDto session = sessionService.get(userId, id);
-                                guard.require(userId, session.agentId(), Tier.RUN);
+                                sessionService.get(userId, id);
                             }
                             eventLog.deleteBySessionId(id);
                         })
-                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .subscribeOn(BLOCKING)
                 .then();
     }
 
@@ -168,11 +172,11 @@ public class DataSessionApiController {
             @PathVariable("id") String id, Authentication auth) {
         String userId = (String) auth.getPrincipal();
         return Mono.fromCallable(
-                () -> {
-                    ManagedSessionDto session = sessionService.get(userId, id);
-                    guard.require(userId, session.agentId(), Tier.RUN);
-                    return handsMetrics.snapshot(id);
-                });
+                        () -> {
+                            sessionService.get(userId, id);
+                            return handsMetrics.snapshot(id);
+                        })
+                .subscribeOn(BLOCKING);
     }
 
     /** Opt-in preview targets for {@code event_deltas=} (Claude: message + thinking; we also allow tool_use). */
@@ -190,42 +194,55 @@ public class DataSessionApiController {
             @RequestParam(value = "event_deltas", required = false) List<String> eventDeltas,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
-        ManagedSessionDto session = sessionService.get(userId, id);
-        guard.require(userId, session.agentId(), Tier.RUN);
-
-        long afterSeq = after != null ? after : 0L;
-        Flux<SessionEventDto> persisted = eventLog.subscribe(id, afterSeq);
-        if (eventDeltas == null || eventDeltas.isEmpty()) {
-            return persisted.map(this::toSse);
-        }
-        if (eventDeltas.size() > 100) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "event_deltas accepts at most 100 values");
-        }
-        for (String t : eventDeltas) {
-            if (!ALLOWED_EVENT_DELTAS.contains(t)) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "unsupported event_deltas value: "
-                                + t
-                                + " (allowed: agent.message, agent.thinking, agent.tool_use)");
+        if (eventDeltas != null) {
+            if (eventDeltas.size() > 100) {
+                return Flux.error(
+                        new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, "event_deltas accepts at most 100 values"));
+            }
+            for (String t : eventDeltas) {
+                if (!ALLOWED_EVENT_DELTAS.contains(t)) {
+                    return Flux.error(
+                            new ResponseStatusException(
+                                    HttpStatus.BAD_REQUEST,
+                                    "unsupported event_deltas value: "
+                                            + t
+                                            + " (allowed: agent.message, agent.thinking,"
+                                            + " agent.tool_use)"));
+                }
             }
         }
 
-        Set<String> deltaTypes = new HashSet<>(eventDeltas);
-        Flux<SessionEventDto> previews =
-                previewBus
-                        .subscribe(id)
-                        .filter(
-                                dto -> {
-                                    if (dto.payload() == null) {
-                                        return false;
-                                    }
-                                    Object targetType = dto.payload().get("type");
-                                    return targetType != null
-                                            && deltaTypes.contains(String.valueOf(targetType));
-                                });
-        return Flux.merge(persisted, previews).map(this::toSse);
+        long afterSeq = after != null ? after : 0L;
+        return Mono.fromCallable(
+                        () -> {
+                            sessionService.get(userId, id);
+                            return Boolean.TRUE;
+                        })
+                .subscribeOn(BLOCKING)
+                .flatMapMany(
+                        ignored -> {
+                            Flux<SessionEventDto> persisted = eventLog.subscribe(id, afterSeq);
+                            if (eventDeltas == null || eventDeltas.isEmpty()) {
+                                return persisted.map(this::toSse);
+                            }
+                            Set<String> deltaTypes = new HashSet<>(eventDeltas);
+                            Flux<SessionEventDto> previews =
+                                    previewBus
+                                            .subscribe(id)
+                                            .filter(
+                                                    dto -> {
+                                                        if (dto.payload() == null) {
+                                                            return false;
+                                                        }
+                                                        Object targetType =
+                                                                dto.payload().get("type");
+                                                        return targetType != null
+                                                                && deltaTypes.contains(
+                                                                        String.valueOf(targetType));
+                                                    });
+                            return Flux.merge(persisted, previews).map(this::toSse);
+                        });
     }
 
     private SessionEventDto handleInboundEvent(

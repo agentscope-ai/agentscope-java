@@ -21,7 +21,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -57,8 +56,11 @@ public class SessionEventEntity {
     @Column(name = "event_type", length = 64, nullable = false)
     private String eventType;
 
-    @Lob
-    @Column(name = "payload_json")
+    /**
+     * Event payload JSON. Stored as PostgreSQL {@code text} (not OID LOB) so reads do not require
+     * an open large-object transaction.
+     */
+    @Column(name = "payload_json", columnDefinition = "TEXT")
     private String payloadJson;
 
     @Column(name = "processed_at")

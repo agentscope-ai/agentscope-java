@@ -29,6 +29,34 @@ const (
 	TaskStateCompleted  = "completed"
 )
 
+// Team / member lifecycle phases (store-backed; CRD enums map 1:1).
+const (
+	TeamPhasePending   = "Pending"
+	TeamPhaseRunning   = "Running"
+	TeamPhaseCompleted = "Completed"
+	TeamPhaseFailed    = "Failed"
+
+	MemberPhaseJoining  = "Joining"
+	MemberPhaseWorking  = "Working"
+	MemberPhaseIdle     = "Idle"
+	MemberPhaseLost     = "Lost"
+	MemberPhaseFailed   = "Failed"
+	MemberPhaseShutdown = "Shutdown"
+
+	MemberOriginStatic  = "static"
+	MemberOriginDynamic = "dynamic"
+
+	MemberDeployManaged = "managed"
+	MemberDeployBYO     = "byo"
+
+	// PlanStatusPending marks a submitted member plan awaiting lead review.
+	PlanStatusPending = "pending"
+	// PlanStatusApproved marks a member plan the lead accepted.
+	PlanStatusApproved = "approved"
+	// PlanStatusRejected marks a member plan the lead sent back.
+	PlanStatusRejected = "rejected"
+)
+
 // Session is a runtime session on an agent.
 type Session struct {
 	ID               uuid.UUID       `json:"id"`
@@ -247,6 +275,49 @@ type AgentMetric struct {
 	AvgContextPressure float64   `json:"avgContextPressure,omitempty"`
 	ErrorCount         int32     `json:"errorCount,omitempty"`
 	UptimeSeconds      int64     `json:"uptimeSeconds,omitempty"`
+}
+
+// Team is the store-backed team runtime resource (authoritative; CRD is optional projection).
+type Team struct {
+	ID         int64           `json:"id"`
+	Name       string          `json:"name"`
+	Namespace  string          `json:"namespace"`
+	Objective  string          `json:"objective"`
+	Phase      string          `json:"phase"`
+	LeadRef    string          `json:"leadRef"` // registry agentName of the lead
+	LeadPrompt string          `json:"leadPrompt,omitempty"`
+	Config     json.RawMessage `json:"config,omitempty"` // TeamConfig JSON
+	SpecExtra  json.RawMessage `json:"specExtra,omitempty"` // dynamicMembers/sharedContext/recovery/lifecycle
+	StartedAt  *time.Time      `json:"startedAt,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+}
+
+// TeamMember is one role slot on a team (lead or worker).
+type TeamMember struct {
+	ID               int64      `json:"id"`
+	TeamName         string     `json:"teamName"`
+	Namespace        string     `json:"namespace"`
+	MemberName       string     `json:"memberName"` // "lead" for the lead role
+	AgentRef         string     `json:"agentRef"`   // registry agentName
+	Prompt           string     `json:"prompt,omitempty"`
+	PlanApproval     bool       `json:"planApproval,omitempty"`
+	PlanText         string     `json:"planText,omitempty"`
+	PlanStatus       string     `json:"planStatus,omitempty"` // pending | approved | rejected | ""
+	Origin           string     `json:"origin,omitempty"`     // static | dynamic
+	DeployMode       string     `json:"deployMode,omitempty"` // managed | byo
+	ManagedAgentID   string     `json:"managedAgentId,omitempty"`
+	OwnerID          string     `json:"ownerId,omitempty"` // product owner for managed find-or-create
+	Phase            string     `json:"phase"`
+	SessionID        string     `json:"sessionId,omitempty"`
+	ManagedSessionID string     `json:"managedSessionId,omitempty"`
+	InstanceRef      string     `json:"instanceRef,omitempty"`
+	CurrentTask      string     `json:"currentTask,omitempty"`
+	RestartCount     int32      `json:"restartCount,omitempty"`
+	LastRestartAt    *time.Time `json:"lastRestartAt,omitempty"`
+	LastRestartReason string    `json:"lastRestartReason,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
 // TeamMessage is a team collaboration message (outbox).

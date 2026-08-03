@@ -158,6 +158,12 @@ var ErrInstanceNotConnected = errors.New("asdp: instance not connected")
 // SendSessionCommand sends a session command to a specific instance.
 // It returns ErrInstanceNotConnected when the instance has no live stream.
 func (d *Distributor) SendSessionCommand(namespace, instanceID, sessionID, command string) error {
+	return d.SendSessionCommandWithParams(namespace, instanceID, sessionID, command, nil)
+}
+
+// SendSessionCommandWithParams is like SendSessionCommand but includes params
+// (e.g. TeamContext JSON for team_join).
+func (d *Distributor) SendSessionCommandWithParams(namespace, instanceID, sessionID, command string, params []byte) error {
 	logger := log.Log.WithName("asdp-distributor")
 
 	conn, ok := d.server.GetConnection(namespace, instanceID)
@@ -167,12 +173,17 @@ func (d *Distributor) SendSessionCommand(namespace, instanceID, sessionID, comma
 		return ErrInstanceNotConnected
 	}
 
+	cmd := &SessionCommand{
+		SessionId: sessionID,
+		Command:   command,
+	}
+	if len(params) > 0 {
+		cmd.Params = params
+	}
+
 	down := &Downstream{
 		Payload: &Downstream_SessionCmd{
-			SessionCmd: &SessionCommand{
-				SessionId: sessionID,
-				Command:   command,
-			},
+			SessionCmd: cmd,
 		},
 	}
 

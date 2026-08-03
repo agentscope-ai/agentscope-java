@@ -77,6 +77,7 @@ import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
 import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.TranscriptMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
@@ -1131,7 +1132,38 @@ public class HarnessAgent implements Agent, AutoCloseable {
         java.time.Duration asyncToolTimeout;
         io.agentscope.harness.agent.bus.AsyncToolRegistry asyncToolRegistry;
 
+        io.agentscope.harness.agent.team.TeamClient teamsModeClient;
+        io.agentscope.harness.agent.team.TeamContext teamsModeContext;
+        String teamsModeSessionId;
+
         private Builder() {}
+
+        /**
+         * Enables AgentTeams mode: attaches {@link
+         * io.agentscope.harness.agent.middleware.TeamsMiddleware} and registers the role-clipped
+         * {@code team} tool. Used for both Managed resolve({@code teamContext}) and Entry-B lead
+         * sessions that declare a roster template.
+         */
+        public Builder teamsMode(
+                io.agentscope.harness.agent.team.TeamClient teamClient,
+                io.agentscope.harness.agent.team.TeamContext teamContext) {
+            return teamsMode(teamClient, teamContext, null);
+        }
+
+        /**
+         * Same as {@link #teamsMode(io.agentscope.harness.agent.team.TeamClient,
+         * io.agentscope.harness.agent.team.TeamContext)} but also binds the middleware to {@code
+         * sessionId} so control-plane TeamEvents addressed at that session reach this agent.
+         */
+        public Builder teamsMode(
+                io.agentscope.harness.agent.team.TeamClient teamClient,
+                io.agentscope.harness.agent.team.TeamContext teamContext,
+                String sessionId) {
+            this.teamsModeClient = teamClient;
+            this.teamsModeContext = teamContext;
+            this.teamsModeSessionId = sessionId;
+            return this;
+        }
 
         /**
          * Returns a new {@link Builder} pre-populated with as much of the given {@link ReActAgent}'s
@@ -2294,6 +2326,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             if (messageBus != null) {
                 inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
+            }
+
+            if (teamsModeClient != null && teamsModeContext != null) {
+                TeamsMiddleware teamsMw = new TeamsMiddleware(teamsModeClient, teamsModeContext);
+                if (messageBus != null) {
+                    teamsMw.wireMessageBus(messageBus, agentId != null ? agentId : name);
+                }
+                teamsMw.bindSession(teamsModeSessionId);
+                inner.middleware(teamsMw);
+                for (Object t : teamsMw.getTools()) {
+                    agentToolkit.registerTool(t);
+                }
             }
 
             Object capturedSubagentMw = null;

@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.team.TeamClient;
 import java.util.Objects;
 
 /**
@@ -164,6 +165,18 @@ public interface DistributedStore {
     }
 
     /**
+     * Creates a {@link TeamClient} for AgentTeams coordination.
+     *
+     * <p>Override when the store hosts team task/message APIs (control plane) or can back a local
+     * CAS client. The default returns {@code null}.
+     *
+     * @return a team client, or {@code null} when teams mode is unavailable
+     */
+    default TeamClient teamClient() {
+        return null;
+    }
+
+    /**
      * Creates a builder for composing a {@link DistributedStore} from individual components,
      * potentially sourced from different store implementations.
      *
@@ -199,6 +212,7 @@ public interface DistributedStore {
         private AsyncToolRegistry asyncToolRegistry;
         private TaskRepository taskRepository;
         private SessionTurnGate sessionTurnGate;
+        private TeamClient teamClient;
 
         private Builder() {}
 
@@ -272,6 +286,12 @@ public interface DistributedStore {
             return this;
         }
 
+        /** Sets the AgentTeams client. */
+        public Builder teamClient(TeamClient teamClient) {
+            this.teamClient = teamClient;
+            return this;
+        }
+
         /**
          * Builds the composite {@link DistributedStore}.
          *
@@ -295,7 +315,8 @@ public interface DistributedStore {
                     messageBus,
                     asyncToolRegistry,
                     taskRepository,
-                    sessionTurnGate);
+                    sessionTurnGate,
+                    teamClient);
         }
     }
 
@@ -310,7 +331,8 @@ public interface DistributedStore {
             MessageBus bus,
             AsyncToolRegistry toolRegistry,
             TaskRepository tasks,
-            SessionTurnGate turnGate)
+            SessionTurnGate turnGate,
+            TeamClient teams)
             implements DistributedStore {
 
         @Override
@@ -351,6 +373,11 @@ public interface DistributedStore {
         @Override
         public SessionTurnGate sessionTurnGate() {
             return turnGate;
+        }
+
+        @Override
+        public TeamClient teamClient() {
+            return teams;
         }
     }
 }

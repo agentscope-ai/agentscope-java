@@ -480,6 +480,25 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     }
 
     /**
+     * Adopts a control-plane-allocated session id so {@link #runWakeup(String, String)} can resolve
+     * it. Used by BYO {@code team_join}; Managed sessions already use product ids that the managed
+     * turn path accepts without this mapping.
+     *
+     * @param sessionId external session id assigned by the control plane
+     * @param gateKey stable gate key (e.g. {@code team:{teamName}:{role}})
+     */
+    public void registerExternalSession(String sessionId, String gateKey) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId required");
+        }
+        if (gateKey == null || gateKey.isBlank()) {
+            throw new IllegalArgumentException("gateKey required");
+        }
+        sessionToGateKey.put(sessionId, gateKey);
+        persistSessionGateKey(sessionId, gateKey);
+    }
+
+    /**
      * Returns {@code true} when the given session is currently inside a gated turn (a run is in
      * progress). Used by {@link WakeupDispatcher} to skip sessions that will naturally drain their
      * inbox on the current reasoning step.

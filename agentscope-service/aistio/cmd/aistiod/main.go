@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -461,13 +462,16 @@ func main() {
 	dpRegistry := dataplane.NewRegistry()
 
 	var asdpServer *asdp.Server
+	var teamEventSinkHolder *sessionSinkAdapter
 	if mgr != nil {
-		asdpServer = setupKubernetes(kubeRuntime{
+		asdpServer, teamEventSinkHolder = setupKubernetes(kubeRuntime{
 			mgr:                mgr,
 			logger:             logger,
 			store:              runtimeStore,
 			storeCfg:           storeCfg,
 			prober:             httpProber,
+			registry:           dpRegistry,
+			product:            productSrv,
 			enableASDP:         enableASDP,
 			enableExperimental: enableExperimental,
 			enableWebhook:      enableWebhook,
@@ -481,6 +485,34 @@ func main() {
 		})
 	} else if enableASDP {
 		logger.Info("ASDP disabled: the data plane protocol requires a Kubernetes connection")
+	}
+
+	// Shared Team runtime (one Lifecycle / MessageRouter / Activator tree).
+	// REST and kube adapters both use these; registry/K8s are sources only.
+	var teamLifecycle *team.Lifecycle
+	var teamTaskStore *team.TaskStore
+	var teamMsgRouter *team.MessageRouter
+	if runtimeStore != nil {
+		teamTaskStore = team.NewTaskStore(runtimeStore.TeamTasks())
+		teamMsgRouter = team.NewMessageRouter(runtimeStore.TeamMessages(), runtimeStore.Sessions())
+		spawner := team.NewSessionSpawner(runtimeStore)
+		teamLifecycle = team.NewLifecycle(runtimeStore, teamTaskStore, teamMsgRouter, spawner)
+		var commander team.SessionCommander
+		if asdpServer != nil {
+			commander = asdpServer.Distributor()
+		}
+		act := team.NewActivator(runtimeStore, dpRegistry, commander)
+		if productSrv != nil {
+			act.SetManagedSessionAPI(productSrv)
+			productSrv.SetTeamContextLookup(func(ctx context.Context, sessionID string) json.RawMessage {
+				list, err := runtimeStore.Sessions().List(ctx, store.SessionFilter{SessionID: sessionID, Limit: 1})
+				if err != nil || len(list) == 0 {
+					return nil
+				}
+				return list[0].TeamContext
+			})
+		}
+		teamLifecycle.SetActivator(act)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -538,6 +570,9 @@ func main() {
 		Registry:      dpRegistry,
 		InternalToken: productToken,
 		HostedStore:   enableHostedStore,
+		TeamLifecycle: teamLifecycle,
+		TeamTaskStore: teamTaskStore,
+		TeamRouter:    teamMsgRouter,
 	}
 	if mgr != nil {
 		apiOpts.Client = mgr.GetClient()
@@ -567,6 +602,67 @@ func main() {
 			Batch:    20,
 		}).Run(ctx)
 		logger.Info("session command queue worker started")
+	}
+
+	// Shared TeamRuntime loops: message delivery + lifecycle sweep.
+	// Independent of Kubernetes / --enable-experimental.
+	if runtimeStore != nil && teamLifecycle != nil {
+		var asdpDeliverer controller.TeamEventDeliverer
+		if asdpServer != nil {
+			asdpDeliverer = asdpServer.Distributor()
+		}
+		var managedWake controller.ManagedWakeAPI
+		if productSrv != nil {
+			managedWake = productSrv
+		}
+		dispatcher := &controller.TeamMessageDispatcher{
+			Store:       runtimeStore,
+			Deliverer:   asdpDeliverer,
+			ManagedWake: managedWake,
+		}
+		go func() {
+			if err := dispatcher.Start(ctx); err != nil {
+				logger.Error(err, "team message dispatcher stopped")
+			}
+		}()
+		logger.Info("team message dispatcher started")
+
+		sweeper := &controller.TeamSweeper{
+			Store:     runtimeStore,
+			Lifecycle: teamLifecycle,
+		}
+		if mgr != nil {
+			if err := mgr.Add(sweeper); err != nil {
+				logger.Error(err, "unable to add team sweeper")
+				os.Exit(1)
+			}
+		} else {
+			go func() {
+				if err := sweeper.Start(ctx); err != nil {
+					logger.Error(err, "team sweeper stopped")
+				}
+			}()
+		}
+		logger.Info("team sweeper started")
+	}
+
+	// Kube AgentTeam adapter: project CRD ↔ store using the shared Lifecycle.
+	if mgr != nil && enableExperimental && teamLifecycle != nil {
+		if teamEventSinkHolder != nil {
+			teamEventSinkHolder.teamSink = controller.NewTeamEventSink(
+				mgr.GetClient(), teamTaskStore, mgr.GetEventRecorderFor("agentscope-controller"))
+		}
+		if err := (&controller.AgentTeamReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Recorder:  mgr.GetEventRecorderFor("agentscope-controller"),
+			Lifecycle: teamLifecycle,
+			Store:     runtimeStore,
+		}).SetupWithManager(mgr); err != nil {
+			logger.Error(err, "unable to create controller", "controller", "AgentTeam")
+			os.Exit(1)
+		}
+		logger.Info("AgentTeam CRD source adapter registered")
 	}
 
 	// Without a manager the REST server is the only long-running component,
@@ -604,6 +700,8 @@ type kubeRuntime struct {
 	store              store.Store
 	storeCfg           store.Config
 	prober             prober.DataPlaneProber
+	registry           *dataplane.Registry
+	product            *product.Server
 	enableASDP         bool
 	enableExperimental bool
 	enableWebhook      bool
@@ -618,8 +716,9 @@ type kubeRuntime struct {
 
 // setupKubernetes registers the reconcilers, config delivery, admission
 // webhooks, and health checks that require a cluster connection. It returns
-// the ASDP server when the data plane protocol is enabled.
-func setupKubernetes(k kubeRuntime) *asdp.Server {
+// the ASDP server when the data plane protocol is enabled, plus the session
+// sink adapter so the shared TeamRuntime can attach TeamEventSink later.
+func setupKubernetes(k kubeRuntime) (*asdp.Server, *sessionSinkAdapter) {
 	mgr, logger, runtimeStore, httpProber := k.mgr, k.logger, k.store, k.prober
 
 	// Build ASDP server for data plane coordination.
@@ -641,7 +740,7 @@ func setupKubernetes(k kubeRuntime) *asdp.Server {
 		asdpServer = srv
 		dist = &distributorAdapter{dist: asdpServer.Distributor()}
 		// Wire upstream session reports through to the runtime Store.
-		// teamSink is set later once taskStore is available (if experimental is enabled).
+		// teamSink is attached later once the shared TeamRuntime exists.
 		sinkAdapter = &sessionSinkAdapter{
 			sink: &controller.SessionEventSink{Client: mgr.GetClient(), Store: runtimeStore},
 		}
@@ -756,8 +855,10 @@ func setupKubernetes(k kubeRuntime) *asdp.Server {
 	}
 
 	// ===== Experimental controllers (gated) =====
+	// Sandbox remains experimental. AgentTeam CRD adapter + shared TeamRuntime
+	// loops are wired in main() after the shared Lifecycle is constructed.
 	if enableExperimental {
-		logger.Info("experimental features enabled (AgentTeam, SandboxBroker)")
+		logger.Info("experimental features enabled (SandboxBroker; AgentTeam adapter wires later)")
 
 		if err := (&controller.SandboxBrokerReconciler{
 			Client:   mgr.GetClient(),
@@ -765,45 +866,6 @@ func setupKubernetes(k kubeRuntime) *asdp.Server {
 			Recorder: mgr.GetEventRecorderFor("sandboxbroker-controller"),
 		}).SetupWithManager(mgr); err != nil {
 			logger.Error(err, "unable to create controller", "controller", "SandboxBroker")
-			os.Exit(1)
-		}
-
-		taskStore := team.NewTaskStore(runtimeStore.TeamTasks())
-		msgRouter := team.NewMessageRouter(runtimeStore.TeamMessages(), runtimeStore.Sessions())
-		spawner := team.NewSessionSpawner(runtimeStore)
-		lifecycle := team.NewLifecycle(mgr.GetClient(), runtimeStore, taskStore, msgRouter, spawner)
-
-		// Wire team event processing now that taskStore is available.
-		if sinkAdapter != nil {
-			sinkAdapter.teamSink = controller.NewTeamEventSink(
-				mgr.GetClient(), taskStore, mgr.GetEventRecorderFor("agentscope-controller"))
-		}
-
-		if err := (&controller.AgentTeamReconciler{
-			Client:    mgr.GetClient(),
-			Scheme:    mgr.GetScheme(),
-			Recorder:  mgr.GetEventRecorderFor("agentscope-controller"),
-			Lifecycle: lifecycle,
-			Store:     runtimeStore,
-		}).SetupWithManager(mgr); err != nil {
-			logger.Error(err, "unable to create controller", "controller", "AgentTeam")
-			os.Exit(1)
-		}
-
-		// The dispatcher delivers store-backed TeamMessages over the live gRPC
-		// channel. It registers itself as non-leader (runs on every replica) so
-		// it can reach connections held by any replica. The ASDP Distributor
-		// satisfies the TeamEventDeliverer interface directly.
-		var deliverer controller.TeamEventDeliverer
-		if asdpServer != nil {
-			deliverer = asdpServer.Distributor()
-		}
-		dispatcher := &controller.TeamMessageDispatcher{
-			Store:     runtimeStore,
-			Deliverer: deliverer,
-		}
-		if err := mgr.Add(dispatcher); err != nil {
-			logger.Error(err, "unable to add team message dispatcher")
 			os.Exit(1)
 		}
 	}
@@ -840,7 +902,7 @@ func setupKubernetes(k kubeRuntime) *asdp.Server {
 		os.Exit(1)
 	}
 
-	return asdpServer
+	return asdpServer, sinkAdapter
 }
 
 // probeSelf calls /healthz on the local REST listener so container runtimes

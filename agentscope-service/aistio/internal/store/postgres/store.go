@@ -28,6 +28,7 @@ type Store struct {
 	transcriptIndex  *transcriptIndexRepo
 	messages         *messageRepo
 	tasks            *taskRepo
+	teams            *teamRepo
 	commands         *commandRepo
 	kv               *kvRepo
 	locks            *lockRepo
@@ -71,6 +72,7 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.transcriptIndex = &transcriptIndexRepo{pool: pool}
 	s.messages = &messageRepo{pool: pool}
 	s.tasks = &taskRepo{pool: pool}
+	s.teams = &teamRepo{pool: pool}
 	s.commands = &commandRepo{pool: pool}
 	s.kv = &kvRepo{pool: pool}
 	s.locks = &lockRepo{pool: pool}
@@ -89,6 +91,7 @@ func (s *Store) Metrics() store.MetricsRepository                  { return s.me
 func (s *Store) TranscriptIndex() store.TranscriptIndexRepository  { return s.transcriptIndex }
 func (s *Store) TeamMessages() store.TeamMessageRepository         { return s.messages }
 func (s *Store) TeamTasks() store.TeamTaskRepository               { return s.tasks }
+func (s *Store) Teams() store.TeamRepository                       { return s.teams }
 func (s *Store) Commands() store.SessionCommandRepository          { return s.commands }
 func (s *Store) KV() store.KVRepository                             { return s.kv }
 func (s *Store) Locks() store.LockRepository                       { return s.locks }

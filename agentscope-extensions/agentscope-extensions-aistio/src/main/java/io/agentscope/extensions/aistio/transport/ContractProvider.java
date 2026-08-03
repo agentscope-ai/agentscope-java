@@ -70,6 +70,22 @@ public interface ContractProvider {
         throw new UnsupportedOperationException("plan-mode is not supported");
     }
 
+    /**
+     * Adopts a team session (HTTP fallback for ASDP {@code team_join}). Body is JSON with {@code
+     * sessionId} and optional {@code params} TeamContext. Capability: {@code team-coordination}.
+     */
+    default void teamJoin(byte[] body) {
+        throw new UnsupportedOperationException("team-coordination is not supported");
+    }
+
+    /**
+     * Releases a team session (HTTP fallback for ASDP {@code team_leave}). Body carries the same
+     * envelope as {@link #teamJoin(byte[])}. Capability: {@code team-coordination}.
+     */
+    default void teamLeave(byte[] body) {
+        throw new UnsupportedOperationException("team-coordination is not supported");
+    }
+
     /** Current phase string for command success responses. */
     default String sessionPhase(String sessionId) {
         return "running";

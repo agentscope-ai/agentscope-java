@@ -233,6 +233,11 @@ public class SessionEventMapper {
                     SessionEventTypes.AGENT_TOOL_RESULT, payload, buf.eventId());
         }
         if (event instanceof ModelCallStartEvent) {
+            // Opening a model request opens a fresh preview window. The previous window must stay
+            // readable until then: AgentResultEvent arrives only at the end of the turn and needs
+            // the last window's id to reconcile with the streamed preview.
+            previewIds.resetMessage();
+            previewIds.resetThinking();
             return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_START, Map.of());
         }
         if (event instanceof ModelCallEndEvent modelEnd) {
@@ -240,9 +245,6 @@ public class SessionEventMapper {
             if (modelEnd.getUsage() != null) {
                 payload.put("usage", modelEnd.getUsage());
             }
-            // Closing a model request also closes the message preview window for the next request.
-            previewIds.resetMessage();
-            previewIds.resetThinking();
             return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_END, payload);
         }
         if (event instanceof AgentStartEvent || event instanceof AgentEndEvent) {

@@ -59,14 +59,16 @@ builder:
   # Control plane (aistiod) base URL for session/environment resolve APIs.
   control-plane-url: ${BUILDER_CONTROL_URL:http://localhost:8081}
 
-  # aistio data-plane contract + self-registration
+  # aistio data-plane contract + optional Operate self-registration.
+  # Off by default: this process hosts Managed agent runs; it is not an agent itself.
+  # Set BUILDER_DATAPLANE_REGISTER=true only if you want it listed under Operate → Agents.
   dataplane:
     agent-name: ${BUILDER_DATAPLANE_AGENT_NAME:agentscope-java-dataplane}
     namespace: ${BUILDER_DATAPLANE_NAMESPACE:default}
     version: ${BUILDER_DATAPLANE_VERSION:2.0.1}
     # Reachable from aistiod (compose: http://data:8082; local: leave empty → localhost:port)
     public-url: ${BUILDER_DATAPLANE_PUBLIC_URL:}
-    register-enabled: ${BUILDER_DATAPLANE_REGISTER:true}
+    register-enabled: ${BUILDER_DATAPLANE_REGISTER:false}
     heartbeat-interval-ms: ${BUILDER_DATAPLANE_HEARTBEAT_MS:15000}
 
   # Platform-wide shared workspace root — MUST match the control plane layout.

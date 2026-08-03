@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.aistio;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.aistio.proto.SessionEventMsg;
 import io.agentscope.aistio.proto.SessionSnapshot;
 import io.agentscope.extensions.aistio.model.ContextSnapshot;
@@ -26,8 +27,10 @@ import io.agentscope.extensions.aistio.transport.ContractHttpServer;
 import io.agentscope.extensions.aistio.transport.ContractProvider;
 import io.agentscope.extensions.aistio.transport.GrpcTransport;
 import io.agentscope.extensions.aistio.transport.HttpSelfRegistration;
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
@@ -82,6 +85,8 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private static final long CONTEXT_PUSH_COOLDOWN_MS = 30_000L;
     private static final long INVENTORY_INTERVAL_MS = 30_000L;
     private static final Duration ADAPTER_CALL_TIMEOUT = Duration.ofSeconds(10);
+
+    private static final ObjectMapper TEAM_EVENT_MAPPER = new ObjectMapper();
 
     private final AistioConfig config;
     private final Object lock = new Object();
@@ -160,6 +165,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                             config.sessionAffinity());
             grpc.setSessionCommandHandler(
                     (sessionId, command, params) -> dispatchCommand(sessionId, command, params));
+            grpc.setTeamEventHandler(this::onTeamEvent);
             grpc.start();
         }
 
@@ -559,6 +565,37 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         grpc.reportInventory(inventory.toProto());
     }
 
+    // ─── team events (ASDP downstream) ───
+
+    /**
+     * Wakes the local teammate session addressed by a control-plane TeamEvent. The event names the
+     * member; the payload may additionally carry the concrete session id.
+     */
+    private void onTeamEvent(
+            String teamId, String eventType, String memberName, String taskId, byte[] payload) {
+        LOG.log(
+                Level.FINE,
+                "aistio: downstream team event team={0} type={1} member={2} task={3}",
+                new Object[] {teamId, eventType, memberName, taskId});
+        TeamsMiddleware.wakeupTeamMember(teamId, memberName);
+        String sessionId = readSessionId(payload);
+        if (!sessionId.isEmpty()) {
+            TeamsMiddleware.wakeupSession(sessionId);
+        }
+    }
+
+    private static String readSessionId(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "";
+        }
+        try {
+            return TEAM_EVENT_MAPPER.readTree(payload).path("sessionId").asText("");
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "aistio: team event payload is not JSON", e);
+            return "";
+        }
+    }
+
     // ─── command dispatch (ASDP push and HTTP both land here) ───
 
     private void dispatchCommand(String sessionId, String command, byte[] params) {
@@ -837,6 +874,54 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             throw new UnsupportedOperationException("no framework adapter attached");
         }
         adapter.setPlanMode(sessionId, body).block(ADAPTER_CALL_TIMEOUT);
+    }
+
+    @Override
+    public void teamJoin(byte[] body) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        if (body == null || body.length == 0) {
+            throw new IllegalArgumentException("team join body required");
+        }
+        dispatchTeamCommand(body, FrameworkAdapter.COMMAND_TEAM_JOIN, "team join");
+    }
+
+    @Override
+    public void teamLeave(byte[] body) {
+        if (adapter == null) {
+            throw new UnsupportedOperationException("no framework adapter attached");
+        }
+        if (body == null || body.length == 0) {
+            throw new IllegalArgumentException("team leave body required");
+        }
+        dispatchTeamCommand(body, FrameworkAdapter.COMMAND_TEAM_LEAVE, "team leave");
+    }
+
+    /** Unwraps the {@code {sessionId, params}} envelope shared by the team HTTP endpoints. */
+    private void dispatchTeamCommand(byte[] body, String command, String label) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> root = TEAM_EVENT_MAPPER.readValue(body, Map.class);
+            Object sid = root.get("sessionId");
+            if (sid == null || String.valueOf(sid).isBlank()) {
+                throw new IllegalArgumentException("sessionId required");
+            }
+            byte[] params;
+            Object rawParams = root.get("params");
+            if (rawParams == null) {
+                params = new byte[0];
+            } else if (rawParams instanceof String s) {
+                params = s.getBytes(StandardCharsets.UTF_8);
+            } else {
+                params = TEAM_EVENT_MAPPER.writeValueAsBytes(rawParams);
+            }
+            dispatchCommand(String.valueOf(sid), command, params);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid " + label + " body: " + e.getMessage(), e);
+        }
     }
 
     @Override

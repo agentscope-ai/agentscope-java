@@ -48,10 +48,6 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-skill-git-repository</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-nacos-skill</artifactId>
-        </dependency>
 
         <!-- JPA entities + repositories -->
         <dependency>

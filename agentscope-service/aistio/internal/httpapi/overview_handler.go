@@ -277,12 +277,10 @@ func (s *Server) fleetOverview(c *gin.Context) {
 		topAgentsByActive = []store.AgentUsage{}
 	}
 
-	agents := map[string]struct{}{}
-	// Count unique agents from non-terminated sessions via a small list.
 	sessions, _ := s.store.Sessions().List(ctx, store.SessionFilter{Limit: 5000})
-	for _, sess := range sessions {
-		agents[sess.Namespace+"/"+sess.AgentName] = struct{}{}
-	}
+
+	liveAgents, offlineAgents, registryKeys, _ := registryAgentBuckets(s.registry)
+	historicalAgents := historicalAgentKeys(sessions, registryKeys)
 
 	dataplaneCount := 0
 	healthyCount := 0
@@ -296,7 +294,6 @@ func (s *Server) fleetOverview(c *gin.Context) {
 			if ns == "" {
 				ns = "default"
 			}
-			agents[ns+"/"+dp.AgentName] = struct{}{}
 			if dp.Healthy {
 				healthyCount++
 			} else {
@@ -308,13 +305,6 @@ func (s *Server) fleetOverview(c *gin.Context) {
 					"lastSeenAt": dp.LastSeenAt,
 				})
 			}
-		}
-		for _, a := range s.registry.AggregateAgents() {
-			ns := a.Namespace
-			if ns == "" {
-				ns = "default"
-			}
-			agents[ns+"/"+a.Name] = struct{}{}
 		}
 	}
 
@@ -346,7 +336,9 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	}
 
 	body := gin.H{
-		"agentCount":             len(agents),
+		"agentCount":             len(liveAgents),
+		"offlineAgentCount":      len(offlineAgents),
+		"historicalAgentCount":   len(historicalAgents),
 		"instanceCount":          dataplaneCount,
 		"healthyInstanceCount":   healthyCount,
 		"staleInstanceCount":     staleCount,

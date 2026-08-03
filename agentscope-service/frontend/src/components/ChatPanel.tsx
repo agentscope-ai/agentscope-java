@@ -215,6 +215,7 @@ export default function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const streamHandleRef = useRef<EventStreamHandle | null>(null);
   const replyMsgIdRef = useRef<string | null>(null);
+  const pendingUserMsgIdRef = useRef<string | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const lastSeqRef = useRef(0);
 
@@ -260,19 +261,16 @@ export default function ChatPanel({
       const delta = evt.payload?.delta != null ? String(evt.payload.delta) : '';
       if (!eventId || !delta) return;
       if (targetType === 'agent.message') {
+        const localReply = replyMsgIdRef.current;
+        replyMsgIdRef.current = eventId;
         setMessages(prev => {
-          const exists = prev.some(m => m.id === eventId);
-          if (exists) {
-            replyMsgIdRef.current = eventId;
+          if (prev.some(m => m.id === eventId)) {
             return prev.map(m => (m.id === eventId ? { ...m, text: m.text + delta, pending: true } : m));
           }
-          const localReply = replyMsgIdRef.current;
           if (localReply && localReply !== eventId && prev.some(m => m.id === localReply)) {
-            replyMsgIdRef.current = eventId;
             return prev.map(m =>
               m.id === localReply ? { ...m, id: eventId, text: m.text + delta, pending: true } : m);
           }
-          replyMsgIdRef.current = eventId;
           return [...prev, { id: eventId, role: 'assistant', text: delta, tools: [], pending: true }];
         });
       } else if (targetType === 'agent.tool_use') {
@@ -304,19 +302,26 @@ export default function ChatPanel({
     if (evt.type === 'user.message') {
       const text = payloadText(evt.payload);
       if (text) {
+        const localUser = pendingUserMsgIdRef.current;
+        pendingUserMsgIdRef.current = null;
         setMessages(prev => {
           if (prev.some(m => m.id === evt.id)) return prev;
+          // Adopt the server id onto the optimistic bubble instead of appending a twin.
+          if (localUser && prev.some(m => m.id === localUser)) {
+            return prev.map(m => (m.id === localUser ? { ...m, id: evt.id, text } : m));
+          }
           return [...prev, { id: evt.id, role: 'user', text, tools: [] }];
         });
       }
     } else if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
       const text = payloadText(evt.payload);
+      const replyId = replyMsgIdRef.current;
+      replyMsgIdRef.current = null;
       setMessages(prev => {
         if (prev.some(m => m.id === evt.id)) {
           return prev.map(m =>
             m.id === evt.id ? { ...m, text: text || m.text || '[agent response]', pending: false } : m);
         }
-        const replyId = replyMsgIdRef.current;
         if (replyId && prev.some(m => m.id === replyId)) {
           return prev.map(m =>
             m.id === replyId
@@ -325,7 +330,6 @@ export default function ChatPanel({
         }
         return [...prev, { id: evt.id, role: 'assistant', text: text || '[agent response]', tools: [] }];
       });
-      replyMsgIdRef.current = null;
     } else if (evt.type === 'agent.tool_use') {
       const tool: ToolEntry = {
         id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
@@ -389,6 +393,8 @@ export default function ChatPanel({
     setManagedSession(null);
     seenEventIdsRef.current = new Set();
     lastSeqRef.current = 0;
+    replyMsgIdRef.current = null;
+    pendingUserMsgIdRef.current = null;
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
 
@@ -448,6 +454,27 @@ export default function ChatPanel({
     return `env: ${env} · vaults: ${vaults} · memory: ${mems}`;
   }, [managedSession, envNameById]);
 
+  /**
+   * Relabels the optimistic user bubble with the server event id so the same event
+   * arriving over the stream is dropped by the seen-id guard. No-op when the stream
+   * already won the race and reconciled it.
+   */
+  function adoptRecordedUserEvent(recorded: SessionEvent[]) {
+    const localUser = pendingUserMsgIdRef.current;
+    if (!localUser) return;
+    const serverEvent = recorded.find(e => e.type === 'user.message' && e.id);
+    if (!serverEvent) return;
+    pendingUserMsgIdRef.current = null;
+    seenEventIdsRef.current.add(serverEvent.id);
+    if (typeof serverEvent.seq === 'number' && serverEvent.seq > lastSeqRef.current) {
+      lastSeqRef.current = serverEvent.seq;
+    }
+    setMessages(prev =>
+      prev.some(m => m.id === serverEvent.id)
+        ? prev.filter(m => m.id !== localUser)
+        : prev.map(m => (m.id === localUser ? { ...m, id: serverEvent.id } : m)));
+  }
+
   async function handleSend() {
     if (!canSend) return;
     const text = input.trim();
@@ -456,16 +483,19 @@ export default function ChatPanel({
     const userMsg: Message = { id: nextId(), role: 'user', text, tools: [] };
     const replyMsg: Message = { id: nextId(), role: 'assistant', text: '', tools: [], pending: true };
     replyMsgIdRef.current = replyMsg.id;
+    pendingUserMsgIdRef.current = userMsg.id;
     setMessages(prev => [...prev, userMsg, replyMsg]);
 
     try {
-      await postUserMessage(sessionId, text);
+      const recorded = await postUserMessage(sessionId, text);
+      adoptRecordedUserEvent(recorded);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'send failed';
       setMessages(prev => prev.map(m => m.id === replyMsg.id
         ? { ...m, pending: false, text: `[error] ${msg}` }
         : m));
       replyMsgIdRef.current = null;
+      pendingUserMsgIdRef.current = null;
     } finally {
       setBusy(false);
       inputRef.current?.focus();

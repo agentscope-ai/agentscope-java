@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
@@ -75,6 +77,52 @@ class SessionEventMapperTest {
         assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_MESSAGE);
         assertThat(persisted.payload().get("text")).isEqualTo("Hello");
         assertThat(persisted.eventId()).isEqualTo(previewId);
+    }
+
+    /**
+     * The harness emits ModelCallEnd while finishing the model request, and AgentResult only at the
+     * very end of the turn. Closing the request must not discard the preview id, or the client
+     * renders the typewriter preview and the persisted message as two separate bubbles.
+     */
+    @Test
+    void agentResultReusesPreviewMessageEventIdAcrossModelCallEnd() {
+        mapper.map(new ModelCallStartEvent("r"), previewIds);
+        SessionEventMapper.MappingResult delta =
+                mapper.map(new TextBlockDeltaEvent("r", "b", "Hel"), previewIds);
+        String previewId = delta.preview().orElseThrow().eventId();
+        mapper.map(new ModelCallEndEvent("r", null), previewIds);
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hello").build();
+        SessionEventMapper.MappingResult result = mapper.map(new AgentResultEvent(msg), previewIds);
+
+        assertThat(result.persisted().orElseThrow().eventId()).isEqualTo(previewId);
+    }
+
+    /** Each model request opens a fresh preview window; the result reconciles with the last one. */
+    @Test
+    void multiRoundTurnReusesLastRoundPreviewMessageEventId() {
+        mapper.map(new ModelCallStartEvent("r"), previewIds);
+        String firstRoundId =
+                mapper.map(new TextBlockDeltaEvent("r", "b", "thinking"), previewIds)
+                        .preview()
+                        .orElseThrow()
+                        .eventId();
+        mapper.map(new ModelCallEndEvent("r", null), previewIds);
+
+        mapper.map(new ModelCallStartEvent("r"), previewIds);
+        String secondRoundId =
+                mapper.map(new TextBlockDeltaEvent("r", "b", "answer"), previewIds)
+                        .preview()
+                        .orElseThrow()
+                        .eventId();
+        mapper.map(new ModelCallEndEvent("r", null), previewIds);
+
+        assertThat(secondRoundId).isNotEqualTo(firstRoundId);
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("answer").build();
+        SessionEventMapper.MappingResult result = mapper.map(new AgentResultEvent(msg), previewIds);
+
+        assertThat(result.persisted().orElseThrow().eventId()).isEqualTo(secondRoundId);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package dataplane
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -154,6 +155,51 @@ type AgentSummary struct {
 	HealthyCount   int      `json:"healthyCount"`
 	InstanceCount  int      `json:"instanceCount"`
 	Instances      []string `json:"instances,omitempty"`
+}
+
+// Presence classification for Operate fleet views.
+const (
+	PresenceLive       = "live"
+	PresenceOffline    = "offline"
+	PresenceHistorical = "historical"
+	PresenceAll        = "all"
+)
+
+// ClassifyPresence maps healthy/instance counts to a presence bucket.
+func ClassifyPresence(healthyCount, instanceCount int) string {
+	if healthyCount > 0 {
+		return PresenceLive
+	}
+	if instanceCount > 0 {
+		return PresenceOffline
+	}
+	return PresenceHistorical
+}
+
+// FilterAgentsByPresence keeps summaries matching presence (live|offline|all).
+// historical is not derived from registry summaries.
+func FilterAgentsByPresence(summaries []AgentSummary, presence string) []AgentSummary {
+	presence = strings.ToLower(strings.TrimSpace(presence))
+	if presence == "" || presence == PresenceAll {
+		return summaries
+	}
+	out := make([]AgentSummary, 0, len(summaries))
+	for _, s := range summaries {
+		p := ClassifyPresence(s.HealthyCount, s.InstanceCount)
+		switch presence {
+		case PresenceLive:
+			if p == PresenceLive {
+				out = append(out, s)
+			}
+		case PresenceOffline:
+			if p == PresenceOffline {
+				out = append(out, s)
+			}
+		default:
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // AggregateAgents returns one summary per agentName/namespace.

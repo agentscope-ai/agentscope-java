@@ -23,6 +23,7 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("Commands", func(t *testing.T) { testCommands(t, ctx, s) })
 	t.Run("TeamMessages", func(t *testing.T) { testMessages(t, ctx, s) })
 	t.Run("TeamTasks", func(t *testing.T) { testTasks(t, ctx, s) })
+	t.Run("Teams", func(t *testing.T) { testTeams(t, ctx, s) })
 	t.Run("KV", func(t *testing.T) { testKV(t, ctx, s) })
 	t.Run("Locks", func(t *testing.T) { testLocks(t, ctx, s) })
 	t.Run("Snapshots", func(t *testing.T) { testSnapshots(t, ctx, s) })
@@ -454,11 +455,11 @@ func testMessages(t *testing.T, ctx context.Context, s store.Store) {
 }
 
 func testTasks(t *testing.T, ctx context.Context, s store.Store) {
-	t1, err := s.TeamTasks().Create(ctx, "ns", "team", "do thing", "desc", nil)
+	t1, err := s.TeamTasks().Create(ctx, "ns", "team", "do thing", "desc", nil, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t2, err := s.TeamTasks().Create(ctx, "ns", "team", "blocked", "", []string{t1.TaskID})
+	t2, err := s.TeamTasks().Create(ctx, "ns", "team", "blocked", "", []string{t1.TaskID}, "")
 	if err != nil {
 		t.Fatalf("create2: %v", err)
 	}
@@ -511,11 +512,138 @@ func testTasks(t *testing.T, ctx context.Context, s store.Store) {
 	}
 
 	// Unclaim flow on a fresh task.
-	t3, _ := s.TeamTasks().Create(ctx, "ns", "team", "unclaim-me", "", nil)
+	t3, _ := s.TeamTasks().Create(ctx, "ns", "team", "unclaim-me", "", nil, "")
 	c3, _ := s.TeamTasks().Claim(ctx, "ns", "team", t3.TaskID, "w", t3.Version)
 	u3, err := s.TeamTasks().Unclaim(ctx, "ns", "team", c3.TaskID)
 	if err != nil || u3.State != store.TaskStatePending || u3.Owner != "" {
 		t.Fatalf("unclaim: %v %+v", err, u3)
+	}
+
+	// Lead-assign then assignee claim; other member cannot claim.
+	t4, err := s.TeamTasks().Create(ctx, "ns", "team", "assigned", "", nil, "")
+	if err != nil {
+		t.Fatalf("create4: %v", err)
+	}
+	a4, err := s.TeamTasks().Assign(ctx, "ns", "team", t4.TaskID, "alice", t4.Version)
+	if err != nil || a4.Owner != "alice" || a4.State != store.TaskStatePending {
+		t.Fatalf("assign: %v %+v", err, a4)
+	}
+	_, err = s.TeamTasks().Claim(ctx, "ns", "team", t4.TaskID, "bob", a4.Version)
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("bob should not claim alice task: %v", err)
+	}
+	c4, err := s.TeamTasks().Claim(ctx, "ns", "team", t4.TaskID, "alice", a4.Version)
+	if err != nil || c4.State != store.TaskStateInProgress || c4.Owner != "alice" {
+		t.Fatalf("alice claim: %v %+v", err, c4)
+	}
+
+	// Assigned pending tasks are not self-claim candidates.
+	t5, _ := s.TeamTasks().Create(ctx, "ns", "team", "owned-pending", "", nil, "carol")
+	unblocked, _ = s.TeamTasks().GetUnblockedPending(ctx, "ns", "team")
+	for _, u := range unblocked {
+		if u.TaskID == t5.TaskID {
+			t.Fatal("owned pending task must not appear in GetUnblockedPending")
+		}
+	}
+
+	// Concurrent self-claim: only one winner.
+	t6, err := s.TeamTasks().Create(ctx, "ns", "team-race", "race", "", nil, "")
+	if err != nil {
+		t.Fatalf("create race: %v", err)
+	}
+	errCh := make(chan error, 2)
+	go func() {
+		_, e := s.TeamTasks().Claim(ctx, "ns", "team-race", t6.TaskID, "racer-a", t6.Version)
+		errCh <- e
+	}()
+	go func() {
+		_, e := s.TeamTasks().Claim(ctx, "ns", "team-race", t6.TaskID, "racer-b", t6.Version)
+		errCh <- e
+	}()
+	var wins, conflicts int
+	for i := 0; i < 2; i++ {
+		e := <-errCh
+		switch {
+		case e == nil:
+			wins++
+		case errors.Is(e, store.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("race claim unexpected: %v", e)
+		}
+	}
+	if wins != 1 || conflicts != 1 {
+		t.Fatalf("race claim: wins=%d conflicts=%d", wins, conflicts)
+	}
+}
+
+func testTeams(t *testing.T, ctx context.Context, s store.Store) {
+	created, err := s.Teams().Create(ctx, &store.Team{
+		Name: "research", Namespace: "default", Objective: "find facts",
+		LeadRef: "lead-agent",
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	if created.Phase != store.TeamPhasePending || created.ID == 0 {
+		t.Fatalf("created: %+v", created)
+	}
+	_, err = s.Teams().Create(ctx, &store.Team{
+		Name: "research", Namespace: "default", Objective: "dup", LeadRef: "x",
+	})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+
+	lead, err := s.Teams().UpsertMember(ctx, &store.TeamMember{
+		TeamName: "research", Namespace: "default", MemberName: "lead",
+		AgentRef: "lead-agent", DeployMode: store.MemberDeployManaged,
+		ManagedAgentID: "lead-agent", OwnerID: "user-1",
+	})
+	if err != nil || lead.Phase != store.MemberPhaseJoining {
+		t.Fatalf("upsert lead: %v %+v", err, lead)
+	}
+	worker, err := s.Teams().UpsertMember(ctx, &store.TeamMember{
+		TeamName: "research", Namespace: "default", MemberName: "writer",
+		AgentRef: "writer-agent", DeployMode: store.MemberDeployBYO,
+	})
+	if err != nil {
+		t.Fatalf("upsert worker: %v", err)
+	}
+	if err := s.Teams().BindMemberSession(ctx, "default", "research", "writer",
+		"sess-w", "", "inst-1"); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	got, err := s.Teams().GetMember(ctx, "default", "research", "writer")
+	if err != nil || got.SessionID != "sess-w" || got.InstanceRef != "inst-1" {
+		t.Fatalf("get member: %v %+v", err, got)
+	}
+	_ = worker
+
+	if err := s.Teams().UpdatePhase(ctx, "default", "research", store.TeamPhaseRunning); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	team, err := s.Teams().Get(ctx, "default", "research")
+	if err != nil || team.Phase != store.TeamPhaseRunning || team.StartedAt == nil {
+		t.Fatalf("running: %v %+v", err, team)
+	}
+	members, err := s.Teams().ListMembers(ctx, "default", "research")
+	if err != nil || len(members) != 2 {
+		t.Fatalf("members: %v %d", err, len(members))
+	}
+	if err := s.Teams().RemoveMember(ctx, "default", "research", "writer"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	members, _ = s.Teams().ListMembers(ctx, "default", "research")
+	if len(members) != 1 {
+		t.Fatalf("after remove: %d", len(members))
+	}
+	if err := s.Teams().Delete(ctx, "default", "research"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err = s.Teams().Get(ctx, "default", "research")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
 	}
 }
 

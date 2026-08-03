@@ -181,11 +181,7 @@ public class SessionEventLog {
     public List<SessionEventDto> listAfter(
             String sessionId, long afterSeq, Collection<String> types) {
         if (types == null || types.isEmpty()) {
-            return repository
-                    .findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq)
-                    .stream()
-                    .map(this::toDto)
-                    .toList();
+            return listAfterUnchecked(sessionId, afterSeq);
         }
         return repository
                 .findBySessionIdAndEventTypeInAndSeqGreaterThanOrderBySeqAsc(
@@ -215,21 +211,40 @@ public class SessionEventLog {
     /**
      * Polls the database for events with sequence strictly greater than {@code afterSeq}. Works
      * across control/data planes and data-plane replicas without process-local sinks.
+     *
+     * <p>Each poll runs inside {@link TransactionTemplate}: PostgreSQL {@code @Lob} CLOB/OID
+     * payload reads require a transaction, and calling {@link #listAfter} via {@code this.} would
+     * bypass the Spring {@code @Transactional} proxy.
      */
     public Flux<SessionEventDto> subscribe(String sessionId, long afterSeq) {
         AtomicLong cursor = new AtomicLong(Math.max(0L, afterSeq));
         return Flux.interval(Duration.ofMillis(pollIntervalMs))
                 .concatMap(
                         tick ->
-                                Mono.fromCallable(() -> listAfter(sessionId, cursor.get()))
+                                Mono.fromCallable(
+                                                () ->
+                                                        transactionTemplate.execute(
+                                                                status ->
+                                                                        listAfterUnchecked(
+                                                                                sessionId,
+                                                                                cursor.get())))
                                         .subscribeOn(Schedulers.boundedElastic()))
                 .concatMapIterable(
                         list -> {
-                            if (!list.isEmpty()) {
+                            if (list != null && !list.isEmpty()) {
                                 cursor.set(list.get(list.size() - 1).seq());
                             }
-                            return list;
+                            return list != null ? list : List.of();
                         });
+    }
+
+    /** Repository read used by transactional entry points and {@link #subscribe} polls. */
+    private List<SessionEventDto> listAfterUnchecked(String sessionId, long afterSeq) {
+        return repository
+                .findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq)
+                .stream()
+                .map(this::toDto)
+                .toList();
     }
 
     /** Deletes all persisted events for a session. */

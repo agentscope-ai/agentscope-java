@@ -48,7 +48,11 @@ export default function OperateSessionsPage() {
     setParams(nextParams, { replace: true });
   }
 
-  const agents = useQuery({ queryKey: ['v1-agents'], queryFn: fetchManagedAgents, refetchInterval: 30_000 });
+  const agents = useQuery({
+    queryKey: ['v1-agents', 'all'],
+    queryFn: () => fetchManagedAgents({ presence: 'all' }),
+    refetchInterval: 30_000,
+  });
 
   const sessions = useQuery({
     queryKey: ['runtime-sessions', agent, phase, offset],

@@ -25,7 +25,7 @@ func TestTeamFinalizerNotPresentInitially(t *testing.T) {
 	}
 }
 
-func TestTeamLegacyPendingSetsRunning(t *testing.T) {
+func TestTeamHandlePendingRequiresLifecycle(t *testing.T) {
 	s := runtime.NewScheme()
 	v1alpha1.AddToScheme(s)
 
@@ -44,19 +44,9 @@ func TestTeamLegacyPendingSetsRunning(t *testing.T) {
 		WithStatusSubresource(&v1alpha1.AgentTeam{}).Build()
 
 	r := &AgentTeamReconciler{Client: c, Scheme: s}
-
-	_, err := r.legacyHandlePending(t.Context(), team)
-	if err != nil {
-		t.Fatalf("legacyHandlePending: %v", err)
-	}
-	if team.Status.Phase != v1alpha1.TeamPhaseRunning {
-		t.Errorf("expected Running, got %s", team.Status.Phase)
-	}
-	if team.Status.Lead == nil {
-		t.Fatal("lead status should be set")
-	}
-	if len(team.Status.Members) != 1 {
-		t.Errorf("expected 1 member, got %d", len(team.Status.Members))
+	_, err := r.handlePending(t.Context(), team)
+	if err == nil {
+		t.Fatal("expected error when Lifecycle is nil")
 	}
 }
 

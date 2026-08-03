@@ -16,10 +16,23 @@ import (
 // the console/gateway facing `/api/*` routes, but not an HTTP listener:
 // aistiod mounts it onto the shared REST server so the whole control plane
 // is one process on one port.
+// TeamContextLookup returns opaque TeamContext JSON for a managed session id.
+// Wired from the runtime store so /api/internal/sessions/{id}/resolve can
+// project team membership without coupling product schema to Team rows.
+type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessage
+
 type Server struct {
-	cfg      Config
-	db       *DB
-	vaultKey []byte
+	cfg               Config
+	db                *DB
+	vaultKey          []byte
+	teamContextLookup TeamContextLookup
+}
+
+// SetTeamContextLookup injects the runtime-store TeamContext lookup used by resolve.
+func (s *Server) SetTeamContextLookup(fn TeamContextLookup) {
+	if s != nil {
+		s.teamContextLookup = fn
+	}
 }
 
 // Open connects to Postgres, migrates the `cp` schema, and seeds default

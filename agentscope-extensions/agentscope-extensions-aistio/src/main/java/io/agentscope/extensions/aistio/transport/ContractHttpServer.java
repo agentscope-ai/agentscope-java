@@ -49,6 +49,8 @@ import java.util.logging.Logger;
  *   POST /agentscope/sessions/{id}/compress
  *   POST /agentscope/sessions/{id}/terminate
  *   POST /agentscope/sessions/{id}/abort
+ *   POST /agentscope/teams/join
+ *   POST /agentscope/teams/leave
  * </pre>
  *
  * <p>Built on the JDK's {@code com.sun.net.httpserver} so that instrumenting an agent never drags
@@ -147,6 +149,20 @@ public final class ContractHttpServer implements AutoCloseable {
                 default -> {
                     // Falls through to the 404 below.
                 }
+            }
+        }
+
+        if (parts.size() == 3 && "teams".equals(parts.get(1)) && "POST".equals(method)) {
+            String action = parts.get(2);
+            if ("join".equals(action) || "leave".equals(action)) {
+                byte[] body = exchange.getRequestBody().readAllBytes();
+                if ("join".equals(action)) {
+                    provider.teamJoin(body);
+                } else {
+                    provider.teamLeave(body);
+                }
+                json(exchange, 200, Map.of("ok", true));
+                return;
             }
         }
 

@@ -93,6 +93,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     private final AistioObserverMiddleware middleware;
     private volatile SessionHistorySource historySource;
     private volatile AgentRuntimeSource runtimeSource;
+    private volatile TeamSessionStarter teamSessionStarter;
 
     /** Sessions seen so far, mapped to the user slot their state lives in. */
     private final Map<String, String> sessionUsers = new ConcurrentHashMap<>();
@@ -133,6 +134,14 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         this.runtimeSource = runtimeSource;
     }
 
+    /**
+     * Optional host hook for {@code team_join} / {@code team_leave}. When set, this adapter
+     * advertises {@link FrameworkAdapter#CAP_TEAM_COORDINATION}.
+     */
+    public void setTeamSessionStarter(TeamSessionStarter teamSessionStarter) {
+        this.teamSessionStarter = teamSessionStarter;
+    }
+
     // ─── identity ───
 
     @Override
@@ -165,6 +174,9 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
             caps.add(CAP_WORKSPACE_INVENTORY);
             caps.add(CAP_SUBAGENT_TASK_QUERY);
             caps.add(CAP_SUBAGENT_TASK_COMMAND);
+        }
+        if (teamSessionStarter != null) {
+            caps.add(CAP_TEAM_COORDINATION);
         }
         return caps;
     }
@@ -506,6 +518,24 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                                                                 .content(summaryOf(state))
                                                                 .build()));
                     });
+        }
+        if (COMMAND_TEAM_JOIN.equals(command)) {
+            TeamSessionStarter starter = teamSessionStarter;
+            if (starter == null) {
+                return Mono.error(
+                        new UnsupportedOperationException(
+                                "agentscope-java: team_join requires setTeamSessionStarter"));
+            }
+            return starter.join(sessionId, params == null ? new byte[0] : params);
+        }
+        if (COMMAND_TEAM_LEAVE.equals(command)) {
+            TeamSessionStarter starter = teamSessionStarter;
+            if (starter == null) {
+                return Mono.error(
+                        new UnsupportedOperationException(
+                                "agentscope-java: team_leave requires setTeamSessionStarter"));
+            }
+            return starter.leave(sessionId);
         }
         return Mono.error(new IllegalArgumentException("unsupported command: " + command));
     }

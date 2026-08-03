@@ -55,6 +55,7 @@ AGENTS.md
 CLAUDE.md
 .omc/
 .qoder/
+.cursor/
 
 ##Log
 logs/
