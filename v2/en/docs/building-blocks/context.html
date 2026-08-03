@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness Architecture" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-08-03T06:06:06+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness Architecture" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/context.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1160,6 +1160,24 @@
 </tbody>
 </table>
 </div>
+</section>
+<section id="clearing-a-session-s-conversation-context">
+<h3>Clearing a session’s conversation context<a class="headerlink" href="#clearing-a-session-s-conversation-context" title="Link to this heading">¶</a></h3>
+<p>To let a user start a fresh topic without creating a new session, call <code class="docutils literal notranslate"><span class="pre">clearContext</span></code>. It keeps the
+same <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> and preserves non-conversation state such as permissions, tools, tasks,
+and Plan Mode. It clears the model-visible message buffer and compaction summary, then immediately
+persists the result when the agent has an <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
+
+<span class="c1">// Or use the same RuntimeContext used by calls.</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-001&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>Call it after the session’s current request has completed. It does not cancel an in-flight call;
+the next call starts with the cleared conversation context.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The 1.0 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface (<code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code> / <code class="docutils literal notranslate"><span class="pre">LongTermMemory</span></code>, etc.) is <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> in 2.0. New code should use <code class="docutils literal notranslate"><span class="pre">AgentState.getContext()</span></code> + an <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>; <code class="docutils literal notranslate"><span class="pre">Memory</span></code> remains only as a source-compat shim.</p>
@@ -1345,7 +1363,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1391,6 +1409,7 @@
 <li><a class="reference internal" href="#real-time-resume-across-processes-and-machines">Real-time resume across processes and machines</a></li>
 <li><a class="reference internal" href="#multi-user-isolation">Multi-user isolation</a></li>
 <li><a class="reference internal" href="#reading-and-writing-agentstate-directly">Reading and writing <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> directly</a></li>
+<li><a class="reference internal" href="#clearing-a-session-s-conversation-context">Clearing a session’s conversation context</a></li>
 <li><a class="reference internal" href="#per-session-interrupt">Per-session interrupt</a></li>
 <li><a class="reference internal" href="#concurrent-usage">Concurrent usage</a></li>
 </ul>

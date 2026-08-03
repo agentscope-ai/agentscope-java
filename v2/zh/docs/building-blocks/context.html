@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness 架构" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-08-03T06:06:06+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Harness 架构" href="../harness/architecture.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/context.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1160,6 +1160,22 @@
 </tbody>
 </table>
 </div>
+</section>
+<section id="id7">
+<h3>清空会话对话上下文<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<p>若要让用户在不创建新会话的情况下开始新话题，可调用 <code class="docutils literal notranslate"><span class="pre">clearContext</span></code>。该方法保留相同的
+<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
+消息缓冲和压缩摘要，并在 agent 配置了 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 时立即持久化结果。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
+
+<span class="c1">// 也可以传入与调用时相同的 RuntimeContext。</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-001&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>请在该会话当前请求完成后调用。它不会取消正在执行的调用；下一次调用会使用已清空的对话上下文。</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>1.0 中的 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 接口(<code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code> / <code class="docutils literal notranslate"><span class="pre">LongTermMemory</span></code> 等)在 2.0 已 <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code>。新代码请使用 <code class="docutils literal notranslate"><span class="pre">AgentState.getContext()</span></code> + <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> —— <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 仅作为源代码兼容层保留。</p>
@@ -1182,8 +1198,8 @@
 <p><code class="docutils literal notranslate"><span class="pre">InterruptControl</span></code> 是纯运行时信号,不会被持久化。如果某个 session 在故障转移后恢复到另一台机器,中断标志从清零状态开始。另一个 <code class="docutils literal notranslate"><span class="pre">AgentState.shutdownInterrupted</span></code> 标志(是<strong>会被持久化</strong>的)记录了该 session 是否被优雅停机中断——agent 可以在下次加载时检测并恢复。</p>
 </div>
 </section>
-<section id="id7">
-<h3>并发使用<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>并发使用<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p>由于 agent 是无状态引擎,单个实例天然支持并发请求:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;SharedAssistant&quot;</span><span class="p">)</span>
@@ -1281,8 +1297,8 @@
 </div>
 </section>
 <hr class="docutils" />
-<section id="id8">
-<h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>相关文档<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="agent.html"><span class="std std-doc">智能体（Agent）</span></a> —— <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 完整接口与 Builder 参数</p></li>
 <li><p><a class="reference internal" href="../harness/compaction.html"><span class="std std-doc">上下文压缩</span></a> —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)</p></li>
@@ -1345,7 +1361,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1391,12 +1407,13 @@
 <li><a class="reference internal" href="#userid-sessionid">同 (userId, sessionId) 跨进程、跨机器实时恢复</a></li>
 <li><a class="reference internal" href="#id5">多用户隔离</a></li>
 <li><a class="reference internal" href="#id6">直接读写 AgentState</a></li>
+<li><a class="reference internal" href="#id7">清空会话对话上下文</a></li>
 <li><a class="reference internal" href="#per-session">Per-session 中断</a></li>
-<li><a class="reference internal" href="#id7">并发使用</a></li>
+<li><a class="reference internal" href="#id8">并发使用</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#runtimecontext-per-call"><code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> —— per-call 元数据</a></li>
-<li><a class="reference internal" href="#id8">相关文档</a></li>
+<li><a class="reference internal" href="#id9">相关文档</a></li>
 </ul>
 </li>
 </ul>
