@@ -3695,8 +3695,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Clears the model-visible conversation context for the session identified by {@code ctx}.
      *
      * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
-     * are preserved. The conversation messages and any compaction summary are removed, and the
-     * updated state is persisted immediately when an {@link AgentStateStore} is configured.
+     * are preserved. When an {@link AgentStateStore} is configured and the session has already
+     * been persisted, the latest persisted state is reloaded before clearing so only the
+     * conversation messages and any compaction summary are removed. The updated state is persisted
+     * immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
      *
      * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
      * has completed so that the next call reliably starts with an empty conversation context.
@@ -3715,8 +3720,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * <p>The session keeps the same identity. Unlike creating a new session, this only removes
      * the conversation messages and compaction summary, so permission configuration, tool state,
-     * tasks, and plan-mode state remain available. The updated state is persisted immediately when
-     * an {@link AgentStateStore} is configured.
+     * tasks, and plan-mode state remain available. When an {@link AgentStateStore} is configured
+     * and the session has already been persisted, the latest persisted state is reloaded before
+     * clearing. The updated state is persisted immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
      *
      * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
      * has completed so that the next call reliably starts with an empty conversation context.
