@@ -138,6 +138,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -546,6 +547,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
+        // state 加载完成，触发 onStateLoaded 回调
+        BiConsumer<RuntimeContext, List<Msg>> onStateLoaded = ctx.getOnStateLoaded();
+        if (onStateLoaded != null) {
+            onStateLoaded.accept(ctx, msgs);
+        }
         this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised

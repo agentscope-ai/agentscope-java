@@ -21,9 +21,7 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
@@ -39,7 +37,6 @@ import reactor.core.publisher.Flux;
  * <p><b>Responsibilities:</b>
  * <ul>
  *   <li>Agent ID resolution from multiple sources</li>
- *   <li>Message extraction for server-side memory scenarios</li>
  *   <li>Agent resolution via {@link AgentResolver}</li>
  *   <li>Event stream generation via {@link AguiAgentAdapter}</li>
  * </ul>
@@ -136,16 +133,10 @@ public class AguiRequestProcessor {
                             }
 
                             try {
-                                // Determine effective input based on server-side memory
+                                // Full input is forwarded; message dedup against persisted
+                                // AgentState context is handled by the onStateLoaded callback
+                                // registered in AguiAgentAdapter.buildRuntimeContext().
                                 RunAgentInput effectiveInput = input;
-                                if (agentResolver.hasMemory(threadId)) {
-                                    logger.debug(
-                                            "Using server-side memory for thread {}, extracting"
-                                                    + " latest user message",
-                                            threadId);
-                                    effectiveInput = extractLatestUserMessage(input);
-                                }
-
                                 RuntimeContext effectiveRuntimeContext =
                                         resumeCoordinator.addResumeToolCallIds(
                                                 input, runtimeContext);
@@ -255,48 +246,6 @@ public class AguiRequestProcessor {
         // 5. Fall back to "default"
         logger.debug("Using fallback agent ID: default");
         return "default";
-    }
-
-    /**
-     * Extract only the latest user message from the input.
-     *
-     * <p>This is used when server-side memory is enabled and the agent already
-     * has conversation history. Only the latest user message needs to be passed.
-     *
-     * @param input The original input
-     * @return A new input with only the latest user message
-     */
-    public RunAgentInput extractLatestUserMessage(RunAgentInput input) {
-        List<AguiMessage> messages = input.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return input;
-        }
-
-        // Find the last user message
-        AguiMessage lastUserMessage = null;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                lastUserMessage = msg;
-                break;
-            }
-        }
-
-        if (lastUserMessage == null) {
-            return input;
-        }
-
-        // Create new input with only the last user message
-        return RunAgentInput.builder()
-                .threadId(input.getThreadId())
-                .runId(input.getRunId())
-                .messages(List.of(lastUserMessage))
-                .tools(input.getTools())
-                .context(input.getContext())
-                .state(input.getState())
-                .forwardedProps(input.getForwardedProps())
-                .resume(input.getResume())
-                .build();
     }
 
     /**
