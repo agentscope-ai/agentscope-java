@@ -30,7 +30,7 @@ import io.agentscope.extensions.model.openai.formatter.OpenAIMultiAgentFormatter
  *       stripped on {@code kimi-*} models</li>
  *   <li>{@code reasoning_effort} is only kept for {@code kimi-k3};
  *       {@code thinking_budget} is always stripped</li>
- *   <li>{@code max_completion_tokens} is mapped to {@code max_tokens}</li>
+ *   <li>{@code max_tokens} is mapped to {@code max_completion_tokens}</li>
  *   <li>{@code tool_choice} is degraded when the target model does not support the requested
  *       mode (see {@link KimiFormatter} for details)</li>
  *   <li>The {@code strict} parameter in tool definitions is not sent</li>

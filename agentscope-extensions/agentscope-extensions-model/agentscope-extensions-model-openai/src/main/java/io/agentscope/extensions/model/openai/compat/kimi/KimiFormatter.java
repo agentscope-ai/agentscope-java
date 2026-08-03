@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>Adapted to the latest Kimi open platform Chat Completions API
  * ({@code https://api.moonshot.cn/v1/chat/completions}):
  * <ul>
- *   <li>On {@code kimi-*} models, {@code temperature} / {@code top_p} /
+ *   <li>On {@code kimi-*} models, {@code temperature} / {@code top_p} / {@code n} /
  *       {@code frequency_penalty} / {@code presence_penalty} are fixed by the platform and the
  *       API rejects requests carrying other values; these parameters are stripped from the
  *       request. The {@code moonshot-v1} series still accepts them, so they are kept there.</li>
@@ -39,15 +39,15 @@ import org.slf4j.LoggerFactory;
  *       {@code "max"}) is only supported by {@code kimi-k3}; it is stripped for other models</li>
  *   <li>{@code thinking_budget} is not a Kimi parameter and is always stripped; K2.x thinking is
  *       controlled through the {@code thinking} body parameter instead (see below)</li>
- *   <li>Only {@code max_tokens} is documented; {@code max_completion_tokens} is mapped to
- *       {@code max_tokens} when the latter is not set. Reasoning tokens count towards
- *       {@code max_tokens}, so the official guide recommends {@code max_tokens >= 16000} for
- *       thinking models</li>
+ *   <li>Only {@code max_completion_tokens} is documented; {@code max_tokens} is mapped to
+ *       {@code max_completion_tokens} when the latter is not set. Reasoning tokens count towards
+ *       {@code max_completion_tokens}, so the official guide recommends
+ *       {@code max_completion_tokens >= 16000} for thinking models</li>
  *   <li>{@code tool_choice} supports {@code auto} / {@code none} on all models;
- *       {@code required} is only supported by {@code kimi-k3} and is degraded to {@code auto} on
- *       the K2.x series; forcing a specific function is incompatible with thinking enabled
- *       (HTTP 400), so it is degraded to {@code auto} on always-thinking models
- *       ({@code kimi-k3}, {@code kimi-k2.7-code})</li>
+ *       {@code required} is degraded to {@code auto} on the K2.x series; forcing a specific
+ *       function is incompatible with thinking enabled (HTTP 400), so it is degraded to
+ *       {@code auto} on always-thinking models ({@code kimi-k3}, {@code kimi-k2.7-code}) and on
+ *       {@code kimi-k2.6} / {@code kimi-k2.5} unless thinking is explicitly disabled</li>
  *   <li>The {@code strict} parameter in tool definitions is not documented by Kimi and is not
  *       sent</li>
  *   <li>Assistant {@code reasoning_content} is preserved in the request history (inherited from
@@ -75,7 +75,7 @@ import org.slf4j.LoggerFactory;
  * @see <a href="https://platform.kimi.com/docs/api/overview">Kimi API overview</a>
  * @see <a href="https://platform.kimi.com/docs/api/models-overview">Kimi model parameter
  *     reference</a>
- * @see <a href="https://platform.kimi.com/docs/guide/use-kimi-k2-thinking-model">Kimi thinking
+ * @see <a href="https://platform.kimi.com/docs/guide/use-thinking-models">Kimi thinking
  *     mode guide</a>
  * @see <a href="https://platform.kimi.com/docs/guide/use-tool-choice">Kimi tool choice guide</a>
  */
@@ -127,6 +127,17 @@ public class KimiFormatter extends OpenAIChatFormatter {
     }
 
     /**
+     * Whether the model enables thinking by default but allows it to be disabled through the
+     * top-level {@code thinking} body parameter.
+     *
+     * @param model the model name from the request (may be null)
+     * @return true for Kimi models with configurable thinking mode
+     */
+    static boolean hasConfigurableThinking(String model) {
+        return model != null && (model.startsWith("kimi-k2.6") || model.startsWith("kimi-k2.5"));
+    }
+
+    /**
      * Whether the model supports the top-level {@code reasoning_effort} parameter.
      * Per the official parameter reference, only {@code kimi-k3} supports it.
      *
@@ -139,8 +150,8 @@ public class KimiFormatter extends OpenAIChatFormatter {
 
     /**
      * Whether the model supports {@code tool_choice = "required"}.
-     * Per the official parameter reference, {@code kimi-k3} supports it while the K2.x series
-     * ({@code kimi-k2.6}, {@code kimi-k2.7-code}, ...) rejects it.
+     * Per the official parameter reference, {@code kimi-k3} supports it while documented K2.x
+     * models reject it. Non-K2 models are passed through for compatibility.
      *
      * @param model the model name from the request (may be null)
      * @return true if {@code required} is supported
@@ -154,12 +165,12 @@ public class KimiFormatter extends OpenAIChatFormatter {
      *
      * <p>Applied adaptations:
      * <ul>
-     *   <li>{@code temperature} / {@code top_p} / {@code frequency_penalty} /
+     *   <li>{@code temperature} / {@code top_p} / {@code n} / {@code frequency_penalty} /
      *       {@code presence_penalty} are removed on {@code kimi-*} models (fixed by the
      *       platform; other values are rejected)</li>
      *   <li>{@code reasoning_effort} is removed on models other than {@code kimi-k3}</li>
      *   <li>{@code thinking_budget} is always removed (not a Kimi parameter)</li>
-     *   <li>{@code max_completion_tokens} is mapped to {@code max_tokens} when the latter is
+     *   <li>{@code max_tokens} is mapped to {@code max_completion_tokens} when the latter is
      *       not set</li>
      * </ul>
      *
@@ -179,6 +190,10 @@ public class KimiFormatter extends OpenAIChatFormatter {
             if (request.getTopP() != null) {
                 log.debug("Kimi model {} does not allow overriding top_p, removing it", model);
                 request.setTopP(null);
+            }
+            if (request.getN() != null) {
+                log.debug("Kimi model {} does not allow overriding n, removing it", model);
+                request.setN(null);
             }
             if (request.getFrequencyPenalty() != null) {
                 log.debug(
@@ -210,13 +225,13 @@ public class KimiFormatter extends OpenAIChatFormatter {
             request.setThinkingBudget(null);
         }
 
-        // Kimi only documents max_tokens; map OpenAI-style max_completion_tokens onto it
-        if (request.getMaxCompletionTokens() != null) {
-            if (request.getMaxTokens() == null) {
-                log.debug("Kimi only supports max_tokens, mapping max_completion_tokens to it");
-                request.setMaxTokens(request.getMaxCompletionTokens());
+        // Kimi only documents max_completion_tokens; map legacy max_tokens onto it.
+        if (request.getMaxTokens() != null) {
+            if (request.getMaxCompletionTokens() == null) {
+                log.debug("Kimi only supports max_completion_tokens, mapping max_tokens to it");
+                request.setMaxCompletionTokens(request.getMaxTokens());
             }
-            request.setMaxCompletionTokens(null);
+            request.setMaxTokens(null);
         }
     }
 
@@ -229,9 +244,9 @@ public class KimiFormatter extends OpenAIChatFormatter {
      *   <li>{@code required} is only supported by {@code kimi-k3}; it is degraded to
      *       {@code auto} on the K2.x series, which rejects it</li>
      *   <li>Forcing a specific function ({@code {"type": "function", ...}}) is incompatible with
-     *       thinking enabled (HTTP 400); it is degraded to {@code auto} on always-thinking
-     *       models and passed through otherwise (on {@code kimi-k2.6} / {@code kimi-k2.5},
-     *       disable thinking via the {@code thinking} body param to use it)</li>
+     *       thinking enabled (HTTP 400); it is degraded to {@code auto} on always-thinking models
+     *       and on {@code kimi-k2.6} / {@code kimi-k2.5} unless thinking is explicitly disabled
+     *       via the {@code thinking} body parameter</li>
      * </ul>
      *
      * <p>This method is static to allow sharing with {@link KimiMultiAgentFormatter}.
@@ -261,12 +276,11 @@ public class KimiFormatter extends OpenAIChatFormatter {
                 request.setToolChoice("auto");
             }
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            if (isAlwaysThinkingModel(model)) {
-                // Specified tool_choice is incompatible with thinking enabled (HTTP 400), and
-                // these models cannot disable thinking
+            if (isAlwaysThinkingModel(model)
+                    || (hasConfigurableThinking(model) && !hasThinkingDisabled(request))) {
                 log.warn(
-                        "Kimi model {} always runs with thinking enabled, which is incompatible"
-                                + " with a specific tool_choice; degrading to 'auto'",
+                        "Kimi model {} has thinking enabled, which is incompatible with a"
+                                + " specific tool_choice; degrading to 'auto'",
                         model);
                 request.setToolChoice("auto");
             } else {
@@ -285,5 +299,19 @@ public class KimiFormatter extends OpenAIChatFormatter {
         } else {
             request.setToolChoice("auto");
         }
+    }
+
+    private static boolean hasThinkingDisabled(OpenAIRequest request) {
+        Map<String, Object> extraParams = request.getExtraParams();
+        if (extraParams == null) {
+            return false;
+        }
+
+        Object thinking = extraParams.get("thinking");
+        if (!(thinking instanceof Map<?, ?> thinkingMap)) {
+            return false;
+        }
+
+        return "disabled".equals(thinkingMap.get("type"));
     }
 }

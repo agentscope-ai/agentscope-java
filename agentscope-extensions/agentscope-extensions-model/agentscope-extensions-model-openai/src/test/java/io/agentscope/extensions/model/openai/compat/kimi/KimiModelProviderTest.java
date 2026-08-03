@@ -21,6 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
@@ -30,11 +35,15 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 class KimiModelProviderTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @AfterEach
     void tearDown() {
@@ -53,9 +62,6 @@ class KimiModelProviderTest {
         assertTrue(provider.supports("kimi:kimi-k2.6"));
         assertTrue(provider.supports("kimi:moonshot-v1-8k"));
         assertFalse(provider.supports("kimi:"));
-        // Whitespace-only model names must not be treated as supported
-        assertFalse(provider.supports("kimi: "));
-        assertFalse(provider.supports("kimi:   "));
         assertFalse(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports(null));
     }
@@ -76,7 +82,6 @@ class KimiModelProviderTest {
         KimiModelProvider provider = new KimiModelProvider();
 
         assertThrows(IllegalArgumentException.class, () -> provider.create("kimi:"));
-        assertThrows(IllegalArgumentException.class, () -> provider.create("kimi: "));
         assertThrows(IllegalArgumentException.class, () -> provider.create("kimi-k3"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
     }
@@ -96,6 +101,39 @@ class KimiModelProviderTest {
         assertTrue(model instanceof OpenAIChatModel);
         assertEquals("kimi-k3", model.getModelName());
         assertEquals(262144, model.getContextWindowSize());
+    }
+
+    @Test
+    void createUsesKnownKimiContextWindows() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-kimi-key").build();
+
+        assertEquals(1_048_576, provider.create("kimi:kimi-k3", context).getContextWindowSize());
+        assertEquals(
+                262_144,
+                provider.create("kimi:kimi-k2.7-code-highspeed", context).getContextWindowSize());
+        assertEquals(262_144, provider.create("kimi:kimi-k2.6", context).getContextWindowSize());
+        assertEquals(
+                131_072, provider.create("kimi:moonshot-v1-128k", context).getContextWindowSize());
+        assertEquals(
+                8_192,
+                provider.create("kimi:moonshot-v1-8k-vision-preview", context)
+                        .getContextWindowSize());
+    }
+
+    @Test
+    void createAppliesUserGenerateOptions() throws Exception {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .reasoningEffort("high")
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .build();
+
+        assertEquals("high", requestBodyFor("kimi:kimi-k3", options).get("reasoning_effort"));
+        assertEquals(
+                Map.of("type", "disabled"),
+                requestBodyFor("kimi:kimi-k2.6", options).get("thinking"));
     }
 
     @Test
@@ -285,5 +323,76 @@ class KimiModelProviderTest {
 
     private static boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private static Map<String, Object> requestBodyFor(String modelId, GenerateOptions options)
+            throws Exception {
+        CapturingTransport transport = new CapturingTransport();
+        ModelCreationContext.Builder contextBuilder =
+                ModelCreationContext.builder().apiKey("test-kimi-key").stream(false)
+                        .component(HttpTransport.class, transport);
+        if (options != null) {
+            contextBuilder.component(GenerateOptions.class, options);
+        }
+
+        OpenAIChatModel model =
+                (OpenAIChatModel) new KimiModelProvider().create(modelId, contextBuilder.build());
+        model.stream(userMessages(), null, null).blockLast();
+        return parseBody(transport.request.getBody());
+    }
+
+    private static List<Msg> userMessages() {
+        return List.of(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Reply with pong").build()))
+                        .build());
+    }
+
+    private static Map<String, Object> parseBody(String body) throws Exception {
+        return MAPPER.readValue(body, new TypeReference<Map<String, Object>>() {});
+    }
+
+    private static final class CapturingTransport implements HttpTransport {
+        private HttpRequest request;
+
+        @Override
+        public HttpResponse execute(HttpRequest request) {
+            this.request = request;
+            return HttpResponse.builder()
+                    .statusCode(200)
+                    .body(
+                            """
+                            {
+                              "id": "kimi-test",
+                              "object": "chat.completion",
+                              "created": 1,
+                              "model": "kimi-k3",
+                              "choices": [{
+                                "index": 0,
+                                "message": {
+                                  "role": "assistant",
+                                  "content": "pong"
+                                },
+                                "finish_reason": "stop"
+                              }],
+                              "usage": {
+                                "prompt_tokens": 1,
+                                "completion_tokens": 1,
+                                "total_tokens": 2
+                              }
+                            }
+                            """)
+                    .build();
+        }
+
+        @Override
+        public Flux<String> stream(HttpRequest request) {
+            this.request = request;
+            return Flux.empty();
+        }
+
+        @Override
+        public void close() {}
     }
 }

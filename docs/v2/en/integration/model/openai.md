@@ -1,6 +1,6 @@
 # OpenAI Model
 
-`agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, Kimi, and similar services when their wire format follows the OpenAI API.
+`agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, Kimi, MiniMax, and similar services when their wire format follows the OpenAI API.
 
 ## Add the dependency
 
@@ -36,90 +36,6 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .stream(true)
     .build();
 ```
-
-For generic compatible endpoints, set `baseUrl(...)` and the model name expected by that service. For DeepSeek, prefer the dedicated `deepseek:<model>` registry id so AgentScope applies the DeepSeek base URL, `DEEPSEEK_API_KEY`, and DeepSeek formatter defaults. See [DeepSeek](deepseek.md).
-
-## Kimi (Moonshot AI)
-
-Kimi has a dedicated adapter in the `io.agentscope.extensions.model.openai.compat.kimi` package. It reuses `OpenAIChatModel` under the hood but is preconfigured for the Kimi open platform endpoint (`https://api.moonshot.cn/v1`).
-
-Set `MOONSHOT_API_KEY` (or `KIMI_API_KEY`), then use the `kimi:<model>` id:
-## GLM (Zhipu AI)
-
-GLM has a dedicated adapter in the `io.agentscope.extensions.model.openai.compat.glm` package. It reuses `OpenAIChatModel` under the hood but is preconfigured for the Zhipu open platform endpoint (`https://open.bigmodel.cn/api/paas/v4`).
-
-Set `GLM_API_KEY` (or `ZHIPUAI_API_KEY`), then use the `glm:<model>` id:
-
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("assistant")
-    .model("kimi:kimi-k3") // Resolved by KimiModelProvider through ModelRegistry
-    .build();
-```
-
-Or build the model explicitly with a Kimi formatter:
-
-```java
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
-import io.agentscope.extensions.model.openai.compat.kimi.KimiFormatter;
-
-OpenAIChatModel model = OpenAIChatModel.builder()
-    .apiKey(System.getenv("MOONSHOT_API_KEY"))
-    .baseUrl("https://api.moonshot.cn/v1")
-    .modelName("kimi-k3")
-    .formatter(new KimiFormatter()) // or KimiMultiAgentFormatter for multi-agent prompts
-    .model("glm:glm-5.2") // Resolved by GLMModelProvider through ModelRegistry
-    .build();
-```
-
-Or build the model explicitly with a GLM formatter:
-
-```java
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
-import io.agentscope.extensions.model.openai.compat.glm.GLMFormatter;
-
-OpenAIChatModel model = OpenAIChatModel.builder()
-    .apiKey(System.getenv("GLM_API_KEY"))
-    .baseUrl("https://open.bigmodel.cn/api/paas/v4")
-    .modelName("glm-5.2")
-    .formatter(new GLMFormatter()) // or GLMMultiAgentFormatter for multi-agent prompts
-    .stream(true)
-    .build();
-```
-
-The Kimi formatters adapt requests to the latest official API:
-
-- On `kimi-*` models (kimi-k3, kimi-k2.7-code, kimi-k2.6, etc.), `temperature` / `top_p` / `frequency_penalty` / `presence_penalty` are fixed by the platform and the API rejects other values, so these parameters are stripped from requests; the `moonshot-v1` series still accepts them and they are passed through.
-- `reasoning_effort` (`low` / `high` / `max`, default `max`) is only supported by `kimi-k3` and is stripped on other models; use the `thinking` body parameter on K2.x models instead.
-- `thinking_budget` is not a Kimi parameter and is always stripped.
-- Kimi only supports `max_tokens`: when only `max_completion_tokens` (the newer OpenAI style) is set, it is mapped to `max_tokens`. Note that reasoning tokens (`reasoning_content`) count towards `max_tokens`; the official guide recommends `max_tokens >= 16000` for thinking models.
-- `tool_choice`: `auto` / `none` are supported by all models; `required` is only supported by `kimi-k3` and is degraded to `auto` on the K2.x series; forcing a specific function is incompatible with thinking enabled (HTTP 400), so it is degraded to `auto` on always-thinking models (`kimi-k3`, `kimi-k2.7-code`) and passed through otherwise (disable thinking via the `thinking` parameter first on `kimi-k2.6`).
-- The `strict` parameter in tool definitions is not sent (not documented by Kimi).
-- `reasoning_content` on assistant history messages is passed back as-is, satisfying Preserved Thinking on `kimi-k3` / `kimi-k2.7-code` and `thinking.keep = "all"` on `kimi-k2.6`.
-- `KimiModelProvider` disables native structured output by default because the Kimi `response_format` only supports `json_object` (JSON Mode); agents fall back to the `generate_response` tool. It also disables structured output alongside tools by default, because Kimi prioritises `response_format` over tool invocations. Both can be re-enabled with the `nativeStructuredOutput` / `nativeStructuredOutputWithTools` options in `ModelCreationContext`.
-
-Thinking-related parameters:
-
-- `kimi-k2.6` / `kimi-k2.5` control thinking through the `thinking` body parameter, e.g. `GenerateOptions.additionalBodyParam("thinking", Map.of("type", "disabled"))`; `kimi-k2.6` also supports `Map.of("type", "enabled", "keep", "all")` to enable Preserved Thinking.
-- `kimi-k2.7-code` always thinks and Preserved Thinking cannot be disabled; do not pass a `thinking` parameter.
-- `kimi-k3` always thinks and uses the top-level `reasoning_effort` to configure thinking effort; use `GenerateOptions.reasoningEffort("high")`, which is passed through directly.
-The GLM formatters adapt requests to the latest Zhipu API:
-
-- Ensure at least one user message exists (the API returns error 1214 otherwise).
-- `tool_choice` only supports `auto`; other values are degraded to `auto`.
-- The `strict` parameter in tool definitions is not sent.
-- `frequency_penalty` / `presence_penalty` / `thinking_budget` are stripped from requests (not supported by GLM).
-- GLM only supports `max_tokens`: when only `max_completion_tokens` (the newer OpenAI style) is set, it is mapped to `max_tokens`.
-- `temperature` is clamped to the GLM range [0.0, 1.0] (OpenAI allows up to 2.0) and `top_p` to [0.01, 1.0]; per the official OpenAI compatibility guide, `temperature = 0` is not applicable on the GLM endpoint and is translated to `do_sample = false` (deterministic decoding).
-- `GLMModelProvider` disables native structured output by default because GLM `response_format` only supports `json_object`; agents fall back to the `generate_response` tool. Re-enable it with the `nativeStructuredOutput` option in `ModelCreationContext` if needed.
-
-Thinking-related parameters:
-
-- Thinking mode (GLM-4.5 and later) is controlled through an additional body parameter, e.g. `GenerateOptions.additionalBodyParam("thinking", Map.of("type", "disabled"))`; GLM-4.7 / GLM-5 series enable thinking by default.
-- GLM-5.2 supports `reasoning_effort` (default `max`); use `GenerateOptions.reasoningEffort("max")`, which is passed through directly.
-- GLM-5.2 streaming tool-call arguments (`tool_stream`) can be enabled via `GenerateOptions.additionalBodyParam("tool_stream", true)`.
-
-> The old `io.agentscope.extensions.model.openai.formatter.GLMFormatter` and `GLMMultiAgentFormatter` classes are deprecated; they now extend the `compat.glm` implementations and will be removed in a future release.
 
 ## Spring Boot
 

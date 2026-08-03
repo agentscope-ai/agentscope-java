@@ -196,22 +196,19 @@ class KimiMultiAgentFormatterTest {
         }
 
         @Test
-        @DisplayName("applyOptions should map max_completion_tokens and strip reasoning_effort")
+        @DisplayName("applyOptions should map max_tokens and strip reasoning_effort")
         void testSharedSanitizeBehavior() {
             OpenAIRequest request =
                     OpenAIRequest.builder().model("kimi-k2.6").messages(List.of()).build();
 
             GenerateOptions options =
-                    GenerateOptions.builder()
-                            .reasoningEffort("high")
-                            .maxCompletionTokens(32768)
-                            .build();
+                    GenerateOptions.builder().reasoningEffort("high").maxTokens(32768).build();
 
             formatter.applyOptions(request, options, null);
 
             assertNull(request.getReasoningEffort());
-            assertEquals(32768, request.getMaxTokens());
-            assertNull(request.getMaxCompletionTokens());
+            assertEquals(32768, request.getMaxCompletionTokens());
+            assertNull(request.getMaxTokens());
         }
     }
 }

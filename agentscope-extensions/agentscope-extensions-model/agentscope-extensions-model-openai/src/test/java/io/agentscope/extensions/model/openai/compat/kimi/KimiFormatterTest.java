@@ -46,10 +46,10 @@ import org.junit.jupiter.api.Test;
  * <p>Tests verify Kimi (Moonshot AI)-specific requirements per the latest official API
  * reference:
  * <ul>
- *   <li>Fixed sampling params (temperature / top_p / penalties) are stripped on kimi-* models</li>
+ *   <li>Fixed params (temperature / top_p / n / penalties) are stripped on kimi-* models</li>
  *   <li>reasoning_effort is kimi-k3 only</li>
- *   <li>tool_choice: required is degraded on K2.x, specific is degraded on always-thinking
- *       models</li>
+ *   <li>tool_choice: required is degraded on K2.x, specific is degraded when thinking is
+ *       enabled</li>
  *   <li>Does NOT send the strict parameter in tool definitions</li>
  *   <li>reasoning_content is preserved in assistant history (Preserved Thinking)</li>
  * </ul>
@@ -143,6 +143,17 @@ class KimiFormatterTest {
         }
 
         @Test
+        @DisplayName("kimi-k2.6 and kimi-k2.5 have configurable thinking")
+        void testConfigurableThinkingModels() {
+            assertTrue(KimiFormatter.hasConfigurableThinking("kimi-k2.6"));
+            assertTrue(KimiFormatter.hasConfigurableThinking("kimi-k2.5"));
+            assertFalse(KimiFormatter.hasConfigurableThinking("kimi-k3"));
+            assertFalse(KimiFormatter.hasConfigurableThinking("kimi-k2.7-code"));
+            assertFalse(KimiFormatter.hasConfigurableThinking("moonshot-v1-8k"));
+            assertFalse(KimiFormatter.hasConfigurableThinking(null));
+        }
+
+        @Test
         @DisplayName("Only kimi-k3 supports reasoning_effort")
         void testSupportsReasoningEffort() {
             assertTrue(KimiFormatter.supportsReasoningEffort("kimi-k3"));
@@ -169,9 +180,10 @@ class KimiFormatterTest {
     class ApplyOptionsTests {
 
         @Test
-        @DisplayName("Should strip fixed sampling params on kimi-* models")
+        @DisplayName("Should strip fixed params on kimi-* models")
         void testStripFixedSamplingParamsOnKimiModels() {
-            OpenAIRequest request = requestFor("kimi-k3");
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("kimi-k3").messages(List.of()).n(2).build();
 
             GenerateOptions options =
                     GenerateOptions.builder()
@@ -185,6 +197,7 @@ class KimiFormatterTest {
 
             assertNull(request.getTemperature());
             assertNull(request.getTopP());
+            assertNull(request.getN());
             assertNull(request.getFrequencyPenalty());
             assertNull(request.getPresencePenalty());
         }
@@ -192,7 +205,12 @@ class KimiFormatterTest {
         @Test
         @DisplayName("Should keep sampling params on moonshot-v1 models")
         void testKeepSamplingParamsOnMoonshotModels() {
-            OpenAIRequest request = requestFor("moonshot-v1-8k");
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("moonshot-v1-8k")
+                            .messages(List.of())
+                            .n(2)
+                            .build();
 
             GenerateOptions options =
                     GenerateOptions.builder()
@@ -206,6 +224,7 @@ class KimiFormatterTest {
 
             assertEquals(0.3, request.getTemperature());
             assertEquals(0.9, request.getTopP());
+            assertEquals(2, request.getN());
             assertEquals(0.5, request.getFrequencyPenalty());
             assertEquals(0.5, request.getPresencePenalty());
         }
@@ -247,21 +266,21 @@ class KimiFormatterTest {
         }
 
         @Test
-        @DisplayName("Should map max_completion_tokens to max_tokens")
-        void testMapMaxCompletionTokensToMaxTokens() {
+        @DisplayName("Should map max_tokens to max_completion_tokens")
+        void testMapMaxTokensToMaxCompletionTokens() {
             OpenAIRequest request = requestFor("kimi-k3");
 
-            GenerateOptions options = GenerateOptions.builder().maxCompletionTokens(32768).build();
+            GenerateOptions options = GenerateOptions.builder().maxTokens(32768).build();
 
             formatter.applyOptions(request, options, null);
 
-            assertEquals(32768, request.getMaxTokens());
-            assertNull(request.getMaxCompletionTokens());
+            assertEquals(32768, request.getMaxCompletionTokens());
+            assertNull(request.getMaxTokens());
         }
 
         @Test
-        @DisplayName("max_tokens should take precedence over max_completion_tokens")
-        void testMaxTokensTakesPrecedence() {
+        @DisplayName("max_completion_tokens should take precedence over max_tokens")
+        void testMaxCompletionTokensTakesPrecedence() {
             OpenAIRequest request = requestFor("kimi-k3");
 
             GenerateOptions options =
@@ -269,8 +288,8 @@ class KimiFormatterTest {
 
             formatter.applyOptions(request, options, null);
 
-            assertEquals(16000, request.getMaxTokens());
-            assertNull(request.getMaxCompletionTokens());
+            assertEquals(32768, request.getMaxCompletionTokens());
+            assertNull(request.getMaxTokens());
         }
 
         @Test
@@ -355,10 +374,21 @@ class KimiFormatterTest {
         }
 
         @Test
-        @DisplayName("Should keep specific tool_choice on kimi-k2.6")
-        @SuppressWarnings("unchecked")
-        void testToolChoiceSpecificKeptOnK26() {
+        @DisplayName("Should degrade specific to auto on kimi-k2.6 unless thinking is disabled")
+        void testToolChoiceSpecificDegradesOnK26ByDefault() {
             OpenAIRequest request = requestWithTools("kimi-k2.6");
+
+            KimiFormatter.applyKimiToolChoice(request, new ToolChoice.Specific("get_weather"));
+
+            assertEquals("auto", request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("Should keep specific tool_choice on kimi-k2.6 when thinking is disabled")
+        @SuppressWarnings("unchecked")
+        void testToolChoiceSpecificKeptOnK26WhenThinkingDisabled() {
+            OpenAIRequest request = requestWithTools("kimi-k2.6");
+            request.addExtraParam("thinking", Map.of("type", "disabled"));
 
             KimiFormatter.applyKimiToolChoice(request, new ToolChoice.Specific("get_weather"));
 
