@@ -325,6 +325,20 @@ class HarnessAgentSubagentStreamEventsTest {
         assertTrue(
                 firstChildIdx < events.size() - 1,
                 "child events should appear before parent AGENT_END");
+
+        int childEndIdx =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e.getType() == AgentEventType.AGENT_END
+                                                && e.getSource() != null)
+                        .mapToInt(events::indexOf)
+                        .findFirst()
+                        .orElse(-1);
+        assertTrue(childEndIdx > firstChildIdx, "child AGENT_END should follow child events");
+        assertTrue(
+                childEndIdx < events.size() - 1,
+                "child AGENT_END should appear before parent AGENT_END");
     }
 
     // -----------------------------------------------------------------
