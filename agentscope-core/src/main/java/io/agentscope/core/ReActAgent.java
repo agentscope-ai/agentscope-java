@@ -136,6 +136,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -276,6 +277,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final ConcurrentHashMap<String, PermissionEngine> permissionEngineCache =
             new ConcurrentHashMap<>();
+
+    /**
+     * Maximum number of slot entries to retain in the state and permission-engine caches.
+     * When the cache exceeds this limit the oldest entries are evicted, preventing
+     * unbounded memory growth in long-running singleton deployments.
+     */
+    private static final int MAX_CACHED_SLOTS = 1000;
+
+    /**
+     * Insertion-order tracker for the slot caches. After each {@code put} or
+     * {@code computeIfAbsent} that adds a new key, the oldest entries are trimmed when
+     * the cache exceeds {@link #MAX_CACHED_SLOTS}.
+     */
+    private final ConcurrentLinkedDeque<String> slotOrder = new ConcurrentLinkedDeque<>();
 
     private final ModelConfig modelConfig;
     private final ReactConfig reactConfig;
@@ -471,33 +486,61 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             getAgentId(),
                             initialActiveToolGroups);
             stateCache.put(slot, loaded);
+            recordSlotAccess(slot);
         } else {
             loaded =
                     stateCache.computeIfAbsent(
                             slot,
-                            k ->
-                                    loadOrCreateAgentStateForSlot(
-                                            null,
-                                            finalUid,
-                                            finalSid,
-                                            initialPermissionContext,
-                                            getAgentId(),
-                                            initialActiveToolGroups));
+                            k -> {
+                                recordSlotAccess(slot);
+                                return loadOrCreateAgentStateForSlot(
+                                        null,
+                                        finalUid,
+                                        finalSid,
+                                        initialPermissionContext,
+                                        getAgentId(),
+                                        initialActiveToolGroups);
+                            });
         }
         PermissionEngine loadedEngine;
         if (stateStore != null) {
             loadedEngine = new PermissionEngine(loaded.getPermissionContext());
             permissionEngineCache.put(slot, loadedEngine);
+            trimCaches();
         } else {
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+            trimCaches();
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
         return scope;
+    }
+
+    /**
+     * Records a slot access in the insertion-order tracker. If the key was already present it is
+     * promoted to the tail (most-recently-used position). Safe to call from multiple threads.
+     */
+    private void recordSlotAccess(String slot) {
+        // Remove-then-add promotes an existing slot to the tail (most recent).
+        slotOrder.remove(slot);
+        slotOrder.addLast(slot);
+    }
+
+    /**
+     * Evicts the oldest entries from both caches when the slot count exceeds
+     * {@link #MAX_CACHED_SLOTS}. Call after each cache write that may have added a new entry.
+     */
+    private void trimCaches() {
+        while (slotOrder.size() > MAX_CACHED_SLOTS) {
+            String oldest = slotOrder.pollFirst();
+            if (oldest == null) break;
+            stateCache.remove(oldest);
+            permissionEngineCache.remove(oldest);
+        }
     }
 
     // ==================== Config assembly helpers ====================
@@ -3681,14 +3724,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sessionId);
         return stateCache.computeIfAbsent(
                 slot,
-                k ->
-                        loadOrCreateAgentStateForSlot(
-                                stateStore,
-                                userId,
-                                sessionId,
-                                initialPermissionContext,
-                                getAgentId(),
-                                initialActiveToolGroups));
+                k -> {
+                    recordSlotAccess(slot);
+                    trimCaches();
+                    return loadOrCreateAgentStateForSlot(
+                            stateStore,
+                            userId,
+                            sessionId,
+                            initialPermissionContext,
+                            getAgentId(),
+                            initialActiveToolGroups);
+                });
     }
 
     /**
