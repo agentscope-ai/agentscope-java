@@ -32,6 +32,8 @@ go.work.sum
 
 # bin
 bin/
+/aistiod
+/aistiod.exe
 
 # docs
 docs/_build/
