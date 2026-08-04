@@ -1538,8 +1538,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults =
-                        extractAndValidateConfirmResults(msgs, asking);
+                List<ConfirmResult> confirmResults = extractAndValidateConfirmResults(msgs, asking);
                 publishEvent(
                         new UserConfirmResultEvent(
                                 resolvePendingConfirmRequestReplyId(), confirmResults));
