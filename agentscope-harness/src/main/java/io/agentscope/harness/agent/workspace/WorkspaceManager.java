@@ -370,7 +370,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -670,7 +670,7 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private String readWritableWorkspaceRelativeUtf8(RuntimeContext rc, String relativePath) {
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return "";
         }
@@ -682,7 +682,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -735,7 +735,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -762,8 +762,8 @@ public class WorkspaceManager implements AutoCloseable {
         if (fromRelative == null || toRelative == null || filesystem == null) {
             return false;
         }
-        String src = normalizeRelativePath(fromRelative);
-        String dst = normalizeRelativePath(toRelative);
+        String src = requireSafeRelativePath(fromRelative);
+        String dst = requireSafeRelativePath(toRelative);
         if (src.isEmpty() || dst.isEmpty()) {
             return false;
         }
@@ -891,6 +891,14 @@ public class WorkspaceManager implements AutoCloseable {
             s = s.substring(1);
         }
         return s;
+    }
+
+    private static String requireSafeRelativePath(String relativePath) {
+        String normalized = normalizeRelativePath(relativePath);
+        if (!normalized.isEmpty()) {
+            AbstractFilesystem.validatePath(normalized);
+        }
+        return normalized;
     }
 
     /**

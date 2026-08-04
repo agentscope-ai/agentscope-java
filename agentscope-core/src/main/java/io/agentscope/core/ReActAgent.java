@@ -115,6 +115,7 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConcurrentSessionModificationException;
 import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.LegacyStateLoader;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
@@ -240,6 +241,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final Toolkit toolkit;
 
+    /** Default active groups captured after builder-time toolkit configuration is complete. */
+    private final List<String> initialActiveToolGroups;
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -314,6 +318,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         super(builder.name, builder.description, new ArrayList<>(builder.hooks));
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
+        this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -407,8 +412,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String userId,
             String sessionId,
             PermissionContextState permCtx,
-            String agentId) {
-        AgentState fresh = freshState(permCtx, agentId, userId, sessionId);
+            String agentId,
+            List<String> initialActiveToolGroups) {
+        AgentState fresh = freshState(permCtx, agentId, userId, sessionId, initialActiveToolGroups);
         if (stateStore == null) {
             return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
         }
@@ -418,14 +424,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (versioned.isPresent()) {
                 return versioned;
             }
-            AgentState legacy =
-                    LegacyStateLoader.loadFromLegacySession(stateStore, userId, sessionId);
-            if (legacy != null
-                    && (!legacy.getContext().isEmpty()
-                            || !legacy.getToolContext().getActivatedGroups().isEmpty())) {
+            LegacyStateLoader.LegacyLoadResult legacy =
+                    LegacyStateLoader.loadFromLegacySessionWithPresence(
+                            stateStore, userId, sessionId);
+            if (legacy.found()) {
                 // Legacy keys have no version; treat as create-if-absent baseline.
                 long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-                return new VersionedState<>(legacy, version);
+                return new VersionedState<>(legacy.state(), version);
             }
             long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
             return new VersionedState<>(fresh, version);
@@ -441,7 +446,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private static AgentState freshState(
-            PermissionContextState permCtx, String agentId, String userId, String sessionId) {
+            PermissionContextState permCtx,
+            String agentId,
+            String userId,
+            String sessionId,
+            List<String> initialActiveToolGroups) {
         AgentState.Builder asb =
                 AgentState.builder().sessionId(sessionId != null ? sessionId : agentId);
         if (userId != null) {
@@ -450,6 +459,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (permCtx != null) {
             asb.permissionContext(permCtx);
         }
+        ToolContextState.Builder toolContext = ToolContextState.builder();
+        if (initialActiveToolGroups != null) {
+            initialActiveToolGroups.forEach(toolContext::addActivatedGroup);
+        }
+        asb.toolContext(toolContext.build());
         return asb.build();
     }
 
@@ -554,7 +568,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         latest.isPresent()
                                 ? latest.value()
                                 : freshState(
-                                        initialPermissionContext, getAgentId(), userId, sessionId);
+                                        initialPermissionContext,
+                                        getAgentId(),
+                                        userId,
+                                        sessionId,
+                                        initialActiveToolGroups);
                 List<Msg> local = toSave.getContext();
                 if (loadedContextSize >= 0 && loadedContextSize < local.size()) {
                     List<Msg> appended = local.subList(loadedContextSize, local.size());
@@ -609,7 +627,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore != null) {
             VersionedState<AgentState> versioned =
                     loadOrCreateAgentStateForSlot(
-                            stateStore, finalUid, finalSid, initialPermissionContext, getAgentId());
+                            stateStore,
+                            finalUid,
+                            finalSid,
+                            initialPermissionContext,
+                            getAgentId(),
+                            initialActiveToolGroups);
             loaded = versioned.value();
             loadedVersion = versioned.version();
             stateCache.put(slot, loaded);
@@ -624,7 +647,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     finalUid,
                                                     finalSid,
                                                     initialPermissionContext,
-                                                    getAgentId())
+                                                    getAgentId(),
+                                                    initialActiveToolGroups)
                                             .value());
         }
         PermissionEngine loadedEngine;
@@ -2295,13 +2319,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
                     mci -> modelCallStream(context, mci, true);
 
+            StringBuilder transformedText = new StringBuilder();
+            AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
                             middlewares,
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent textDelta) {
+                                    sawTransformedTextDelta.set(true);
+                                    if (textDelta.getDelta() != null) {
+                                        transformedText.append(textDelta.getDelta());
+                                    }
+                                }
+                            })
+                    .doOnTerminate(
+                            () -> {
+                                if (sawTransformedTextDelta.get()
+                                        || !context.getAccumulatedText().isEmpty()) {
+                                    context.replaceAccumulatedText(transformedText.toString());
+                                }
+                            });
         }
 
         private Flux<AgentEvent> modelCallStream(
@@ -2696,7 +2738,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             for (ToolUseBlock tc : toolCalls) {
                 if (deniedIds.contains(tc.getId())) {
                     ToolResultBlock denied =
-                            ToolResultBlock.text("Permission denied by user")
+                            ToolResultBlock.text("Permission denied by rules")
                                     .withIdAndName(tc.getId(), tc.getName())
                                     .withState(ToolResultState.DENIED);
                     deniedEntries.add(Map.entry(tc, denied));
@@ -2717,7 +2759,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
-                                                        "Permission denied by user"),
+                                                        "Permission denied by rules"),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
@@ -3832,10 +3874,87 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     userId,
                                     sessionId,
                                     initialPermissionContext,
-                                    getAgentId());
+                                    getAgentId(),
+                                    initialActiveToolGroups);
                     slotVersions.put(slot, versioned.version());
                     return versioned.value();
                 });
+    }
+
+    /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
+     * are preserved. When an {@link AgentStateStore} is configured and the session has already
+     * been persisted, the latest persisted state is reloaded before clearing so only the
+     * conversation messages and any compaction summary are removed. The updated state is persisted
+     * immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearContext(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearContext(uid, sid);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session keeps the same identity. Unlike creating a new session, this only removes
+     * the conversation messages and compaction summary, so permission configuration, tool state,
+     * tasks, and plan-mode state remain available. When an {@link AgentStateStore} is configured
+     * and the session has already been persisted, the latest persisted state is reloaded before
+     * clearing. The updated state is persisted immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        AgentState state;
+        if (stateStore != null) {
+            if (stateStore.exists(userId, sid)) {
+                VersionedState<AgentState> versioned =
+                        loadOrCreateAgentStateForSlot(
+                                stateStore,
+                                userId,
+                                sid,
+                                initialPermissionContext,
+                                getAgentId(),
+                                initialActiveToolGroups);
+                state = versioned.value();
+                stateCache.put(slot, state);
+                slotVersions.put(slot, versioned.version());
+            } else {
+                state = stateCache.get(slot);
+                if (state == null) {
+                    return;
+                }
+            }
+        } else {
+            state = stateCache.get(slot);
+            if (state == null) {
+                return;
+            }
+        }
+        state.contextMutable().clear();
+        state.setSummary("");
+        saveAgentState(userId, sid);
     }
 
     /**
@@ -3860,11 +3979,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
-        AgentState s = getAgentState(userId, sid);
-        s.setPermissionContext(s.getPermissionContext().withMode(mode));
-        permissionEngineCache.put(slot, new PermissionEngine(s.getPermissionContext()));
-        saveAgentState(userId, sid);
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, state.getPermissionContext().withMode(mode));
+    }
+
+    /**
+     * Replaces the permission context for one {@code (userId, sessionId)} slot, rebuilds that
+     * slot's permission engine, and persists the updated state.
+     *
+     * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
+     * to subsequent calls on this slot and does not affect any other user or session.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param permissionContext complete replacement context
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        Objects.requireNonNull(permissionContext, "permissionContext must not be null");
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, permissionContext);
+    }
+
+    private void installPermissionContext(
+            String userId,
+            String sessionId,
+            AgentState state,
+            PermissionContextState permissionContext) {
+        state.setPermissionContext(permissionContext);
+        permissionEngineCache.put(
+                slotKey(userId, sessionId), new PermissionEngine(permissionContext));
+        saveAgentState(userId, sessionId);
     }
 
     /**
@@ -4018,8 +4164,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     public void close() {
-        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
-        // additional resources here.
+        // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
+        // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
+        shutdownManager.unbindStateSaver(this);
     }
 
     // ==================== Builder ====================
