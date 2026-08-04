@@ -234,10 +234,11 @@ public class E2bSandbox extends AbstractBaseSandbox {
     }
 
     /**
-     * AgentScope-native snapshot alias: {@code agentscope-<uuid>-<epochMillis>}, where the middle
-     * segment is the (lower-case hex) E2B sandbox id. The timestamp makes pruning deterministic and
-     * the sanitized id (lowercased, E2B sandbox ids are already lower-case alphanumeric) keeps the
-     * alias within E2B's {@code ^[a-z0-9-_]+$} naming rules and well below the 128-char limit.
+     * AgentScope-native snapshot alias: {@code agentscope-<sandboxId>-<epochMillis>}, where the
+     * middle segment is the lower-case alphanumeric E2B sandbox id (base32-style). The timestamp
+     * makes pruning deterministic and the sanitized id (lowercased, E2B sandbox ids are already
+     * lower-case alphanumeric) keeps the alias within E2B's {@code ^[a-z0-9-_]+$} naming rules and
+     * well below the 128-char limit.
      */
     private static String snapshotName(String sandboxId) {
         String id = sandboxId == null ? "" : sandboxId;

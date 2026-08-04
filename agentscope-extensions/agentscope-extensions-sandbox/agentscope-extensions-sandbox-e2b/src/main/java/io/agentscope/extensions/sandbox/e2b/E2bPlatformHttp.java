@@ -45,13 +45,14 @@ final class E2bPlatformHttp {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     /**
-     * AgentScope-native snapshot alias: {@code agentscope-<uuid>-<epochMillis>}, where the middle
-     * segment is the (lower-case hex) E2B sandbox id. The trailing 13-digit epoch millis timestamp
-     * makes ordering deterministic; anything not matching this format is treated as a legacy/foreign
-     * snapshot and never pruned.
+     * AgentScope-native snapshot alias: {@code agentscope-<sandboxId>-<epochMillis>}, where the
+     * middle segment is the lower-case alphanumeric E2B sandbox id (base32-style, e.g. {@code
+     * i1xfu3xo4sywzgi7rfd9k}). The trailing 13-digit epoch millis timestamp makes ordering
+     * deterministic; anything not matching this format is treated as a legacy/foreign snapshot and
+     * never pruned.
      */
     private static final Pattern SNAPSHOT_TIMESTAMP_PATTERN =
-            Pattern.compile("^agentscope-[0-9a-f-]+-(\\d{13})$");
+            Pattern.compile("^agentscope-[a-z0-9-]+-(\\d{13})$");
 
     private final OkHttpClient http;
     private final ObjectMapper json = new ObjectMapper();
@@ -116,7 +117,12 @@ final class E2bPlatformHttp {
     }
 
     void deleteSnapshot(String snapshotId) throws IOException {
-        String url = trimSlash(opt.getApiBaseUrl()) + "/templates/" + snapshotId;
+        HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/templates");
+        if (parsed == null) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Invalid E2B apiBaseUrl: " + opt.getApiBaseUrl());
+        }
+        HttpUrl url = parsed.newBuilder().addPathSegment(snapshotId).build();
         Request req =
                 new Request.Builder()
                         .url(url)
@@ -143,7 +149,7 @@ final class E2bPlatformHttp {
      * pruning. Individual delete failures are logged and skipped so a hiccup never aborts the whole
      * pass.
      *
-     * <p>Only snapshots whose alias matches {@code agentscope-<uuid>-<epochMillis>}
+     * <p>Only snapshots whose alias matches {@code agentscope-<sandboxId>-<epochMillis>}
      * are candidates for pruning, ordered by their embedded timestamp (the most recent {@code
      * retention - 1} are kept, the {@code keepSnapshotId} is always kept). Legacy or foreign
      * snapshots are never touched and must be cleaned up manually. {@code GET /snapshots} pagination

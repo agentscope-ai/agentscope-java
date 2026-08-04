@@ -108,12 +108,12 @@ class E2bPlatformHttpTest {
 
         RecordedRequest ok = server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals("DELETE", ok.getMethod());
-        assertEquals("/templates/team/stale:v1", ok.getPath());
+        assertEquals("/templates/team%2Fstale:v1", ok.getPath());
         assertEquals("test-key", ok.getHeader("X-API-Key"));
 
         RecordedRequest missing = server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals("DELETE", missing.getMethod());
-        assertEquals("/templates/team/missing:v1", missing.getPath());
+        assertEquals("/templates/team%2Fmissing:v1", missing.getPath());
         assertEquals("test-key", missing.getHeader("X-API-Key"));
     }
 
@@ -162,7 +162,7 @@ class E2bPlatformHttpTest {
         RecordedRequest list = server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals("GET", list.getMethod());
         assertEquals(
-                "/templates/team/agentscope-abc123-1699999999999:latest",
+                "/templates/team%2Fagentscope-abc123-1699999999999:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
         assertEquals(2, server.getRequestCount());
     }
@@ -181,7 +181,7 @@ class E2bPlatformHttpTest {
 
         server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals(
-                "/templates/team/agentscope-abc123-1699999999999:latest",
+                "/templates/team%2Fagentscope-abc123-1699999999999:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
         assertEquals(2, server.getRequestCount());
     }
@@ -249,7 +249,7 @@ class E2bPlatformHttpTest {
 
         server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals(
-                "/templates/team/agentscope-abc123-1700000000000:latest",
+                "/templates/team%2Fagentscope-abc123-1700000000000:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
         assertEquals(2, server.getRequestCount());
     }
