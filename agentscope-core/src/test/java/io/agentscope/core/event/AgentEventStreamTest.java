@@ -95,6 +95,30 @@ class AgentEventStreamTest {
         }
 
         @Test
+        @DisplayName("SUGGESTION_RESULT round-trips through Jackson")
+        void suggestionEventTypeRoundTrip() throws Exception {
+            AgentEventType type = AgentEventType.SUGGESTION_RESULT;
+            String json = mapper.writeValueAsString(type);
+            assertEquals("\"SUGGESTION_RESULT\"", json);
+            assertEquals(type, mapper.readValue(json, AgentEventType.class));
+        }
+
+        @Test
+        @DisplayName("SuggestionResultEvent round-trips via AgentEvent polymorphism")
+        void suggestionResultEventRoundTrip() throws Exception {
+            SuggestionResultEvent event =
+                    new SuggestionResultEvent("r1", java.util.List.of("Ask A", "Ask B"));
+
+            String json = mapper.writeValueAsString(event);
+            AgentEvent parsed = mapper.readValue(json, AgentEvent.class);
+            assertEquals(event.getType(), parsed.getType());
+            assertEquals(event.getClass(), parsed.getClass());
+            assertEquals(
+                    java.util.List.of("Ask A", "Ask B"),
+                    ((SuggestionResultEvent) parsed).getSuggestions());
+        }
+
+        @Test
         @DisplayName("Canonical names round-trip unchanged")
         void javaNativeNamesRoundTrip() throws Exception {
             for (AgentEventType type : AgentEventType.values()) {
