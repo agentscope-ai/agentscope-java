@@ -78,16 +78,29 @@ builder:
   workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
 
   # ---- Workspace storage topology (multi-tenant filesystem) ----
-  # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
-  # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,
-  # AGENTS.md, default skills/subagents/knowledge shipped on disk) blended with
-  # per-(owner, agent) RemoteFilesystem routes for memory/, MEMORY.md, sessions/,
-  # tasks/, skills/, subagents/. The remote routes are backed by a `BaseStore`
-  # Spring bean — operators MUST provide one (e.g. SqliteBaseStore, a Redis-
-  # backed implementation, etc.); a missing bean fails context refresh fast.
+  # `auto` selects LocalFilesystemSpec for local/in-process state stores and
+  # RemoteFilesystemSpec for distributed state stores. Set `local`, `sandbox`,
+  # or `remote` explicitly to override the detected topology. Remote mode uses
+  # the configured BaseStore; sandbox mode requires builder.sandbox.enabled=true.
   workspace-store:
+    # auto selects local for in-process state stores and remote for distributed stores.
+    # Set explicitly to local, sandbox, or remote to override the detected topology.
+    fs-spec: ${BUILDER_WORKSPACE_FS_SPEC:auto}
     local:
       max-file-size-mb: 10
+
+  # ---- Optional Docker sandbox filesystem ----
+  # Used when builder.workspace-store.fs-spec=sandbox. Keeping enabled=false avoids
+  # creating Docker resources for the default local/remote topology.
+  sandbox:
+    enabled: ${BUILDER_SANDBOX_ENABLED:false}
+    image: ${BUILDER_SANDBOX_IMAGE:agentscope/python-sandbox:py311-slim}
+    network: ${BUILDER_SANDBOX_NETWORK:none}
+    workspace-root: ${BUILDER_SANDBOX_WORKSPACE_ROOT:/workspace}
+    isolation: ${BUILDER_SANDBOX_ISOLATION:USER}
+    projection-roots: ${BUILDER_SANDBOX_PROJECTION_ROOTS:AGENTS.md,skills,subagents,knowledge}
+    cpu-count: ${BUILDER_SANDBOX_CPU_COUNT:0}
+    memory-bytes: ${BUILDER_SANDBOX_MEMORY_BYTES:0}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.
