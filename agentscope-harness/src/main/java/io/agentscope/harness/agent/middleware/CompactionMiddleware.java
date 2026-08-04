@@ -61,12 +61,30 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final String agentId;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, null);
+    }
+
+    /**
+     * Creates a compaction middleware with a stable agent namespace for session archives.
+     *
+     * @param workspaceManager workspace manager used for session archive IO
+     * @param model model used to summarize compacted messages
+     * @param config compaction trigger and retention configuration
+     * @param agentId stable agent namespace; falls back to the runtime agent name when blank
+     */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            String agentId) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.agentId = agentId != null && !agentId.isBlank() ? agentId : null;
     }
 
     @Override
@@ -94,7 +112,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                         conversation = messages != null ? new ArrayList<>(messages) : List.of();
                     }
 
-                    String agentId = agent.getName();
+                    String effectiveAgentId = agentId != null ? agentId : agent.getName();
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
@@ -107,7 +125,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     final Msg sys = systemMsg;
 
                     return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                            .compactIfNeeded(
+                                    rc, conversation, effectiveConfig, effectiveAgentId, sessionId)
                             .flatMapMany(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
