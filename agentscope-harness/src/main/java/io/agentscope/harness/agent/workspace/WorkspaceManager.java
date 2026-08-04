@@ -24,6 +24,7 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_MD
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_STORE;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
+import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SUBAGENTS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -285,6 +286,10 @@ public class WorkspaceManager implements AutoCloseable {
         return workspace.resolve(SKILLS_DIR);
     }
 
+    public Path getSubagentsDir() {
+        return workspace.resolve(SUBAGENTS_DIR);
+    }
+
     public Path getKnowledgeDir() {
         return workspace.resolve(KNOWLEDGE_DIR);
     }
@@ -319,6 +324,98 @@ public class WorkspaceManager implements AutoCloseable {
                                 });
             } catch (IOException e) {
                 log.warn("Failed to list knowledge files: {}", e.getMessage());
+            }
+        }
+
+        List<Path> result = new ArrayList<>();
+        for (String rel : relativePaths) {
+            result.add(workspace.resolve(rel));
+        }
+        return result;
+    }
+
+    /**
+     * Lists all subagent declaration files ({@code *.md}) under the {@code subagents/} directory.
+     * Union of filesystem + local disk, deduplicated by relative path.
+     */
+    public List<Path> listSubagentFiles(RuntimeContext rc) {
+        Set<String> relativePaths = new LinkedHashSet<>();
+
+        if (filesystem != null) {
+            GlobResult glob = filesystem.glob(rc, "*.md", SUBAGENTS_DIR);
+            if (glob.isSuccess() && glob.matches() != null) {
+                for (FileInfo fi : glob.matches()) {
+                    if (fi.path() != null && !fi.path().isBlank()) {
+                        relativePaths.add(normalizeRelativePath(fi.path().trim()));
+                    }
+                }
+            }
+        }
+
+        Path dir = getSubagentsDir();
+        if (Files.isDirectory(dir)) {
+            try (Stream<Path> list = Files.list(dir)) {
+                list.filter(Files::isRegularFile)
+                        .filter(p -> p.toString().endsWith(".md"))
+                        .forEach(
+                                p -> {
+                                    String rel =
+                                            workspace
+                                                    .relativize(p.normalize())
+                                                    .toString()
+                                                    .replace('\\', '/');
+                                    relativePaths.add(rel);
+                                });
+            } catch (IOException e) {
+                log.warn("Failed to list subagent files: {}", e.getMessage());
+            }
+        }
+
+        List<Path> result = new ArrayList<>();
+        for (String rel : relativePaths) {
+            result.add(workspace.resolve(rel));
+        }
+        return result;
+    }
+
+    /**
+     * Lists all skill directories under the {@code skills/} directory.
+     * Union of filesystem + local disk, deduplicated by relative path.
+     */
+    public List<Path> listSkillDirs(RuntimeContext rc) {
+        Set<String> relativePaths = new LinkedHashSet<>();
+
+        if (filesystem != null) {
+            GlobResult glob = filesystem.glob(rc, "SKILL.md", SKILLS_DIR);
+            if (glob.isSuccess() && glob.matches() != null) {
+                for (FileInfo fi : glob.matches()) {
+                    if (fi.path() != null && !fi.path().isBlank()) {
+                        String normalized = normalizeRelativePath(fi.path().trim());
+                        // Extract the skill directory name (parent of SKILL.md)
+                        int idx = normalized.lastIndexOf('/');
+                        if (idx > 0) {
+                            relativePaths.add(normalized.substring(0, idx));
+                        }
+                    }
+                }
+            }
+        }
+
+        Path dir = getSkillsDir();
+        if (Files.isDirectory(dir)) {
+            try (Stream<Path> list = Files.list(dir)) {
+                list.filter(Files::isDirectory)
+                        .forEach(
+                                p -> {
+                                    String rel =
+                                            workspace
+                                                    .relativize(p.normalize())
+                                                    .toString()
+                                                    .replace('\\', '/');
+                                    relativePaths.add(rel);
+                                });
+            } catch (IOException e) {
+                log.warn("Failed to list skill directories: {}", e.getMessage());
             }
         }
 
