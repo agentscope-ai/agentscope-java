@@ -6,6 +6,8 @@
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
+Multimodal input is supported, but document types are not supported yet.
+
 `AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 
 ## When To Use

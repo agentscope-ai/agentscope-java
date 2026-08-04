@@ -37,7 +37,6 @@ import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
-import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -541,7 +540,7 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertBlocksContentWithAllInputTypes() {
+    void testConvertBlocksContentWithAllSupportedInputTypes() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
@@ -555,9 +554,6 @@ class AguiMessageConverterTest {
                                         null),
                                 new VideoInputContent(
                                         new InputContentUrlSource("https://example.com/video.mp4"),
-                                        null),
-                                new DocumentInputContent(
-                                        new InputContentUrlSource("https://example.com/doc.pdf"),
                                         null)));
 
         Msg msg = converter.toMsg(aguiMsg);
@@ -567,11 +563,10 @@ class AguiMessageConverterTest {
         assertTrue(msg.hasContentBlocks(ImageBlock.class));
         assertTrue(msg.hasContentBlocks(AudioBlock.class));
         assertTrue(msg.hasContentBlocks(VideoBlock.class));
-        assertTrue(msg.hasContentBlocks(DataBlock.class));
     }
 
     @Test
-    void testConvertDocumentToDataBlock() {
+    void testConvertDocumentInputContentIsRejectedForUrlSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
@@ -580,17 +575,13 @@ class AguiMessageConverterTest {
                                         new InputContentUrlSource("https://example.com/doc.pdf"),
                                         null)));
 
-        Msg msg = converter.toMsg(aguiMsg);
-
-        assertTrue(msg.hasContentBlocks(DataBlock.class));
-        assertFalse(msg.hasContentBlocks(TextBlock.class));
-        DataBlock db = msg.getFirstContentBlock(DataBlock.class);
-        URLSource source = (URLSource) db.getSource();
-        assertEquals("https://example.com/doc.pdf", source.getUrl());
+        IllegalStateException exception =
+                assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
+        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
     }
 
     @Test
-    void testConvertDocumentWithDataSourceToDataBlock() {
+    void testConvertDocumentInputContentIsRejectedForDataSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
@@ -599,13 +590,9 @@ class AguiMessageConverterTest {
                                         new InputContentDataSource("dGVzdA==", "application/pdf"),
                                         null)));
 
-        Msg msg = converter.toMsg(aguiMsg);
-
-        assertTrue(msg.hasContentBlocks(DataBlock.class));
-        DataBlock db = msg.getFirstContentBlock(DataBlock.class);
-        Base64Source source = (Base64Source) db.getSource();
-        assertEquals("application/pdf", source.getMediaType());
-        assertEquals("dGVzdA==", source.getData());
+        IllegalStateException exception =
+                assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
+        assertTrue(exception.getMessage().startsWith("Unhandled InputContent type:"));
     }
 
     @Test
