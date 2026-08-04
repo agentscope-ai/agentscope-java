@@ -66,12 +66,6 @@ class AguiRequestProcessorTest {
                                         lastUser))
                         .state(Map.of("cursor", 8))
                         .forwardedProps(Map.of("agentId", "agent-a"))
-                        .resume(
-                                List.of(
-                                        new AguiResume(
-                                                "int-1",
-                                                AguiResume.STATUS_RESOLVED,
-                                                Map.of("approved", true))))
                         .build();
 
         RunAgentInput extracted = processor.extractLatestUserMessage(input);
@@ -79,7 +73,80 @@ class AguiRequestProcessorTest {
         assertEquals(List.of(lastUser), extracted.getMessages());
         assertEquals(input.getState(), extracted.getState());
         assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
-        assertEquals(input.getResume(), extracted.getResume());
+        assertEquals(List.of(), extracted.getResume());
+    }
+
+    @Test
+    void extractLatestUserMessageDropsHistoricalMessagesOnResumeOnlyTurn() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiResume resume =
+                new AguiResume("int-1", AguiResume.STATUS_RESOLVED, Map.of("approved", true));
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "please deploy"),
+                                        AguiMessage.assistantMessage("msg-2", "need approval")))
+                        .state(Map.of("cursor", 8))
+                        .forwardedProps(Map.of("agentId", "agent-a"))
+                        .resume(List.of(resume))
+                        .build();
+
+        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+
+        assertEquals(List.of(), extracted.getMessages());
+        assertEquals(List.of(resume), extracted.getResume());
+        assertEquals(input.getState(), extracted.getState());
+        assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
+    }
+
+    @Test
+    void extractLatestUserMessageKeepsTrailingToolMessagesForFrontendHitl() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiMessage toolResult =
+                AguiMessage.toolMessage("msg-tool", "tool-call-1", "{\"ok\":true}");
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "look up weather"),
+                                        AguiMessage.assistantMessage("msg-2", "calling tool"),
+                                        toolResult))
+                        .state(Map.of("cursor", 8))
+                        .build();
+
+        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+
+        assertEquals(List.of(toolResult), extracted.getMessages());
+        assertEquals(input.getState(), extracted.getState());
+    }
+
+    @Test
+    void extractLatestUserMessageKeepsMultipleTrailingToolMessages() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiMessage toolA = AguiMessage.toolMessage("msg-a", "tool-a", "a");
+        AguiMessage toolB = AguiMessage.toolMessage("msg-b", "tool-b", "b");
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "run tools"),
+                                        toolA,
+                                        toolB))
+                        .build();
+
+        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+
+        assertEquals(List.of(toolA, toolB), extracted.getMessages());
     }
 
     @Test
@@ -535,11 +602,9 @@ class AguiRequestProcessorTest {
     }
 
     private static void assertResumeContractErrorLifecycle(List<AguiEvent> events) {
+        // RUN_ERROR is terminal — do not also expect RUN_FINISHED.
         assertEquals(
-                List.of(
-                        AguiEventType.RUN_STARTED,
-                        AguiEventType.RUN_ERROR,
-                        AguiEventType.RUN_FINISHED),
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                 events.stream().map(AguiEvent::getType).toList());
         AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals("AGUI_INTERRUPT_CONTRACT_ERROR", error.code());
@@ -548,11 +613,9 @@ class AguiRequestProcessorTest {
 
     private static void assertProcessorErrorLifecycle(
             List<AguiEvent> events, String message, String code) {
+        // RUN_ERROR is terminal — do not also expect RUN_FINISHED.
         assertEquals(
-                List.of(
-                        AguiEventType.RUN_STARTED,
-                        AguiEventType.RUN_ERROR,
-                        AguiEventType.RUN_FINISHED),
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                 events.stream().map(AguiEvent::getType).toList());
         AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals(message, error.message());

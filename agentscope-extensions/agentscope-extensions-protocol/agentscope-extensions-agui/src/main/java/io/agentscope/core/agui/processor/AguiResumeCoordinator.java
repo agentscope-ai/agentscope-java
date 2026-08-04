@@ -134,11 +134,16 @@ final class AguiResumeCoordinator {
     }
 
     /**
-     * Add known interrupt-to-tool-call mappings to the runtime context for resume conversion.
+     * Add known interrupt metadata to the runtime context for resume conversion.
+     *
+     * <p>Permission HITL resumes need both the interrupt→toolCallId mapping and the original
+     * interrupt metadata ({@code toolName}/{@code toolInput}) so {@link
+     * io.agentscope.core.agui.converter.AguiMessageConverter} can rebuild {@link
+     * io.agentscope.core.event.ConfirmResult} payloads.
      *
      * @param input The run input containing resume entries
      * @param runtimeContext The caller-provided runtime context, if any
-     * @return A runtime context with AG-UI resume tool-call mappings when available
+     * @return A runtime context with AG-UI resume mappings when available
      */
     RuntimeContext addResumeToolCallIds(RunAgentInput input, RuntimeContext runtimeContext) {
         if (!input.hasResume()) {
@@ -150,23 +155,34 @@ final class AguiResumeCoordinator {
             return runtimeContext;
         }
         Map<String, String> toolCallIds = new LinkedHashMap<>();
+        Map<String, AguiEvent.Interrupt> resumeInterrupts = new LinkedHashMap<>();
         for (AguiResume resume : input.getResume()) {
             AguiEvent.Interrupt interrupt = pending.get(resume.getInterruptId());
-            if (interrupt != null
-                    && "tool_call".equals(interrupt.reason())
+            if (interrupt == null) {
+                continue;
+            }
+            resumeInterrupts.put(resume.getInterruptId(), interrupt);
+            if ("tool_call".equals(interrupt.reason())
                     && interrupt.toolCallId() != null
                     && !interrupt.toolCallId().isBlank()) {
                 toolCallIds.put(resume.getInterruptId(), interrupt.toolCallId());
             }
         }
-        if (toolCallIds.isEmpty()) {
+        if (toolCallIds.isEmpty() && resumeInterrupts.isEmpty()) {
             return runtimeContext;
         }
-        return RuntimeContext.builder(runtimeContext)
-                .put(
-                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY,
-                        Map.copyOf(toolCallIds))
-                .build();
+        RuntimeContext.Builder builder = RuntimeContext.builder(runtimeContext);
+        if (!toolCallIds.isEmpty()) {
+            builder.put(
+                    AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY,
+                    Map.copyOf(toolCallIds));
+        }
+        if (!resumeInterrupts.isEmpty()) {
+            builder.put(
+                    AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY,
+                    Map.copyOf(resumeInterrupts));
+        }
+        return builder.build();
     }
 
     /**
@@ -205,6 +221,7 @@ final class AguiResumeCoordinator {
      * @return The protocol error lifecycle events
      */
     List<AguiEvent> contractErrorEvents(RunAgentInput input, String message) {
+        // RUN_ERROR is terminal — do not also emit RUN_FINISHED.
         return List.of(
                 new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
                 new AguiEvent.RunError(
@@ -213,8 +230,7 @@ final class AguiResumeCoordinator {
                         message,
                         CONTRACT_ERROR_CODE,
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+                        null));
     }
 
     private ResumeContractResult validateResumeStatuses(List<AguiResume> resumes) {

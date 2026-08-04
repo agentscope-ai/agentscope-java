@@ -98,6 +98,60 @@ class AguiResumeCoordinatorTest {
         assertEquals(
                 Map.of("interrupt-1", "tool-call-1"),
                 context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
+        @SuppressWarnings("unchecked")
+        Map<String, AguiEvent.Interrupt> resumeInterrupts =
+                (Map<String, AguiEvent.Interrupt>)
+                        context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY);
+        assertNotNull(resumeInterrupts);
+        assertEquals(1, resumeInterrupts.size());
+        AguiEvent.Interrupt interrupt = resumeInterrupts.get("interrupt-1");
+        assertNotNull(interrupt);
+        assertEquals("tool-call-1", interrupt.toolCallId());
+        assertEquals("tool_call", interrupt.reason());
+    }
+
+    @Test
+    void addResumeToolCallIdsPreservesPermissionInterruptMetadata() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        AguiEvent.Interrupt permissionInterrupt =
+                new AguiEvent.Interrupt(
+                        "interrupt-perm",
+                        "tool_call",
+                        "Approve tool call: danger_tool?",
+                        "tool-danger",
+                        Map.of("type", "object"),
+                        null,
+                        Map.of(
+                                "source",
+                                "permission",
+                                "toolName",
+                                "danger_tool",
+                                "toolInput",
+                                Map.of("x", 1)));
+        track(coordinator, "run-1", interruptedFinished("run-1", permissionInterrupt), false);
+
+        RuntimeContext context =
+                coordinator.addResumeToolCallIds(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-perm",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true))))
+                                .build(),
+                        null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, AguiEvent.Interrupt> resumeInterrupts =
+                (Map<String, AguiEvent.Interrupt>)
+                        context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY);
+        assertEquals(permissionInterrupt, resumeInterrupts.get("interrupt-perm"));
+        assertEquals(
+                Map.of("interrupt-perm", "tool-danger"),
+                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
     }
 
     @Test
@@ -181,10 +235,7 @@ class AguiResumeCoordinatorTest {
                 coordinator.contractErrorEvents(input("run-1"), "resume contract failed");
 
         assertEquals(
-                List.of(
-                        AguiEventType.RUN_STARTED,
-                        AguiEventType.RUN_ERROR,
-                        AguiEventType.RUN_FINISHED),
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                 events.stream().map(AguiEvent::getType).toList());
         AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
         assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());

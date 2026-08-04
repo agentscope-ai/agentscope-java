@@ -15,10 +15,15 @@
  */
 package io.agentscope.core.agui.encoder;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonException;
-import io.agentscope.core.util.JsonUtils;
 
 /**
  * Encoder for AG-UI events to Server-Sent Events (SSE) format.
@@ -28,14 +33,27 @@ import io.agentscope.core.util.JsonUtils;
  * data: {"type":"EVENT_TYPE",...}\n\n
  * </pre>
  *
+ * <p>Null fields are omitted from the JSON payload so clients do not receive
+ * {@code "timestamp":null}, {@code "rawEvent":null}, etc.
+ *
  * <p>The encoder is thread-safe and can be shared across multiple requests.
  */
 public class AguiEventEncoder {
+
+    private static final JsonCodec JSON_CODEC = createWireCodec();
 
     /**
      * Creates a new AguiEventEncoder.
      */
     public AguiEventEncoder() {}
+
+    private static JsonCodec createWireCodec() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+        return new JacksonJsonCodec(mapper);
+    }
 
     /**
      * Encode an AG-UI event to SSE format.
@@ -51,7 +69,7 @@ public class AguiEventEncoder {
      */
     public String encode(AguiEvent event) {
         try {
-            String json = JsonUtils.getJsonCodec().toJson(event);
+            String json = JSON_CODEC.toJson(event);
             return "data: " + json + "\n\n";
         } catch (JsonException e) {
             throw new AguiException.EncodingException("Failed to encode AG-UI event", e);
@@ -73,7 +91,7 @@ public class AguiEventEncoder {
     public String encodeToJson(AguiEvent event) {
         try {
             // Add leading space for SSE compatibility: "data:" + " {...}" = "data: {...}"
-            return " " + JsonUtils.getJsonCodec().toJson(event);
+            return " " + JSON_CODEC.toJson(event);
         } catch (JsonException e) {
             throw new AguiException.EncodingException("Failed to encode AG-UI event to JSON", e);
         }

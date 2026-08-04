@@ -21,11 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -336,6 +338,253 @@ class AguiMessageConverterTest {
         assertNotNull(result);
         assertEquals(ToolResultState.INTERRUPTED, result.getState());
         assertEquals("Interrupt cancelled by user", resultText(result));
+    }
+
+    @Test
+    void testPermissionResumePutsPayloadIntoConfirmMsgContent() {
+        String interruptId = "6ff307dec5de48719df664ba0293c6a8:call_a18a1355f8b445bbbb562829";
+        String toolCallId = "call_a18a1355f8b445bbbb562829";
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                interruptId,
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of(
+                                                        "approved",
+                                                        true,
+                                                        "reason",
+                                                        "Approved in the CopilotKit HITL demo.")),
+                                        new AguiResume(
+                                                "int-2:" + toolCallId + "-b",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of(
+                                                        "approved",
+                                                        false,
+                                                        "reason",
+                                                        "Denied by reviewer."))))
+                        .build();
+        Map<String, AguiEvent.Interrupt> interrupts =
+                Map.of(
+                        interruptId,
+                        new AguiEvent.Interrupt(
+                                interruptId,
+                                "permission_required",
+                                "Confirm tool",
+                                toolCallId,
+                                null,
+                                null,
+                                Map.of(
+                                        "source",
+                                        "permission",
+                                        "toolName",
+                                        "danger_tool",
+                                        "toolInput",
+                                        Map.of("x", 1))),
+                        "int-2:" + toolCallId + "-b",
+                        new AguiEvent.Interrupt(
+                                "int-2:" + toolCallId + "-b",
+                                "permission_required",
+                                "Confirm tool",
+                                toolCallId + "-b",
+                                null,
+                                null,
+                                Map.of(
+                                        "source",
+                                        "permission",
+                                        "toolName",
+                                        "other_tool",
+                                        "toolInput",
+                                        Map.of())));
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of(), interrupts);
+
+        assertEquals(1, msgs.size());
+        Msg confirm = msgs.get(0);
+        assertEquals("agui-resume-confirm", confirm.getId());
+        assertEquals(MsgRole.USER, confirm.getRole());
+        String text = confirm.getTextContent();
+        assertTrue(text.contains("\"approved\":true"));
+        assertTrue(text.contains("Approved in the CopilotKit HITL demo."));
+        assertTrue(text.contains("\"approved\":false"));
+        assertTrue(text.contains("Denied by reviewer."));
+        Object metadata = confirm.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertTrue(metadata instanceof List<?>);
+        assertEquals(2, ((List<?>) metadata).size());
+        ConfirmResult first = (ConfirmResult) ((List<?>) metadata).get(0);
+        ConfirmResult second = (ConfirmResult) ((List<?>) metadata).get(1);
+        assertTrue(first.isConfirmed());
+        assertEquals("danger_tool", first.getToolCall().getName());
+        assertEquals(Map.of("x", 1), first.getToolCall().getInput());
+        assertEquals(toolCallId, first.getToolCall().getId());
+        assertFalse(second.isConfirmed());
+        assertEquals("other_tool", second.getToolCall().getName());
+    }
+
+    @Test
+    void testPermissionResumeDeniedCreatesUnconfirmedConfirmResult() {
+        String interruptId = "reply-1:tool-1";
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                interruptId,
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", false, "reason", "too risky"))))
+                        .build();
+        Map<String, AguiEvent.Interrupt> interrupts =
+                Map.of(
+                        interruptId,
+                        new AguiEvent.Interrupt(
+                                interruptId,
+                                "tool_call",
+                                "Approve tool call: danger_tool?",
+                                "tool-1",
+                                null,
+                                null,
+                                Map.of(
+                                        "source",
+                                        "permission",
+                                        "toolName",
+                                        "danger_tool",
+                                        "toolInput",
+                                        Map.of("cmd", "rm"))));
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of(), interrupts);
+
+        assertEquals(1, msgs.size());
+        @SuppressWarnings("unchecked")
+        List<ConfirmResult> results =
+                (List<ConfirmResult>) msgs.get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).isConfirmed());
+        assertEquals("danger_tool", results.get(0).getToolCall().getName());
+        assertTrue(msgs.get(0).getTextContent().contains("too risky"));
+    }
+
+    @Test
+    void testCancelledPermissionResumeCreatesUnconfirmedConfirmResult() {
+        String interruptId = "reply-1:tool-1";
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                interruptId, AguiResume.STATUS_CANCELLED, null)))
+                        .build();
+        Map<String, AguiEvent.Interrupt> interrupts =
+                Map.of(
+                        interruptId,
+                        new AguiEvent.Interrupt(
+                                interruptId,
+                                "tool_call",
+                                "Approve?",
+                                "tool-1",
+                                null,
+                                null,
+                                Map.of("source", "permission", "toolName", "danger_tool")));
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of(), interrupts);
+
+        @SuppressWarnings("unchecked")
+        List<ConfirmResult> results =
+                (List<ConfirmResult>) msgs.get(0).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertFalse(results.get(0).isConfirmed());
+        assertEquals("Interrupt cancelled by user", msgs.get(0).getTextContent());
+    }
+
+    @Test
+    void testRejectedToolResumeBecomesInterruptedToolResult() {
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "int-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", false, "reason", "deny"))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("int-1", "tool-call-1"));
+
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals(ToolResultState.INTERRUPTED, result.getState());
+        assertTrue(resultText(result).contains("\"approved\":false"));
+    }
+
+    @Test
+    void testResumeSkipsSynthesizedToolResultWhenClientAlreadySentToolMessage() {
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(
+                                List.of(
+                                        AguiMessage.toolMessage(
+                                                "msg-tool", "tool-call-1", "client result")))
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "int-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("int-1", "tool-call-1"));
+
+        assertEquals(1, msgs.size());
+        assertEquals(MsgRole.TOOL, msgs.get(0).getRole());
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tool-call-1", result.getId());
+        assertEquals("client result", resultText(result));
+    }
+
+    @Test
+    void testToolSuspendedResumeUsesInterruptToolCallIdOverMapping() {
+        String interruptId = "reply-1:actual-tool";
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                interruptId,
+                                                AguiResume.STATUS_RESOLVED,
+                                                "external done")))
+                        .build();
+        Map<String, AguiEvent.Interrupt> interrupts =
+                Map.of(
+                        interruptId,
+                        new AguiEvent.Interrupt(
+                                interruptId,
+                                "tool_call",
+                                "Execute externally",
+                                "actual-tool",
+                                null,
+                                null,
+                                Map.of("source", "tool_suspended", "toolName", "lookup")));
+
+        List<Msg> msgs =
+                converter.toMsgList(input, Map.of(interruptId, "stale-mapping"), interrupts);
+
+        ToolResultBlock result = msgs.get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("actual-tool", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals("external done", resultText(result));
     }
 
     @Test
