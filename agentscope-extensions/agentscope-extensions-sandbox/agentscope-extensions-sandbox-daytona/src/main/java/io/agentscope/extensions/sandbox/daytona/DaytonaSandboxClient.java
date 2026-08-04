@@ -63,7 +63,6 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
         DaytonaSandboxState state = new DaytonaSandboxState();
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
         state.setImage(merged.getImage());
         state.setSnapshotId(merged.getSnapshotId());
         state.setSandboxOwned(true);
@@ -138,9 +137,6 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
         if (call.getDisk() != null) {
             o.setDisk(call.getDisk());
         }
-        if (call.getWorkspaceRoot() != null) {
-            o.setWorkspaceRoot(call.getWorkspaceRoot());
-        }
         if (call.getHttpClient() != null) {
             o.setHttpClient(call.getHttpClient());
         }
@@ -160,7 +156,6 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
         o.setCpu(src.getCpu());
         o.setMemory(src.getMemory());
         o.setDisk(src.getDisk());
-        o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setHttpClient(src.getHttpClient());
         o.setConnectTimeoutSeconds(src.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());

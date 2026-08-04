@@ -25,7 +25,6 @@ public class E2bSandboxState extends SandboxState {
     private String sandboxDomain;
     private String envdAccessToken;
     private String envdVersion = "0.1.5";
-    private String workspaceRoot = "/home/user";
     private boolean sandboxOwned = true;
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
     private E2bCodec codec = E2bCodec.PROTO;
@@ -68,14 +67,6 @@ public class E2bSandboxState extends SandboxState {
 
     public void setEnvdVersion(String envdVersion) {
         this.envdVersion = envdVersion;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     public boolean isSandboxOwned() {

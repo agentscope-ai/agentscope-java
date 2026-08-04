@@ -36,12 +36,14 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -65,6 +67,22 @@ import reactor.core.publisher.Flux;
 class LocalFilesystemUserIsolationExampleTest {
 
     @TempDir Path workspace;
+
+    @AfterEach
+    void cleanupWorkspace() throws IOException {
+        try (Stream<Path> walk = Files.walk(workspace)) {
+            walk.sorted((a, b) -> b.compareTo(a))
+                    .skip(1)
+                    .forEach(
+                            p -> {
+                                try {
+                                    Files.deleteIfExists(p);
+                                } catch (IOException e) {
+                                    // ignore
+                                }
+                            });
+        }
+    }
 
     /**
      * Writes MEMORY.md as alice, verifies it lands under {@code workspace/alice/MEMORY.md},

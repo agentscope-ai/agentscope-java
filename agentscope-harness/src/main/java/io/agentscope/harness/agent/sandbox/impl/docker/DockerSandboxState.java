@@ -38,9 +38,6 @@ public class DockerSandboxState extends SandboxState {
     /** Docker image used to create this container. */
     private String image;
 
-    /** Workspace root path inside the container. */
-    private String workspaceRoot;
-
     /**
      * Whether the SDK owns the container lifecycle (create/stop/remove).
      * When {@code false}, the container was injected by the developer and will not be removed.
@@ -114,24 +111,6 @@ public class DockerSandboxState extends SandboxState {
      */
     public void setImage(String image) {
         this.image = image;
-    }
-
-    /**
-     * Returns the workspace root path inside the container.
-     *
-     * @return workspace root path
-     */
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    /**
-     * Sets the workspace root path inside the container.
-     *
-     * @param workspaceRoot absolute path inside the container
-     */
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     /**

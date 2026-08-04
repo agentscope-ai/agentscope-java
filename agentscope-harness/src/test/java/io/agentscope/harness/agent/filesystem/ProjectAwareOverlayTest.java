@@ -240,4 +240,10 @@ class ProjectAwareOverlayTest {
         assertTrue(r.output().contains("hello"));
         assertEquals(0, r.exitCode());
     }
+
+    @Test
+    void getWorkspaceRoot_delegatesToShellBackend() {
+        String root = overlay.getWorkspaceRoot();
+        assertTrue(root.contains(workspace.toAbsolutePath().toString()));
+    }
 }

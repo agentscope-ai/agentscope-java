@@ -46,7 +46,7 @@ public class DockerFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public DockerFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.workspaceRoot(workspaceRoot);
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
         return this;
     }
 

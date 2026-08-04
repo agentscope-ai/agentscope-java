@@ -66,6 +66,15 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
+    public String getWorkspaceRoot() {
+        Sandbox s = sandbox;
+        if (s == null) {
+            return "/workspace";
+        }
+        return s.getWorkspaceRoot();
+    }
+
+    @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
         Sandbox active = requireSandbox();

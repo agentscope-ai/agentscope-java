@@ -67,16 +67,11 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
 
         String image =
                 options != null && options.getImage() != null ? options.getImage() : "ubuntu:22.04";
-        String workspaceRoot =
-                options != null && options.getWorkspaceRoot() != null
-                        ? options.getWorkspaceRoot()
-                        : "/workspace";
 
         DockerSandboxState state = new DockerSandboxState();
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
         state.setImage(image);
-        state.setWorkspaceRoot(workspaceRoot);
         state.setContainerOwned(true);
         state.setWorkspaceRootReady(false);
 

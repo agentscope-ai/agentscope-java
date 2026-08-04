@@ -84,6 +84,11 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
     }
 
     @Override
+    public String getWorkspaceRoot() {
+        return shellBackend.getWorkspaceRoot();
+    }
+
+    @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
         return shellBackend.execute(runtimeContext, command, timeoutSeconds);

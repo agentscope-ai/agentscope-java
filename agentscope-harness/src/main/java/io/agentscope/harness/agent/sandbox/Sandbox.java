@@ -55,6 +55,17 @@ public interface Sandbox extends AutoCloseable {
     boolean isRunning();
 
     /**
+     * Returns the absolute workspace root path inside the sandbox.
+     *
+     * @return workspace root path string
+     */
+    default String getWorkspaceRoot() {
+        return getState() != null && getState().getWorkspaceSpec() != null
+                ? getState().getWorkspaceSpec().getRoot()
+                : "/workspace";
+    }
+
+    /**
      * Returns the current serializable state of this sandbox.
      *
      * @return state (may be modified by lifecycle methods)

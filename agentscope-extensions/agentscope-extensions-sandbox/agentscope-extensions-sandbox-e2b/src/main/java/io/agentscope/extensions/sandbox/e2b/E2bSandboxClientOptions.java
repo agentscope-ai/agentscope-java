@@ -30,9 +30,6 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     /** E2B template id (or snapshot id when creating from a snapshot). */
     private String templateId = "base";
 
-    /** Absolute path of the workspace root inside the sandbox. */
-    private String workspaceRoot = "/home/user";
-
     private int sandboxTimeoutSeconds = 300;
     private String runUser = "user";
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
@@ -89,14 +86,6 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setTemplateId(String templateId) {
         this.templateId = templateId;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     public int getSandboxTimeoutSeconds() {
