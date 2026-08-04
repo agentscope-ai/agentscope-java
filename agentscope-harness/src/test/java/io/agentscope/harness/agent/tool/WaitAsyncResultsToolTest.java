@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -213,11 +214,141 @@ class WaitAsyncResultsToolTest {
     }
 
     @Test
+    @DisplayName("task_ids waits until all listed tasks are terminal")
+    void taskIdsWaitUntilAllListedTasksTerminal() throws Exception {
+        CompletableFuture<String> t1 = new CompletableFuture<>();
+        CompletableFuture<String> t2 = new CompletableFuture<>();
+        TaskRepository repo =
+                new StubTaskRepository(
+                        List.of(
+                                new BackgroundTask("t1", "agent-1", t1),
+                                new BackgroundTask("t2", "agent-2", t2)));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        Thread completer =
+                new Thread(
+                        () -> {
+                            sleep(150);
+                            t1.complete("one");
+                            sleep(150);
+                            t2.complete("two");
+                        });
+        completer.start();
+
+        String result = tool.waitForResults(2, " t1, t2 ", null, ctx());
+        completer.join();
+
+        assertTrue(
+                result.contains("All requested background tasks are terminal"),
+                "should complete barrier after both tasks finish, got: " + result);
+    }
+
+    @Test
+    @DisplayName("task_ids timeout if any listed task remains running")
+    void taskIdsTimeoutWhenAnyListedTaskStillRunning() throws Exception {
+        CompletableFuture<String> completed = CompletableFuture.completedFuture("done");
+        CompletableFuture<String> running = new CompletableFuture<>();
+        TaskRepository repo =
+                new StubTaskRepository(
+                        List.of(
+                                new BackgroundTask("t1", "agent-1", completed),
+                                new BackgroundTask("t2", "agent-2", running)));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        String result = tool.waitForResults(1, "t1,t2", null, ctx());
+
+        assertTrue(result.contains("Timeout"), "should timeout while t2 is running");
+        assertTrue(
+                result.contains("not all terminal yet"),
+                "should explain barrier condition, got: " + result);
+    }
+
+    @Test
+    @DisplayName("task_ids rejects unknown task ids")
+    void taskIdsRejectsUnknownTaskIds() throws Exception {
+        TaskRepository repo =
+                new StubTaskRepository(
+                        List.of(
+                                new BackgroundTask(
+                                        "t1",
+                                        "agent-1",
+                                        CompletableFuture.completedFuture("done"))));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        long start = System.currentTimeMillis();
+        String result = tool.waitForResults(120, "t1,missing", null, ctx());
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertTrue(result.contains("unknown task_ids"), "got: " + result);
+        assertTrue(result.contains("missing"), "should report the missing id, got: " + result);
+        assertTrue(elapsed < 2_000, "should not wait for unknown ids, took: " + elapsed + "ms");
+    }
+
+    @Test
+    @DisplayName("wait_all=true waits for snapshot of current non-terminal tasks")
+    void waitAllWaitsForCurrentNonTerminalSnapshot() throws Exception {
+        CompletableFuture<String> running = new CompletableFuture<>();
+        MutableTaskRepository repo =
+                new MutableTaskRepository(List.of(new BackgroundTask("t1", "agent-1", running)));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        Thread completer =
+                new Thread(
+                        () -> {
+                            sleep(150);
+                            repo.add(
+                                    new BackgroundTask("t2", "agent-2", new CompletableFuture<>()));
+                            running.complete("done");
+                        });
+        completer.start();
+
+        String result = tool.waitForResults(2, null, true, ctx());
+        completer.join();
+
+        assertTrue(
+                result.contains("All requested background tasks are terminal"),
+                "wait_all should use the initial snapshot and ignore later tasks, got: " + result);
+    }
+
+    @Test
+    @DisplayName("wait_all=true with empty snapshot returns immediately")
+    void waitAllEmptySnapshotReturnsImmediately() throws Exception {
+        WaitAsyncResultsTool tool =
+                new WaitAsyncResultsTool(emptyBus(), new StubTaskRepository(List.of()));
+
+        long start = System.currentTimeMillis();
+        String result = tool.waitForResults(120, null, true, ctx());
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertTrue(result.contains("No running background tasks"), "got: " + result);
+        assertTrue(elapsed < 2_000, "should return immediately, took: " + elapsed + "ms");
+    }
+
+    @Test
+    @DisplayName("barrier mode requires TaskRepository")
+    void barrierModeRequiresTaskRepository() throws Exception {
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
+
+        String result = tool.waitForResults(1, "t1", null, ctx());
+
+        assertTrue(result.contains("task repository is unavailable"), "got: " + result);
+    }
+
+    @Test
     @DisplayName("no TaskRepository (null) → falls through to normal wait")
     void nullTaskRepositoryFallsThrough() throws Exception {
         WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
         String result = tool.waitForResults(1, ctx());
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(e);
+        }
     }
 
     private static class StubMessageBus implements MessageBus {
@@ -280,7 +411,7 @@ class WaitAsyncResultsToolTest {
 
     private static class StubTaskRepository implements TaskRepository {
 
-        private final List<BackgroundTask> tasks;
+        protected final List<BackgroundTask> tasks;
 
         StubTaskRepository(List<BackgroundTask> tasks) {
             this.tasks = tasks;
@@ -322,6 +453,17 @@ class WaitAsyncResultsToolTest {
         @Override
         public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
             return false;
+        }
+    }
+
+    private static class MutableTaskRepository extends StubTaskRepository {
+
+        MutableTaskRepository(List<BackgroundTask> tasks) {
+            super(new ArrayList<>(tasks));
+        }
+
+        void add(BackgroundTask task) {
+            tasks.add(task);
         }
     }
 }

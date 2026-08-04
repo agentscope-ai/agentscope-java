@@ -110,6 +110,10 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
+If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. When tool execution is configured for parallelism, those synchronous calls can advance in parallel; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier.
+
+Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.
+
 ### Background tasks push back automatically
 
 When a background task finishes, the parent **does not need to poll** — before the parent's next reasoning step, the framework injects completed task results as a system reminder at the end of the conversation:
@@ -134,12 +138,19 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 | `agent_send` | Send a follow-up message to an existing subagent |
 | `agent_list` | List active subagent instances |
 | `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
+| `wait_async_results` | Wait for background results; can wait for specific `task_ids` to all finish, or use `wait_all=true` for a snapshot of unfinished tasks in the current session |
 | `task_cancel` | Cancel a running background task |
 | `task_list` | List all background tasks with their current statuses |
 
-`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
+`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `wait_async_results` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, wait, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
 
-> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+
+There are three common ways to collect asynchronous results:
+
+- **Automatic push-back**: the default path. Completed child tasks are injected as a `<system-reminder>` before the next reasoning step, so the parent does not need to poll immediately.
+- **Targeted task check**: call `task_output(task_id, block=false)` to inspect one task's current state or final result. This is useful for taking short-task results early, or recovering results that were compacted or not injected.
+- **Wait barrier**: call `wait_async_results(task_ids="id1,id2")` to wait until all listed tasks are terminal; or call `wait_async_results(wait_all=true)` to wait for the snapshot of unfinished tasks in the current session at the start of the call. `wait_all=true` does not dynamically add tasks created while it is waiting.
 
 ## Send a follow-up to an existing subagent
 

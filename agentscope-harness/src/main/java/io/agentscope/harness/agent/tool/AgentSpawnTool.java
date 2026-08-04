@@ -130,6 +130,8 @@ public class AgentSpawnTool {
             status: accepted
             task_id: %s
             Use task_output(task_id='%s', block=false) to check status, \
+            wait_async_results(task_ids=...) to wait for a chosen group, \
+            wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
             Do NOT call task_output immediately — the task has just started.\
             """;
@@ -203,7 +205,10 @@ public class AgentSpawnTool {
                     Every response starts with three lines: agent_key (pass this verbatim to \
                     agent_send as agent_key), agent_id (the subagent type name), and session_id \
                     (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output — task_id is NOT agent_key.\
+                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
+                    task_id is NOT agent_key. Multiple sync tool calls may run in parallel when \
+                    the toolkit enables parallel tool execution; otherwise use async tasks for \
+                    explicit parallelism.\
                     """)
     public Mono<String> agentSpawn(
             RuntimeContext runtimeContext,
@@ -445,7 +450,7 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
                     """)
     public Mono<String> agentSend(
             RuntimeContext runtimeContext,
@@ -991,6 +996,7 @@ public class AgentSpawnTool {
                 task_id: %s
                 The task exceeded the %ds sync timeout but is still running in the background. \
                 Use task_output(task_id='%s', block=false) to check status, \
+                wait_async_results(task_ids=...) when this task is part of a required barrier, \
                 or wait — completed tasks are pushed back to you automatically. \
                 Do NOT retry the same task.\
                 """,
