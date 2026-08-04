@@ -15,13 +15,20 @@
  */
 package io.agentscope.builder;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
+import io.agentscope.builder.runtime.session.LocalSessionStore;
+import io.agentscope.builder.runtime.session.SessionStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -101,6 +108,62 @@ class BuilderBootstrapSmokeTest {
         ChatUiChannel chat = bootstrap.chatUiChannel();
         Msg reply = chat.send("hello").block();
         assertTrue(reply.getTextContent().contains("from-main"));
+    }
+
+    @Test
+    void defaultsToLocalSessionStore() throws Exception {
+        BuilderBootstrap bootstrap =
+                BuilderBootstrap.builder()
+                        .skipConfigFile(true)
+                        .cwd(tempDir)
+                        .model(stubModel("reply"))
+                        .configureAgent("main", b -> b.name("main"))
+                        .mainAgent("main")
+                        .build();
+
+        SessionStore sessionStore = bootstrap.gateway().sessionAgentManager().getSessionStore();
+        LocalSessionStore localStore = assertInstanceOf(LocalSessionStore.class, sessionStore);
+        assertEquals(
+                tempDir.resolve(".agentscope/workspace/sessions.json").toAbsolutePath().normalize(),
+                localStore.getStoreFile());
+    }
+
+    @Test
+    void loadsAndInjectsCustomSessionStore() throws Exception {
+        SessionStore sessionStore = mock(SessionStore.class);
+        when(sessionStore.listAll()).thenReturn(List.of());
+
+        BuilderBootstrap bootstrap =
+                BuilderBootstrap.builder()
+                        .skipConfigFile(true)
+                        .cwd(tempDir)
+                        .model(stubModel("reply"))
+                        .configureAgent("main", b -> b.name("main"))
+                        .mainAgent("main")
+                        .remoteSessionStore(true)
+                        .sessionStore(sessionStore)
+                        .build();
+
+        verify(sessionStore).load();
+        assertSame(sessionStore, bootstrap.gateway().sessionAgentManager().getSessionStore());
+    }
+
+    @Test
+    void rejectsRemoteSessionModeWithoutSharedStore() {
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                BuilderBootstrap.builder()
+                                        .skipConfigFile(true)
+                                        .cwd(tempDir)
+                                        .model(stubModel("reply"))
+                                        .configureAgent("main", b -> b.name("main"))
+                                        .mainAgent("main")
+                                        .remoteSessionStore(true)
+                                        .build());
+
+        assertTrue(error.getMessage().contains("requires a SessionStore implementation"));
     }
 
     private static Model stubModel(String assistantText) {

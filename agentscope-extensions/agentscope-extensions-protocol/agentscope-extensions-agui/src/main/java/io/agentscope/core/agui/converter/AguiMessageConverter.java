@@ -18,18 +18,22 @@ package io.agentscope.core.agui.converter;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -131,6 +135,36 @@ public class AguiMessageConverter {
     }
 
     /**
+     * Convert an AG-UI run input to AgentScope messages, including official resume entries.
+     *
+     * @param input The AG-UI run input
+     * @return The converted AgentScope messages
+     */
+    public List<Msg> toMsgList(RunAgentInput input) {
+        return toMsgList(input, Map.of());
+    }
+
+    /**
+     * Convert an AG-UI run input to AgentScope messages, resolving resume entries through known
+     * interrupt-to-tool-call mappings when available.
+     *
+     * @param input The AG-UI run input
+     * @param resumeToolCallIds Mapping from interrupt ID to tool call ID
+     * @return The converted AgentScope messages
+     */
+    public List<Msg> toMsgList(RunAgentInput input, Map<String, String> resumeToolCallIds) {
+        Objects.requireNonNull(input, "input cannot be null");
+        List<Msg> msgs = new ArrayList<>(toMsgList(input.getMessages()));
+        for (AguiResume resume : input.getResume()) {
+            String toolCallId = resolveToolCallId(resume.getInterruptId(), resumeToolCallIds);
+            if (toolCallId != null && !toolCallId.isBlank()) {
+                msgs.add(toToolResultMsg(resume, toolCallId));
+            }
+        }
+        return List.copyOf(msgs);
+    }
+
+    /**
      * Convert a list of AgentScope messages to AG-UI messages.
      *
      * @param msgs The AgentScope messages to convert
@@ -214,6 +248,61 @@ public class AguiMessageConverter {
         } catch (JsonException e) {
             return Map.of();
         }
+    }
+
+    private Msg toToolResultMsg(AguiResume resume, String toolCallId) {
+        ToolResultState state =
+                resume.isCancelled() ? ToolResultState.INTERRUPTED : ToolResultState.SUCCESS;
+        ToolResultBlock result =
+                ToolResultBlock.builder()
+                        .id(toolCallId)
+                        .output(TextBlock.builder().text(resumeContent(resume)).build())
+                        .metadata(
+                                Map.of(
+                                        "agui.interruptId", resume.getInterruptId(),
+                                        "agui.resumeStatus", resume.getStatus()))
+                        .state(state)
+                        .build();
+        return Msg.builder()
+                .id("agui-resume-" + resume.getInterruptId())
+                .role(MsgRole.TOOL)
+                .content(result)
+                .build();
+    }
+
+    private String resumeContent(AguiResume resume) {
+        if (resume.isCancelled()) {
+            return "Interrupt cancelled by user";
+        }
+        Object payload = resume.getPayload();
+        if (payload == null) {
+            return "";
+        }
+        if (payload instanceof String text) {
+            return text;
+        }
+        try {
+            return JsonUtils.getJsonCodec().toJson(payload);
+        } catch (JsonException e) {
+            return String.valueOf(payload);
+        }
+    }
+
+    private String resolveToolCallId(String interruptId, Map<String, String> resumeToolCallIds) {
+        if (interruptId == null || interruptId.isBlank()) {
+            return null;
+        }
+        if (resumeToolCallIds != null) {
+            String mapped = resumeToolCallIds.get(interruptId);
+            if (mapped != null && !mapped.isBlank()) {
+                return mapped;
+            }
+        }
+        int separator = interruptId.lastIndexOf(':');
+        if (separator >= 0 && separator < interruptId.length() - 1) {
+            return interruptId.substring(separator + 1);
+        }
+        return interruptId;
     }
 
     /**

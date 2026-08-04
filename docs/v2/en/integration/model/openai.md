@@ -1,6 +1,6 @@
 # OpenAI Model
 
-`agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, and similar services when their wire format follows the OpenAI API.
+`agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, Kimi, MiniMax, and similar services when their wire format follows the OpenAI API.
 
 ## Add the dependency
 
@@ -36,8 +36,6 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .stream(true)
     .build();
 ```
-
-For generic compatible endpoints, set `baseUrl(...)` and the model name expected by that service. For DeepSeek, prefer the dedicated `deepseek:<model>` registry id so AgentScope applies the DeepSeek base URL, `DEEPSEEK_API_KEY`, and DeepSeek formatter defaults. See [DeepSeek](deepseek.md).
 
 ## Spring Boot
 

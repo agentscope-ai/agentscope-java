@@ -287,13 +287,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * configured {@link SkillPromotionGate}.
      */
     public Mono<SkillPromoter.PromotionResult> promoteSkill(String name, String reviewerId) {
+        return promoteSkill(name, reviewerId, getRuntimeContext());
+    }
+
+    /**
+     * Promote a draft skill for the explicitly supplied request context.
+     *
+     * <p>Callers promoting skills outside an active {@code call(...)} must use this overload when
+     * the workspace is user- or session-scoped so the draft is resolved and moved within the
+     * correct namespace.
+     */
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(
+            String name, String reviewerId, RuntimeContext ctx) {
         if (skillPromoter == null) {
             return Mono.just(
                     SkillPromoter.PromotionResult.invalid(
                             "skill promoter not configured; call"
                                     + " enableSkillManageTool(...) on the builder"));
         }
-        return skillPromoter.promote(name, reviewerId, getRuntimeContext());
+        return skillPromoter.promote(name, reviewerId, ctx);
     }
 
     /**
@@ -312,6 +324,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /** @return whether plan mode is active for the session identified by the given {@link RuntimeContext}. */
     public boolean isPlanModeActive(RuntimeContext ctx) {
         return isPlanModeActive(ctx.getUserId(), ctx.getSessionId());
+    }
+
+    /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void clearContext(RuntimeContext ctx) {
+        delegate.clearContext(ctx);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        delegate.clearContext(userId, sessionId);
     }
 
     /**
