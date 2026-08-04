@@ -537,12 +537,45 @@ func testTasks(t *testing.T, ctx context.Context, s store.Store) {
 		t.Fatalf("alice claim: %v %+v", err, c4)
 	}
 
-	// Assigned pending tasks are not self-claim candidates.
+	// Assigned pending tasks are not open-board self-claim candidates.
 	t5, _ := s.TeamTasks().Create(ctx, "ns", "team", "owned-pending", "", nil, "carol")
 	unblocked, _ = s.TeamTasks().GetUnblockedPending(ctx, "ns", "team")
 	for _, u := range unblocked {
 		if u.TaskID == t5.TaskID {
 			t.Fatal("owned pending task must not appear in GetUnblockedPending")
+		}
+	}
+	// Assignee can claim with expectedVersion 0 (current version).
+	c5, err := s.TeamTasks().Claim(ctx, "ns", "team", t5.TaskID, "carol", 0)
+	if err != nil || c5.State != store.TaskStateInProgress || c5.Owner != "carol" {
+		t.Fatalf("carol claim with version 0: %v %+v", err, c5)
+	}
+
+	// Fail records the reason and is terminal.
+	f5, err := s.TeamTasks().Fail(ctx, "ns", "team", t5.TaskID, "sandbox exploded")
+	if err != nil || f5.State != store.TaskStateFailed || f5.Result != "sandbox exploded" {
+		t.Fatalf("fail: %v %+v", err, f5)
+	}
+	if f5.CompletedAt == nil {
+		t.Fatal("failed task should carry completedAt")
+	}
+	if _, err = s.TeamTasks().Fail(ctx, "ns", "team", t5.TaskID, "again"); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("re-failing a terminal task must conflict, got %v", err)
+	}
+	if _, err = s.TeamTasks().Complete(ctx, "ns", "team", t5.TaskID, "late"); err == nil {
+		t.Fatal("completing a failed task must fail")
+	}
+
+	// A pending task can fail directly (never claimed).
+	t7, _ := s.TeamTasks().Create(ctx, "ns", "team", "unstartable", "", nil, "")
+	f7, err := s.TeamTasks().Fail(ctx, "ns", "team", t7.TaskID, "no capacity")
+	if err != nil || f7.State != store.TaskStateFailed {
+		t.Fatalf("fail pending: %v %+v", err, f7)
+	}
+	unblocked, _ = s.TeamTasks().GetUnblockedPending(ctx, "ns", "team")
+	for _, u := range unblocked {
+		if u.TaskID == t7.TaskID {
+			t.Fatal("failed task must not be claimable")
 		}
 	}
 

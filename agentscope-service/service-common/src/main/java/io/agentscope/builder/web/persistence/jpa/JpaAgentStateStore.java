@@ -17,8 +17,10 @@ package io.agentscope.builder.web.persistence.jpa;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JacksonJsonCodec;
 import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonUtils;
@@ -46,11 +48,14 @@ public class JpaAgentStateStore implements AgentStateStore {
     private static final String ANON_USER = "__anon__";
 
     private final AgentStateEntityRepository repository;
+    private final DeletedSessionRegistry deletedSessions;
     private final JsonCodec codec;
     private final ObjectMapper mapper;
 
-    public JpaAgentStateStore(AgentStateEntityRepository repository) {
+    public JpaAgentStateStore(
+            AgentStateEntityRepository repository, DeletedSessionRegistry deletedSessions) {
         this.repository = repository;
+        this.deletedSessions = deletedSessions;
         this.codec = JsonUtils.getJsonCodec();
         if (!(codec instanceof JacksonJsonCodec jackson)) {
             throw new IllegalStateException(
@@ -77,6 +82,22 @@ public class JpaAgentStateStore implements AgentStateStore {
         } catch (Exception ex) {
             throw new RuntimeException("Failed to save agent state list: " + key, ex);
         }
+    }
+
+    /**
+     * Overridden only so that a transaction is open while the row is read.
+     *
+     * <p>Inherited as an interface default method it would be declared by {@link AgentStateStore},
+     * so Spring finds no transaction attribute for it and the class-level {@link Transactional} never
+     * applies; its call to {@link #get} is then a self-invocation that bypasses the proxy too. With
+     * no transaction, reading the PostgreSQL large object behind {@code state_data} fails and every
+     * turn would start from an empty context.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        return new VersionedState<>(get(userId, sessionId, key, type).orElse(null), UNVERSIONED);
     }
 
     @Override
@@ -151,6 +172,11 @@ public class JpaAgentStateStore implements AgentStateStore {
 
     private void upsert(
             String userId, String sessionId, String key, boolean listKind, String json) {
+        // A turn that is unwinding after its session was deleted still saves state,
+        // which would restore the row teardown just dropped.
+        if (deletedSessions.isDeleted(sessionId)) {
+            return;
+        }
         String uid = normalizeUser(userId);
         long now = System.currentTimeMillis();
         AgentStateEntity entity =

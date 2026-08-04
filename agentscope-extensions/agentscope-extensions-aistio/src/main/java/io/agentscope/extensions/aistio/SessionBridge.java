@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.aistio;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.aistio.proto.SessionEventMsg;
 import io.agentscope.aistio.proto.SessionSnapshot;
@@ -577,10 +578,29 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                 Level.FINE,
                 "aistio: downstream team event team={0} type={1} member={2} task={3}",
                 new Object[] {teamId, eventType, memberName, taskId});
-        TeamsMiddleware.wakeupTeamMember(teamId, memberName);
+        String notice = readNotice(payload);
+        TeamsMiddleware.wakeupTeamMember(teamId, memberName, notice);
         String sessionId = readSessionId(payload);
         if (!sessionId.isEmpty()) {
-            TeamsMiddleware.wakeupSession(sessionId);
+            TeamsMiddleware.wakeupSession(sessionId, notice);
+        }
+    }
+
+    /**
+     * Extracts the human-readable body of a team event so the woken turn starts with the content.
+     * The control plane sends the message text as the raw payload; JSON payloads carry it under
+     * {@code content}.
+     */
+    private static String readNotice(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "";
+        }
+        try {
+            JsonNode root = TEAM_EVENT_MAPPER.readTree(payload);
+            String content = root.path("content").asText("");
+            return content.isEmpty() ? root.toString() : content;
+        } catch (IOException e) {
+            return new String(payload, StandardCharsets.UTF_8);
         }
     }
 

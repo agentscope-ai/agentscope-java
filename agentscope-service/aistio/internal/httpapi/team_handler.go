@@ -3,8 +3,10 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -459,6 +461,13 @@ func (s *Server) createTeamTask(c *gin.Context) {
 		return
 	}
 
+	if !s.requireTeam(c, namespace, teamName) {
+		return
+	}
+	if !s.requireTeamMember(c, namespace, teamName, req.Owner) {
+		return
+	}
+
 	var (
 		task *store.TeamTask
 		err  error
@@ -472,6 +481,7 @@ func (s *Server) createTeamTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	s.notifyTaskAssigned(namespace, teamName, task, false)
 	c.JSON(http.StatusCreated, task)
 }
 
@@ -506,6 +516,9 @@ func (s *Server) assignTeamTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
+	if !s.requireTeamMember(c, namespace, teamName, req.Owner) {
+		return
+	}
 	var expectedVersion int64
 	if req.ResourceVersion != "" {
 		v, _ := strconv.ParseInt(req.ResourceVersion, 10, 64)
@@ -516,6 +529,7 @@ func (s *Server) assignTeamTask(c *gin.Context) {
 		s.writeTaskErr(c, namespace, teamName, taskID, err)
 		return
 	}
+	s.notifyTaskAssigned(namespace, teamName, task, false)
 	c.JSON(http.StatusOK, task)
 }
 
@@ -533,6 +547,10 @@ func (s *Server) claimTeamTask(c *gin.Context) {
 		return
 	}
 
+	if !s.requireTeamMember(c, namespace, teamName, req.ClaimedBy) {
+		return
+	}
+
 	var expectedVersion int64
 	if req.ResourceVersion != "" {
 		v, _ := strconv.ParseInt(req.ResourceVersion, 10, 64)
@@ -543,6 +561,11 @@ func (s *Server) claimTeamTask(c *gin.Context) {
 	if err != nil {
 		s.writeTaskErr(c, namespace, teamName, taskID, err)
 		return
+	}
+	// A member claiming its own task already knows; a console operator starting
+	// it from the board does not reach the agent at all, so notify in that case.
+	if internal, _ := c.Get(ctxInternalAuth); internal != true {
+		s.notifyTaskAssigned(namespace, teamName, task, true)
 	}
 	c.JSON(http.StatusOK, task)
 }
@@ -581,7 +604,125 @@ func (s *Server) completeTeamTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
+	s.notifyLeadTaskSettled(namespace, teamName, task, req.Result, "completed")
 	c.JSON(http.StatusOK, task)
+}
+
+func (s *Server) failTeamTask(c *gin.Context) {
+	if !s.requireTeamStores(c) {
+		return
+	}
+	teamName := c.Param("team")
+	taskID := c.Param("taskId")
+	namespace := c.DefaultQuery("namespace", defaultNamespace)
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	task, err := s.taskStore.Fail(namespace, teamName, taskID, req.Reason)
+	if err != nil {
+		s.writeTaskErr(c, namespace, teamName, taskID, err)
+		return
+	}
+	s.notifyLeadTaskSettled(namespace, teamName, task, req.Reason, "failed")
+	c.JSON(http.StatusOK, task)
+}
+
+// requireTeamMember rejects an owner or claimant that names no team member.
+// Such a task is invisible to every worker's claimable list and to the
+// unassigned pool, so it would sit on the board forever. The error lists the
+// roster names because an agent that guessed an agent ref (the roster's right
+// column) has no other way to recover.
+// requireTeam reports whether the team still exists, answering 404 when it does
+// not. Members keep calling their team tools for a while after teardown — an
+// interrupted turn does not stop immediately — and those calls must not insert
+// board or mailbox rows for a team that is gone.
+func (s *Server) requireTeam(c *gin.Context, namespace, teamName string) bool {
+	_, err := s.store.Teams().Get(c.Request.Context(), namespace, teamName)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "team not found"})
+	} else {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+	}
+	return false
+}
+
+func (s *Server) requireTeamMember(c *gin.Context, namespace, teamName, member string) bool {
+	if member == "" {
+		return true
+	}
+	ctx := c.Request.Context()
+	if m, err := s.store.Teams().GetMember(ctx, namespace, teamName, member); err == nil && m != nil {
+		return true
+	}
+	msg := fmt.Sprintf("unknown team member %q", member)
+	if members, err := s.store.Teams().ListMembers(ctx, namespace, teamName); err == nil {
+		names := make([]string, 0, len(members))
+		for _, m := range members {
+			names = append(names, m.MemberName)
+		}
+		if len(names) > 0 {
+			msg = fmt.Sprintf("%s; use a roster member name: %s", msg, strings.Join(names, ", "))
+		}
+	}
+	c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg})
+	return false
+}
+
+// notifyTaskAssigned pushes newly created work into the owner's mailbox so the
+// member is woken with it. A worker that probed an empty board and ended its
+// turn has no other way to learn the task exists. When started is true the task
+// is already in progress (a console operator pressed start on its behalf), so
+// the member is told to work it rather than to claim it first.
+func (s *Server) notifyTaskAssigned(namespace, teamName string, task *store.TeamTask, started bool) {
+	if s.messageRouter == nil || task == nil || task.Owner == "" {
+		return
+	}
+	var b strings.Builder
+	if started {
+		fmt.Fprintf(&b, "[team] Task %s (%s) is now in progress and owned by you.\n",
+			task.TaskID, task.Subject)
+	} else {
+		fmt.Fprintf(&b, "[team] Task %s (%s) was assigned to you.\n", task.TaskID, task.Subject)
+	}
+	if task.Description != "" {
+		fmt.Fprintf(&b, "\nDescription:\n%s\n", task.Description)
+	}
+	if started {
+		b.WriteString("\nWork it now, then call completeTask with a result summary," +
+			" or failTask with a reason.")
+	} else {
+		fmt.Fprintf(&b, "\nCall claimTask with task_id=%s to start, then completeTask with a"+
+			" result summary, or failTask with a reason.", task.TaskID)
+	}
+	s.messageRouter.NotifyMember(namespace, teamName, team.LeadMemberName, task.Owner, b.String())
+}
+
+// notifyLeadTaskSettled pushes a terminal task transition into the lead's mailbox
+// so the lead is woken with the outcome instead of having to poll the board.
+func (s *Server) notifyLeadTaskSettled(namespace, teamName string, task *store.TeamTask, detail, verb string) {
+	if s.messageRouter == nil || task == nil {
+		return
+	}
+	owner := task.Owner
+	if owner == "" {
+		owner = "unknown"
+	}
+	if detail == "" {
+		detail = "(no detail provided)"
+	}
+	label := "Result"
+	if verb == "failed" {
+		label = "Reason"
+	}
+	s.messageRouter.NotifyLead(namespace, teamName, task.Owner, fmt.Sprintf(
+		"[team] Task %s (%s) %s by %s.\n\n%s:\n%s",
+		task.TaskID, task.Subject, verb, owner, label, detail))
 }
 
 func (s *Server) sendTeamMessage(c *gin.Context) {
@@ -595,6 +736,22 @@ func (s *Server) sendTeamMessage(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
+	}
+	if !s.requireTeam(c, namespace, teamName) {
+		return
+	}
+
+	if req.To != "" {
+		// A self-addressed message only wakes its sender again, so the reply it was
+		// meant for never reaches anyone.
+		if req.To == req.From {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error: "cannot send a message to yourself; address another roster member"})
+			return
+		}
+		if !s.requireTeamMember(c, namespace, teamName, req.To) {
+			return
+		}
 	}
 
 	// Empty `to` means broadcast (reuse MessageRouter.BroadcastMessage).

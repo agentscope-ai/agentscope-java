@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { getManagedSession, ManagedSession } from '../api/managedSessions';
+import {
+  getManagedSession,
+  ManagedSession,
+  parseTeamExternalKey,
+  teamDetailPath,
+} from '../api/managedSessions';
 import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
 
@@ -19,6 +24,10 @@ const S: Record<string, React.CSSProperties> = {
   meta: {
     fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'ui-monospace, Menlo, monospace',
   },
+  teamTag: {
+    fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+    padding: '2px 8px', borderRadius: 6, color: '#0f766e', background: '#ccfbf1',
+  },
   tabs: { display: 'flex', gap: 4, marginLeft: 8 },
   tab: {
     background: 'transparent', border: 'none', borderBottom: '2px solid transparent',
@@ -27,6 +36,20 @@ const S: Record<string, React.CSSProperties> = {
   },
   tabActive: { color: '#0f172a', fontWeight: 600, borderBottomColor: '#6366f1' },
   body: { flex: 1, minHeight: 0, overflow: 'auto' },
+  bodyChat: { flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  banner: {
+    flexShrink: 0,
+    margin: '12px 28px 0',
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: '1px solid #99f6e4',
+    background: '#f0fdfa',
+    color: '#115e59',
+    fontSize: '0.88rem',
+    lineHeight: 1.5,
+  },
+  bannerLink: { color: '#0f766e', fontWeight: 600 },
+  chatWrap: { flex: 1, minHeight: 0 },
   err: { padding: 32, color: '#dc2626' },
   loading: { padding: 32, color: '#94a3b8' },
 };
@@ -84,6 +107,9 @@ export default function SessionDetailPage() {
     );
   }
 
+  const teamRef = parseTeamExternalKey(session.externalKey);
+  const fromTeam = !!teamRef;
+
   return (
     <div style={S.root}>
       <div style={S.bar}>
@@ -95,6 +121,9 @@ export default function SessionDetailPage() {
         </Link>
         <h1 style={S.title}>Session</h1>
         <span style={S.meta} title={session.id}>{session.id}</span>
+        {fromTeam && (
+          <span style={S.teamTag} title={session.externalKey || undefined}>Team</span>
+        )}
         <span style={{ flex: 1 }} />
         <div style={S.tabs}>
           <button
@@ -102,7 +131,7 @@ export default function SessionDetailPage() {
             style={{ ...S.tab, ...(tab === 'chat' ? S.tabActive : {}) }}
             onClick={() => setTab('chat')}
           >
-            Chat
+            {fromTeam ? 'Transcript' : 'Chat'}
           </button>
           <button
             type="button"
@@ -113,9 +142,31 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </div>
-      <div style={S.body}>
+      <div style={tab === 'chat' ? S.bodyChat : S.body}>
         {tab === 'chat' ? (
-          <ChatPanel sessionId={session.id} agentId={session.agentId} />
+          <>
+            {teamRef && (
+              <div style={S.banner}>
+                This session was started by Agent Team{' '}
+                <strong>
+                  {teamRef.namespace}/{teamRef.teamName}
+                </strong>{' '}
+                (member <strong>{teamRef.memberName}</strong>). Direct chat here is disabled —
+                continue the conversation from the{' '}
+                <Link to={teamDetailPath(teamRef)} style={S.bannerLink}>
+                  team detail page
+                </Link>
+                .
+              </div>
+            )}
+            <div style={S.chatWrap}>
+              <ChatPanel
+                sessionId={session.id}
+                agentId={session.agentId}
+                readOnly={fromTeam}
+              />
+            </div>
+          </>
         ) : (
           <SessionTranscript
             agentId={session.agentId}

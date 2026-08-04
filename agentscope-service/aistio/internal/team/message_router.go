@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"sync"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
+
+// LeadMemberName is the reserved member name of a team's lead.
+const LeadMemberName = "lead"
 
 // MemberLocation holds the routing information for a team member.
 type MemberLocation struct {
@@ -109,6 +114,33 @@ func (r *MessageRouter) RouteMessage(namespace, teamName, from, to, content stri
 	}
 	metrics.RecordTeamMessage(namespace, teamName, "enqueued")
 	return msg, nil
+}
+
+// NotifyLead enqueues a notice toward the team lead so lifecycle transitions
+// (task completed/failed, member lost) reach the lead instead of only landing in
+// the store. Best-effort: never fails the caller's primary operation, and skips
+// self-notification when the lead itself is the source.
+func (r *MessageRouter) NotifyLead(namespace, teamName, from, content string) {
+	if r == nil || from == LeadMemberName || content == "" {
+		return
+	}
+	if _, err := r.RouteMessage(namespace, teamName, from, LeadMemberName, content); err != nil {
+		log.Log.WithName("team-router").V(1).Info("lead notify failed",
+			"team", teamName, "from", from, "error", err.Error())
+	}
+}
+
+// NotifyMember enqueues a notice toward a single member so board transitions
+// that create work for it (assignment, board-driven start) wake it instead of
+// waiting for it to poll again. Best-effort, and skips self-notification.
+func (r *MessageRouter) NotifyMember(namespace, teamName, from, to, content string) {
+	if r == nil || to == "" || to == from || content == "" {
+		return
+	}
+	if _, err := r.RouteMessage(namespace, teamName, from, to, content); err != nil {
+		log.Log.WithName("team-router").V(1).Info("member notify failed",
+			"team", teamName, "to", to, "error", err.Error())
+	}
 }
 
 // BroadcastMessage sends a message to every team member (except the sender)

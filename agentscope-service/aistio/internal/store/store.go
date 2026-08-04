@@ -170,6 +170,9 @@ type TeamRepository interface {
 	RemoveMember(ctx context.Context, namespace, teamName, memberName string) error
 	BindMemberSession(ctx context.Context, namespace, teamName, memberName, sessionID, managedSessionID, instanceRef string) error
 	UpdateMemberPhase(ctx context.Context, namespace, teamName, memberName, phase string) error
+	// FindMemberBySessionID returns the member bound to sessionID (session_id or
+	// managed_session_id). ErrNotFound when no match.
+	FindMemberBySessionID(ctx context.Context, sessionID string) (*TeamMember, error)
 }
 
 // TeamTaskRepository manages team_tasks. Method signatures align with the
@@ -183,8 +186,12 @@ type TeamTaskRepository interface {
 	Assign(ctx context.Context, namespace, teamName, taskID, owner string, expectedVersion int64) (*TeamTask, error)
 	// Claim moves a pending unblocked task to in_progress when owner is empty
 	// (self-claim) or already equals claimedBy (assignee starts assigned work).
+	// expectedVersion <= 0 means claim at the current store version.
 	Claim(ctx context.Context, namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*TeamTask, error)
 	Complete(ctx context.Context, namespace, teamName, taskID, result string) (*TeamTask, error)
+	// Fail marks a pending or in-progress task failed, recording reason in result.
+	// Terminal tasks are rejected with ErrConflict.
+	Fail(ctx context.Context, namespace, teamName, taskID, reason string) (*TeamTask, error)
 	Unclaim(ctx context.Context, namespace, teamName, taskID string) (*TeamTask, error)
 	// GetUnblockedPending returns pending tasks whose blockers are completed
 	// and owner is empty (self-claim candidates).

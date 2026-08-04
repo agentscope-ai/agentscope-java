@@ -119,7 +119,14 @@ func (r *taskRepo) Claim(ctx context.Context, namespace, teamName, taskID, claim
 	if err != nil {
 		return nil, err
 	}
-	if cur.Version != expectedVersion || cur.State != store.TaskStatePending {
+	if cur.State == store.TaskStateInProgress && cur.Owner == claimedBy {
+		return cur, nil
+	}
+	version := expectedVersion
+	if version <= 0 {
+		version = cur.Version
+	}
+	if cur.Version != version || cur.State != store.TaskStatePending {
 		return nil, store.ErrConflict
 	}
 	if cur.Owner != "" && cur.Owner != claimedBy {
@@ -141,7 +148,7 @@ func (r *taskRepo) Claim(ctx context.Context, namespace, teamName, taskID, claim
 			AND (owner IS NULL OR owner='' OR owner=$6)
 		RETURNING id, task_id, team_name, namespace, subject, description, state, owner,
 			blocked_by, result, version, created_at, updated_at, completed_at`,
-		namespace, teamName, taskID, expectedVersion, store.TaskStateInProgress, claimedBy, now,
+		namespace, teamName, taskID, version, store.TaskStateInProgress, claimedBy, now,
 		store.TaskStatePending,
 	).Scan(
 		&t.ID, &t.TaskID, &t.TeamName, &t.Namespace, &t.Subject, &desc, &t.State, &owner,
@@ -191,6 +198,41 @@ func (r *taskRepo) Complete(ctx context.Context, namespace, teamName, taskID, re
 		INSERT INTO team_task_history (task_fk, team_name, namespace, from_state, to_state, owner)
 		VALUES ($1,$2,$3,$4,$5,$6)`,
 		t.ID, teamName, namespace, store.TaskStateInProgress, store.TaskStateCompleted, t.Owner)
+	return t, nil
+}
+
+func (r *taskRepo) Fail(ctx context.Context, namespace, teamName, taskID, reason string) (*store.TeamTask, error) {
+	now := time.Now().UTC()
+	t := &store.TeamTask{}
+	var owner, desc, res *string
+	err := r.pool.QueryRow(ctx, `
+		UPDATE team_tasks
+		SET state=$4, result=$5, version=version+1, updated_at=$6, completed_at=$6
+		WHERE namespace=$1 AND team_name=$2 AND task_id=$3 AND state IN ($7,$8)
+		RETURNING id, task_id, team_name, namespace, subject, description, state, owner,
+			blocked_by, result, version, created_at, updated_at, completed_at`,
+		namespace, teamName, taskID, store.TaskStateFailed, reason, now,
+		store.TaskStatePending, store.TaskStateInProgress,
+	).Scan(
+		&t.ID, &t.TaskID, &t.TeamName, &t.Namespace, &t.Subject, &desc, &t.State, &owner,
+		&t.BlockedBy, &res, &t.Version, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			if _, getErr := r.Get(ctx, namespace, teamName, taskID); getErr != nil {
+				return nil, getErr
+			}
+			return nil, store.ErrConflict
+		}
+		return nil, err
+	}
+	t.Owner = deref(owner)
+	t.Description = deref(desc)
+	t.Result = deref(res)
+	_, _ = r.pool.Exec(ctx, `
+		INSERT INTO team_task_history (task_fk, team_name, namespace, from_state, to_state, owner)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, teamName, namespace, store.TaskStateInProgress, store.TaskStateFailed, t.Owner)
 	return t, nil
 }
 

@@ -1,207 +1,285 @@
-# Aistio
+# Aistio Control Plane
 
-**Istio is for microservices. Aistio is for AI agents.**
+> **The Go control-plane component behind [Agent Service](../README.md).**
 
-Aistio is a Kubernetes-native control plane that brings the service-mesh philosophy to AI agent workloads. Just as Istio gives platform teams a uniform way to manage traffic, security, and observability for microservices — without changing application code — Aistio does the same for AI agents: lifecycle management, session tracking, model routing, tool governance, multi-agent collaboration, and observability, all declared as Kubernetes CRDs.
+[中文说明](README_zh.md)
 
-## Why Aistio
+Aistio provides the product, runtime, fleet, and Kubernetes control APIs used by Agent Service. It
+manages desired state and operational state while leaving model inference and tool execution in
+AgentScope data planes.
 
-Running a handful of agents in a notebook is easy. Running dozens in production is not:
+When deployed independently in Kubernetes, Aistio also brings service-mesh-style control-plane
+discipline to agent workloads: declarative lifecycle management, runtime discovery, session
+observability, model and tool governance, and multi-agent coordination.
 
-| Challenge | Without Aistio | With Aistio |
-| --- | --- | --- |
-| Deploying & scaling agents | Hand-rolled Deployments, one-off scripts | `kubectl apply` an `Agent` CR, autoscaling built in |
-| Model credentials | Scattered env vars, easy to leak | `ModelConfig` CR + K8s Secrets, rotated centrally |
-| Tool access control | Every agent wires its own MCP clients | `MCPServer` CR, tool allow-lists per agent |
-| Multi-agent collaboration | Custom orchestration code per scenario | `AgentTeam` CR with lead/member roles, task routing, fault recovery |
-| Session & context management | App-level bookkeeping | Runtime DB + `aistioctl sessions`, context-pressure monitoring, auto-compression |
-| Observability | printf debugging | Prometheus metrics, OpenTelemetry tracing, Grafana dashboards |
+## Overview
+
+Running an agent is straightforward. Operating a fleet of agents introduces a different class of
+problems: configuration rollout, credentials, tool access, health, session state, context pressure,
+and collaboration across independently running agents. Aistio centralizes those concerns without
+putting the inference loop in the control plane.
+
+The project is built around three boundaries:
+
+- **Desired state** is declared with Kubernetes resources such as `Agent`, `ModelConfig`,
+  `MCPServer`, and `AgentTeam`.
+- **Runtime state**—sessions, events, context snapshots, metrics, team messages, and tasks—is stored
+  in PostgreSQL or an in-memory store and exposed through the REST API.
+- **Agent execution** stays in the data plane. Agents connect through ASDP or expose the AgentScope
+  HTTP contract while retaining ownership of their model loop and tools.
+
+### What Aistio manages
+
+| Area | Capability |
+| --- | --- |
+| Agent lifecycle | Declarative deployments, BYO workload adoption, replicas, health, and revisions |
+| Runtime operations | Live agent inventory, session inspection, context pressure, compression, and termination |
+| Models and credentials | Provider configuration through `ModelConfig`; secrets remain in Kubernetes Secrets |
+| Tools | MCP server registry, per-agent allow-lists, approval requirements, and remote/stdio transports |
+| Agent teams | Lead/member topology, dynamic membership, task routing, lifecycle policy, and recovery |
+| Data plane delivery | ASDP gRPC configuration push and status reporting, plus HTTP contract discovery |
+| Observability | Prometheus metrics, OpenTelemetry traces, health probes, Grafana dashboard, and alert rules |
+| Isolation | Optional sandbox claims, network policy integration, and configurable shutdown behavior |
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Kubernetes Cluster                        │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    Aistio Control Plane                     │ │
-│  │                                                             │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐ │ │
-│  │  │ Agent    │  │ Session  │  │ Team     │  │ MCP / Model│ │ │
-│  │  │Controller│  │Controller│  │Controller│  │ Controller │ │ │
-│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────┬──────┘ │ │
-│  │       │              │             │              │        │ │
-│  │  ┌────┴──────────────┴─────────────┴──────────────┴─────┐  │ │
-│  │  │            ASDP (Agent Service Discovery Protocol)   │  │ │
-│  │  │          gRPC bi-directional config push/status      │  │ │
-│  │  └────┬──────────────┬─────────────┬──────────────┬─────┘  │ │
-│  │       │              │             │              │        │ │
-│  └───────┼──────────────┼─────────────┼──────────────┼────────┘ │
-│          │              │             │              │          │
-│  ┌───────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼──────┐  │
-│  │  Agent Pod   │ │ Agent Pod │ │ Agent Pod │ │  Agent Pod │  │
-│  │  (data plane)│ │           │ │           │ │            │  │
-│  │  ┌─────────┐ │ │           │ │           │ │            │  │
-│  │  │Connector│ │ │   ...     │ │   ...     │ │    ...     │  │
-│  │  │ (ASDP)  │ │ │           │ │           │ │            │  │
-│  │  └─────────┘ │ │           │ │           │ │            │  │
-│  └──────────────┘ └───────────┘ └───────────┘ └────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+```text
+                         kubectl / aistioctl / REST clients
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              aistiod                                        │
+│                                                                             │
+│  Kubernetes reconcilers       Runtime services          Product APIs*       │
+│  ┌────────────────────┐       ┌──────────────────┐      ┌────────────────┐  │
+│  │ Agent / Model / MCP│       │ sessions / teams │      │ managed agents │  │
+│  │ Team / Sandbox     │       │ context / metrics│      │ console / auth │  │
+│  └─────────┬──────────┘       └────────┬─────────┘      └───────┬────────┘  │
+│            │                           │                        │           │
+│            └──────────────┬────────────┴────────────────────────┘           │
+│                           │                                                 │
+│            ASDP gRPC / AgentScope HTTP contract / REST API                 │
+└───────────────────────────┬─────────────────────────────────────────────────┘
+                            │
+              ┌─────────────┼────────────────┐
+              ▼             ▼                ▼
+       managed agent   BYO workload    Agent Service
+       deployments     deployments     Java data plane
+              │             │                │
+              └─────────────┴────────────────┘
+                            │
+                   PostgreSQL or memory
 ```
 
-**Control plane** (`aistiod`) watches CRDs, reconciles agent deployments, persists runtime session/team data in a store (PostgreSQL or in-memory), coordinates teams, and pushes configuration to data planes via ASDP.
+\* Product APIs and the web console are optional in the Helm chart and are enabled by the
+[Agent Service](../README.md) deployment.
 
-**Data plane** is your agent application. Embed the [Connector](connector/) library (or implement the ASDP gRPC contract) to receive config pushes and report status — no vendor lock-in on the agent framework.
+### Control plane and data plane
 
-**CRDs at a glance** (declarative topology only — runtime session/message/task data lives in the DB):
+`aistiod` watches CRDs, reconciles Kubernetes resources, stores runtime state, coordinates teams,
+and pushes configuration. It does **not** execute model turns.
 
-| CRD | Purpose |
+The data plane is the agent application. AgentScope runtimes can embed the Go
+[`connector`](connector/) or the Java
+[`agentscope-extensions-aistio`](../../agentscope-extensions/agentscope-extensions-aistio/)
+integration. Other runtimes can implement the ASDP gRPC protocol or the AgentScope HTTP contract.
+
+### Deployment modes
+
+| Mode | Kubernetes | Product APIs | Typical use |
+| --- | --- | --- | --- |
+| Kubernetes control plane | Enabled | Optional | Manage CRD-backed agents and BYO workloads in a cluster |
+| Agent Service | Disabled locally; optional in production | Enabled | Full hosted-agent stack with console, gateway, Java data plane, and scheduler |
+| Runtime-only API | Optional | Disabled | Session/team observation and control for externally managed agents |
+
+### Resource model
+
+CRDs describe topology and desired state; high-volume runtime data stays out of Kubernetes objects.
+
+| Resource | Purpose |
 | --- | --- |
-| `Agent` | Declare an agent: image, model, tools, replicas, sandbox |
-| `AgentTeam` | Orchestrate multi-agent collaboration with lead/member roles |
-| `MCPServer` | Register an MCP tool server (remote HTTP or stdio) |
-| `ModelConfig` | Define model provider + credentials (DashScope, OpenAI, Anthropic, …) |
-| `SandboxClaim` | Request a sandbox for an agent session |
+| `Agent` | Declarative or BYO agent, runtime, tools, replicas, and sandbox policy |
+| `ModelConfig` | Model provider, model name, options, TLS, and secret references |
+| `MCPServer` | Remote or stdio MCP endpoint and credential headers |
+| `AgentTeam` | Lead/member graph, dynamic membership, task strategy, and recovery policy |
+| `SandboxClaim` | Isolated execution environment requested for an agent session |
 
-Runtime data (sessions, events, context snapshots, team messages/tasks) is queried via the REST API / `aistioctl`, not via kubectl CRDs.
-
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
-- Kubernetes cluster (1.28+)
-- Helm 3.x
-- kubectl
+- Kubernetes 1.28+
+- Helm 3
+- `kubectl` configured for the target cluster
 
-### Install via Helm
+### 1. Install the control plane
+
+From this directory:
 
 ```bash
-helm install aistio helm/aistio -n aistio-system --create-namespace
+helm install aistio ./helm/aistio \
+  --namespace aistio-system \
+  --create-namespace
+
+kubectl rollout status deployment/aistio-controller -n aistio-system
+kubectl get crd | grep agentscope.io
 ```
 
-### Define a model
+The default chart uses an in-memory runtime store. Use the
+[`postgres` profile](helm/aistio/profiles/postgres.yaml) for durable sessions, team state, or more
+than one control-plane replica.
 
-```yaml
+### 2. Configure a model
+
+```bash
+kubectl create namespace agents
+kubectl create secret generic dashscope-credentials \
+  --namespace agents \
+  --from-literal=api-key="$DASHSCOPE_API_KEY"
+
+kubectl apply -f - <<'YAML'
 apiVersion: agentscope.io/v1alpha1
 kind: ModelConfig
 metadata:
   name: qwen-max
+  namespace: agents
 spec:
   provider: DashScope
   model: qwen-max
-  apiKeySecret: dashscope-credentials   # a K8s Secret with key "api-key"
+  apiKeySecret: dashscope-credentials
+  apiKeySecretKey: api-key
+YAML
 ```
 
-### Register an MCP tool server
+### 3. Deploy an agent
 
-```yaml
-apiVersion: agentscope.io/v1alpha1
-kind: MCPServer
-metadata:
-  name: knowledge-base
-spec:
-  type: Remote
-  remote:
-    url: https://kb.internal/mcp
-    timeout: "30s"
-```
-
-### Deploy an agent
-
-```yaml
+```bash
+kubectl apply -f - <<'YAML'
 apiVersion: agentscope.io/v1alpha1
 kind: Agent
 metadata:
-  name: customer-support
+  name: support-agent
+  namespace: agents
 spec:
   type: Declarative
   runtime: agentscope-java
+  displayName: Support Agent
   declarative:
     agentConfig:
-      systemMessage: "You are a customer support assistant."
+      systemMessage: "You are a concise and helpful support assistant."
       modelConfigRef: qwen-max
-      maxTurns: 50
-    tools:
-      - type: McpServer
-        mcpServer:
-          name: knowledge-base
-          toolNames: ["search_docs", "get_faq"]
-    replicas: 3
+      maxTurns: 30
+    replicas: 1
+YAML
+
+kubectl get agents -n agents
+kubectl describe agent support-agent -n agents
 ```
+
+For richer examples, see [`config/samples`](config/samples/) and the
+[`AgentTeam` walkthrough](examples/agentteam/README.md).
+
+### 4. Inspect the runtime
+
+Build `aistioctl` locally, then port-forward the control-plane API:
 
 ```bash
-kubectl apply -f model.yaml -f mcp.yaml -f agent.yaml
-kubectl get agents
-# NAME               TYPE          RUNTIME           READY   REPLICAS   AGE
-# customer-support   Declarative   agentscope-java   True    3          30s
+go build -o bin/aistioctl ./cmd/aistioctl
+
+kubectl port-forward service/aistio-controller 8080:8080 -n aistio-system
 ```
 
-### Assemble a team
-
-```yaml
-apiVersion: agentscope.io/v1alpha1
-kind: AgentTeam
-metadata:
-  name: code-review-team
-spec:
-  objective: "Review PR #42 for security, performance, and test coverage"
-  lead:
-    agentRef:
-      name: senior-reviewer
-    prompt: "Coordinate the review and synthesize findings."
-  members:
-    - name: security
-      agentRef:
-        name: security-agent
-      prompt: "Focus on auth, injection, and data exposure."
-    - name: performance
-      agentRef:
-        name: perf-agent
-      prompt: "Focus on N+1 queries, memory leaks, and hot paths."
-  recovery:
-    reschedulePolicy: Auto
-    maxRestarts: 3
-  lifecycle:
-    maxDuration: "2h"
-```
+In another terminal:
 
 ```bash
-kubectl apply -f team.yaml
-kubectl get agentteams
-# NAME               PHASE     LEAD              AGE
-# code-review-team   Running   senior-reviewer   10s
+./bin/aistioctl verify-install
+./bin/aistioctl agent list --namespace agents
+./bin/aistioctl session list
 ```
 
-## Features
+Run `./bin/aistioctl --help` for agent revisions, rollbacks, sessions, teams, and proxy status.
 
-**Agent Lifecycle** — Declarative (control plane creates Deployments) or BYO (adopt existing workloads). Replica scaling, rolling updates, health probing.
+## Key features
 
-**Session Management** — Per-session state tracking, token usage metering, context-pressure monitoring with automatic compression when the context window fills up.
+### Declarative and BYO agents
 
-**Multi-Agent Teams** — Lead/member topology, dynamic membership, task claim strategies (self-claim / lead-assign), fault recovery with configurable restart policies.
+Use `type: Declarative` when Aistio should create and reconcile the Deployment. Use `type: BYO`
+with an image or `workloadRef` to adopt an existing runtime. Both modes converge on the same
+discovery, health, session, and operations APIs.
 
-**Model Governance** — Centralized model provider configuration. Credentials stay in K8s Secrets, never in agent code. Supports DashScope, OpenAI, Anthropic, Gemini, Ollama, and custom providers.
+### Multi-agent teams
 
-**MCP Tool Registry** — Register MCP servers as cluster resources. Bind tools to agents with allow-lists and approval gates. Supports remote HTTP (Streamable HTTP / SSE) and stdio transports.
+`AgentTeam` defines an objective, lead, members, dynamic-member policy, task-claim strategy,
+recovery, and lifecycle limits. Runtime messages and tasks are persisted separately from the CRD,
+allowing the team to continue across controller restarts.
 
-**ASDP Data Plane** — Bi-directional gRPC protocol for config push and status reporting. Framework-agnostic: works with any agent runtime that embeds the connector.
+### Runtime sessions and context
 
-**Observability** — Built-in Prometheus metrics (`agentscope_*`), OpenTelemetry tracing, Grafana dashboard, and PrometheusRule alerts.
+The runtime store tracks session events, token metrics, context snapshots, and lifecycle state.
+Operators can inspect sessions, request context compression, or terminate work through REST or
+`aistioctl`.
 
-**Sandbox Isolation** — Optional per-agent sandbox with network policies, idle timeouts, and configurable shutdown behavior.
+### Config delivery with ASDP
+
+ASDP is a bidirectional gRPC control channel for configuration push and instance status. The
+control plane also probes the AgentScope HTTP contract, so workloads can be discovered and operated
+without coupling their inference loop to Kubernetes APIs.
+
+### Production-ready integration points
+
+The Helm chart includes:
+
+- PostgreSQL-backed runtime storage and retention controls
+- leader election and admission webhooks
+- optional REST bearer authentication and gRPC mTLS
+- Prometheus `ServiceMonitor`, `PrometheusRule`, and Grafana dashboard
+- OpenTelemetry export and Kubernetes `NetworkPolicy`
+
+See [`helm/aistio/values.yaml`](helm/aistio/values.yaml) for the complete configuration surface.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [`cmd/aistiod`](cmd/aistiod/) | Control-plane entry point |
+| [`cmd/aistioctl`](cmd/aistioctl/) | Operator CLI |
+| [`api/v1alpha1`](api/v1alpha1/) | Kubernetes API types |
+| [`internal/controller`](internal/controller/) | Reconcilers and lifecycle controllers |
+| [`internal/httpapi`](internal/httpapi/) | Runtime and fleet REST API |
+| [`internal/team`](internal/team/) | Team coordination and lifecycle |
+| [`internal/store`](internal/store/) | In-memory and PostgreSQL runtime stores |
+| [`internal/asdp`](internal/asdp/) | ASDP protocol and distribution |
+| [`connector`](connector/) | Embeddable Go data-plane connector |
+| [`helm/aistio`](helm/aistio/) | Helm chart, CRDs, dashboards, and production profiles |
+| [`config/samples`](config/samples/) | Example resources |
+| [`docs`](docs/) | User and design documentation |
 
 ## Development
 
+Go 1.26+, GNU Make, Helm 3, and `controller-gen` are required for the full development workflow.
+
 ```bash
-make build          # build aistiod
-make test           # run unit tests
-make test-integration  # run envtest integration tests
-make manifests      # regenerate CRDs and RBAC
-make helm-lint      # lint the Helm chart
-make docker-build   # build multi-arch image
+make install-tools      # install controller-gen
+make build              # build bin/aistiod
+make test               # unit tests with coverage
+make test-integration   # controller-runtime envtest suite
+make vet                # static checks
+make verify             # generated code, CRDs, and Helm sync
+make helm-lint          # validate the chart
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+Generated CRDs and RBAC are sourced from `api/` and mirrored into the Helm chart by
+`make sync-helm`; do not edit generated chart copies directly.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+
+## Documentation
+
+- [English documentation](docs/en/)
+- [中文文档](docs/zh/)
+- [Control-plane integration contract](docs/zh/controlplane/contract.md)
+- [Framework integration](docs/zh/controlplane/framework-integration.md)
+- [Agent Service](../README.md)
 
 ## License
 

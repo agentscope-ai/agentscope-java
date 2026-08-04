@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/spring-ai-alibaba/aistio/internal/team"
 )
 
 func (s *Server) registerInternal(r gin.IRouter) {
@@ -158,6 +160,7 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 			"agentRefType":       refType,
 			"agentOverridesJson": nullStrPtr(sess.AgentOverridesJSON),
 			"environmentId":      sess.EnvironmentID,
+			"externalKey":        nullStrPtr(sess.ExternalKey),
 			"memoryStoreIds":     memIDs,
 			"vaultIds":           vaultIDs,
 			"resources": s.expandFileResources(c.Request.Context(), sess.OwnerID,
@@ -277,6 +280,26 @@ func (s *Server) FindOrCreateSessionID(ctx context.Context, ownerID, agentID, en
 	return sess.SessionID, nil
 }
 
+// DeleteManagedSession removes a product session row and asks the data plane to
+// drop its event rows. Implements team.ManagedSessionAPI so tearing a team down
+// does not leave its member sessions behind: the store rows go away with the
+// team, but the product session it allocated would otherwise outlive it.
+func (s *Server) DeleteManagedSession(ctx context.Context, ownerID, sessionID string) error {
+	if sessionID == "" || ownerID == "" {
+		return nil
+	}
+	tag, err := s.db.Pool.Exec(ctx,
+		`DELETE FROM sessions WHERE session_id=$1 AND owner_id=$2`, sessionID, ownerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	s.bestEffortDeleteSessionEvents(ctx, sessionID, ownerID)
+	return nil
+}
+
 // PostSessionWakeEvent posts a user.message to the data plane to start a managed turn.
 // Implements team.ManagedSessionAPI. Requires BUILDER_DATA_URL and InternalToken.
 func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error {
@@ -311,6 +334,11 @@ func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, t
 		return err
 	}
 	defer resp.Body.Close()
+	// The data plane rejects a wake while the session is mid-turn; the caller must
+	// keep the notice queued rather than spend a delivery attempt on it.
+	if resp.StatusCode == http.StatusConflict {
+		return team.ErrMemberBusy
+	}
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("wake event %s: %s", resp.Status, string(msg))
@@ -350,6 +378,9 @@ func (s *Server) internalPatchSessionRuntime(c *gin.Context) {
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.Status != nil && s.teamMemberActivityHook != nil {
+		s.teamMemberActivityHook(c.Request.Context(), sess.SessionID, status)
 	}
 	out, _ := s.loadSession(c.Request.Context(), sess.SessionID)
 	c.JSON(http.StatusOK, out.toJSON())

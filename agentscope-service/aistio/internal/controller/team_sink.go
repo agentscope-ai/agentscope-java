@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/team"
 )
 
@@ -30,6 +32,7 @@ type TeamEventSink struct {
 	client    client.Client
 	taskStore *team.TaskStore
 	recorder  record.EventRecorder
+	router    *team.MessageRouter
 }
 
 // NewTeamEventSink creates a new TeamEventSink.
@@ -39,6 +42,11 @@ func NewTeamEventSink(c client.Client, ts *team.TaskStore, rec record.EventRecor
 		taskStore: ts,
 		recorder:  rec,
 	}
+}
+
+// SetMessageRouter wires lead notification for task transitions reported over ASDP.
+func (s *TeamEventSink) SetMessageRouter(r *team.MessageRouter) {
+	s.router = r
 }
 
 // ParseDetail unmarshals raw JSON bytes into a TeamEventReport Detail map.
@@ -87,9 +95,26 @@ func (s *TeamEventSink) HandleEvent(ctx context.Context, namespace string, evt *
 			return
 		}
 		result := evt.Detail["result"]
-		_, err := s.taskStore.Complete(namespace, evt.TeamID, evt.TaskID, result)
+		task, err := s.taskStore.Complete(namespace, evt.TeamID, evt.TaskID, result)
 		if err != nil {
 			logger.Error(err, "failed to complete task", "taskID", evt.TaskID)
+		} else {
+			s.notifyLeadTaskSettled(namespace, evt.TeamID, task, result, "completed")
+		}
+
+	case "task_failed":
+		if evt.TaskID == "" {
+			return
+		}
+		reason := evt.Detail["reason"]
+		if reason == "" {
+			reason = evt.Detail["result"]
+		}
+		task, err := s.taskStore.Fail(namespace, evt.TeamID, evt.TaskID, reason)
+		if err != nil {
+			logger.Error(err, "failed to fail task", "taskID", evt.TaskID)
+		} else {
+			s.notifyLeadTaskSettled(namespace, evt.TeamID, task, reason, "failed")
 		}
 
 	case "member_joined", "member_idle", "member_working", "member_left":
@@ -107,9 +132,30 @@ func (s *TeamEventSink) HandleEvent(ctx context.Context, namespace string, evt *
 	}
 
 	// After task events, update the team's task summary.
-	if evt.EventType == "task_created" || evt.EventType == "task_claimed" || evt.EventType == "task_completed" {
+	switch evt.EventType {
+	case "task_created", "task_claimed", "task_completed", "task_failed":
 		s.updateTaskSummary(ctx, namespace, evt.TeamID)
 	}
+}
+
+func (s *TeamEventSink) notifyLeadTaskSettled(namespace, teamName string, task *store.TeamTask, detail, verb string) {
+	if s.router == nil || task == nil {
+		return
+	}
+	owner := task.Owner
+	if owner == "" {
+		owner = "unknown"
+	}
+	if detail == "" {
+		detail = "(no detail provided)"
+	}
+	label := "Result"
+	if verb == "failed" {
+		label = "Reason"
+	}
+	s.router.NotifyLead(namespace, teamName, task.Owner, fmt.Sprintf(
+		"[team] Task %s (%s) %s by %s.\n\n%s:\n%s",
+		task.TaskID, task.Subject, verb, owner, label, detail))
 }
 
 func (s *TeamEventSink) updateMemberPhase(ctx context.Context, namespace string, evt *TeamEventReport) {

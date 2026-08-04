@@ -185,6 +185,9 @@ func NewServer(opts ServerOptions) *Server {
 					}
 					return list[0].TeamContext
 				})
+				opts.Product.SetTeamMemberActivityHook(func(ctx context.Context, sessionID, status string) {
+					_ = team.SyncMemberPhaseFromSessionStatus(ctx, st, sessionID, status)
+				})
 			}
 			s.teamLifecycle.SetActivator(act)
 		}
@@ -357,6 +360,7 @@ func (s *Server) registerRoutes() {
 			teams.POST("/:team/tasks/:taskId/claim", s.claimTeamTask)
 			teams.POST("/:team/tasks/:taskId/unclaim", s.unclaimTeamTask)
 			teams.POST("/:team/tasks/:taskId/complete", s.completeTeamTask)
+			teams.POST("/:team/tasks/:taskId/fail", s.failTeamTask)
 			teams.POST("/:team/messages", s.sendTeamMessage)
 			teams.GET("/:team/messages", s.listTeamMessages)
 			teams.GET("/:team/events", s.listTeamEvents)

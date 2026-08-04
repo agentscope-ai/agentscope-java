@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.team;
 
-import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
@@ -29,22 +28,18 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * {@link TeamClient} backed by {@link BaseStore} CAS (Claude file-lock equivalent) and optional
- * {@link MessageBus} for mailbox wakeups.
+ * {@link TeamClient} backed by {@link BaseStore} CAS (Claude file-lock equivalent). Mailbox wakeups
+ * are delegated to {@link TeamWakeups}, which the hosting middleware registers.
  */
 public final class LocalTeamClient implements TeamClient {
 
+    private static final String LEAD = "lead";
+
     private final BaseStore store;
-    private final MessageBus messageBus;
     private final AtomicLong messageSeq = new AtomicLong();
 
     public LocalTeamClient(BaseStore store) {
-        this(store, null);
-    }
-
-    public LocalTeamClient(BaseStore store, MessageBus messageBus) {
         this.store = Objects.requireNonNull(store, "store");
-        this.messageBus = messageBus;
     }
 
     @Override
@@ -88,6 +83,7 @@ public final class LocalTeamClient implements TeamClient {
                                     taskNs(namespace, teamName), taskId, task.toMap(), 0L)) {
                                 throw new TeamConflictException("create cas failed for " + taskId);
                             }
+                            notifyMemberTaskAssigned(task);
                             return task;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -121,6 +117,7 @@ public final class LocalTeamClient implements TeamClient {
                             if (!cas(namespace, teamName, next, expectedVersion)) {
                                 throw new TeamConflictException("assign cas failed for " + taskId);
                             }
+                            notifyMemberTaskAssigned(next);
                             return next;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -136,7 +133,15 @@ public final class LocalTeamClient implements TeamClient {
         return Mono.fromCallable(
                         () -> {
                             VersionedTask cur = requireVersioned(namespace, teamName, taskId);
-                            if (cur.storeVersion() != expectedVersion
+                            // Idempotent: already started by this member.
+                            if (TeamTask.IN_PROGRESS.equals(cur.task().state())
+                                    && claimedBy != null
+                                    && claimedBy.equals(cur.task().owner())) {
+                                return cur.task();
+                            }
+                            long version =
+                                    expectedVersion <= 0 ? cur.storeVersion() : expectedVersion;
+                            if (cur.storeVersion() != version
                                     || !TeamTask.PENDING.equals(cur.task().state())) {
                                 throw new TeamConflictException("claim conflict for " + taskId);
                             }
@@ -161,7 +166,7 @@ public final class LocalTeamClient implements TeamClient {
                                             cur.task().blockedBy(),
                                             cur.task().result(),
                                             cur.storeVersion() + 1);
-                            if (!cas(namespace, teamName, next, expectedVersion)) {
+                            if (!cas(namespace, teamName, next, version)) {
                                 throw new TeamConflictException("claim cas failed for " + taskId);
                             }
                             return next;
@@ -195,9 +200,97 @@ public final class LocalTeamClient implements TeamClient {
                                 throw new TeamConflictException(
                                         "complete cas failed for " + taskId);
                             }
+                            notifyLeadTaskSettled(next, "completed", result);
                             return next;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<TeamTask> failTask(
+            String namespace, String teamName, String taskId, String reason) {
+        return Mono.fromCallable(
+                        () -> {
+                            VersionedTask cur = requireVersioned(namespace, teamName, taskId);
+                            if (TeamTask.isTerminal(cur.task().state())) {
+                                throw new TeamConflictException(
+                                        "task already terminal: " + cur.task().state());
+                            }
+                            TeamTask next =
+                                    new TeamTask(
+                                            cur.task().taskId(),
+                                            cur.task().teamName(),
+                                            cur.task().namespace(),
+                                            cur.task().subject(),
+                                            cur.task().description(),
+                                            TeamTask.FAILED,
+                                            cur.task().owner(),
+                                            cur.task().blockedBy(),
+                                            reason == null ? "" : reason,
+                                            cur.storeVersion() + 1);
+                            if (!cas(namespace, teamName, next, cur.storeVersion())) {
+                                throw new TeamConflictException("fail cas failed for " + taskId);
+                            }
+                            notifyLeadTaskSettled(next, "failed", reason);
+                            return next;
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Pushes newly assigned work into the owner's mailbox so the member is woken with it. A worker
+     * that probed an empty board and ended its turn has no other way to learn the task exists.
+     */
+    private void notifyMemberTaskAssigned(TeamTask task) {
+        String owner = task.owner();
+        if (owner == null || owner.isBlank() || LEAD.equals(owner)) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("[team] Task ")
+                .append(task.taskId())
+                .append(" (")
+                .append(task.subject())
+                .append(") was assigned to you.\n");
+        if (task.description() != null && !task.description().isBlank()) {
+            sb.append("\nDescription:\n").append(task.description()).append("\n");
+        }
+        sb.append("\nCall claimTask with task_id=")
+                .append(task.taskId())
+                .append(" to start, then completeTask with a result summary, or failTask with a")
+                .append(" reason.");
+        sendMessage(task.namespace(), task.teamName(), LEAD, owner, sb.toString())
+                .onErrorComplete()
+                .subscribe();
+    }
+
+    /**
+     * Pushes a terminal task transition into the lead's mailbox so the lead is woken with the
+     * outcome. Without this the board would change silently and an idle lead would never react.
+     */
+    private void notifyLeadTaskSettled(TeamTask task, String verb, String detail) {
+        String owner = task.owner() == null || task.owner().isBlank() ? "unknown" : task.owner();
+        if (LEAD.equals(owner)) {
+            return;
+        }
+        String body = detail == null || detail.isBlank() ? "(no detail provided)" : detail;
+        String label = "failed".equals(verb) ? "Reason" : "Result";
+        String content =
+                "[team] Task "
+                        + task.taskId()
+                        + " ("
+                        + task.subject()
+                        + ") "
+                        + verb
+                        + " by "
+                        + owner
+                        + ".\n\n"
+                        + label
+                        + ":\n"
+                        + body;
+        sendMessage(task.namespace(), task.teamName(), owner, LEAD, content)
+                .onErrorComplete()
+                .subscribe();
     }
 
     @Override
@@ -233,42 +326,21 @@ public final class LocalTeamClient implements TeamClient {
     }
 
     @Override
-    public Mono<List<TeamTask>> listClaimableTasks(String namespace, String teamName) {
-        return listTasks(namespace, teamName)
-                .map(
-                        tasks -> {
-                            Map<String, Boolean> completed = new HashMap<>();
-                            for (TeamTask t : tasks) {
-                                if (TeamTask.COMPLETED.equals(t.state())) {
-                                    completed.put(t.taskId(), true);
-                                }
-                            }
-                            List<TeamTask> out = new ArrayList<>();
-                            for (TeamTask t : tasks) {
-                                if (!TeamTask.PENDING.equals(t.state())) {
-                                    continue;
-                                }
-                                if (t.owner() != null && !t.owner().isBlank()) {
-                                    continue;
-                                }
-                                boolean blocked = false;
-                                for (String b : t.blockedBy()) {
-                                    if (!Boolean.TRUE.equals(completed.get(b))) {
-                                        blocked = true;
-                                        break;
-                                    }
-                                }
-                                if (!blocked) {
-                                    out.add(t);
-                                }
-                            }
-                            return out;
-                        });
+    public Mono<List<TeamTask>> listClaimableTasks(
+            String namespace, String teamName, String forMember) {
+        return listTasks(namespace, teamName).map(tasks -> TeamTask.claimableOf(tasks, forMember));
     }
 
     @Override
     public Mono<TeamMessage> sendMessage(
             String namespace, String teamName, String from, String to, String content) {
+        if (to != null && to.equals(from)) {
+            // A self-addressed message only wakes its sender again, so the reply it
+            // was meant for never reaches anyone.
+            return Mono.error(
+                    new IllegalArgumentException(
+                            "cannot send a message to yourself; address another roster member"));
+        }
         return Mono.fromCallable(
                         () -> {
                             long id = messageSeq.incrementAndGet();
@@ -279,12 +351,9 @@ public final class LocalTeamClient implements TeamClient {
                             value.put("to", to);
                             value.put("content", content);
                             store.put(msgNs(namespace, teamName), String.valueOf(id), value);
-                            if (messageBus != null) {
-                                messageBus
-                                        .enqueueWakeup("", to, teamName)
-                                        .onErrorComplete()
-                                        .subscribe();
-                            }
+                            // Wake the recipient through the middleware, which owns the
+                            // member -> runtime session mapping this client cannot resolve.
+                            TeamWakeups.wake(teamName, to, content);
                             return msg;
                         })
                 .subscribeOn(Schedulers.boundedElastic());

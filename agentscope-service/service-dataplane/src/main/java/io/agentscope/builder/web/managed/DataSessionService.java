@@ -118,6 +118,7 @@ public class DataSessionService {
                 current.agentRefType(),
                 current.agentOverridesJson(),
                 current.environmentId(),
+                current.externalKey(),
                 current.memoryStoreIds(),
                 current.vaultIds(),
                 current.resources(),
@@ -149,11 +150,23 @@ public class DataSessionService {
 
     /** Runs one harness turn for the session asynchronously. */
     public void runTurn(String ownerId, String sessionId, Map<String, Object> messagePayload) {
+        runTurn(ownerId, sessionId, messagePayload, () -> {});
+    }
+
+    /**
+     * Runs one harness turn asynchronously, invoking {@code onAdmitted} once the turn is certain to
+     * run.
+     */
+    public void runTurn(
+            String ownerId,
+            String sessionId,
+            Map<String, Object> messagePayload,
+            Runnable onAdmitted) {
         ManagedSessionDto session = get(ownerId, sessionId);
         String userMessage = extractUserMessage(messagePayload);
         // Turn lease is acquired inside runTurnAsync on this thread; CONFLICT throws before
         // status flips to running.
-        turnRunner.runTurnAsync(session, userMessage);
+        turnRunner.runTurnAsync(session, userMessage, onAdmitted);
     }
 
     /** Resolves the full control-plane session payload (snapshot, mounts, environment). */

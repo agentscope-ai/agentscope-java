@@ -2,13 +2,17 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
+	"github.com/spring-ai-alibaba/aistio/internal/team"
 )
 
 // TeamEventDeliverer sends team events to connected BYO members.
@@ -79,6 +83,12 @@ func (d *TeamMessageDispatcher) dispatchOnce(ctx context.Context, maxAttempts in
 		return
 	}
 
+	// Everything queued for one managed member is delivered by a single wake: a
+	// wake starts a turn, and a second wake against a running turn is rejected, so
+	// waking per message would spend one turn on the first report and leave the
+	// rest waiting behind it.
+	managed := newManagedBatches()
+
 	for _, msg := range msgs {
 		if msg.Attempts >= maxAttempts {
 			logger.Info("message exceeded max attempts, dropping", "id", msg.ID, "team", msg.TeamName)
@@ -96,17 +106,7 @@ func (d *TeamMessageDispatcher) dispatchOnce(ctx context.Context, maxAttempts in
 
 		member, mErr := d.Store.Teams().GetMember(ctx, msg.Namespace, msg.TeamName, msg.ToMember)
 		if mErr == nil && member != nil && member.DeployMode == store.MemberDeployManaged {
-			if err := d.deliverManaged(ctx, member, msg); err != nil {
-				logger.Error(err, "managed delivery failed", "id", msg.ID)
-				metrics.RecordTeamMessage(msg.Namespace, msg.TeamName, "failed")
-				_ = d.Store.TeamMessages().IncrementAttempts(ctx, msg.ID)
-				continue
-			}
-			if err := d.Store.TeamMessages().MarkDelivered(ctx, msg.ID); err != nil {
-				logger.Error(err, "failed to mark delivered", "id", msg.ID)
-				continue
-			}
-			metrics.RecordTeamMessage(msg.Namespace, msg.TeamName, "delivered")
+			managed.add(member, msg)
 			continue
 		}
 
@@ -147,20 +147,92 @@ func (d *TeamMessageDispatcher) dispatchOnce(ctx context.Context, maxAttempts in
 		}
 		metrics.RecordTeamMessage(msg.Namespace, msg.TeamName, "delivered")
 	}
+
+	d.deliverManagedBatches(ctx, logger, managed)
 }
 
-func (d *TeamMessageDispatcher) deliverManaged(ctx context.Context, member *store.TeamMember, msg *store.TeamMessage) error {
+// managedBatch is everything pending for one managed member this tick.
+type managedBatch struct {
+	member *store.TeamMember
+	msgs   []*store.TeamMessage
+}
+
+type managedBatches struct {
+	order []string
+	byKey map[string]*managedBatch
+}
+
+func newManagedBatches() *managedBatches {
+	return &managedBatches{byKey: map[string]*managedBatch{}}
+}
+
+func (b *managedBatches) add(member *store.TeamMember, msg *store.TeamMessage) {
+	key := msg.Namespace + "/" + msg.TeamName + "/" + msg.ToMember
+	batch, ok := b.byKey[key]
+	if !ok {
+		batch = &managedBatch{member: member}
+		b.byKey[key] = batch
+		b.order = append(b.order, key)
+	}
+	batch.msgs = append(batch.msgs, msg)
+}
+
+func (d *TeamMessageDispatcher) deliverManagedBatches(ctx context.Context, logger logr.Logger, batches *managedBatches) {
+	for _, key := range batches.order {
+		batch := batches.byKey[key]
+		first := batch.msgs[0]
+		if err := d.deliverManaged(ctx, batch.member, batch.msgs); err != nil {
+			// Busy is backpressure, not a failed attempt: the member is mid-turn, and
+			// these notices must still be waiting when it goes idle.
+			if errors.Is(err, team.ErrMemberBusy) {
+				logger.V(1).Info("member busy, keeping messages queued",
+					"member", first.ToMember, "count", len(batch.msgs))
+				continue
+			}
+			logger.Error(err, "managed delivery failed", "member", first.ToMember)
+			for _, msg := range batch.msgs {
+				metrics.RecordTeamMessage(msg.Namespace, msg.TeamName, "failed")
+				_ = d.Store.TeamMessages().IncrementAttempts(ctx, msg.ID)
+			}
+			continue
+		}
+		for _, msg := range batch.msgs {
+			if err := d.Store.TeamMessages().MarkDelivered(ctx, msg.ID); err != nil {
+				logger.Error(err, "failed to mark delivered", "id", msg.ID)
+				continue
+			}
+			metrics.RecordTeamMessage(msg.Namespace, msg.TeamName, "delivered")
+		}
+	}
+}
+
+func (d *TeamMessageDispatcher) deliverManaged(ctx context.Context, member *store.TeamMember, msgs []*store.TeamMessage) error {
 	if d.ManagedWake == nil {
 		return fmt.Errorf("managed wake not configured")
 	}
 	if member.ManagedSessionID == "" || member.OwnerID == "" {
 		return fmt.Errorf("member %s missing managedSessionId/ownerId", member.MemberName)
 	}
-	text := msg.Content
-	if text == "" {
-		text = fmt.Sprintf("[team:%s] you have a new team message as %s", msg.TeamName, msg.ToMember)
-	} else {
-		text = fmt.Sprintf("[team:%s from %s] %s", msg.TeamName, msg.FromMember, msg.Content)
+	return d.ManagedWake.PostSessionWakeEvent(ctx, member.ManagedSessionID, member.OwnerID,
+		renderWakeText(msgs))
+}
+
+// renderWakeText turns a member's pending mailbox into the text of one wake.
+func renderWakeText(msgs []*store.TeamMessage) string {
+	if len(msgs) == 1 && msgs[0].Content == "" {
+		return fmt.Sprintf("[team:%s] you have a new team message as %s",
+			msgs[0].TeamName, msgs[0].ToMember)
 	}
-	return d.ManagedWake.PostSessionWakeEvent(ctx, member.ManagedSessionID, member.OwnerID, text)
+	var b strings.Builder
+	if len(msgs) > 1 {
+		fmt.Fprintf(&b, "[team:%s] %d team notifications arrived while you were busy."+
+			" Handle all of them in this turn.\n\n", msgs[0].TeamName, len(msgs))
+	}
+	for i, msg := range msgs {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(&b, "[team:%s from %s] %s", msg.TeamName, msg.FromMember, msg.Content)
+	}
+	return b.String()
 }

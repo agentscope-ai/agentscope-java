@@ -238,6 +238,18 @@ func (r *teamRepo) UpdateMemberPhase(ctx context.Context, namespace, teamName, m
 	return nil
 }
 
+func (r *teamRepo) FindMemberBySessionID(ctx context.Context, sessionID string) (*store.TeamMember, error) {
+	if sessionID == "" {
+		return nil, store.ErrNotFound
+	}
+	return r.scanMember(ctx, `
+		SELECT `+memberColumns+`
+		FROM team_members
+		WHERE session_id=$1 OR managed_session_id=$1
+		ORDER BY updated_at DESC
+		LIMIT 1`, sessionID)
+}
+
 func (r *teamRepo) scanTeam(ctx context.Context, q string, args ...any) (*store.Team, error) {
 	t := &store.Team{}
 	var leadPrompt *string

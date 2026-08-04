@@ -13,7 +13,7 @@
 #
 # Usage:
 #   scripts/dev-up.sh
-#   BUILDER_REBUILD=1 scripts/dev-up.sh
+#   BUILDER_REBUILD=1 scripts/dev-up.sh   # full monorepo mvn install + aistiod rebuild
 #   scripts/dev-down.sh
 #
 set -euo pipefail
@@ -86,9 +86,14 @@ PY
 }
 
 # ---------------------------------------------------------------- build Java
+# Always install from the monorepo root (not agentscope-service/ alone):
+# fat jars embed ~/.m2 harness/core/extensions; a service-only build can keep a
+# stale snapshot. Root `mvn install` also walks agentscope-service children
+# (unlike `-pl agentscope-service`, which only builds the packaging=pom aggregator).
 if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ]; then
-    echo "==> Building service modules (mvn install -DskipTests)"
-    (cd "$ROOT" && mvn install -DskipTests -q)
+    echo "==> Building agentscope-java monorepo (mvn install -DskipTests)"
+    MONOREPO_ROOT="$(cd "$ROOT/.." && pwd)"
+    (cd "$MONOREPO_ROOT" && mvn install -DskipTests -q)
 fi
 
 # ---------------------------------------------------------------- build aistiod

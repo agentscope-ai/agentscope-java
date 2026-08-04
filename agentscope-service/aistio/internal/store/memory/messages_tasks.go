@@ -227,7 +227,16 @@ func (r *taskRepo) Claim(_ context.Context, namespace, teamName, taskID, claimed
 		if t.Namespace != namespace || t.TeamName != teamName || t.TaskID != taskID {
 			continue
 		}
-		if t.Version != expectedVersion || t.State != store.TaskStatePending {
+		// Idempotent: already claimed by this member.
+		if t.State == store.TaskStateInProgress && t.Owner == claimedBy {
+			cp := *t
+			return &cp, nil
+		}
+		version := expectedVersion
+		if version <= 0 {
+			version = t.Version
+		}
+		if t.Version != version || t.State != store.TaskStatePending {
 			return nil, store.ErrConflict
 		}
 		if t.Owner != "" && t.Owner != claimedBy {
@@ -269,6 +278,35 @@ func (r *taskRepo) Complete(_ context.Context, namespace, teamName, taskID, resu
 		t.Version++
 		t.UpdatedAt = now
 		t.CompletedAt = &now
+		cp := *t
+		return &cp, nil
+	}
+	return nil, store.ErrNotFound
+}
+
+func (r *taskRepo) Fail(_ context.Context, namespace, teamName, taskID, reason string) (*store.TeamTask, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	for i := range r.s.tasks {
+		t := &r.s.tasks[i]
+		if t.Namespace != namespace || t.TeamName != teamName || t.TaskID != taskID {
+			continue
+		}
+		if store.IsTaskTerminal(t.State) {
+			return nil, store.ErrConflict
+		}
+		now := time.Now().UTC()
+		from := t.State
+		t.State = store.TaskStateFailed
+		t.Result = reason
+		t.Version++
+		t.UpdatedAt = now
+		t.CompletedAt = &now
+		r.s.history = append(r.s.history, store.TeamTaskHistory{
+			ID: nextID(&r.s.nextHistID), TaskFK: t.ID, TeamName: teamName, Namespace: namespace,
+			FromState: from, ToState: store.TaskStateFailed, Owner: t.Owner,
+			TransitionedAt: now,
+		})
 		cp := *t
 		return &cp, nil
 	}

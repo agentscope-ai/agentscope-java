@@ -21,6 +21,7 @@ import io.agentscope.builder.web.api.error.ApiException;
 import io.agentscope.builder.web.catalog.HarnessAgentBuildService;
 import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.coord.TurnLeaseService;
+import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -34,6 +35,7 @@ import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import java.util.LinkedHashMap;
@@ -66,6 +68,7 @@ public class SessionTurnRunner {
     private final HandsLeaseService handsLeaseService;
     private final TurnLeaseService turnLeaseService;
     private final CoordinationStore coordinationStore;
+    private final DeletedSessionRegistry deletedSessions;
     private final ConcurrentHashMap<String, Disposable> activeTurns = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TurnLeaseService.TurnLease> activeTurnLeases =
@@ -84,7 +87,8 @@ public class SessionTurnRunner {
             DataEnvironmentService environmentService,
             HandsLeaseService handsLeaseService,
             TurnLeaseService turnLeaseService,
-            CoordinationStore coordinationStore) {
+            CoordinationStore coordinationStore,
+            DeletedSessionRegistry deletedSessions) {
         this.agentBuildService = agentBuildService;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
@@ -94,12 +98,22 @@ public class SessionTurnRunner {
         this.handsLeaseService = handsLeaseService;
         this.turnLeaseService = turnLeaseService;
         this.coordinationStore = coordinationStore;
+        this.deletedSessions = deletedSessions;
     }
 
     /** Runs a turn asynchronously so inbound HTTP handlers can return quickly. */
     public void runTurnAsync(ManagedSessionDto session, String userMessage) {
+        runTurnAsync(session, userMessage, () -> {});
+    }
+
+    /**
+     * Runs a turn asynchronously, invoking {@code onAdmitted} once the turn is certain to run — the
+     * lease is held by then, so a caller can record the message that triggered it only if it will
+     * actually be processed.
+     */
+    public void runTurnAsync(ManagedSessionDto session, String userMessage, Runnable onAdmitted) {
         Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(userMessage).build();
-        runTurnAsync(session, List.of(userMsg));
+        runTurnAsync(session, List.of(userMsg), onAdmitted);
     }
 
     /**
@@ -116,16 +130,23 @@ public class SessionTurnRunner {
         for (ToolResultBlock block : toolResults) {
             ((ToolResultMessage.Builder) resumeBuilder).result(block);
         }
-        runTurnAsync(session, List.of(resumeBuilder.build()));
+        runTurnAsync(session, List.of(resumeBuilder.build()), () -> {});
     }
 
-    private void runTurnAsync(ManagedSessionDto session, List<Msg> inputMsgs) {
+    private void runTurnAsync(ManagedSessionDto session, List<Msg> inputMsgs, Runnable onAdmitted) {
+        // A wakeup can race teardown: the control plane may have deleted the session
+        // between the wake being queued and this turn starting.
+        if (deletedSessions.isDeleted(session.id())) {
+            log.info("Skipping turn for deleted session {}", session.id());
+            return;
+        }
         TurnLeaseService.TurnLease lease =
                 turnLeaseService.acquireOrConflict(
                         session.id(),
                         session.ownerId(),
                         () -> interruptLocal(session.id(), "remote"));
         activeTurnLeases.put(session.id(), lease);
+        onAdmitted.run();
         sessionService.updateStatus(
                 session.ownerId(), session.id(), DataSessionService.STATUS_RUNNING, null);
         Schedulers.boundedElastic()
@@ -195,6 +216,24 @@ public class SessionTurnRunner {
                 SessionEventTypes.SESSION_INTERRUPTED,
                 Map.of("status", "interrupted", "source", source));
         return true;
+    }
+
+    /**
+     * Drops the footprint of a session the control plane has deleted: an in-flight turn is cancelled
+     * first, then the team wakeup bindings, the cached instance with its persisted agent state, and
+     * the per-session preview bookkeeping. Team teardown relies on this — otherwise a deleted member
+     * keeps its wakeup registration and a later team reusing the same member name routes to the dead
+     * session.
+     */
+    public void releaseSession(String sessionId, String ownerId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        interruptLocal(sessionId, "session-deleted");
+        TeamsMiddleware.unregisterSession(sessionId);
+        agentBuildService.discardSession(ownerId, sessionId);
+        previewIdsBySession.remove(sessionId);
+        startedPreviewTypes.remove(sessionId);
     }
 
     private void runTurn(

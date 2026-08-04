@@ -44,6 +44,9 @@ public interface TeamClient {
     /**
      * Claims a pending unblocked task into in_progress when owner is empty (self-claim) or already
      * equals {@code claimedBy} (assignee starts).
+     *
+     * <p>{@code expectedVersion <= 0} means "claim at the current store version" (models often omit
+     * the optimistic lock token).
      */
     Mono<TeamTask> claimTask(
             String namespace,
@@ -52,15 +55,26 @@ public interface TeamClient {
             String claimedBy,
             long expectedVersion);
 
-    /** Completes an in-progress task. */
+    /** Completes an in-progress task. Notifies the lead with the result. */
     Mono<TeamTask> completeTask(String namespace, String teamName, String taskId, String result);
+
+    /** Marks a non-terminal task failed. Notifies the lead with the reason. */
+    Mono<TeamTask> failTask(String namespace, String teamName, String taskId, String reason);
 
     /** Unclaims an in-progress task back to pending. */
     Mono<TeamTask> unclaimTask(
             String namespace, String teamName, String taskId, long expectedVersion);
 
-    /** Returns unassigned + unblocked pending tasks (self-claim candidates). */
-    Mono<List<TeamTask>> listClaimableTasks(String namespace, String teamName);
+    /**
+     * Returns unblocked pending tasks the caller can start: unassigned open-board tasks, plus (when
+     * {@code forMember} is non-blank) pending tasks already assigned to that member.
+     */
+    Mono<List<TeamTask>> listClaimableTasks(String namespace, String teamName, String forMember);
+
+    /** Open-board claimable tasks only ({@code forMember} blank). */
+    default Mono<List<TeamTask>> listClaimableTasks(String namespace, String teamName) {
+        return listClaimableTasks(namespace, teamName, null);
+    }
 
     /** Point-to-point team mailbox message. */
     Mono<TeamMessage> sendMessage(

@@ -21,6 +21,7 @@ import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.coord.JdbcCoordinationStore;
 import io.agentscope.builder.web.managed.service.AgentVersionService;
+import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.persistence.jpa.AgentStateEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.CoordHitlTicketEntityRepository;
@@ -125,9 +126,10 @@ public class DataPlaneConfig {
     /** JPA-backed {@link AgentStateStore} shared by every agent built on this node. */
     @Bean
     @ConditionalOnMissingBean(AgentStateStore.class)
-    public AgentStateStore agentStateStore(AgentStateEntityRepository repository) {
+    public AgentStateStore agentStateStore(
+            AgentStateEntityRepository repository, DeletedSessionRegistry deletedSessions) {
         log.info("Wiring JpaAgentStateStore on the Spring DataSource / JPA schema");
-        return new JpaAgentStateStore(repository);
+        return new JpaAgentStateStore(repository, deletedSessions);
     }
 
     /**

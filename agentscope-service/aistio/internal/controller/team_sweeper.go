@@ -53,7 +53,7 @@ func (w *TeamSweeper) sweepOnce(ctx context.Context) {
 	}
 	for _, t := range teams {
 		switch t.Phase {
-		case store.TeamPhaseRunning:
+		case store.TeamPhaseRunning, store.TeamPhaseIdle:
 			w.sweepRunning(ctx, t)
 		case store.TeamPhaseCompleted, store.TeamPhaseFailed:
 			if w.Lifecycle.ShouldCleanup(t) {

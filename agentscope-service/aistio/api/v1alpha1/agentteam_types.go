@@ -3,12 +3,13 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // TeamPhase represents the lifecycle phase of a team.
-// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+// +kubebuilder:validation:Enum=Pending;Running;Idle;Completed;Failed
 type TeamPhase string
 
 const (
 	TeamPhasePending   TeamPhase = "Pending"
 	TeamPhaseRunning   TeamPhase = "Running"
+	TeamPhaseIdle      TeamPhase = "Idle"
 	TeamPhaseCompleted TeamPhase = "Completed"
 	TeamPhaseFailed    TeamPhase = "Failed"
 )

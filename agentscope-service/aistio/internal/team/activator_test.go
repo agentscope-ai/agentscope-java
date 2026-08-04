@@ -16,6 +16,7 @@ type fakeManagedAPI struct {
 	mu       sync.Mutex
 	sessions map[string]string // externalKey -> sessionID
 	wakes    []wakeCall
+	deleted  []wakeCall
 	nextID   int
 }
 
@@ -46,6 +47,13 @@ func (f *fakeManagedAPI) PostSessionWakeEvent(_ context.Context, sessionID, owne
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wakes = append(f.wakes, wakeCall{sessionID: sessionID, ownerID: ownerID, text: text})
+	return nil
+}
+
+func (f *fakeManagedAPI) DeleteManagedSession(_ context.Context, ownerID, sessionID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, wakeCall{sessionID: sessionID, ownerID: ownerID})
 	return nil
 }
 

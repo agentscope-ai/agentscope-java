@@ -81,7 +81,7 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	switch at.Status.Phase {
 	case "", v1alpha1.TeamPhasePending:
 		return r.handlePending(ctx, &at)
-	case v1alpha1.TeamPhaseRunning:
+	case v1alpha1.TeamPhaseRunning, v1alpha1.TeamPhaseIdle:
 		return r.handleRunning(ctx, &at)
 	case v1alpha1.TeamPhaseCompleted, v1alpha1.TeamPhaseFailed:
 		return r.handleTerminal(ctx, &at)

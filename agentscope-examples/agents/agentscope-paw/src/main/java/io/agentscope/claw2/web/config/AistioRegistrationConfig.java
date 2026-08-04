@@ -20,7 +20,11 @@ import io.agentscope.extensions.aistio.Aistio;
 import io.agentscope.extensions.aistio.AistioConfig;
 import io.agentscope.extensions.aistio.SessionBridge;
 import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
+import io.agentscope.extensions.aistio.adapter.HarnessTeamSessionStarter;
+import io.agentscope.extensions.aistio.store.ControlPlaneTeamClient;
+import io.agentscope.extensions.aistio.transport.ControlPlaneHttpClient;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.team.TeamClient;
 import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
@@ -109,13 +113,23 @@ public class AistioRegistrationConfig {
             cfg.startHttpRegister(true);
         }
 
+        // Wire BYO team_join before instrument so register advertises team-coordination.
+        String token =
+                internalToken == null || internalToken.isBlank()
+                        ? "builder-internal-dev-token"
+                        : internalToken;
+        TeamClient teamClient =
+                new ControlPlaneTeamClient(new ControlPlaneHttpClient(controlHttp, token));
+        adapter.setTeamSessionStarter(
+                new HarnessTeamSessionStarter(bootstrap::mainAgent, teamClient));
+
         SessionBridge bridge = Aistio.instrument(main, cfg.build(), adapter);
         adapter.setHistorySource(new HarnessSessionHistorySource(main));
         adapter.setRuntimeSource(new HarnessAgentRuntimeSource(main));
         bridges.add(bridge);
         log.info(
                 "claw.aistio: instrumented main agent as '{}' (agentId={}, contract :{}, control"
-                        + " {})",
+                        + " {}, team-coordination=on)",
                 agentName,
                 main.getAgentId(),
                 bridge.getContractPort(),

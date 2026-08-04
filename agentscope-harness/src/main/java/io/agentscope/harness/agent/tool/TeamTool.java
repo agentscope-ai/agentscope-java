@@ -51,11 +51,12 @@ public final class TeamTool {
             name = "team",
             description =
                     "AgentTeams coordination. Set action to one of: listTasks, createTask,"
-                        + " assignTask, claimTask, unclaimTask, completeTask, listClaimableTasks,"
-                        + " sendMessage, broadcastMessage, listMessages, listMembers, spawnMember,"
-                        + " shutdownMember, submitPlan, approvePlan, rejectPlan, completeTeam."
-                        + " Lead-only actions require isLead. Use expectedVersion from listTasks"
-                        + " for assign/claim/unclaim.")
+                            + " assignTask, claimTask, unclaimTask, completeTask, failTask,"
+                            + " listClaimableTasks, sendMessage, broadcastMessage, listMessages,"
+                            + " listMembers, spawnMember, shutdownMember, submitPlan, approvePlan,"
+                            + " rejectPlan, completeTeam. Lead-only actions require isLead."
+                            + " expected_version is optional for claimTask (omit to claim at the"
+                            + " current board version).")
     public String team(
             @ToolParam(name = "action", description = "Team action name") String action,
             @ToolParam(name = "task_id", description = "Task id", required = false) String taskId,
@@ -101,7 +102,7 @@ public final class TeamTool {
         try {
             return switch (normalize(act)) {
                 case "listtasks" -> json(client.listTasks(ns, team).block());
-                case "listclaimabletasks" -> json(client.listClaimableTasks(ns, team).block());
+                case "listclaimabletasks" -> json(client.listClaimableTasks(ns, team, me).block());
                 case "createtask" ->
                         json(
                                 client.createTask(
@@ -141,6 +142,14 @@ public final class TeamTool {
                 case "completetask" ->
                         json(
                                 client.completeTask(
+                                                ns,
+                                                team,
+                                                require(taskId, "task_id"),
+                                                result == null ? "" : result)
+                                        .block());
+                case "failtask" ->
+                        json(
+                                client.failTask(
                                                 ns,
                                                 team,
                                                 require(taskId, "task_id"),
@@ -211,6 +220,427 @@ public final class TeamTool {
         }
     }
 
+    // ── Per-action aliases (models often call createTask/sendMessage as tool names) ──
+
+    @Tool(name = "listTasks", description = "List team tasks on the shared board.")
+    public String listTasks() {
+        return team(
+                "listTasks",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(
+            name = "listClaimableTasks",
+            description =
+                    "List unblocked pending tasks you can start: unassigned board tasks and tasks"
+                            + " already assigned to you. Prefer this (or listTasks) before product"
+                            + " work; then claimTask.")
+    public String listClaimableTasks() {
+        return team(
+                "listClaimableTasks",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(
+            name = "createTask",
+            description =
+                    "Create a task on the shared team board. Lead typically sets owner to assign.")
+    public String createTask(
+            @ToolParam(name = "subject", description = "Short task title") String subject,
+            @ToolParam(name = "description", description = "Task details", required = false)
+                    String description,
+            @ToolParam(
+                            name = "owner",
+                            description =
+                                    "Optional assignee: a member name from the team roster (e.g."
+                                            + " w1), not the agent name",
+                            required = false)
+                    String owner) {
+        return team(
+                "createTask",
+                null,
+                subject,
+                description,
+                owner,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "assignTask", description = "Assign a pending task to a member (lead).")
+    public String assignTask(
+            @ToolParam(name = "task_id", description = "Task id") String taskId,
+            @ToolParam(
+                            name = "owner",
+                            description =
+                                    "Assignee: a member name from the team roster, not the agent"
+                                            + " name")
+                    String owner,
+            @ToolParam(
+                            name = "expected_version",
+                            description = "Optimistic lock version",
+                            required = false)
+                    Long expectedVersion) {
+        return team(
+                "assignTask",
+                taskId,
+                null,
+                null,
+                owner,
+                expectedVersion,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(
+            name = "claimTask",
+            description =
+                    "Claim a pending task for yourself (or start work already assigned to you)."
+                            + " expected_version is optional — omit it to claim at the current"
+                            + " version.")
+    public String claimTask(
+            @ToolParam(name = "task_id", description = "Task id") String taskId,
+            @ToolParam(
+                            name = "expected_version",
+                            description = "Optimistic lock version (optional)",
+                            required = false)
+                    Long expectedVersion) {
+        return team(
+                "claimTask",
+                taskId,
+                null,
+                null,
+                null,
+                expectedVersion,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "unclaimTask", description = "Return a claimed task to the board.")
+    public String unclaimTask(
+            @ToolParam(name = "task_id", description = "Task id") String taskId,
+            @ToolParam(
+                            name = "expected_version",
+                            description = "Optimistic lock version",
+                            required = false)
+                    Long expectedVersion) {
+        return team(
+                "unclaimTask",
+                taskId,
+                null,
+                null,
+                null,
+                expectedVersion,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(
+            name = "failTask",
+            description =
+                    "Mark a task failed with a reason when you cannot finish it. The lead is"
+                        + " notified automatically. Use this instead of silently abandoning work.")
+    public String failTask(
+            @ToolParam(name = "task_id", description = "Task id") String taskId,
+            @ToolParam(name = "reason", description = "Why the task failed") String reason) {
+        return team(
+                "failTask",
+                taskId,
+                null,
+                null,
+                null,
+                null,
+                reason,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(
+            name = "completeTask",
+            description =
+                    "Mark a task completed with a result summary. The lead is notified"
+                            + " automatically, so summarize the outcome in result.")
+    public String completeTask(
+            @ToolParam(name = "task_id", description = "Task id") String taskId,
+            @ToolParam(name = "result", description = "Completion result text", required = false)
+                    String result) {
+        return team(
+                "completeTask",
+                taskId,
+                null,
+                null,
+                null,
+                null,
+                result,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "sendMessage", description = "Send a mailbox message to one teammate.")
+    public String sendMessage(
+            @ToolParam(name = "to_member", description = "Recipient member name") String toMember,
+            @ToolParam(name = "content", description = "Message body") String content) {
+        return team(
+                "sendMessage",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                toMember,
+                content,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "broadcastMessage", description = "Broadcast a mailbox message to all teammates.")
+    public String broadcastMessage(
+            @ToolParam(name = "content", description = "Message body") String content) {
+        return team(
+                "broadcastMessage",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                content,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "listMessages", description = "List recent team mailbox messages.")
+    public String listMessages(
+            @ToolParam(name = "limit", description = "Max messages", required = false)
+                    Integer limit) {
+        return team(
+                "listMessages",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                limit,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "listMembers", description = "List team members and phases.")
+    public String listMembers() {
+        return team(
+                "listMembers",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "spawnMember", description = "Spawn a dynamic teammate (lead).")
+    public String spawnMember(
+            @ToolParam(name = "member_name", description = "New member name") String memberName,
+            @ToolParam(name = "agent_ref", description = "Registry agentRef") String agentRef,
+            @ToolParam(name = "prompt", description = "Role prompt", required = false)
+                    String prompt) {
+        return team(
+                "spawnMember",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                memberName,
+                agentRef,
+                prompt,
+                null);
+    }
+
+    @Tool(name = "shutdownMember", description = "Shut down a teammate (lead).")
+    public String shutdownMember(
+            @ToolParam(name = "member_name", description = "Member to remove") String memberName) {
+        return team(
+                "shutdownMember",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                memberName,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "submitPlan", description = "Submit a plan for lead approval.")
+    public String submitPlan(
+            @ToolParam(name = "plan_text", description = "Plan body") String planText,
+            @ToolParam(name = "member_name", description = "Member name", required = false)
+                    String memberName) {
+        return team(
+                "submitPlan",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                memberName,
+                null,
+                null,
+                planText);
+    }
+
+    @Tool(name = "approvePlan", description = "Approve a member plan (lead).")
+    public String approvePlan(
+            @ToolParam(name = "member_name", description = "Member whose plan to approve")
+                    String memberName) {
+        return team(
+                "approvePlan",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                memberName,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "rejectPlan", description = "Reject a member plan (lead).")
+    public String rejectPlan(
+            @ToolParam(name = "member_name", description = "Member whose plan to reject")
+                    String memberName) {
+        return team(
+                "rejectPlan",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                memberName,
+                null,
+                null,
+                null);
+    }
+
+    @Tool(name = "completeTeam", description = "Mark the team objective complete (lead).")
+    public String completeTeam() {
+        return team(
+                "completeTeam",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
     private boolean isAllowed(String action) {
         List<String> allowed = context.availableActions();
         if (allowed == null || allowed.isEmpty()) {
@@ -230,6 +660,9 @@ public final class TeamTool {
         }
         if ("listmessages".equals(n)
                 && (set.contains("sendmessage") || set.contains("broadcastmessage"))) {
+            return true;
+        }
+        if ("failtask".equals(n) && set.contains("completetask")) {
             return true;
         }
         return set.contains(n);

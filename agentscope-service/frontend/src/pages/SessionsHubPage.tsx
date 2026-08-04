@@ -5,8 +5,11 @@ import {
   ManagedSessionListStatus,
   archiveManagedSession,
   deleteManagedSession,
+  isTeamOriginatedSession,
   listManagedSessions,
+  parseTeamExternalKey,
   restoreManagedSession,
+  teamDetailPath,
 } from '../api/managedSessions';
 import { AgentDefinition, listAgents } from '../api/agents';
 import { Environment, listEnvironments } from '../api/environments';
@@ -48,12 +51,18 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
     padding: '2px 8px', borderRadius: 6, flexShrink: 0,
   },
+  teamTag: {
+    fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+    padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+    color: '#0f766e', background: '#ccfbf1',
+  },
   stopReason: {
     fontSize: '0.78rem', color: '#64748b', marginTop: 4,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   mounts: { fontSize: '0.78rem', color: '#64748b', marginTop: 8 },
   agent: { fontSize: '0.82rem', color: '#4338ca', fontWeight: 500, marginTop: 6 },
+  teamMeta: { fontSize: '0.78rem', color: '#0f766e', marginTop: 6 },
   cardFooter: {
     display: 'flex', alignItems: 'center', gap: 10, marginTop: 12,
     fontSize: '0.78rem', color: '#94a3b8', flexWrap: 'wrap',
@@ -226,14 +235,22 @@ export default function SessionsHubPage() {
         const reason = stopReasonSummary(s.stopReason);
         const archived = !!s.archivedAt;
         const agentLabel = agentNameById.get(s.agentId) || s.agentId;
+        const teamRef = parseTeamExternalKey(s.externalKey);
+        const fromTeam = isTeamOriginatedSession(s);
         return (
           <div key={s.id} style={S.card}>
             <div style={S.cardHeader}>
               <span style={S.label}>{s.id}</span>
+              {fromTeam && <span style={S.teamTag} title={s.externalKey || undefined}>Team</span>}
               <span style={statusStyle(s.status)}>{s.status}</span>
               <span style={S.time}>{relTime(s.updatedAt)}</span>
             </div>
             <div style={S.agent}>{agentLabel}</div>
+            {teamRef && (
+              <div style={S.teamMeta}>
+                from team {teamRef.namespace}/{teamRef.teamName} · member {teamRef.memberName}
+              </div>
+            )}
             {reason && <div style={S.stopReason}>stop: {reason}</div>}
             <div style={S.mounts}>{mountSummary(s, envNameById)}</div>
             <div style={S.cardFooter}>
@@ -244,7 +261,16 @@ export default function SessionsHubPage() {
                   disabled={busyId === s.id}
                   onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}`)}
                 >
-                  Open chat
+                  {fromTeam ? 'View transcript' : 'Open chat'}
+                </button>
+              )}
+              {teamRef && (
+                <button
+                  type="button"
+                  style={S.action}
+                  onClick={() => navigate(teamDetailPath(teamRef))}
+                >
+                  Open team
                 </button>
               )}
               <button

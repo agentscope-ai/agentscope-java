@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +55,7 @@ public class WaitAsyncResultsTool {
     private final TaskRepository taskRepository;
     private final ConcurrentHashMap<String, AtomicInteger> consecutiveEmptyWaitsBySession =
             new ConcurrentHashMap<>();
+    private volatile BooleanSupplier externalWorkProbe;
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
         this(messageBus, null);
@@ -64,15 +66,38 @@ public class WaitAsyncResultsTool {
         this.taskRepository = taskRepository;
     }
 
+    /**
+     * Registers a probe for outstanding work owned outside the subagent task repository (currently
+     * AgentTeams teammates). Without it a lead with no subagent tasks would be told to stop waiting
+     * while its teammates are still running.
+     */
+    public WaitAsyncResultsTool setExternalWorkProbe(BooleanSupplier probe) {
+        this.externalWorkProbe = probe;
+        return this;
+    }
+
+    private boolean hasExternalWork() {
+        BooleanSupplier probe = this.externalWorkProbe;
+        if (probe == null) {
+            return false;
+        }
+        try {
+            return probe.getAsBoolean();
+        } catch (RuntimeException e) {
+            log.debug("external work probe failed: {}", e.toString());
+            return false;
+        }
+    }
+
     @Tool(
             name = "wait_async_results",
             description =
-                    "Wait for background async tool or subagent results to arrive. "
-                            + "Call this when you have launched async tasks and want to wait for "
-                            + "their completion instead of returning to the user. After this tool "
-                            + "returns successfully, continue reasoning — the results will be "
-                            + "automatically injected into your context. "
-                            + "Max timeout is 120 seconds. "
+                    "Wait for background async tool, subagent, or teammate results to arrive. "
+                            + "Call this when you have launched async tasks (or assigned team "
+                            + "tasks) and want to wait for their completion instead of returning "
+                            + "to the user. After this tool returns successfully, continue "
+                            + "reasoning — the results will be automatically injected into your "
+                            + "context. Max timeout is 120 seconds. "
                             + "If you have already waited without results, use task_list or "
                             + "task_output(block=false) to check status instead of waiting again.",
             readOnly = true)
@@ -119,7 +144,8 @@ public class WaitAsyncResultsTool {
         }
 
         if (taskRepository != null) {
-            boolean hasNonTerminal = hasNonTerminalTasks(runtimeContext, sessionId);
+            boolean hasNonTerminal =
+                    hasNonTerminalTasks(runtimeContext, sessionId) || hasExternalWork();
             if (!hasNonTerminal) {
                 Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
                 if (!Boolean.TRUE.equals(hasMessages)) {

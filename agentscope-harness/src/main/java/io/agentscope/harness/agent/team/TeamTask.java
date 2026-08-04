@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.team;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +36,50 @@ public record TeamTask(
     public static final String PENDING = "pending";
     public static final String IN_PROGRESS = "in_progress";
     public static final String COMPLETED = "completed";
+    public static final String FAILED = "failed";
+
+    /** {@code true} when the state accepts no further transitions. */
+    public static boolean isTerminal(String state) {
+        return COMPLETED.equals(state) || FAILED.equals(state);
+    }
+
+    /**
+     * Unblocked pending tasks claimable by {@code forMember}: unassigned open-board items, and when
+     * {@code forMember} is non-blank also pending tasks assigned to that member.
+     */
+    public static List<TeamTask> claimableOf(List<TeamTask> tasks, String forMember) {
+        if (tasks == null || tasks.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Boolean> completed = new HashMap<>();
+        for (TeamTask t : tasks) {
+            if (COMPLETED.equals(t.state())) {
+                completed.put(t.taskId(), true);
+            }
+        }
+        String me = forMember == null ? "" : forMember.trim();
+        ArrayList<TeamTask> out = new ArrayList<>();
+        for (TeamTask t : tasks) {
+            if (!PENDING.equals(t.state())) {
+                continue;
+            }
+            String owner = t.owner() == null ? "" : t.owner().trim();
+            if (!owner.isEmpty() && (me.isEmpty() || !owner.equals(me))) {
+                continue;
+            }
+            boolean blocked = false;
+            for (String b : t.blockedBy() == null ? List.<String>of() : t.blockedBy()) {
+                if (!Boolean.TRUE.equals(completed.get(b))) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (!blocked) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
 
     @SuppressWarnings("unchecked")
     static TeamTask fromMap(Map<String, Object> m) {

@@ -22,17 +22,24 @@ const (
 	SessionPhaseTerminated  = "terminated"
 )
 
-// Team task states.
+// Team task states. Completed and Failed are terminal.
 const (
 	TaskStatePending    = "pending"
 	TaskStateInProgress = "in_progress"
 	TaskStateCompleted  = "completed"
+	TaskStateFailed     = "failed"
 )
+
+// IsTaskTerminal reports whether a task state accepts no further transitions.
+func IsTaskTerminal(state string) bool {
+	return state == TaskStateCompleted || state == TaskStateFailed
+}
 
 // Team / member lifecycle phases (store-backed; CRD enums map 1:1).
 const (
 	TeamPhasePending   = "Pending"
 	TeamPhaseRunning   = "Running"
+	TeamPhaseIdle      = "Idle" // alive; all active members idle (not Completed)
 	TeamPhaseCompleted = "Completed"
 	TeamPhaseFailed    = "Failed"
 

@@ -48,6 +48,10 @@ func (s *TaskStore) Complete(namespace, teamName, taskID, result string) (*store
 	return s.Repo.Complete(context.Background(), namespace, teamName, taskID, result)
 }
 
+func (s *TaskStore) Fail(namespace, teamName, taskID, reason string) (*store.TeamTask, error) {
+	return s.Repo.Fail(context.Background(), namespace, teamName, taskID, reason)
+}
+
 func (s *TaskStore) Unclaim(namespace, teamName, taskID string) (*store.TeamTask, error) {
 	return s.Repo.Unclaim(context.Background(), namespace, teamName, taskID)
 }

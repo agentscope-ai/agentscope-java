@@ -1,8 +1,8 @@
 import { api } from '@/lib/apiClient';
 
-export type TeamPhase = 'Pending' | 'Running' | 'Completed' | 'Failed' | string;
+export type TeamPhase = 'Pending' | 'Running' | 'Idle' | 'Completed' | 'Failed' | string;
 export type MemberPhase = 'Joining' | 'Working' | 'Idle' | 'Lost' | 'Failed' | 'Shutdown' | string;
-export type TaskState = 'pending' | 'in_progress' | 'completed' | string;
+export type TaskState = 'pending' | 'in_progress' | 'completed' | 'failed' | string;
 
 export interface Team {
   id?: string;
@@ -302,8 +302,15 @@ export function teamPhaseTone(
 }
 
 export function chatSessionPath(member: TeamMember): string | null {
+  const id = managedChatSessionId(member);
+  if (!id) return null;
+  return `/sessions/${encodeURIComponent(id)}`;
+}
+
+/** Managed member session id for in-page chat (null for BYO / unbound). */
+export function managedChatSessionId(member: TeamMember): string | null {
   if (member.deployMode !== 'managed') return null;
   const id = member.managedSessionId || member.sessionId;
   if (!id) return null;
-  return `/sessions/${encodeURIComponent(id)}`;
+  return id;
 }

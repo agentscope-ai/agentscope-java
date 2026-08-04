@@ -511,6 +511,11 @@ func main() {
 				}
 				return list[0].TeamContext
 			})
+			productSrv.SetTeamMemberActivityHook(func(ctx context.Context, sessionID, status string) {
+				if err := team.SyncMemberPhaseFromSessionStatus(ctx, runtimeStore, sessionID, status); err != nil {
+					logger.Error(err, "team member phase sync failed", "session", sessionID, "status", status)
+				}
+			})
 		}
 		teamLifecycle.SetActivator(act)
 	}
@@ -649,8 +654,10 @@ func main() {
 	// Kube AgentTeam adapter: project CRD ↔ store using the shared Lifecycle.
 	if mgr != nil && enableExperimental && teamLifecycle != nil {
 		if teamEventSinkHolder != nil {
-			teamEventSinkHolder.teamSink = controller.NewTeamEventSink(
+			sink := controller.NewTeamEventSink(
 				mgr.GetClient(), teamTaskStore, mgr.GetEventRecorderFor("agentscope-controller"))
+			sink.SetMessageRouter(teamMsgRouter)
+			teamEventSinkHolder.teamSink = sink
 		}
 		if err := (&controller.AgentTeamReconciler{
 			Client:    mgr.GetClient(),

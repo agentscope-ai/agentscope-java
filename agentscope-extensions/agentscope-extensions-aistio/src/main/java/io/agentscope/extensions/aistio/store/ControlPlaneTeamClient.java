@@ -137,9 +137,23 @@ public final class ControlPlaneTeamClient implements TeamClient {
             long expectedVersion) {
         return Mono.fromCallable(
                         () -> {
+                            long version = expectedVersion;
+                            if (version <= 0) {
+                                TeamTask cur = getTask(namespace, teamName, taskId);
+                                if (cur != null
+                                        && TeamTask.IN_PROGRESS.equals(cur.state())
+                                        && claimedBy != null
+                                        && claimedBy.equals(cur.owner())) {
+                                    return cur;
+                                }
+                                if (cur == null) {
+                                    throw new IllegalStateException("task not found: " + taskId);
+                                }
+                                version = cur.version();
+                            }
                             Map<String, Object> body = new LinkedHashMap<>();
                             body.put("claimedBy", claimedBy);
-                            body.put("resourceVersion", String.valueOf(expectedVersion));
+                            body.put("resourceVersion", String.valueOf(version));
                             ControlPlaneHttpClient.Response resp =
                                     http.send(
                                             "POST",
@@ -151,9 +165,43 @@ public final class ControlPlaneTeamClient implements TeamClient {
                                                     + enc(namespace),
                                             body);
                             if (resp.status() == 409) {
+                                // Idempotent retry: already in progress by this member.
+                                TeamTask again = getTask(namespace, teamName, taskId);
+                                if (again != null
+                                        && TeamTask.IN_PROGRESS.equals(again.state())
+                                        && claimedBy != null
+                                        && claimedBy.equals(again.owner())) {
+                                    return again;
+                                }
                                 throw new TeamConflictException(resp.body());
                             }
                             requireOk(resp, "claimTask");
+                            return taskFromJson(MAPPER.readTree(resp.body()));
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<TeamTask> failTask(
+            String namespace, String teamName, String taskId, String reason) {
+        return Mono.fromCallable(
+                        () -> {
+                            Map<String, Object> body =
+                                    Map.of("reason", reason == null ? "" : reason);
+                            ControlPlaneHttpClient.Response resp =
+                                    http.send(
+                                            "POST",
+                                            "/api/v1/teams/"
+                                                    + enc(teamName)
+                                                    + "/tasks/"
+                                                    + enc(taskId)
+                                                    + "/fail?namespace="
+                                                    + enc(namespace),
+                                            body);
+                            if (resp.status() == 409) {
+                                throw new TeamConflictException(resp.body());
+                            }
+                            requireOk(resp, "failTask");
                             return taskFromJson(MAPPER.readTree(resp.body()));
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -209,37 +257,9 @@ public final class ControlPlaneTeamClient implements TeamClient {
     }
 
     @Override
-    public Mono<List<TeamTask>> listClaimableTasks(String namespace, String teamName) {
-        return listTasks(namespace, teamName)
-                .map(
-                        tasks -> {
-                            Map<String, Boolean> completed = new LinkedHashMap<>();
-                            for (TeamTask t : tasks) {
-                                if (TeamTask.COMPLETED.equals(t.state())) {
-                                    completed.put(t.taskId(), true);
-                                }
-                            }
-                            List<TeamTask> out = new ArrayList<>();
-                            for (TeamTask t : tasks) {
-                                if (!TeamTask.PENDING.equals(t.state())) {
-                                    continue;
-                                }
-                                if (t.owner() != null && !t.owner().isBlank()) {
-                                    continue;
-                                }
-                                boolean blocked = false;
-                                for (String b : t.blockedBy()) {
-                                    if (!Boolean.TRUE.equals(completed.get(b))) {
-                                        blocked = true;
-                                        break;
-                                    }
-                                }
-                                if (!blocked) {
-                                    out.add(t);
-                                }
-                            }
-                            return out;
-                        });
+    public Mono<List<TeamTask>> listClaimableTasks(
+            String namespace, String teamName, String forMember) {
+        return listTasks(namespace, teamName).map(tasks -> TeamTask.claimableOf(tasks, forMember));
     }
 
     @Override
@@ -558,6 +578,19 @@ public final class ControlPlaneTeamClient implements TeamClient {
                 blocked,
                 n.path("result").asText(""),
                 n.path("version").asLong());
+    }
+
+    private TeamTask getTask(String namespace, String teamName, String taskId) throws Exception {
+        String path = "/api/v1/teams/" + enc(teamName) + "/tasks?namespace=" + enc(namespace);
+        ControlPlaneHttpClient.Response resp = http.send("GET", path, null);
+        requireOk(resp, "getTask");
+        JsonNode root = MAPPER.readTree(resp.body());
+        for (JsonNode n : root.path("tasks")) {
+            if (taskId.equals(n.path("taskId").asText())) {
+                return taskFromJson(n);
+            }
+        }
+        return null;
     }
 
     private static TeamMemberInfo memberFromJson(JsonNode n, boolean leadHint) {

@@ -52,16 +52,19 @@ public class SessionEventLog {
     private final SessionEventEntityRepository repository;
     private final ManagedJsonHelper jsonHelper;
     private final TransactionTemplate transactionTemplate;
+    private final DeletedSessionRegistry deletedSessions;
     private final long pollIntervalMs;
 
     public SessionEventLog(
             SessionEventEntityRepository repository,
             ManagedJsonHelper jsonHelper,
             TransactionTemplate transactionTemplate,
+            DeletedSessionRegistry deletedSessions,
             @Value("${builder.session-event.poll-interval-ms:500}") long pollIntervalMs) {
         this.repository = repository;
         this.jsonHelper = jsonHelper;
         this.transactionTemplate = transactionTemplate;
+        this.deletedSessions = deletedSessions;
         this.pollIntervalMs = Math.max(50L, pollIntervalMs);
     }
 
@@ -80,6 +83,10 @@ public class SessionEventLog {
      */
     public SessionEventDto append(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
+        if (deletedSessions.isDeleted(sessionId)) {
+            log.debug("Dropping {} event for deleted session {}", type, sessionId);
+            return droppedEvent(sessionId, type, payload, eventId);
+        }
         RuntimeException lastConflict = null;
         for (int attempt = 0; attempt < MAX_SEQ_RETRIES; attempt++) {
             try {
@@ -247,10 +254,37 @@ public class SessionEventLog {
                 .toList();
     }
 
-    /** Deletes all persisted events for a session. */
+    /** Deletes all persisted events for a session that keeps running (transcript clear). */
     @Transactional
     public void deleteBySessionId(String sessionId) {
         repository.deleteBySessionId(sessionId);
+    }
+
+    /**
+     * Deletes a session's events and refuses any later append for it. Use this instead of {@link
+     * #deleteBySessionId} once the session row itself is gone, so an unwinding turn cannot leave
+     * orphan rows behind.
+     */
+    public void purgeDeletedSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        deletedSessions.markDeleted(sessionId);
+        transactionTemplate.executeWithoutResult(status -> repository.deleteBySessionId(sessionId));
+    }
+
+    /**
+     * Stands in for an event that was not written because the session is gone. Callers echo the
+     * result to HTTP/SSE, so a {@code seq} of {@code -1} marks it as never persisted.
+     */
+    private SessionEventDto droppedEvent(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        long now = System.currentTimeMillis();
+        String id =
+                eventId != null && !eventId.isBlank()
+                        ? eventId
+                        : "evt_" + UUID.randomUUID().toString().replace("-", "");
+        return new SessionEventDto(id, sessionId, -1L, type, payload, now, now);
     }
 
     private SessionEventDto toDto(SessionEventEntity entity) {

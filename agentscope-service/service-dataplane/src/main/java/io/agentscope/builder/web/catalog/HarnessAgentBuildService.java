@@ -72,7 +72,8 @@ import org.springframework.web.server.ResponseStatusException;
  *       per-user overlay write path.
  * </ul>
  *
- * <p>Built agents are cached locally keyed by {@code sessionOwner/agentId/spec.cacheSuffix()}.
+ * <p>Built agents are cached locally keyed by {@code sessionOwner/agentId/spec.cacheSuffix()}, plus
+ * the session id for team member sessions, whose team role is fixed at build time.
  */
 @Service
 public class HarnessAgentBuildService {
@@ -98,6 +99,9 @@ public class HarnessAgentBuildService {
     private final Optional<TeamClient> teamClient;
 
     private final ConcurrentHashMap<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
+
+    /** Separates the session-scoped part of a team member's cache key from its owner/agent base. */
+    private static final String TEAM_KEY_INFIX = "/team-";
 
     public HarnessAgentBuildService(
             Optional<Model> modelOpt,
@@ -128,14 +132,53 @@ public class HarnessAgentBuildService {
 
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
     public HarnessAgent getOrBuildAgent(ManagedSessionDto session, SessionAgentBuildSpec spec) {
-        String cacheKey = session.ownerId() + "/" + session.agentId() + "/" + spec.cacheSuffix();
+        String cacheKey = cacheKey(session, spec);
         return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec));
+    }
+
+    /**
+     * A team member's {@code TeamContext} (team, role, allowed actions) and its wakeup-bound
+     * session id are baked into the agent at build time, so a team session must get its own
+     * instance instead of sharing one keyed only by owner/agent/spec — otherwise the second team
+     * to run inherits the first team's role.
+     */
+    static String cacheKey(ManagedSessionDto session, SessionAgentBuildSpec spec) {
+        String base = session.ownerId() + "/" + session.agentId() + "/" + spec.cacheSuffix();
+        return isTeamSession(session) ? base + TEAM_KEY_INFIX + session.id() : base;
+    }
+
+    /** Team member sessions are allocated by the control plane with a {@code team|...} key. */
+    private static boolean isTeamSession(ManagedSessionDto session) {
+        String externalKey = session.externalKey();
+        return externalKey != null && externalKey.startsWith("team|");
     }
 
     /** Evicts all cached instance variants for a session-owner/agent pair. */
     public void evict(String sessionOwnerId, String agentId) {
         String prefix = sessionOwnerId + "/" + agentId;
         agentCache.keySet().removeIf(k -> k.equals(prefix) || k.startsWith(prefix + "/"));
+    }
+
+    /**
+     * Drops what the data plane holds for a deleted session: the instance built for it and its
+     * persisted agent state. Only the session-scoped team entries can be evicted by session id —
+     * plain sessions share one instance per owner/agent/spec.
+     */
+    public void discardSession(String ownerId, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        agentCache.keySet().removeIf(k -> isTeamSessionKey(k, sessionId));
+        try {
+            agentStateStore.delete(ownerId, sessionId);
+        } catch (RuntimeException ex) {
+            log.warn("Agent state cleanup failed for session {}: {}", sessionId, ex.getMessage());
+        }
+    }
+
+    /** True when {@code cacheKey} is the team-session variant built for {@code sessionId}. */
+    static boolean isTeamSessionKey(String cacheKey, String sessionId) {
+        return cacheKey.endsWith(TEAM_KEY_INFIX + sessionId);
     }
 
     /**
@@ -269,7 +312,7 @@ public class HarnessAgentBuildService {
         b.middleware(toolConfirmationMiddleware);
 
         applyManagedSessionBuildOptions(b, buildOwnerId, agentId, workspace, spec, sysPrompt);
-        attachTeamsMiddlewareIfPresent(b, session);
+        attachTeamsMiddlewareIfPresent(b, session, resolved);
 
         HarnessAgent agent = b.build();
         log.info(
@@ -316,19 +359,10 @@ public class HarnessAgentBuildService {
                 definitionStore, buildOwnerId, agentId, spec.resources());
     }
 
-    private void attachTeamsMiddlewareIfPresent(HarnessAgent.Builder b, ManagedSessionDto session) {
+    private void attachTeamsMiddlewareIfPresent(
+            HarnessAgent.Builder b, ManagedSessionDto session, SessionResolveResult resolved) {
         TeamClient client = teamClient.orElse(null);
         if (client == null) {
-            return;
-        }
-        SessionResolveResult resolved;
-        try {
-            resolved = controlPlaneClient.resolveSession(session.id());
-        } catch (RuntimeException ex) {
-            log.debug(
-                    "skip teams middleware: resolve failed for {}: {}",
-                    session.id(),
-                    ex.toString());
             return;
         }
         if (resolved == null

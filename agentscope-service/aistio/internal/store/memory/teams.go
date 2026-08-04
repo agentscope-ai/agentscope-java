@@ -225,6 +225,28 @@ func (r *teamRepo) UpdateMemberPhase(_ context.Context, namespace, teamName, mem
 	return store.ErrNotFound
 }
 
+func (r *teamRepo) FindMemberBySessionID(_ context.Context, sessionID string) (*store.TeamMember, error) {
+	if sessionID == "" {
+		return nil, store.ErrNotFound
+	}
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	var best *store.TeamMember
+	for i := range r.s.teamMembers {
+		m := &r.s.teamMembers[i]
+		if m.SessionID == sessionID || m.ManagedSessionID == sessionID {
+			cp := *m
+			if best == nil || cp.UpdatedAt.After(best.UpdatedAt) {
+				best = &cp
+			}
+		}
+	}
+	if best == nil {
+		return nil, store.ErrNotFound
+	}
+	return best, nil
+}
+
 func teamKey(namespace, name string) string {
 	return namespace + "/" + name
 }

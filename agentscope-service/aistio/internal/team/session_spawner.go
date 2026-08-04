@@ -119,8 +119,9 @@ func (s *SessionSpawner) buildTeamContext(
 	}
 
 	actions := []string{
-		"listTasks", "claimTask", "unclaimTask", "completeTask",
-		"sendMessage", "broadcastMessage", "listMembers", "submitPlan",
+		"listTasks", "listClaimableTasks", "claimTask", "unclaimTask",
+		"completeTask", "failTask",
+		"sendMessage", "broadcastMessage", "listMessages", "listMembers", "submitPlan",
 	}
 	if isLead {
 		actions = append(actions,

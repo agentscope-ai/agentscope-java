@@ -14,6 +14,7 @@ export default function TeamsOverviewPage() {
 
   const items = teams.data?.items || [];
   const running = items.filter((t) => t.phase === 'Running').length;
+  const idle = items.filter((t) => t.phase === 'Idle').length;
   const pending = items.filter((t) => t.phase === 'Pending').length;
   const completed = items.filter((t) => t.phase === 'Completed').length;
   const failed = items.filter((t) => t.phase === 'Failed').length;
@@ -30,10 +31,11 @@ export default function TeamsOverviewPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {[
           { label: 'Total', value: items.length },
           { label: 'Running', value: running },
+          { label: 'Idle', value: idle },
           { label: 'Pending', value: pending },
           { label: 'Done / Failed', value: `${completed} / ${failed}` },
         ].map((c) => (

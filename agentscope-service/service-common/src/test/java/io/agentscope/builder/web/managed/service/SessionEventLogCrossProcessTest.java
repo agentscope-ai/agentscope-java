@@ -56,6 +56,7 @@ class SessionEventLogCrossProcessTest {
 
     @Autowired SessionEventLog eventLog;
     @Autowired SessionEventEntityRepository repository;
+    @Autowired DeletedSessionRegistry deletedSessions;
 
     @Test
     void concurrentAppendProducesUniqueSeq() throws Exception {
@@ -118,6 +119,35 @@ class SessionEventLogCrossProcessTest {
                 .verify(Duration.ofSeconds(5));
     }
 
+    // A turn keeps running for seconds after its session is deleted, so the purge has to
+    // reject those late appends or they recreate the rows it just removed.
+    @Test
+    void purgedSessionDropsLateAppends() {
+        String sessionId = "ses_purged";
+        eventLog.append(sessionId, "agent.message", Map.of("text", "before"));
+        assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).hasSize(1);
+
+        eventLog.purgeDeletedSession(sessionId);
+        SessionEventDto dropped =
+                eventLog.append(sessionId, "agent.message", Map.of("text", "after"));
+
+        assertThat(deletedSessions.isDeleted(sessionId)).isTrue();
+        assertThat(dropped.seq()).isEqualTo(-1L);
+        assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).isEmpty();
+    }
+
+    @Test
+    void clearingTranscriptKeepsTheSessionWritable() {
+        String sessionId = "ses_cleared";
+        eventLog.append(sessionId, "agent.message", Map.of("text", "old"));
+
+        eventLog.deleteBySessionId(sessionId);
+        eventLog.append(sessionId, "agent.message", Map.of("text", "new"));
+
+        assertThat(deletedSessions.isDeleted(sessionId)).isFalse();
+        assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).hasSize(1);
+    }
+
     @TestConfiguration
     static class Config {
         @Bean
@@ -136,11 +166,18 @@ class SessionEventLogCrossProcessTest {
         }
 
         @Bean
+        DeletedSessionRegistry deletedSessionRegistry() {
+            return new DeletedSessionRegistry();
+        }
+
+        @Bean
         SessionEventLog sessionEventLog(
                 SessionEventEntityRepository repository,
                 ManagedJsonHelper jsonHelper,
-                TransactionTemplate transactionTemplate) {
-            return new SessionEventLog(repository, jsonHelper, transactionTemplate, 100L);
+                TransactionTemplate transactionTemplate,
+                DeletedSessionRegistry deletedSessions) {
+            return new SessionEventLog(
+                    repository, jsonHelper, transactionTemplate, deletedSessions, 100L);
         }
     }
 }

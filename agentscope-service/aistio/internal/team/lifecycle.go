@@ -148,11 +148,33 @@ func (l *Lifecycle) FailTeam(ctx context.Context, team *store.Team, reason strin
 
 // CleanupTeamState removes a team's persistent task/message/session/member state.
 func (l *Lifecycle) CleanupTeamState(ctx context.Context, team *store.Team) {
+	l.releaseManagedSessions(ctx, team)
 	l.taskStore.DeleteTeam(team.Namespace, team.Name)
 	l.router.DeleteTeam(team.Name, team.Namespace)
 	if l.store != nil {
 		_ = l.store.Sessions().DeleteByTeam(ctx, team.Name, team.Namespace)
 		_ = l.store.Teams().Delete(ctx, team.Namespace, team.Name)
+	}
+}
+
+// releaseManagedSessions deletes the product sessions the team allocated for its
+// managed members. Must run before the member rows are deleted, since they hold
+// the session ids. Failures are logged only: teardown must still finish.
+func (l *Lifecycle) releaseManagedSessions(ctx context.Context, team *store.Team) {
+	if l.activator == nil || l.store == nil {
+		return
+	}
+	logger := log.FromContext(ctx)
+	members, err := l.store.Teams().ListMembers(ctx, team.Namespace, team.Name)
+	if err != nil {
+		logger.Error(err, "failed to list members for session release", "team", team.Name)
+		return
+	}
+	for _, m := range members {
+		if err := l.activator.ReleaseManagedMemberSession(ctx, m); err != nil {
+			logger.Error(err, "failed to release managed member session",
+				"team", team.Name, "member", m.MemberName)
+		}
 	}
 }
 
@@ -169,10 +191,19 @@ func (l *Lifecycle) CheckTimeout(team *store.Team) bool {
 	return time.Since(*team.StartedAt) > maxDur
 }
 
-// CheckAllComplete returns true if all tasks are completed.
+// CheckAllComplete returns true when every task reached a terminal state
+// (completed or failed), so a board with failures still settles.
 func (l *Lifecycle) CheckAllComplete(team *store.Team) bool {
-	total, _, _, completed := l.taskStore.GetSummary(team.Namespace, team.Name)
-	return total > 0 && completed == total
+	tasks := l.taskStore.List(team.Namespace, team.Name)
+	if len(tasks) == 0 {
+		return false
+	}
+	for _, t := range tasks {
+		if !store.IsTaskTerminal(t.State) {
+			return false
+		}
+	}
+	return true
 }
 
 // ShouldCleanup checks if the team should be garbage collected based on TTL.
@@ -217,6 +248,9 @@ func (l *Lifecycle) HandleMemberFailure(ctx context.Context, team *store.Team, m
 	extra := ParseSpecExtra(team)
 	if extra.Recovery == nil || extra.Recovery.ReschedulePolicy == "None" {
 		metrics.RecordTeamRecovery(team.Namespace, team.Name, "no_policy")
+		l.router.NotifyLead(team.Namespace, team.Name, memberName, fmt.Sprintf(
+			"[team] Member %s was lost (%s) and will not be restarted (reschedulePolicy=None)."+
+				" Reassign its work or complete without it.", memberName, reason))
 		return nil
 	}
 
@@ -227,6 +261,9 @@ func (l *Lifecycle) HandleMemberFailure(ctx context.Context, team *store.Team, m
 	if m.RestartCount >= maxRestarts {
 		_ = l.store.Teams().UpdateMemberPhase(ctx, team.Namespace, team.Name, memberName, store.MemberPhaseFailed)
 		metrics.RecordTeamRecovery(team.Namespace, team.Name, "exhausted")
+		l.router.NotifyLead(team.Namespace, team.Name, memberName, fmt.Sprintf(
+			"[team] Member %s failed permanently after %d restarts (%s)."+
+				" Reassign its work or complete without it.", memberName, m.RestartCount, reason))
 		return nil
 	}
 
@@ -369,6 +406,9 @@ func (l *Lifecycle) rescheduleMember(ctx context.Context, team *store.Team, m *s
 				Note: "Rolled back to pending due to member failure",
 			}
 			l.taskStore.Unclaim(team.Namespace, team.Name, t.TaskID)
+			l.router.NotifyLead(team.Namespace, team.Name, m.MemberName, fmt.Sprintf(
+				"[team] Task %s (%s) was rolled back to pending: member %s failed mid-task"+
+					" and is being restarted.", t.TaskID, t.Subject, m.MemberName))
 		}
 	}
 

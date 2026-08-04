@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   approveMemberPlan,
   assignTeamTask,
-  chatSessionPath,
   claimTeamTask,
   completeTeam,
   completeTeamTask,
@@ -14,6 +13,7 @@ import {
   listTeamEvents,
   listTeamMessages,
   listTeamTasks,
+  managedChatSessionId,
   rejectMemberPlan,
   removeTeamMember,
   sendTeamMessage,
@@ -23,11 +23,13 @@ import {
   type TeamMember,
   type TeamTask,
 } from '@/api/teams';
+import ChatPanel from '@/components/ChatPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { ApiError } from '@/lib/apiClient';
+import { cn } from '@/lib/utils';
 
 type Tab = 'board' | 'members' | 'messages';
 
@@ -37,9 +39,14 @@ function bucketTasks(tasks: TeamTask[]) {
   const inProgress: TeamTask[] = [];
   const blocked: TeamTask[] = [];
   const completed: TeamTask[] = [];
+  const failed: TeamTask[] = [];
   for (const t of tasks) {
     if (t.state === 'completed') {
       completed.push(t);
+      continue;
+    }
+    if (t.state === 'failed') {
+      failed.push(t);
       continue;
     }
     if (t.state === 'in_progress') {
@@ -54,7 +61,7 @@ function bucketTasks(tasks: TeamTask[]) {
     if (!t.owner) unassigned.push(t);
     else assigned.push(t);
   }
-  return { unassigned, assigned, inProgress, blocked, completed };
+  return { unassigned, assigned, inProgress, blocked, completed, failed };
 }
 
 export default function TeamDetailPage() {
@@ -72,6 +79,7 @@ export default function TeamDetailPage() {
   const [spawnName, setSpawnName] = useState('');
   const [spawnRef, setSpawnRef] = useState('');
   const [spawnPrompt, setSpawnPrompt] = useState('');
+  const [chatMember, setChatMember] = useState<TeamMember | null>(null);
 
   const detail = useQuery({
     queryKey: ['team', namespace, teamName],
@@ -106,6 +114,12 @@ export default function TeamDetailPage() {
   const tasks = tasksQ.data?.tasks || [];
   const buckets = useMemo(() => bucketTasks(tasks), [tasks]);
   const lead = members.find((m) => m.memberName === 'lead');
+  const chatSessionId = chatMember ? managedChatSessionId(chatMember) : null;
+
+  const openMemberChat = (m: TeamMember) => {
+    if (!managedChatSessionId(m)) return;
+    setChatMember(m);
+  };
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['team', namespace, teamName] });
@@ -156,9 +170,17 @@ export default function TeamDetailPage() {
 
   const team = detail.data.team;
   const summary = detail.data.tasks;
+  const readOnly = (team.phase || '').toLowerCase() === 'completed';
 
   return (
-    <Page className="max-w-7xl">
+    <Page className={cn(chatMember ? 'max-w-none' : 'max-w-7xl')}>
+      <div
+        className={cn(
+          chatMember &&
+            'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:items-start lg:gap-6',
+        )}
+      >
+        <div className="min-w-0 space-y-8">
       <PageHeader
         title={team.name}
         description={team.objective}
@@ -168,15 +190,17 @@ export default function TeamDetailPage() {
               <Link to="/teams/list">Back</Link>
             </Button>
             <Button
-              variant="destructive"
-              disabled={completeMut.isPending}
+              variant={readOnly ? 'secondary' : 'destructive'}
+              disabled={readOnly || completeMut.isPending}
+              title={readOnly ? 'Team is already completed' : undefined}
               onClick={() => {
+                if (readOnly) return;
                 if (window.confirm(`Complete team "${team.name}" (keeps state until TTL)?`)) {
                   completeMut.mutate();
                 }
               }}
             >
-              Complete team
+              {readOnly ? 'Completed' : 'Complete team'}
             </Button>
             <Button
               variant="outline"
@@ -200,6 +224,11 @@ export default function TeamDetailPage() {
           tasks {summary?.completed ?? 0}/{summary?.total ?? 0} complete ·{' '}
           {summary?.inProgress ?? 0} in progress · {summary?.pending ?? 0} pending
         </span>
+        {readOnly && (
+          <span className="text-sm font-medium text-muted-foreground">
+            Read-only — team is completed
+          </span>
+        )}
       </div>
 
       {/* Topology */}
@@ -209,7 +238,14 @@ export default function TeamDetailPage() {
         </h2>
         <div className="flex flex-wrap items-stretch gap-3">
           {members.map((m) => (
-            <MemberCard key={m.memberName} member={m} highlight={m.memberName === 'lead'} />
+            <MemberCard
+              key={m.memberName}
+              member={m}
+              highlight={m.memberName === 'lead'}
+              active={chatMember?.memberName === m.memberName}
+              readOnly={readOnly}
+              onOpenChat={() => openMemberChat(m)}
+            />
           ))}
           {members.length === 0 && (
             <p className="text-sm text-muted-foreground">No members registered.</p>
@@ -247,7 +283,7 @@ export default function TeamDetailPage() {
             className="flex flex-wrap gap-2"
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
-              if (!subject.trim()) return;
+              if (readOnly || !subject.trim()) return;
               createTask.mutate();
             }}
           >
@@ -256,8 +292,9 @@ export default function TeamDetailPage() {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="New task subject"
+              disabled={readOnly}
             />
-            <Button type="submit" disabled={createTask.isPending}>
+            <Button type="submit" disabled={readOnly || createTask.isPending}>
               Add task
             </Button>
           </form>
@@ -270,6 +307,7 @@ export default function TeamDetailPage() {
                 ['In progress', buckets.inProgress],
                 ['Blocked', buckets.blocked],
                 ['Completed', buckets.completed],
+                ['Failed', buckets.failed],
               ] as const
             ).map(([title, list]) => (
               <div
@@ -293,7 +331,7 @@ export default function TeamDetailPage() {
                         {t.blockedBy?.length ? ` · blockedBy=${t.blockedBy.join(',')}` : ''}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {t.state === 'pending' && !t.owner && (
+                        {!readOnly && t.state === 'pending' && !t.owner && (
                           <>
                             <select
                               className="h-8 max-w-[7rem] rounded border border-border bg-white px-1 text-xs"
@@ -353,7 +391,7 @@ export default function TeamDetailPage() {
                             </Button>
                           </>
                         )}
-                        {t.state === 'pending' && t.owner && (
+                        {!readOnly && t.state === 'pending' && t.owner && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -375,7 +413,7 @@ export default function TeamDetailPage() {
                             Start
                           </Button>
                         )}
-                        {t.state === 'in_progress' && (
+                        {!readOnly && t.state === 'in_progress' && (
                           <>
                             <Button
                               size="sm"
@@ -422,7 +460,7 @@ export default function TeamDetailPage() {
             className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-white p-4 shadow-sm"
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!spawnName.trim() || !spawnRef.trim()) return;
+              if (readOnly || !spawnName.trim() || !spawnRef.trim()) return;
               try {
                 await spawnTeamMember(
                   teamName,
@@ -448,19 +486,24 @@ export default function TeamDetailPage() {
                 value={spawnName}
                 onChange={(e) => setSpawnName(e.target.value)}
                 placeholder="name"
+                disabled={readOnly}
               />
             </div>
             <Input
               value={spawnRef}
               onChange={(e) => setSpawnRef(e.target.value)}
               placeholder="agentRef"
+              disabled={readOnly}
             />
             <Input
               value={spawnPrompt}
               onChange={(e) => setSpawnPrompt(e.target.value)}
               placeholder="prompt (optional)"
+              disabled={readOnly}
             />
-            <Button type="submit">Spawn</Button>
+            <Button type="submit" disabled={readOnly}>
+              Spawn
+            </Button>
           </form>
 
           <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
@@ -478,7 +521,7 @@ export default function TeamDetailPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {members.map((m) => {
-                  const chat = chatSessionPath(m);
+                  const canChat = !!managedChatSessionId(m);
                   return (
                     <tr key={m.memberName}>
                       <td className="px-4 py-3 font-medium">{m.memberName}</td>
@@ -497,14 +540,22 @@ export default function TeamDetailPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {chat ? (
-                            <Link className="text-primary hover:underline text-xs" to={chat}>
-                              Chat
-                            </Link>
+                          {canChat ? (
+                            <button
+                              type="button"
+                              className={
+                                readOnly
+                                  ? 'text-xs font-medium text-muted-foreground'
+                                  : 'text-xs font-medium text-primary hover:underline'
+                              }
+                              onClick={() => openMemberChat(m)}
+                            >
+                              {readOnly ? 'View chat' : 'Chat'}
+                            </button>
                           ) : (
                             <span className="text-xs text-muted-foreground">Observe</span>
                           )}
-                          {m.planStatus === 'pending' && (
+                          {!readOnly && m.planStatus === 'pending' && (
                             <>
                               <Button
                                 size="sm"
@@ -536,7 +587,7 @@ export default function TeamDetailPage() {
                               </Button>
                             </>
                           )}
-                          {m.memberName !== 'lead' && m.phase !== 'Shutdown' && (
+                          {!readOnly && m.memberName !== 'lead' && m.phase !== 'Shutdown' && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -585,7 +636,7 @@ export default function TeamDetailPage() {
               className="grid gap-2"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (!msgBody.trim()) return;
+                if (readOnly || !msgBody.trim()) return;
                 try {
                   await sendTeamMessage(
                     teamName,
@@ -606,9 +657,10 @@ export default function TeamDetailPage() {
               }}
             >
               <select
-                className="h-10 rounded-lg border border-border bg-white px-3 text-sm"
+                className="h-10 rounded-lg border border-border bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 value={msgTo}
                 onChange={(e) => setMsgTo(e.target.value)}
+                disabled={readOnly}
               >
                 <option value="">To member… (empty = broadcast)</option>
                 {members.map((m) => (
@@ -621,8 +673,11 @@ export default function TeamDetailPage() {
                 value={msgBody}
                 onChange={(e) => setMsgBody(e.target.value)}
                 placeholder="Short message or artifact ref"
+                disabled={readOnly}
               />
-              <Button type="submit">Send</Button>
+              <Button type="submit" disabled={readOnly}>
+                Send
+              </Button>
             </form>
           </div>
 
@@ -656,18 +711,64 @@ export default function TeamDetailPage() {
           </div>
         </section>
       )}
+        </div>
+
+        {chatMember && chatSessionId && (
+          <aside className="mt-8 flex h-[min(85vh,820px)] flex-col overflow-hidden rounded-xl border border-border bg-white shadow-sm lg:sticky lg:top-4 lg:mt-0">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{chatMember.memberName}</div>
+                <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  {chatMember.agentRef} · {chatSessionId}
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setChatMember(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ChatPanel
+                key={chatSessionId}
+                sessionId={chatSessionId}
+                agentId={chatMember.managedAgentId || ''}
+                embedded
+                readOnly={readOnly}
+              />
+            </div>
+          </aside>
+        )}
+      </div>
     </Page>
   );
 }
 
-function MemberCard({ member, highlight }: { member: TeamMember; highlight?: boolean }) {
-  const chat = chatSessionPath(member);
+function MemberCard({
+  member,
+  highlight,
+  active,
+  readOnly,
+  onOpenChat,
+}: {
+  member: TeamMember;
+  highlight?: boolean;
+  active?: boolean;
+  readOnly?: boolean;
+  onOpenChat: () => void;
+}) {
+  const canChat = !!managedChatSessionId(member);
   return (
     <div
       className={
-        highlight
-          ? 'min-w-[10rem] rounded-xl border-2 border-primary/40 bg-white p-4 shadow-sm'
-          : 'min-w-[10rem] rounded-xl border border-border bg-white p-4 shadow-sm'
+        active
+          ? 'min-w-[10rem] rounded-xl border-2 border-primary bg-primary/5 p-4 shadow-sm'
+          : highlight
+            ? 'min-w-[10rem] rounded-xl border-2 border-primary/40 bg-white p-4 shadow-sm'
+            : 'min-w-[10rem] rounded-xl border border-border bg-white p-4 shadow-sm'
       }
     >
       <div className="flex items-center justify-between gap-2">
@@ -682,10 +783,18 @@ function MemberCard({ member, highlight }: { member: TeamMember; highlight?: boo
         {member.planStatus ? ` · plan ${member.planStatus}` : ''}
       </div>
       <div className="mt-3">
-        {chat ? (
-          <Link className="text-sm font-medium text-primary hover:underline" to={chat}>
-            Open chat
-          </Link>
+        {canChat ? (
+          <button
+            type="button"
+            className={
+              readOnly
+                ? 'text-sm font-medium text-muted-foreground hover:underline'
+                : 'text-sm font-medium text-primary hover:underline'
+            }
+            onClick={onOpenChat}
+          >
+            {active ? (readOnly ? 'Viewing chat' : 'Chat open') : readOnly ? 'View chat' : 'Open chat'}
+          </button>
         ) : (
           <span className="text-sm text-muted-foreground">Observe only</span>
         )}

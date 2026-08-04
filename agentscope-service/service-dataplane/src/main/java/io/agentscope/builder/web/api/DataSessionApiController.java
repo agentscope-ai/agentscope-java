@@ -34,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -145,6 +146,10 @@ public class DataSessionApiController {
      * Deletes all persisted events for a session. Used by the control plane after product session
      * DELETE (best-effort cascade). Internal-token callers may delete without a live session row;
      * user JWT callers must still own a resolvable session.
+     *
+     * <p>Only the internal call also releases the session's in-process runtime state, because only
+     * then is the session itself gone. A user clearing their own transcript keeps a live session
+     * that must retain its team routing and cached agent.
      */
     @DeleteMapping("/{id}/events")
     public Mono<Void> deleteEvents(@PathVariable("id") String id, Authentication auth) {
@@ -157,10 +162,13 @@ public class DataSessionApiController {
                                                 a.getAuthority()));
         return Mono.fromRunnable(
                         () -> {
-                            if (!internal) {
+                            if (internal) {
+                                eventLog.purgeDeletedSession(id);
+                                turnRunner.releaseSession(id, userId);
+                            } else {
                                 sessionService.get(userId, id);
+                                eventLog.deleteBySessionId(id);
                             }
-                            eventLog.deleteBySessionId(id);
                         })
                 .subscribeOn(BLOCKING)
                 .then();
@@ -255,9 +263,18 @@ public class DataSessionApiController {
         Map<String, Object> payload = event.payload() != null ? event.payload() : Map.of();
         return switch (type) {
             case SessionEventTypes.USER_MESSAGE -> {
-                SessionEventDto recorded = eventLog.append(sessionId, type, payload);
-                sessionService.runTurn(userId, sessionId, payload);
-                yield recorded;
+                // Recorded only once a turn has been admitted. A team wake that arrives
+                // while the session is mid-turn is rejected and retried by the control
+                // plane, and recording each rejection would fill the transcript with
+                // copies of a message no turn ever read.
+                AtomicReference<SessionEventDto> admitted = new AtomicReference<>();
+                sessionService.runTurn(
+                        userId,
+                        sessionId,
+                        payload,
+                        () -> admitted.set(eventLog.append(sessionId, type, payload)));
+                SessionEventDto recorded = admitted.get();
+                yield recorded != null ? recorded : eventLog.append(sessionId, type, payload);
             }
             case SessionEventTypes.USER_INTERRUPT -> {
                 turnRunner.interrupt(sessionId);

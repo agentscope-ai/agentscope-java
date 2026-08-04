@@ -2328,6 +2328,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }
 
+            TeamsMiddleware capturedTeamsMw = null;
             if (teamsModeClient != null && teamsModeContext != null) {
                 TeamsMiddleware teamsMw = new TeamsMiddleware(teamsModeClient, teamsModeContext);
                 if (messageBus != null) {
@@ -2338,6 +2339,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 for (Object t : teamsMw.getTools()) {
                     agentToolkit.registerTool(t);
                 }
+                capturedTeamsMw = teamsMw;
             }
 
             Object capturedSubagentMw = null;
@@ -2385,9 +2387,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else if (capturedSubagentMw instanceof DynamicSubagentsMiddleware dsm) {
                     waitTaskRepo = dsm.getTaskRepository();
                 }
-                agentToolkit.registerTool(
+                io.agentscope.harness.agent.tool.WaitAsyncResultsTool waitTool =
                         new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(
-                                messageBus, waitTaskRepo));
+                                messageBus, waitTaskRepo);
+                if (capturedTeamsMw != null) {
+                    TeamsMiddleware teamsForWait = capturedTeamsMw;
+                    waitTool.setExternalWorkProbe(teamsForWait::hasOutstandingTeamWork);
+                }
+                agentToolkit.registerTool(waitTool);
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
@@ -2626,6 +2633,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Apply tools.json allow/deny filter ----
+            // Platform tools (subagents/teams/tasks/…) survive allow; see ToolFilter.
             if (resolvedToolsConfig != null) {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }

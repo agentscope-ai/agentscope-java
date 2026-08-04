@@ -54,6 +54,37 @@ export interface InboundEvent {
   payload?: Record<string, unknown>;
 }
 
+/** Parsed from product `externalKey` = `team|{namespace}/{teamName}|{memberName}`. */
+export interface TeamSessionRef {
+  namespace: string;
+  teamName: string;
+  memberName: string;
+}
+
+export function parseTeamExternalKey(key?: string | null): TeamSessionRef | null {
+  if (!key || !key.startsWith('team|')) return null;
+  const rest = key.slice('team|'.length);
+  const pipe = rest.lastIndexOf('|');
+  if (pipe <= 0) return null;
+  const nsTeam = rest.slice(0, pipe);
+  const memberName = rest.slice(pipe + 1);
+  const slash = nsTeam.indexOf('/');
+  if (slash <= 0 || !memberName) return null;
+  return {
+    namespace: nsTeam.slice(0, slash),
+    teamName: nsTeam.slice(slash + 1),
+    memberName,
+  };
+}
+
+export function isTeamOriginatedSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
+  return parseTeamExternalKey(s.externalKey) != null;
+}
+
+export function teamDetailPath(ref: TeamSessionRef): string {
+  return `/teams/${encodeURIComponent(ref.teamName)}?namespace=${encodeURIComponent(ref.namespace)}`;
+}
+
 
 export async function createManagedSession(req: CreateManagedSessionRequest): Promise<ManagedSession> {
   const res = await fetch('/api/sessions', {

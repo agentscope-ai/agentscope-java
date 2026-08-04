@@ -21,17 +21,30 @@ import (
 // project team membership without coupling product schema to Team rows.
 type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessage
 
+// TeamMemberActivityHook is invoked after a product session runtime status
+// patch succeeds. Used to mirror idle/running onto store-backed team members.
+type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
+
 type Server struct {
-	cfg               Config
-	db                *DB
-	vaultKey          []byte
-	teamContextLookup TeamContextLookup
+	cfg                    Config
+	db                     *DB
+	vaultKey               []byte
+	teamContextLookup      TeamContextLookup
+	teamMemberActivityHook TeamMemberActivityHook
 }
 
 // SetTeamContextLookup injects the runtime-store TeamContext lookup used by resolve.
 func (s *Server) SetTeamContextLookup(fn TeamContextLookup) {
 	if s != nil {
 		s.teamContextLookup = fn
+	}
+}
+
+// SetTeamMemberActivityHook injects the store-backed member phase sync used when
+// Managed turns update session status via PATCH .../runtime.
+func (s *Server) SetTeamMemberActivityHook(fn TeamMemberActivityHook) {
+	if s != nil {
+		s.teamMemberActivityHook = fn
 	}
 }
 

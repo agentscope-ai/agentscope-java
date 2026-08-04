@@ -30,6 +30,12 @@ public record ManagedSessionDto(
         String agentRefType,
         String agentOverridesJson,
         String environmentId,
+        /**
+         * Stable identity of the conversation this session was created for, or {@code null} for
+         * plain chat-UI / API sessions. Team member sessions are allocated by the control plane
+         * with a {@code team|{namespace}/{team}|{member}} key.
+         */
+        String externalKey,
         List<String> memoryStoreIds,
         List<String> vaultIds,
         List<Map<String, Object>> resources,

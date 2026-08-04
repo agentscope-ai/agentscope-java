@@ -11,7 +11,7 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
-import ToolCallBlock from './ToolCallBlock';
+import MessageBlock from './MessageBlock';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -36,6 +36,8 @@ interface PendingConfirmation {
   input?: Record<string, unknown>;
 }
 
+const NEAR_BOTTOM_PX = 96;
+
 const S: Record<string, React.CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#f8fafc' },
   header: {
@@ -52,31 +54,21 @@ const S: Record<string, React.CSSProperties> = {
     padding: '5px 12px', borderRadius: 7, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500,
     textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
   },
-  thread: { flex: 1, overflowY: 'auto', padding: '28px 36px', display: 'flex', flexDirection: 'column', gap: 18 },
+  thread: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '28px 36px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    overscrollBehavior: 'auto',
+  },
   empty: { color: '#94a3b8', fontSize: '0.95rem', textAlign: 'center', marginTop: 100 },
-  bubble: {
-    maxWidth: '78%', padding: '14px 18px', borderRadius: 14,
-    fontSize: '0.95rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-  },
-  user: {
-    alignSelf: 'flex-end',
-    background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-    color: '#ffffff',
-    boxShadow: '0 2px 6px rgba(99,102,241,0.25)',
-  },
-  assistant: {
-    alignSelf: 'flex-start', background: '#ffffff', color: '#0f172a',
-    border: '1px solid #e2e8f0',
-    boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
-  },
-  system: {
-    alignSelf: 'center', background: 'transparent', color: '#94a3b8',
-    fontSize: '0.85rem', fontStyle: 'italic',
-  },
   confirmCard: {
     alignSelf: 'stretch', maxWidth: 520, margin: '0 auto',
     background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
     padding: '16px 20px', boxShadow: '0 2px 8px rgba(146,64,14,0.08)',
+    flexShrink: 0,
   },
   composer: {
     borderTop: '1px solid #e2e8f0', padding: '18px 28px',
@@ -191,16 +183,42 @@ function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
   return null;
 }
 
+function findScrollableParent(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    const oy = style.overflowY;
+    if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay')
+      && node.scrollHeight > node.clientHeight + 1) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  const root = document.scrollingElement;
+  return root instanceof HTMLElement ? root : null;
+}
+
+function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
 /**
  * Chat bound to an existing Managed session. Does not create sessions —
  * POST user.message is the only turn driver.
+ *
+ * @param embedded — when true, hide session-hub navigation (for Team detail side panel).
+ * @param readOnly — when true, hide composer mutations (e.g. completed team).
  */
 export default function ChatPanel({
   sessionId,
   agentId,
+  embedded = false,
+  readOnly = false,
 }: {
   sessionId: string;
   agentId: string;
+  embedded?: boolean;
+  readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -218,6 +236,8 @@ export default function ChatPanel({
   const pendingUserMsgIdRef = useRef<string | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const lastSeqRef = useRef(0);
+  /** When true, keep pinned to latest message as stream grows. */
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     listEnvironments()
@@ -395,6 +415,7 @@ export default function ChatPanel({
     lastSeqRef.current = 0;
     replyMsgIdRef.current = null;
     pendingUserMsgIdRef.current = null;
+    stickToBottomRef.current = true;
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
 
@@ -438,12 +459,45 @@ export default function ChatPanel({
   }, [sessionId, handleManagedEvent]);
 
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
+    const el = threadRef.current;
+    if (!el || !stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages, pendingConfirm]);
 
+  function handleThreadScroll() {
+    const el = threadRef.current;
+    if (!el) return;
+    stickToBottomRef.current = isNearBottom(el);
+  }
+
+  /**
+   * When the thread is already at an edge, forward wheel deltas to the outer
+   * page scroller so nested overflow does not trap scroll-up during streaming.
+   */
+  function handleThreadWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const el = threadRef.current;
+    if (!el) return;
+    const atTop = el.scrollTop <= 0;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    const scrollingUp = e.deltaY < 0;
+    const scrollingDown = e.deltaY > 0;
+    if ((scrollingUp && atTop) || (scrollingDown && atBottom)) {
+      const parent = findScrollableParent(el);
+      if (parent && parent !== el) {
+        parent.scrollTop += e.deltaY;
+      }
+    }
+  }
+
   const canSend = useMemo(
-    () => !busy && !restoring && !loadError && !pendingConfirm && input.trim().length > 0,
-    [busy, restoring, loadError, pendingConfirm, input],
+    () =>
+      !readOnly &&
+      !busy &&
+      !restoring &&
+      !loadError &&
+      !pendingConfirm &&
+      input.trim().length > 0,
+    [readOnly, busy, restoring, loadError, pendingConfirm, input],
   );
 
   const mountLabel = useMemo(() => {
@@ -480,6 +534,7 @@ export default function ChatPanel({
     const text = input.trim();
     setInput('');
     setBusy(true);
+    stickToBottomRef.current = true;
     const userMsg: Message = { id: nextId(), role: 'user', text, tools: [] };
     const replyMsg: Message = { id: nextId(), role: 'assistant', text: '', tools: [], pending: true };
     replyMsgIdRef.current = replyMsg.id;
@@ -503,7 +558,7 @@ export default function ChatPanel({
   }
 
   async function handleConfirmation(allow: boolean) {
-    if (!pendingConfirm) return;
+    if (readOnly || !pendingConfirm) return;
     setBusy(true);
     try {
       await postToolConfirmation(
@@ -513,6 +568,7 @@ export default function ChatPanel({
         allow ? undefined : 'Denied by user',
       );
       setPendingConfirm(null);
+      stickToBottomRef.current = true;
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
@@ -546,15 +602,17 @@ export default function ChatPanel({
       <div style={S.root}>
         <div style={S.empty}>
           {loadError}
-          <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Sessions</Link>
-            <Link
-              to={`/sessions/new?agentId=${encodeURIComponent(agentId)}`}
-              style={{ ...S.iconBtn, color: '#6366f1' }}
-            >
-              New session
-            </Link>
-          </div>
+          {!embedded && (
+            <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Sessions</Link>
+              <Link
+                to={`/sessions/new?agentId=${encodeURIComponent(agentId)}`}
+                style={{ ...S.iconBtn, color: '#6366f1' }}
+              >
+                New session
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -563,11 +621,11 @@ export default function ChatPanel({
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <span>Managed session</span>
+        <span>{embedded ? 'Team chat' : 'Managed session'}</span>
         <span style={S.sessionTag} title={sessionId}>
           {restoring ? 'resolving…' : sessionLabel}{sessionId.length > 24 ? '…' : ''}
         </span>
-        {mountLabel && (
+        {!embedded && mountLabel && (
           <Link
             to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
             style={{ ...S.iconBtn, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
@@ -577,21 +635,39 @@ export default function ChatPanel({
           </Link>
         )}
         <span style={{ flex: 1 }} />
-        <Link
-          to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
-          style={S.iconBtn}
-          title="Session details and event timeline"
-        >
-          📊 Details
-        </Link>
-        <Link to="/sessions" style={S.iconBtn}>
-          📋 All sessions
-        </Link>
-        <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
-          ✨ New session
-        </button>
+        {!embedded && (
+          <>
+            <Link
+              to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
+              style={S.iconBtn}
+              title="Session details and event timeline"
+            >
+              📊 Details
+            </Link>
+            <Link to="/sessions" style={S.iconBtn}>
+              📋 All sessions
+            </Link>
+            <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
+              ✨ New session
+            </button>
+          </>
+        )}
+        {embedded && (
+          <Link
+            to={`/sessions/${encodeURIComponent(sessionId)}`}
+            style={S.iconBtn}
+            title="Open full session page"
+          >
+            Full page
+          </Link>
+        )}
       </div>
-      <div style={S.thread} ref={threadRef}>
+      <div
+        style={S.thread}
+        ref={threadRef}
+        onScroll={handleThreadScroll}
+        onWheel={handleThreadWheel}
+      >
         {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
         {!restoring && messages.length === 0 && (
           <div style={S.empty}>
@@ -599,21 +675,15 @@ export default function ChatPanel({
           </div>
         )}
         {messages.map(m => (
-          <div key={m.id} style={{
-            ...S.bubble,
-            ...(m.role === 'user' ? S.user : m.role === 'system' ? S.system : S.assistant),
-          }}>
-            {m.tools.length > 0 && (
-              <div style={{ marginBottom: m.text ? 10 : 0 }}>
-                {m.tools.map(t => (
-                  <ToolCallBlock key={t.id} toolName={t.name} toolCallId={t.id} result={t.result} />
-                ))}
-              </div>
-            )}
-            {m.text || (m.pending ? <span style={{ color: '#94a3b8' }}>…</span> : null)}
-          </div>
+          <MessageBlock
+            key={m.id}
+            role={m.role}
+            text={m.text}
+            tools={m.tools}
+            pending={m.pending}
+          />
         ))}
-        {pendingConfirm && (
+        {pendingConfirm && !readOnly && (
           <div style={S.confirmCard}>
             <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
               Allow tool call: {pendingConfirm.toolName}?
@@ -640,10 +710,18 @@ export default function ChatPanel({
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={restoring ? 'Loading…' : pendingConfirm ? 'Confirm tool call above…' : `Message ${agentId}…`}
+          placeholder={
+            readOnly
+              ? 'Read-only transcript — sending is disabled'
+              : restoring
+                ? 'Loading…'
+                : pendingConfirm
+                  ? 'Confirm tool call above…'
+                  : `Message ${agentId}…`
+          }
           rows={1}
-          autoFocus
-          disabled={restoring || !!pendingConfirm}
+          autoFocus={!readOnly}
+          disabled={readOnly || restoring || !!pendingConfirm}
         />
         <button
           style={{ ...S.send, ...(canSend ? {} : S.sendDisabled) }}

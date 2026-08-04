@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,11 +31,18 @@ type SessionCommander interface {
 	SendSessionCommandWithParams(namespace, instanceID, sessionID, command string, params []byte) error
 }
 
+// ErrMemberBusy reports that a member could not be woken because a turn of its
+// own is already running. It is backpressure rather than a delivery failure: the
+// notice must stay queued until the member is idle, or a teammate's report is
+// lost precisely when the member is at its busiest.
+var ErrMemberBusy = errors.New("team member is running a turn")
+
 // ManagedSessionAPI is the product-plane surface used to allocate and wake
 // Managed member sessions (find-or-create + data-plane events).
 type ManagedSessionAPI interface {
 	FindOrCreateSessionID(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (sessionID string, err error)
 	PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error
+	DeleteManagedSession(ctx context.Context, ownerID, sessionID string) error
 }
 
 // Activator wakes data-plane members after store sessions are allocated.
@@ -158,6 +166,26 @@ func (a *Activator) activateBYO(ctx context.Context, team *store.Team, member *s
 // receive team_leave over ASDP (HTTP fallback); for Managed members the store
 // session terminate performed by Lifecycle.ShutdownMember is sufficient, so
 // this is a no-op that never fails the shutdown path.
+// ReleaseManagedMemberSession deletes the product session that was allocated for
+// a managed member. Called during team teardown, where the member row is about
+// to be deleted and is the only record of which session the team allocated.
+func (a *Activator) ReleaseManagedMemberSession(ctx context.Context, member *store.TeamMember) error {
+	if a == nil || a.managed == nil || member == nil {
+		return nil
+	}
+	if member.DeployMode != store.MemberDeployManaged || member.OwnerID == "" {
+		return nil
+	}
+	sessionID := member.ManagedSessionID
+	if sessionID == "" {
+		sessionID = member.SessionID
+	}
+	if sessionID == "" {
+		return nil
+	}
+	return a.managed.DeleteManagedSession(ctx, member.OwnerID, sessionID)
+}
+
 func (a *Activator) DeactivateMember(ctx context.Context, team *store.Team, member *store.TeamMember) error {
 	if a == nil || team == nil || member == nil {
 		return nil
