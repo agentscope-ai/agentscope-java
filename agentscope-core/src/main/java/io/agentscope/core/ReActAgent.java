@@ -1538,12 +1538,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> normalizedResults =
-                        validateAndNormalizeConfirmResults(msgs, asking);
+                List<ConfirmResult> confirmResults =
+                        extractAndValidateConfirmResults(msgs, asking);
                 publishEvent(
                         new UserConfirmResultEvent(
-                                resolvePendingConfirmRequestReplyId(), normalizedResults));
-                applyConfirmResults(normalizedResults);
+                                resolvePendingConfirmRequestReplyId(), confirmResults));
+                applyConfirmResults(confirmResults);
                 clearPendingConfirmRequest();
                 return resumeAgent();
             }
@@ -1607,7 +1607,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * stale or unrelated tool call. Returning a copied list gives downstream event emission and
          * state mutation the same trusted payload.
          */
-        private List<ConfirmResult> validateAndNormalizeConfirmResults(
+        private List<ConfirmResult> extractAndValidateConfirmResults(
                 List<Msg> msgs, List<ToolUseBlock> asking) {
             List<ConfirmResult> results = extractConfirmResults(msgs);
             if (results.isEmpty()) {
@@ -1671,7 +1671,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
                 normalized.add(result);
             }
-            return List.copyOf(normalized);
+            return normalized;
         }
 
         /**

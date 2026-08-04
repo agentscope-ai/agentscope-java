@@ -389,6 +389,10 @@ Msg resumeMsg =
 agent.call(List.of(resumeMsg)).block();
 ```
 
+如果使用 `streamEvents(List.of(resumeMsg))` 发起恢复，事件流会在恢复执行工具之前包含
+`UserConfirmResultEvent`。使用它的 `replyId` 将本次接受的确认结果关联到之前的
+`RequireUserConfirmEvent`；该事件只包含本次恢复消息携带的确认结果。
+
 两种模式的区别：
 
 | | Blocking `call()` | Streaming `streamEvents()` |
