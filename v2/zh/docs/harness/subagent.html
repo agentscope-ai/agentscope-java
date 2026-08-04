@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-08-04T15:52:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1048,6 +1048,8 @@ expose_to_user: true          # 可选三态；强制/禁止向用户暴露（�
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>（默认 30，最大 600）—— <strong>同步</strong>调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> —— <strong>后台</strong>调用，立即返回一个 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>，子 agent 在后台跑。</p></li>
 </ul>
+<p>如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。工具执行层启用并行后，这些同步调用可以并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。</p>
+<p>任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。</p>
 <section id="id6">
 <h3>后台任务自动反向通知<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p>后台任务跑完了，<strong>主 agent 不需要轮询</strong>——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：</p>
@@ -1083,19 +1085,28 @@ expose_to_user: true          # 可选三态；强制/禁止向用户暴露（�
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code></p></td>
 <td><p>通过 <code class="docutils literal notranslate"><span class="pre">task_id</span></code> 获取后台任务结果（阻塞或非阻塞）</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">wait_async_results</span></code></p></td>
+<td><p>等待后台结果到达；可按 <code class="docutils literal notranslate"><span class="pre">task_ids</span></code> 等指定任务全部完成，或用 <code class="docutils literal notranslate"><span class="pre">wait_all=true</span></code> 等待当前 session 未完成任务快照全部完成</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code></p></td>
 <td><p>取消正在运行的后台任务</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_list</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_list</span></code></p></td>
 <td><p>列出所有后台任务及其当前状态</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 管理子 agent <strong>实例</strong>（创建、复用、通信）；<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code> 管理后台<strong>任务结果</strong>（查状态、取结果、取消）。两者的桥梁是 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>——在 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 或 <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 使用 <code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code> 时返回。</p>
+<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 管理子 agent <strong>实例</strong>（创建、复用、通信）；<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">wait_async_results</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code> 管理后台<strong>任务结果</strong>（查状态、取结果、等待、取消）。两者的桥梁是 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>——在 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 或 <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 使用 <code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code> 时返回。</p>
 <blockquote>
-<div><p>大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、取消不再需要的任务、或者在对话压缩后恢复任务状态。</p>
+<div><p>大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。</p>
 </div></blockquote>
+<p>异步结果有三种常用收集方式：</p>
+<ul class="simple">
+<li><p><strong>主动通知</strong>：默认路径。子任务完成后，下一轮 reasoning 前通过 <code class="docutils literal notranslate"><span class="pre">&lt;system-reminder&gt;</span></code> 注入，主 agent 不需要立即轮询。</p></li>
+<li><p><strong>指定任务检查</strong>：用 <code class="docutils literal notranslate"><span class="pre">task_output(task_id,</span> <span class="pre">block=false)</span></code> 主动查看某个任务的当前状态或终态结果，适合先拿短任务结果、补取被压缩或未注入的结果。</p></li>
+<li><p><strong>等待 barrier</strong>：用 <code class="docutils literal notranslate"><span class="pre">wait_async_results(task_ids=&quot;id1,id2&quot;)</span></code> 等指定任务集合全部终态；或用 <code class="docutils literal notranslate"><span class="pre">wait_async_results(wait_all=true)</span></code> 等调用开始时当前 session 的未完成任务快照全部终态。<code class="docutils literal notranslate"><span class="pre">wait_all=true</span></code> 不会把等待期间新创建的任务动态加入 wait set。</p></li>
+</ul>
 </section>
 </section>
 <section id="agent">
@@ -1441,7 +1452,7 @@ description: 调研主题并返回汇总报告。
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-04</div>
           </div>
           <div class="right-details">
             <div class="icons">
