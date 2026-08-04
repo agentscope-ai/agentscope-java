@@ -34,6 +34,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -87,6 +88,33 @@ public class SessionTree {
                         t.setDaemon(true);
                         return t;
                     });
+
+    /**
+     * Waits until all remote mirror work submitted before this call has completed.
+     *
+     * <p>Harness lifecycle owners should call this before closing filesystem or index resources.
+     * The wait is deliberately uninterruptible so that resource shutdown cannot race an in-flight
+     * upload; the interrupted status is restored before returning.
+     */
+    public static void awaitPendingMirrors() {
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    CountDownLatch barrier = new CountDownLatch(1);
+                    MIRROR_EXECUTOR.execute(barrier::countDown);
+                    barrier.await();
+                    return;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 
     private final Path contextFile;
     private final Path logFile;
