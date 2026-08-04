@@ -56,6 +56,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -673,20 +674,33 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
+                        AtomicBoolean endEmitted = new AtomicBoolean();
+                        Runnable emitEnd =
+                                () -> {
+                                    if (endEmitted.compareAndSet(false, true)) {
+                                        parentEmitter.emit(
+                                                new AgentEndEvent(null).withSource(sourcePath));
+                                    }
+                                };
+
                         return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                // doFinally, not doOnTerminate: the latter skips cancel, so a
-                                // parent cancel would leave the AgentStartEvent above unmatched
-                                // and consumers would render this subagent as running forever.
+                                // Emit before success or error reaches the parent, which may
+                                // otherwise complete its event sink before doFinally runs.
+                                .doOnSuccess(ignored -> emitEnd.run())
+                                .doOnError(ignored -> emitEnd.run())
+                                // Preserve best-effort cancellation signaling without emitting a
+                                // duplicate if cancellation races with normal termination.
                                 .doFinally(
-                                        signal ->
-                                                parentEmitter.emit(
-                                                        new AgentEndEvent(null)
-                                                                .withSource(sourcePath)));
+                                        signal -> {
+                                            if (signal == SignalType.CANCEL) {
+                                                emitEnd.run();
+                                            }
+                                        });
                     }
 
                     // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
