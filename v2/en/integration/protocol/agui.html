@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-04T16:13:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -929,7 +929,13 @@
         <article role="main" id="furo-main-content">
           <section id="ag-ui">
 <h1>AG-UI<a class="headerlink" href="#ag-ui" title="Link to this heading">¶</a></h1>
+<section id="compatibility-notes">
+<h2>Compatibility Notes<a class="headerlink" href="#compatibility-notes" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> converts AgentScope v2 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> streams into <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.</p>
+<p><code class="docutils literal notranslate"><span class="pre">AguiMessage.content</span></code> is represented as typed message content. For text-only code paths, use <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code>.</p>
+<p>Multimodal input is supported, but document types are not supported yet.</p>
+<p><code class="docutils literal notranslate"><span class="pre">AguiMessageConverter.toAguiMessage()</span></code> currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.</p>
+</section>
 <section id="when-to-use">
 <h2>When To Use<a class="headerlink" href="#when-to-use" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -1303,7 +1309,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-29</div>
+              Last updated on 2026-08-04</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1339,6 +1345,7 @@ mvn<span class="w"> </span>spring-boot:run
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">AG-UI</a><ul>
+<li><a class="reference internal" href="#compatibility-notes">Compatibility Notes</a></li>
 <li><a class="reference internal" href="#when-to-use">When To Use</a></li>
 <li><a class="reference internal" href="#add-dependencies">Add Dependencies</a></li>
 <li><a class="reference internal" href="#quickstart">Quickstart</a></li>
