@@ -79,6 +79,26 @@ class AguiModelTest {
         }
 
         @Test
+        void testRoleHelpersAreCaseInsensitive() {
+            AguiMessage user =
+                    new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
+            AguiMessage assistant =
+                    new AguiMessage(
+                            "msg-2", "ASSISTANT", new MessageContent.Text("Hello"), null, null);
+            AguiMessage system =
+                    new AguiMessage(
+                            "msg-3", "SYSTEM", new MessageContent.Text("Hello"), null, null);
+            AguiMessage tool =
+                    new AguiMessage(
+                            "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+
+            assertTrue(user.isUserMessage());
+            assertTrue(assistant.isAssistantMessage());
+            assertTrue(system.isSystemMessage());
+            assertTrue(tool.isToolMessage());
+        }
+
+        @Test
         void testMessageWithToolCalls() {
             AguiFunctionCall function = new AguiFunctionCall("get_weather", "{\"city\":\"NYC\"}");
             AguiToolCall toolCall = new AguiToolCall("tc-1", function);

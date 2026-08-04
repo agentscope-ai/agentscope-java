@@ -250,7 +250,7 @@ public class AguiMessage {
      * @return true if role is "user"
      */
     public boolean isUserMessage() {
-        return "user".equals(role);
+        return "user".equalsIgnoreCase(role);
     }
 
     /**
@@ -259,7 +259,7 @@ public class AguiMessage {
      * @return true if role is "assistant"
      */
     public boolean isAssistantMessage() {
-        return "assistant".equals(role);
+        return "assistant".equalsIgnoreCase(role);
     }
 
     /**
@@ -268,7 +268,7 @@ public class AguiMessage {
      * @return true if role is "system"
      */
     public boolean isSystemMessage() {
-        return "system".equals(role);
+        return "system".equalsIgnoreCase(role);
     }
 
     /**
@@ -277,7 +277,7 @@ public class AguiMessage {
      * @return true if role is "tool"
      */
     public boolean isToolMessage() {
-        return "tool".equals(role);
+        return "tool".equalsIgnoreCase(role);
     }
 
     /**

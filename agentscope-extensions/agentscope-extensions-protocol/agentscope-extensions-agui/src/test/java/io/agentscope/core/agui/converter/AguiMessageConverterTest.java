@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.model.AguiFunctionCall;
@@ -204,6 +205,23 @@ class AguiMessageConverterTest {
         assertEquals("msg-t1", msg.getId());
         assertEquals(MsgRole.TOOL, msg.getRole());
         assertTrue(msg.hasContentBlocks(ToolResultBlock.class));
+    }
+
+    @Test
+    void testConvertToolMessageRoleCaseInsensitive() {
+        AguiMessage aguiMsg =
+                new AguiMessage(
+                        "msg-t1",
+                        "TOOL",
+                        new MessageContent.Text("Tool result here"),
+                        null,
+                        "tc-1");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ToolResultBlock.class));
+        assertFalse(msg.hasContentBlocks(TextBlock.class));
     }
 
     @Test
@@ -482,6 +500,19 @@ class AguiMessageConverterTest {
         assertTrue(msg.hasContentBlocks(TextBlock.class));
         TextBlock tb = msg.getFirstContentBlock(TextBlock.class);
         assertEquals("Hello from blocks", tb.getText());
+    }
+
+    @Test
+    void testConvertBlocksContentRejectedForNonUserMessage() {
+        AguiMessage aguiMsg =
+                AguiMessage.blocksMessage(
+                        "msg-1",
+                        "tool",
+                        List.of(new TextInputContent("not a valid tool content block")),
+                        null,
+                        "tc-1");
+
+        assertThrows(IllegalArgumentException.class, () -> converter.toMsg(aguiMsg));
     }
 
     @Test

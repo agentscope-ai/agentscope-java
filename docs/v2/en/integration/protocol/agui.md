@@ -1,6 +1,12 @@
 # AG-UI
 
+## Compatibility Notes
+
 `agentscope-extensions-agui` converts AgentScope v2 `AgentEvent` streams into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.
+
+`AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
+
+`AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 
 ## When To Use
 

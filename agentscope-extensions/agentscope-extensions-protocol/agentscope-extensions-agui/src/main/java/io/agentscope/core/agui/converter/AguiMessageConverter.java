@@ -21,7 +21,6 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.agui.model.AudioInputContent;
-import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
@@ -34,7 +33,6 @@ import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -80,6 +78,10 @@ public class AguiMessageConverter {
         if (content instanceof MessageContent.Text text) {
             addTextBlock(blocks, text.value(), aguiMessage);
         } else if (content instanceof MessageContent.Blocks blocksContent) {
+            if (!aguiMessage.isUserMessage()) {
+                throw new IllegalArgumentException(
+                        "Structured content blocks are only supported for AG-UI user messages");
+            }
             for (InputContent input : blocksContent.parts()) {
                 blocks.add(toContentBlock(input));
             }
@@ -264,10 +266,11 @@ public class AguiMessageConverter {
         if (input instanceof VideoInputContent video) {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
-        if (input instanceof DocumentInputContent doc) {
-            // AgentScope 暂未提供原生的 DocumentBlock，暂时转换为 DataBlock
-            return DataBlock.builder().source(toSource(doc.source())).build();
-        }
+        //        if (input instanceof DocumentInputContent doc) {
+        //            // AgentScope currently lacks a native DocumentBlock; falling back to
+        // DataBlock
+        //            return DataBlock.builder().source(toSource(doc.source())).build();
+        //        }
         throw new IllegalStateException("Unhandled InputContent type: " + input);
     }
 
