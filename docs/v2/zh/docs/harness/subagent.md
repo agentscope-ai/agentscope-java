@@ -110,6 +110,10 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
+如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。工具执行层启用并行后，这些同步调用可以并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。
+
+任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。
+
 ### 后台任务自动反向通知
 
 后台任务跑完了，**主 agent 不需要轮询**——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：
@@ -134,12 +138,19 @@ HarnessAgent.builder()
 | `agent_send` | 向已存在的子 agent 追加消息 |
 | `agent_list` | 列出当前活跃的子 agent 实例 |
 | `task_output` | 通过 `task_id` 获取后台任务结果（阻塞或非阻塞） |
+| `wait_async_results` | 等待后台结果到达；可按 `task_ids` 等指定任务全部完成，或用 `wait_all=true` 等待当前 session 未完成任务快照全部完成 |
 | `task_cancel` | 取消正在运行的后台任务 |
 | `task_list` | 列出所有后台任务及其当前状态 |
 
-`agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
+`agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `wait_async_results` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、等待、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
 
-> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+
+异步结果有三种常用收集方式：
+
+- **主动通知**：默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入，主 agent 不需要立即轮询。
+- **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果，适合先拿短任务结果、补取被压缩或未注入的结果。
+- **等待 barrier**：用 `wait_async_results(task_ids="id1,id2")` 等指定任务集合全部终态；或用 `wait_async_results(wait_all=true)` 等调用开始时当前 session 的未完成任务快照全部终态。`wait_all=true` 不会把等待期间新创建的任务动态加入 wait set。
 
 ## 给已存在的子 agent 补一条消息
 

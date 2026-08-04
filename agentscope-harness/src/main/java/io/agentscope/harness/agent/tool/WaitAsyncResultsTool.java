@@ -21,7 +21,9 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
@@ -72,6 +74,9 @@ public class WaitAsyncResultsTool {
                             + "their completion instead of returning to the user. After this tool "
                             + "returns successfully, continue reasoning — the results will be "
                             + "automatically injected into your context. "
+                            + "Use task_ids to wait until specific task IDs are all terminal, "
+                            + "or wait_all=true to wait until all currently running tasks in the "
+                            + "session are terminal. "
                             + "Max timeout is 120 seconds. "
                             + "If you have already waited without results, use task_list or "
                             + "task_output(block=false) to check status instead of waiting again.",
@@ -83,6 +88,23 @@ public class WaitAsyncResultsTool {
                                     "Maximum seconds to wait. Default 60, max 120. "
                                             + "Values above 120 are clamped.")
                     Integer timeoutSeconds,
+            @ToolParam(
+                            name = "task_ids",
+                            description =
+                                    "Optional comma-separated task IDs to wait for. When set, the "
+                                            + "tool returns only after all listed tasks are "
+                                            + "terminal, or timeout.",
+                            required = false)
+                    String taskIds,
+            @ToolParam(
+                            name = "wait_all",
+                            description =
+                                    "Optional barrier mode. When true and task_ids is empty, wait "
+                                            + "for the snapshot of currently non-terminal tasks in "
+                                            + "this session. Tasks created later are not added to "
+                                            + "the wait set.",
+                            required = false)
+                    Boolean waitAll,
             RuntimeContext runtimeContext)
             throws InterruptedException {
 
@@ -94,6 +116,11 @@ public class WaitAsyncResultsTool {
         AtomicInteger emptyWaits =
                 consecutiveEmptyWaitsBySession.computeIfAbsent(
                         sessionId, k -> new AtomicInteger(0));
+        List<String> explicitTaskIds = parseTaskIds(taskIds);
+        if (!explicitTaskIds.isEmpty() || Boolean.TRUE.equals(waitAll)) {
+            return waitForTaskBarrier(
+                    timeoutSeconds, runtimeContext, sessionId, explicitTaskIds, emptyWaits);
+        }
 
         if (emptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
             Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
@@ -185,6 +212,197 @@ public class WaitAsyncResultsTool {
                 + "). "
                 + "Use task_list to check task status, or task_output(block=false) to poll "
                 + "without blocking.";
+    }
+
+    public String waitForResults(Integer timeoutSeconds, RuntimeContext runtimeContext)
+            throws InterruptedException {
+        return waitForResults(timeoutSeconds, null, null, runtimeContext);
+    }
+
+    private String waitForTaskBarrier(
+            Integer timeoutSeconds,
+            RuntimeContext runtimeContext,
+            String sessionId,
+            List<String> explicitTaskIds,
+            AtomicInteger emptyWaits)
+            throws InterruptedException {
+        if (taskRepository == null) {
+            return "Cannot wait for task completion: task repository is unavailable. "
+                    + "Use task_list or task_output(block=false) to check status.";
+        }
+
+        if (!explicitTaskIds.isEmpty()) {
+            List<String> missingTaskIds =
+                    explicitTaskIds.stream()
+                            .filter(
+                                    id ->
+                                            taskRepository.getTask(runtimeContext, sessionId, id)
+                                                    == null)
+                            .toList();
+            if (!missingTaskIds.isEmpty()) {
+                return "Cannot wait: unknown task_ids "
+                        + missingTaskIds
+                        + ". Use task_list to find valid task IDs.";
+            }
+        }
+
+        List<String> waitSet =
+                !explicitTaskIds.isEmpty()
+                        ? explicitTaskIds
+                        : snapshotNonTerminalTaskIds(runtimeContext, sessionId);
+        if (waitSet.isEmpty()) {
+            log.info(
+                    "wait_async_results: wait_all snapshot empty,"
+                            + " returning immediately, session={}",
+                    sessionId);
+            emptyWaits.set(0);
+            return "No running background tasks found at wait start. Continue reasoning, "
+                    + "or use task_list to review existing task status.";
+        }
+
+        String completed = completeTaskBarrierIfReady(runtimeContext, sessionId, waitSet);
+        if (completed != null) {
+            emptyWaits.set(0);
+            return completed;
+        }
+
+        String rejected = rejectIfWaitBudgetExhausted(sessionId, emptyWaits);
+        if (rejected != null) {
+            return rejected;
+        }
+
+        int timeout = normalizeTimeout(timeoutSeconds, sessionId);
+        log.info(
+                "wait_async_results: waiting up to {}s for task barrier, session={}, tasks={}",
+                timeout,
+                sessionId,
+                waitSet);
+
+        long deadlineMs = System.currentTimeMillis() + (timeout * 1000L);
+        while (true) {
+            completed = completeTaskBarrierIfReady(runtimeContext, sessionId, waitSet);
+            if (completed != null) {
+                emptyWaits.set(0);
+                return completed;
+            }
+            long remainingMs = deadlineMs - System.currentTimeMillis();
+            if (remainingMs <= 0) {
+                break;
+            }
+            sleepForPollInterval(remainingMs);
+        }
+
+        int emptyCount = emptyWaits.incrementAndGet();
+        log.info(
+                "wait_async_results: timeout after {}s waiting for tasks {}"
+                        + " (consecutive empty waits: {}), session={}",
+                timeout,
+                waitSet,
+                emptyCount,
+                sessionId);
+        return "Timeout after "
+                + timeout
+                + "s. Requested background tasks are not all terminal yet (empty wait "
+                + emptyCount
+                + "/"
+                + MAX_CONSECUTIVE_EMPTY_WAITS
+                + "). "
+                + "Use task_list to check task status, or task_output(block=false) to poll "
+                + "without blocking.";
+    }
+
+    private String completeTaskBarrierIfReady(
+            RuntimeContext runtimeContext, String sessionId, List<String> waitSet) {
+        for (String taskId : waitSet) {
+            BackgroundTask task = taskRepository.getTask(runtimeContext, sessionId, taskId);
+            if (task == null) {
+                log.info(
+                        "wait_async_results: task barrier missing task {}, session={}",
+                        taskId,
+                        sessionId);
+                return "Cannot wait: task_id "
+                        + taskId
+                        + " is no longer available. Use task_list to refresh task status.";
+            }
+            if (!task.getTaskStatus().isTerminal()) {
+                return null;
+            }
+        }
+        log.info(
+                "wait_async_results: task barrier complete, tasks={}, session={}",
+                waitSet,
+                sessionId);
+        return "All requested background tasks are terminal. Continue reasoning — "
+                + "results will be injected automatically when delivered, or use "
+                + "task_output(task_id) to read a specific result.";
+    }
+
+    private String rejectIfWaitBudgetExhausted(String sessionId, AtomicInteger emptyWaits) {
+        if (emptyWaits.get() < MAX_CONSECUTIVE_EMPTY_WAITS) {
+            return null;
+        }
+        Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+        if (Boolean.TRUE.equals(hasMessages)) {
+            log.info(
+                    "wait_async_results: budget was exhausted but inbox now has messages,"
+                            + " resetting counter, session={}",
+                    sessionId);
+            emptyWaits.set(0);
+            return "Async results have arrived. Continue reasoning — "
+                    + "the results will be injected into your context automatically.";
+        }
+        log.info(
+                "wait_async_results: rejected — {} consecutive empty waits reached, session={}",
+                emptyWaits.get(),
+                sessionId);
+        return "Wait budget exhausted: you have already waited "
+                + emptyWaits.get()
+                + " times without receiving results. "
+                + "Do NOT call wait_async_results again. Instead use task_list to check "
+                + "task status, or task_output(block=false) to poll for results without "
+                + "blocking.";
+    }
+
+    private int normalizeTimeout(Integer timeoutSeconds, String sessionId) {
+        int raw =
+                timeoutSeconds != null && timeoutSeconds > 0
+                        ? timeoutSeconds
+                        : DEFAULT_TIMEOUT_SECONDS;
+        int timeout = Math.min(raw, MAX_TIMEOUT_SECONDS);
+        if (raw > MAX_TIMEOUT_SECONDS) {
+            log.info(
+                    "wait_async_results: clamped timeout from {}s to {}s, session={}",
+                    raw,
+                    timeout,
+                    sessionId);
+        }
+        return timeout;
+    }
+
+    private void sleepForPollInterval(long remainingMs) throws InterruptedException {
+        Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
+    }
+
+    private List<String> parseTaskIds(String taskIds) {
+        if (taskIds == null || taskIds.isBlank()) {
+            return List.of();
+        }
+        List<String> parsed = new ArrayList<>();
+        for (String raw : taskIds.split(",")) {
+            String id = raw.trim();
+            if (!id.isEmpty()) {
+                parsed.add(id);
+            }
+        }
+        return parsed;
+    }
+
+    private List<String> snapshotNonTerminalTaskIds(RuntimeContext rc, String sessionId) {
+        Collection<BackgroundTask> tasks = taskRepository.listTasks(rc, sessionId, null);
+        return tasks.stream()
+                .filter(t -> !t.getTaskStatus().isTerminal())
+                .map(BackgroundTask::getTaskId)
+                .toList();
     }
 
     private boolean hasNonTerminalTasks(RuntimeContext rc, String sessionId) {
