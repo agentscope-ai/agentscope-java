@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Base64;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,13 +88,16 @@ public class E2bSandbox extends AbstractBaseSandbox {
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
         if (e2bState.getPersistenceMode() == E2bPersistenceMode.NATIVE_SNAPSHOT) {
-            JsonNode snap = platform.createSandboxSnapshot(e2bState.getSandboxId());
+            JsonNode snap =
+                    platform.createSandboxSnapshot(
+                            e2bState.getSandboxId(), snapshotName(e2bState.getSandboxId()));
             String id = snap.path("snapshotID").asText("");
             if (id.isBlank()) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
                         "E2B snapshot response missing snapshotID: " + snap);
             }
+            pruneSnapshotsBestEffort(e2bState.getSandboxId(), id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
@@ -219,6 +223,26 @@ public class E2bSandbox extends AbstractBaseSandbox {
             }
         }
         envd = null;
+    }
+
+    private void pruneSnapshotsBestEffort(String sandboxId, String keepSnapshotId) {
+        try {
+            platform.pruneSnapshots(sandboxId, keepSnapshotId, opt.getSnapshotRetention());
+        } catch (Exception e) {
+            log.warn("[sandbox-e2b] snapshot pruning best-effort skipped: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * AgentScope-native snapshot alias: {@code agentscope-<uuid>-<epochMillis>}, where the middle
+     * segment is the (lower-case hex) E2B sandbox id. The timestamp makes pruning deterministic and
+     * the sanitized id (lowercased, E2B sandbox ids are already lower-case alphanumeric) keeps the
+     * alias within E2B's {@code ^[a-z0-9-_]+$} naming rules and well below the 128-char limit.
+     */
+    private static String snapshotName(String sandboxId) {
+        String id = sandboxId == null ? "" : sandboxId;
+        String sanitized = id.replaceAll("[^a-zA-Z0-9-_]", "-").toLowerCase(Locale.ROOT);
+        return "agentscope-" + sanitized + "-" + System.currentTimeMillis();
     }
 
     private E2bEnvdProcessClient envd() throws Exception {
