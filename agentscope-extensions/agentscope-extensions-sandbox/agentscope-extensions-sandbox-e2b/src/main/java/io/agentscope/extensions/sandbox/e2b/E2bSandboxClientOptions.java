@@ -48,6 +48,10 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
      * kept (the newest by their embedded timestamp); the retained count may exceed the configured
      * value while snapshots newer than the just-created one exist. Legacy/foreign snapshots are
      * never pruned.
+     *
+     * <p>Like {@link #setMaxRetries(int)} and the timeout fields, this value is overridden by the
+     * per-call options passed to {@link E2bSandboxClient#create}; it only takes effect when the
+     * call options leave it at its default.
      */
     private int snapshotRetention = 0;
 
