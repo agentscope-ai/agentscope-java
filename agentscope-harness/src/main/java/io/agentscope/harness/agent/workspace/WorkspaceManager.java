@@ -608,7 +608,29 @@ public class WorkspaceManager implements AutoCloseable {
         }
         String rel = sweepMarkerPath(agentId);
         String content = readWritableWorkspaceRelativeUtf8(rc, rel);
-        return Optional.ofNullable(parseInstantQuiet(content == null ? null : content.strip()));
+        if (content == null || content.isBlank()) {
+            return Optional.empty();
+        }
+        String stripped = content.strip();
+        // Try JSON format: {"ts": "..."}
+        if (stripped.startsWith("{")) {
+            try {
+                int tsIdx = stripped.indexOf("\"ts\"");
+                if (tsIdx >= 0) {
+                    int colonIdx = stripped.indexOf(':', tsIdx);
+                    int startQuote = stripped.indexOf('"', colonIdx + 1);
+                    int endQuote = stripped.indexOf('"', startQuote + 1);
+                    if (startQuote >= 0 && endQuote > startQuote) {
+                        String tsValue = stripped.substring(startQuote + 1, endQuote);
+                        return Optional.ofNullable(parseInstantQuiet(tsValue));
+                    }
+                }
+            } catch (Exception e) {
+                // fall through to legacy parsing
+            }
+        }
+        // Legacy format: plain ISO-8601 string
+        return Optional.ofNullable(parseInstantQuiet(stripped));
     }
 
     /**
@@ -622,7 +644,8 @@ public class WorkspaceManager implements AutoCloseable {
         }
         String rel = sweepMarkerPath(agentId);
         try {
-            writeUtf8WorkspaceRelative(rc, rel, Instant.now().toString());
+            String json = "{\"ts\": \"" + Instant.now().toString() + "\"}";
+            writeUtf8WorkspaceRelative(rc, rel, json);
         } catch (Exception e) {
             log.warn("Failed to write sweep marker for agent {}: {}", agentId, e.getMessage());
         }
