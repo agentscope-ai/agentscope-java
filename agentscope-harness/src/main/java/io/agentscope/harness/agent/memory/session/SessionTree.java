@@ -473,8 +473,7 @@ public class SessionTree {
     private void syncFromTranscriptStore() {
         try {
             TranscriptStore scopedStore = transcriptStore.withRuntimeContext(fsRc);
-            List<TranscriptStore.SegmentInfo> segments =
-                    scopedStore.listSegments(transcriptRef);
+            List<TranscriptStore.SegmentInfo> segments = scopedStore.listSegments(transcriptRef);
             if (segments.isEmpty()) {
                 return;
             }
