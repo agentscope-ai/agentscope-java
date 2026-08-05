@@ -1216,7 +1216,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **RequireExternalExecutionEvent** — agent pauses for external execution.
 
-    **UserConfirmResultEvent** — user provides confirmation results (input event); carries `List<ConfirmResult>`.
+    **UserConfirmResultEvent** — emitted when a later `call()` resumes a paused permission HITL request.
+    It carries one or more `ConfirmResult`s, and its `replyId` matches the earlier `RequireUserConfirmEvent`.
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply ID of the correlated `RequireUserConfirmEvent` |
+    | `getConfirmResults()` | `List<ConfirmResult>` | Confirmation results accepted for this resume |
 
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
 
@@ -2723,6 +2729,11 @@ Msg resumeMsg =
                 .build();
 agent.call(List.of(resumeMsg)).block();
 ```
+
+If the resume is sent with `streamEvents(List.of(resumeMsg))`, the stream includes a
+`UserConfirmResultEvent` before the resumed tool execution. Use its `replyId` to associate
+the accepted results with the earlier `RequireUserConfirmEvent`; the event contains only
+the confirmations included in that resume call.
 
 Comparison of the two modes:
 
