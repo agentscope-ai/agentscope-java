@@ -70,16 +70,24 @@ class WakeupDispatcherTest {
     }
 
     @Test
-    @DisplayName("Running session is skipped by dispatcher")
-    void runningSession_skipped() throws Exception {
+    @DisplayName("Wakeup for a running session is delegated instead of discarded")
+    void runningSession_wakeupIsNotDiscarded() throws Exception {
         target.addKnown("sess-running");
         target.markRunning("sess-running");
+        messageBus
+                .queuePush(
+                        "agentscope:wakeups",
+                        Map.of(
+                                "userId", "user-1",
+                                "sessionId", "sess-running",
+                                "agentId", "agent-main"))
+                .block();
+
         dispatcher.start();
-
-        messageBus.enqueueWakeup("user-1", "sess-running", "agent-main").block();
-
-        Thread.sleep(500);
-        assertTrue(target.wokenSessions.isEmpty(), "Running session should not be woken");
+        assertTrue(
+                target.awaitWakeup(1, 3, TimeUnit.SECONDS),
+                "Wakeup must reach the target, which serializes it behind the active turn");
+        assertEquals("sess-running", target.wokenSessions.get(0));
     }
 
     @Test

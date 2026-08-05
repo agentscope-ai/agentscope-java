@@ -26,11 +26,12 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 
 /**
- * Per-process dispatcher that wakes idle sessions when background work completes.
+ * Per-process dispatcher that schedules session wakeups when background work completes.
  *
  * <p>Subscribes to the shared wakeup signal channel on {@link MessageBus#subscribeWakeup()} and
- * drains the durable wakeup queue on each signal. For each queued entry whose target session is
- * idle, triggers a new reasoning round via {@link WakeupTarget#runWakeup(String)}.
+ * drains the durable wakeup queue on each signal. Each queued entry triggers a new reasoning round
+ * via {@link WakeupTarget#runWakeup(String)}. The target serializes wakeup rounds behind an active
+ * session turn so entries drained while the session is running are not discarded.
  *
  * It serves as the universal activator for all cross-session communication:
  *
@@ -76,7 +77,8 @@ public class WakeupDispatcher implements AutoCloseable {
         Mono<Msg> runWakeup(String sessionId);
 
         /**
-         * Triggers a wakeup run for an idle session, carrying the owning user id when present.
+         * Triggers a wakeup run, carrying the owning user id when present. Implementations must
+         * serialize the run behind any active turn for the same session.
          *
          * <p>Called by {@link WakeupDispatcher} when a background task completes or a team message
          * arrives. Implementations should set the user id on the agent runtime context when
@@ -155,14 +157,13 @@ public class WakeupDispatcher implements AutoCloseable {
 
         if (target.isSessionRunning(sessionId)) {
             log.debug(
-                    "WakeupDispatcher: session {} is running, skipping (current run will drain"
-                            + " inbox)",
+                    "WakeupDispatcher: session {} is running; wakeup will wait behind the current"
+                            + " turn",
                     sessionId);
-            return;
         }
 
         log.info(
-                "WakeupDispatcher: waking idle session {}, userId={}, agentId={}",
+                "WakeupDispatcher: dispatching wakeup for session {}, userId={}, agentId={}",
                 sessionId,
                 userId,
                 agentId);

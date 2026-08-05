@@ -450,8 +450,9 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
 
     /**
      * Returns {@code true} when the given session is currently inside a gated turn (a run is in
-     * progress). Used by {@link WakeupDispatcher} to skip sessions that will naturally drain their
-     * inbox on the current reasoning step.
+     * progress). {@link WakeupDispatcher} uses this for diagnostics; wakeup runs are still
+     * submitted and wait on the same gate so a late inbox entry is not left without a follow-up
+     * turn.
      */
     public boolean isSessionRunning(String sessionId) {
         String gateKey = sessionToGateKey.get(sessionId);
