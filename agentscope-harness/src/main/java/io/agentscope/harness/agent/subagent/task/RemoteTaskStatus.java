@@ -43,7 +43,6 @@ public record RemoteTaskStatus(
         return "error".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status);
     }
 
-    public boolean isCancelled() {
-        return "cancelled".equalsIgnoreCase(status);
-    }
+public boolean isCancelled() {
+    return "cancelled".equalsIgnoreCase(status) || "canceled".equalsIgnoreCase(status);
 }
