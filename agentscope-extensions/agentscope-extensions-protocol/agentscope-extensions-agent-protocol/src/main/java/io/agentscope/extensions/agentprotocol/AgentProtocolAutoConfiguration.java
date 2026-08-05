@@ -41,15 +41,25 @@ import org.springframework.context.annotation.Bean;
 public class AgentProtocolAutoConfiguration {
 
     @Bean
+    public AgentProtocolTaskEventBus agentProtocolTaskEventBus(AgentProtocolProperties properties) {
+        return new AgentProtocolTaskEventBus(properties.getSseReplayBufferSize());
+    }
+
+    @Bean
     @ConditionalOnBean({HarnessAgent.class, WorkspaceManager.class})
     public AgentProtocolTaskStore agentProtocolTaskStore(
-            ObjectProvider<HarnessAgent> agentProvider, WorkspaceManager workspaceManager) {
-        return new AgentProtocolTaskStore(agentProvider::getObject, workspaceManager);
+            ObjectProvider<HarnessAgent> agentProvider,
+            WorkspaceManager workspaceManager,
+            AgentProtocolTaskEventBus eventBus,
+            AgentProtocolProperties properties) {
+        return new AgentProtocolTaskStore(
+                agentProvider::getObject, workspaceManager, eventBus, properties);
     }
 
     @Bean
     @ConditionalOnBean(AgentProtocolTaskStore.class)
-    public AgentProtocolController agentProtocolController(AgentProtocolTaskStore store) {
-        return new AgentProtocolController(store);
+    public AgentProtocolController agentProtocolController(
+            AgentProtocolTaskStore store, AgentProtocolProperties properties) {
+        return new AgentProtocolController(store, properties);
     }
 }

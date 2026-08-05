@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +26,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,15 +62,19 @@ import org.slf4j.LoggerFactory;
  *       persisted terminal state without hanging.
  *   <li>Cancellation sets a {@link TaskRecord#isCancelRequested()} flag in workspace storage;
  *       the originating node checks this flag before invoking the subagent for best-effort cancel.
- *   <li>Remote {@link TaskRunSpec.RemoteTaskRunSpec} tasks use {@link AgentProtocolTaskClient} and
- *       persist {@link TaskRecord#getRemoteBaseUrl()} for cross-node resume.
+ *   <li>Remote {@link TaskRunSpec.RemoteTaskRunSpec} tasks use a {@link RemoteSubagentTransport}
+ *       (Agent Protocol by default) and persist {@link TaskRecord#getRemoteBaseUrl()} for
+ *       cross-node resume.
  * </ul>
  */
 public class WorkspaceTaskRepository implements TaskRepository {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceTaskRepository.class);
 
-    private static final String TRANSPORT_AGENT_PROTOCOL = "agent-protocol";
+    private static final String TRANSPORT_AGENT_PROTOCOL = AgentProtocolTransport.TYPE;
+
+    /** Short, fixed poll interval used while a remote task is awaiting user confirmation. */
+    private static final long AWAITING_CONFIRM_POLL_MS = 750L;
 
     /**
      * How often (in seconds) the heartbeat refreshes {@code lastUpdatedAt} for live local tasks.
@@ -88,7 +94,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     private final WorkspaceManager workspaceManager;
     private final String parentAgentId;
-    private final AgentProtocolTaskClient protocolClient;
+    private volatile RemoteSubagentTransport transport;
 
     /**
      * In-memory local task handles. Keyed by {@code "<sessionId>:<taskId>"} to provide session
@@ -170,7 +176,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         this.parentAgentId = parentAgentId != null ? parentAgentId : "HarnessAgent";
         this.executor = executor;
         this.ownsExecutor = ownsExecutor;
-        this.protocolClient = new AgentProtocolTaskClient();
+        this.transport = new AgentProtocolTransport();
         if (enableMaintenance) {
             ScheduledExecutorService scheduler =
                     Executors.newSingleThreadScheduledExecutor(
@@ -211,6 +217,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
      */
     public void setCompletionCallback(TaskCompletionCallback callback) {
         this.completionCallback = callback;
+    }
+
+    /**
+     * Test-only hook to inject a fake {@link RemoteSubagentTransport}, bypassing real HTTP calls
+     * for remote task tests.
+     */
+    void setTransport(RemoteSubagentTransport transport) {
+        this.transport = Objects.requireNonNull(transport, "transport");
     }
 
     @Override
@@ -337,6 +351,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String subAgentId,
             TaskRunSpec.RemoteTaskRunSpec remote,
             boolean submitRemote) {
+        RemoteTarget target = new RemoteTarget(remote.baseUrl(), remote.headers());
         try {
             Optional<TaskRecord> latest =
                     workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
@@ -345,65 +360,116 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 return null;
             }
             if (submitRemote) {
-                protocolClient.submitTask(
-                        remote.baseUrl(), remote.headers(), taskId, subAgentId, remote.input());
+                RemoteSubmitContext context =
+                        remote.context() != null ? remote.context() : RemoteSubmitContext.empty();
+                transport.submit(target, taskId, subAgentId, remote.input(), context);
                 updateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             }
-            return pollRemoteUntilDone(rc, sessionId, taskId, remote.baseUrl(), remote.headers());
+            String result = pollRemoteUntilDone(rc, sessionId, taskId, target);
+            if (result != null) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            }
+            return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
 
     private String pollRemoteUntilDone(
-            RuntimeContext rc,
-            String sessionId,
-            String taskId,
-            String baseUrl,
-            Map<String, String> headers)
+            RuntimeContext rc, String sessionId, String taskId, RemoteTarget target)
             throws Exception {
         int attempt = 0;
+        boolean wasAwaitingConfirm = false;
         while (!Thread.currentThread().isInterrupted()) {
             Optional<TaskRecord> wr =
                     workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
             if (wr.isPresent() && wr.get().isCancelRequested()) {
                 try {
-                    protocolClient.cancelTask(baseUrl, headers, taskId);
+                    transport.cancel(target, taskId);
                 } catch (Exception ex) {
                     log.debug("Remote cancel after local cancel flag: {}", ex.getMessage());
                 }
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
-            RemoteTaskStatus st = protocolClient.getStatus(baseUrl, headers, taskId);
-            String s = st.status() == null ? "" : st.status().toLowerCase();
-            switch (s) {
-                case "success" -> {
-                    String result = protocolClient.waitForResult(baseUrl, headers, taskId, 120);
-                    updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
-                    return result;
-                }
-                case "error", "failed" -> {
-                    String err = st.error() != null ? st.error() : "remote task error";
-                    updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, err);
-                    throw new RuntimeException(err);
-                }
-                case "cancelled", "canceled" -> {
-                    markCancelled(rc, sessionId, taskId);
-                    return null;
-                }
-                default -> {
-                    // pending, running, empty: keep polling
-                }
+            RemoteTaskStatus st = transport.getStatus(target, taskId);
+            if (st.isAwaitingConfirm()) {
+                wasAwaitingConfirm = true;
+                updateAwaitingConfirm(rc, sessionId, taskId, true, st.pendingConfirms());
+                Thread.sleep(AWAITING_CONFIRM_POLL_MS);
+                continue;
             }
+            if (wasAwaitingConfirm) {
+                updateAwaitingConfirm(rc, sessionId, taskId, false, null);
+                wasAwaitingConfirm = false;
+            }
+            if (st.isTerminalSuccess()) {
+                String result = transport.waitForResult(target, taskId, 120);
+                updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
+                return result;
+            }
+            if (st.isTerminalFailure()) {
+                String err = st.error() != null ? st.error() : "remote task error";
+                updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, err);
+                throw new RuntimeException(err);
+            }
+            if (st.isCancelled()) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
+            // pending, running, empty: keep polling with exponential backoff
             long sleepMs = Math.min(5_000L, 200L * (1L << Math.min(attempt++, 4)));
             Thread.sleep(sleepMs);
         }
         Thread.currentThread().interrupt();
         markCancelled(rc, sessionId, taskId);
         return null;
+    }
+
+    /**
+     * Persists {@link TaskRecord#isAwaitingConfirm()} and {@link TaskRecord#getPendingConfirms()}
+     * without touching {@link TaskRecord#getStatus()} — the task remains {@code RUNNING} while
+     * paused for user confirmation. No-op once the record has reached a terminal state, and no-op
+     * when the awaiting flag and pending list are unchanged (avoids rewriting workspace JSON on
+     * every poll while blocked on confirmation).
+     */
+    private void updateAwaitingConfirm(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            boolean awaiting,
+            List<RemotePendingConfirm> pendingConfirms) {
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty()) {
+            return;
+        }
+        TaskRecord record = existing.get();
+        if (record.getStatus() != null && record.getStatus().isTerminal()) {
+            return;
+        }
+        List<RemotePendingConfirm> nextPending = awaiting ? pendingConfirms : null;
+        if (record.isAwaitingConfirm() == awaiting
+                && pendingConfirmsUnchanged(record.getPendingConfirms(), nextPending)) {
+            return;
+        }
+        record.setAwaitingConfirm(awaiting);
+        record.setPendingConfirms(nextPending);
+        persistRecord(rc, sessionId, record);
+    }
+
+    private static boolean pendingConfirmsUnchanged(
+            List<RemotePendingConfirm> current, List<RemotePendingConfirm> next) {
+        if (current == null || current.isEmpty()) {
+            return next == null || next.isEmpty();
+        }
+        if (next == null || next.isEmpty()) {
+            return false;
+        }
+        return current.equals(next);
     }
 
     @Override
@@ -475,8 +541,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
             if (agentProtocol) {
                 try {
-                    protocolClient.cancelTask(
-                            snapshot.getRemoteBaseUrl(), snapshot.getRemoteHeaders(), taskId);
+                    transport.cancel(
+                            new RemoteTarget(
+                                    snapshot.getRemoteBaseUrl(), snapshot.getRemoteHeaders()),
+                            taskId);
                 } catch (Exception e) {
                     log.warn("Remote cancel failed for task {}: {}", taskId, e.getMessage());
                 }
