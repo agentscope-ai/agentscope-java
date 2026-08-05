@@ -280,7 +280,8 @@ final class HarnessAgentBuilderSupport {
     static SubagentFactory buildGeneralPurposeFactory(
             HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
-        final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
+        final Toolkit capturedParentToolkit =
+                b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final AbstractFilesystem capturedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final int capturedMaxIters = b.maxIters;
@@ -382,7 +383,8 @@ final class HarnessAgentBuilderSupport {
             Path mainWorkspace,
             SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
-        final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
+        final Toolkit capturedParentToolkit =
+                b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
@@ -551,7 +553,10 @@ final class HarnessAgentBuilderSupport {
 
     /** Returns a defensive copy of inherited parent tools filtered by the optional allowlist. */
     static Toolkit allowlistedInheritedToolkit(Toolkit parentToolkit, List<String> allowlist) {
-        Toolkit toolkit = parentToolkit != null ? parentToolkit.copy() : new Toolkit();
+        Toolkit toolkit =
+                parentToolkit != null
+                        ? parentToolkit.copy()
+                        : HarnessAgent.Builder.newDefaultToolkit();
         if (allowlist == null || allowlist.isEmpty()) {
             return toolkit;
         }

@@ -1126,7 +1126,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String sysPrompt;
         boolean checkRunning = true;
         Model model;
-        Toolkit toolkit = new Toolkit();
+        Toolkit toolkit = newDefaultToolkit();
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -1449,10 +1449,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit != null ? toolkit : new Toolkit();
+            this.toolkit = toolkit != null ? toolkit : newDefaultToolkit();
             // Don't push to inner yet — orchestration will register harness tools on this toolkit
             // and then push the final result via inner.toolkit(...) at build() time.
             return this;
+        }
+
+        /**
+         * Default toolkit for Harness agents. Uses {@link Toolkit}'s default config (parallel
+         * tool execution enabled). Pass a custom {@link Toolkit} with
+         * {@code ToolkitConfig.parallel(false)} to opt out.
+         */
+        static Toolkit newDefaultToolkit() {
+            return new Toolkit();
         }
 
         public Builder maxIters(int maxIters) {
@@ -2044,11 +2053,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
+         * {@code session_search}, and omits matching Memory Recall / tool-based Persistence
+         * guidance from the workspace system prompt.
+         */
         public Builder disableMemoryTools() {
             this.disableMemoryTools = true;
             return this;
         }
 
+        /**
+         * Disables memory flush + background consolidation, and removes the "automatically
+         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
+         * {@code <memory_context>}.
+         */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
             return this;
@@ -2337,7 +2357,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 wsManager,
                                 name != null ? name : "ReActAgent",
                                 environmentMemory,
-                                maxContextTokens);
+                                maxContextTokens,
+                                disableMemoryTools,
+                                disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 inner.middleware(markdownMw);
             }
