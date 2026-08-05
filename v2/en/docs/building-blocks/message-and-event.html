@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T02:24:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Middleware" href="middleware.html"><link rel="prev" title="Agent" href="agent.html">
+    <meta property="article:modified_time" content="2026-08-05T15:38:28+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Middleware" href="middleware.html"><link rel="prev" title="Agent" href="agent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1200,6 +1200,10 @@
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">getSource()</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">String</span></code></p></td>
 <td><p>Source path identifying the originating agent. <code class="docutils literal notranslate"><span class="pre">null</span></code> for top-level agent events; a slash-separated path (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>) for events forwarded from a subagent</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">getMetadata()</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Map&lt;String,</span> <span class="pre">Object&gt;</span></code></p></td>
+<td><p>Optional key/value bag. Remote subagent forwards also set <code class="docutils literal notranslate"><span class="pre">taskId</span></code> (<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>) to the harness / Agent Protocol task id when events are task-backed</p></td>
 </tr>
 </tbody>
 </table>

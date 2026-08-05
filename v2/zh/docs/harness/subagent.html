@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-08-05T15:38:28+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1273,7 +1273,7 @@ description: 调研主题并返回汇总报告。
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">remoteStreaming</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code>（未设置时）</p></td>
-<td><p>父代理使用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 时，把远程任务的 SSE 事件转发进父流，并带 <code class="docutils literal notranslate"><span class="pre">source</span></code> 标记</p></td>
+<td><p>父代理使用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 时，把远程任务的 SSE 事件转发进父流，并带 <code class="docutils literal notranslate"><span class="pre">source</span></code> 标记与 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code>（与 harness <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> 的 task id 一致）</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteAskPolicy</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">DENY</span></code></p></td>
@@ -1311,7 +1311,7 @@ description: 调研主题并返回汇总报告。
 <blockquote>
 <div><p>新代码请用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>（返回 <code class="docutils literal notranslate"><span class="pre">Flux&lt;AgentEvent&gt;</span></code>）。旧 <code class="docutils literal notranslate"><span class="pre">stream()</span></code> 系列（<code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code>）在 2.0.0 起 <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> —— 详见 <a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">消息与事件</span></a> 与 <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 迁移指南 B.4</span></a>。</p>
 </div></blockquote>
-<p>父 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 同步调用子 agent 时，子 agent 的中间事件会<strong>实时转发</strong>到父的 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 流中。每个子事件都带一个 <code class="docutils literal notranslate"><span class="pre">source</span></code> 字段（<code class="docutils literal notranslate"><span class="pre">/</span></code> 分隔的路径，如 <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>），父事件的 <code class="docutils literal notranslate"><span class="pre">source</span></code> 为 <code class="docutils literal notranslate"><span class="pre">null</span></code>。</p>
+<p>父 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 同步调用子 agent 时，子 agent 的中间事件会<strong>实时转发</strong>到父的 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 流中。每个子事件都带一个 <code class="docutils literal notranslate"><span class="pre">source</span></code> 字段（<code class="docutils literal notranslate"><span class="pre">/</span></code> 分隔的路径，如 <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>），父事件的 <code class="docutils literal notranslate"><span class="pre">source</span></code> 为 <code class="docutils literal notranslate"><span class="pre">null</span></code>。远程 Agent Protocol 子 agent 还会写入 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>），值为 harness 侧任务 id，因此同一轮里对同一远程 agent 的多次调用即使 <code class="docutils literal notranslate"><span class="pre">source</span></code> 相同也能区分。</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>caller
   └─ parent.streamEvents(msg, ctx)
         │
