@@ -27,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
@@ -170,6 +171,39 @@ class TrainingRouterTest {
                 .shouldSelect(eq(first), eq(List.of(firstInput)), eq(output), any());
         verify(selectionStrategy)
                 .shouldSelect(eq(second), eq(List.of(secondInput)), eq(output), any());
+    }
+
+    @Test
+    @DisplayName("Should isolate concurrent calls on the same agent by request ID")
+    void shouldIsolateInputsForConcurrentCallsOnSameAgent() {
+        when(mockAgent.getAgentId()).thenReturn("shared-agent");
+        when(mockAgent.getId()).thenReturn("shared-instance");
+        when(mockAgent.getName()).thenReturn("TestAgent");
+        when(selectionStrategy.shouldSelect(any(), anyList(), any(), any()))
+                .thenReturn(SelectionDecision.reject("test"));
+
+        Msg firstInput = Msg.builder().role(MsgRole.USER).textContent("first").build();
+        Msg secondInput = Msg.builder().role(MsgRole.USER).textContent("second").build();
+        Msg output = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
+
+        router.onEvent(new PreCallEvent(mockAgent, List.of(firstInput)))
+                .contextWrite(Context.of(AgentBase.SHUTDOWN_REQUEST_ID_KEY, "request-1"))
+                .block();
+        router.onEvent(new PreCallEvent(mockAgent, List.of(secondInput)))
+                .contextWrite(Context.of(AgentBase.SHUTDOWN_REQUEST_ID_KEY, "request-2"))
+                .block();
+
+        router.onEvent(new PostCallEvent(mockAgent, output))
+                .contextWrite(Context.of(AgentBase.SHUTDOWN_REQUEST_ID_KEY, "request-1"))
+                .block();
+        router.onEvent(new PostCallEvent(mockAgent, output))
+                .contextWrite(Context.of(AgentBase.SHUTDOWN_REQUEST_ID_KEY, "request-2"))
+                .block();
+
+        verify(selectionStrategy)
+                .shouldSelect(eq(mockAgent), eq(List.of(firstInput)), eq(output), any());
+        verify(selectionStrategy)
+                .shouldSelect(eq(mockAgent), eq(List.of(secondInput)), eq(output), any());
     }
 
     @Test

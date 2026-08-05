@@ -17,6 +17,7 @@
 package io.agentscope.core.training.runner;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
@@ -36,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Training Router Hook
@@ -118,13 +120,18 @@ public class TrainingRouter implements Hook {
      * Save input messages for use in PostCallEvent
      */
     private Mono<Void> handlePreCall(PreCallEvent event) {
-        return Mono.fromRunnable(
-                () -> {
-                    String agentId = event.getAgent().getAgentId();
-                    String id = event.getAgent().getId();
-                    callInputs.put(id, event.getInputMessages());
-                    logger.debug("Saved input messages for agent: agentId={}, id={}", agentId, id);
-                });
+        return Mono.deferContextual(
+                context ->
+                        Mono.fromRunnable(
+                                () -> {
+                                    String agentId = event.getAgent().getAgentId();
+                                    String callId = callId(context, event.getAgent());
+                                    callInputs.put(callId, event.getInputMessages());
+                                    logger.debug(
+                                            "Saved input messages for agent: agentId={}, callId={}",
+                                            agentId,
+                                            callId);
+                                }));
     }
 
     /**
@@ -135,7 +142,7 @@ public class TrainingRouter implements Hook {
         return Mono.deferContextual(
                 ctx -> {
                     String agentId = event.getAgent().getAgentId();
-                    String id = event.getAgent().getId();
+                    String callId = callId(ctx, event.getAgent());
                     String agentName = event.getAgent().getName();
 
                     // ✅ Prevent shadow agent from triggering training (avoid recursive loop)
@@ -144,12 +151,12 @@ public class TrainingRouter implements Hook {
                                 "Skipping training for shadow agent: {} (prevents recursive"
                                         + " training)",
                                 agentName);
-                        callInputs.remove(id); // Clean up input
+                        callInputs.remove(callId); // Clean up input
                         return Mono.empty();
                     }
 
                     // Get input messages
-                    List<Msg> inputs = callInputs.remove(id);
+                    List<Msg> inputs = callInputs.remove(callId);
                     if (inputs == null) {
                         logger.warn("No input messages found for agent: {}", agentId);
                         return Mono.empty();
@@ -249,6 +256,15 @@ public class TrainingRouter implements Hook {
 
                     return Mono.empty();
                 });
+    }
+
+    /**
+     * Returns the per-call request id when the router runs inside an AgentBase lifecycle. Directly
+     * constructed hook events do not have that context, so retain the agent instance id as a
+     * compatibility fallback.
+     */
+    private String callId(ContextView context, Agent agent) {
+        return context.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, agent.getId());
     }
 
     /**
