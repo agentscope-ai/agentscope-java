@@ -30,12 +30,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Tool that blocks until async results arrive in the session's inbox, or until a timeout is
- * reached. This gives the LLM the option to wait for background results within a single
- * {@code call()} invocation instead of returning and relying on a wakeup.
+ * Tool that blocks until async results arrive, either for a specific task barrier or (legacy)
+ * until any message appears in the session inbox.
  *
- * <p>After this tool returns, the next reasoning step's {@code InboxMiddleware} will drain the
- * inbox and inject the results into context.
+ * <p>Prefer barrier mode ({@code task_ids} or {@code wait_all=true}): when the wait set reaches
+ * terminal state, this tool embeds each task's status and result in the tool return so the model
+ * can continue reasoning immediately without waiting for push-back delivery.
+ *
+ * <p>Without {@code task_ids} / {@code wait_all}, this keeps the legacy inbox-any behavior: the
+ * tool returns as soon as <em>any</em> inbox message is present — it is not a wait-all barrier.
  *
  * <p>Guardrails prevent unbounded blocking:
  * <ul>
@@ -69,14 +72,15 @@ public class WaitAsyncResultsTool {
     @Tool(
             name = "wait_async_results",
             description =
-                    "Wait for background async tool or subagent results to arrive. "
-                            + "Call this when you have launched async tasks and want to wait for "
-                            + "their completion instead of returning to the user. After this tool "
-                            + "returns successfully, continue reasoning — the results will be "
-                            + "automatically injected into your context. "
-                            + "Use task_ids to wait until specific task IDs are all terminal, "
-                            + "or wait_all=true to wait until all currently running tasks in the "
-                            + "session are terminal. "
+                    "Wait for background async tool or subagent results. "
+                            + "Prefer barrier mode: task_ids waits until those specific tasks are "
+                            + "all terminal and returns their results in this tool output; "
+                            + "wait_all=true waits for the snapshot of currently running tasks "
+                            + "(tasks created while waiting are not added) and also returns their "
+                            + "results. "
+                            + "Without task_ids and without wait_all, this is legacy inbox-any "
+                            + "mode: returns when ANY inbox message arrives — not wait-all. For "
+                            + "must-collect-all groups use task_ids or wait_all=true. "
                             + "Max timeout is 120 seconds. "
                             + "If you have already waited without results, use task_list or "
                             + "task_output(block=false) to check status instead of waiting again.",
@@ -93,16 +97,18 @@ public class WaitAsyncResultsTool {
                             description =
                                     "Optional comma-separated task IDs to wait for. When set, the "
                                             + "tool returns only after all listed tasks are "
-                                            + "terminal, or timeout.",
+                                            + "terminal (or timeout), and embeds each task's "
+                                            + "result in the response.",
                             required = false)
                     String taskIds,
             @ToolParam(
                             name = "wait_all",
                             description =
-                                    "Optional barrier mode. When true and task_ids is empty, wait "
-                                            + "for the snapshot of currently non-terminal tasks in "
-                                            + "this session. Tasks created later are not added to "
-                                            + "the wait set.",
+                                    "Optional barrier mode. When true and task_ids is empty, wait"
+                                        + " for the snapshot of currently non-terminal tasks in"
+                                        + " this session and embed their results. Tasks created"
+                                        + " later are not added to the wait set. Not the same as"
+                                        + " legacy no-arg inbox-any wait.",
                             required = false)
                     Boolean waitAll,
             RuntimeContext runtimeContext)
@@ -130,8 +136,10 @@ public class WaitAsyncResultsTool {
                                 + " resetting counter, session={}",
                         sessionId);
                 emptyWaits.set(0);
-                return "Async results have arrived. Continue reasoning — "
-                        + "the results will be injected into your context automatically.";
+                return "Async results have arrived (inbox-any: at least one message). "
+                        + "Continue reasoning — the results will be injected into your context "
+                        + "automatically. Prefer wait_async_results(task_ids=...) or "
+                        + "wait_all=true when you need every task in a group.";
             }
             log.info(
                     "wait_async_results: rejected — {} consecutive empty waits reached, session={}",
@@ -161,21 +169,11 @@ public class WaitAsyncResultsTool {
             }
         }
 
-        int raw =
-                timeoutSeconds != null && timeoutSeconds > 0
-                        ? timeoutSeconds
-                        : DEFAULT_TIMEOUT_SECONDS;
-        int timeout = Math.min(raw, MAX_TIMEOUT_SECONDS);
-        if (raw > MAX_TIMEOUT_SECONDS) {
-            log.info(
-                    "wait_async_results: clamped timeout from {}s to {}s, session={}",
-                    raw,
-                    timeout,
-                    sessionId);
-        }
+        int timeout = normalizeTimeout(timeoutSeconds, sessionId);
 
         log.info(
-                "wait_async_results: waiting up to {}s for inbox messages, session={}",
+                "wait_async_results: waiting up to {}s for any inbox message (legacy inbox-any),"
+                        + " session={}",
                 timeout,
                 sessionId);
 
@@ -190,8 +188,10 @@ public class WaitAsyncResultsTool {
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
                 emptyWaits.set(0);
-                return "Async results have arrived. Continue reasoning — "
-                        + "the results will be injected into your context automatically.";
+                return "Async results have arrived (inbox-any: at least one message). "
+                        + "Continue reasoning — the results will be injected into your context "
+                        + "automatically. Prefer wait_async_results(task_ids=...) or "
+                        + "wait_all=true when you need every task in a group.";
             }
             // Cap sleep to the remaining budget so the tool never overshoots the caller's timeout.
             Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
@@ -313,6 +313,7 @@ public class WaitAsyncResultsTool {
 
     private String completeTaskBarrierIfReady(
             RuntimeContext runtimeContext, String sessionId, List<String> waitSet) {
+        List<BackgroundTask> terminalTasks = new ArrayList<>(waitSet.size());
         for (String taskId : waitSet) {
             BackgroundTask task = taskRepository.getTask(runtimeContext, sessionId, taskId);
             if (task == null) {
@@ -327,14 +328,52 @@ public class WaitAsyncResultsTool {
             if (!task.getTaskStatus().isTerminal()) {
                 return null;
             }
+            terminalTasks.add(task);
         }
         log.info(
                 "wait_async_results: task barrier complete, tasks={}, session={}",
                 waitSet,
                 sessionId);
-        return "All requested background tasks are terminal. Continue reasoning — "
-                + "results will be injected automatically when delivered, or use "
-                + "task_output(task_id) to read a specific result.";
+        return formatBarrierResults(runtimeContext, sessionId, terminalTasks);
+    }
+
+    /**
+     * Embeds each terminal task's status/result in the tool return so the parent can continue
+     * without waiting for inbox push-back. Marks tasks delivered to avoid duplicate reminders.
+     */
+    private String formatBarrierResults(
+            RuntimeContext runtimeContext, String sessionId, List<BackgroundTask> tasks) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("All requested background tasks are terminal. Results are included below.")
+                .append('\n');
+        for (BackgroundTask task : tasks) {
+            task.updateLastCheckedAt();
+            if (task.isCompleted() && task.getTaskStatus().isTerminal()) {
+                try {
+                    taskRepository.markDelivered(runtimeContext, sessionId, task.getTaskId());
+                } catch (RuntimeException ignore) {
+                    // Best-effort: failure only risks a redundant push reminder.
+                }
+            }
+            sb.append("---").append('\n');
+            sb.append("task_id: ").append(task.getTaskId()).append('\n');
+            if (task.getAgentId() != null) {
+                sb.append("agent_id: ").append(task.getAgentId()).append('\n');
+            }
+            sb.append("status: ").append(task.getStatus()).append('\n');
+            if (task.getResult() != null) {
+                sb.append("Result:\n").append(task.getResult()).append('\n');
+            } else if (task.getError() != null) {
+                Exception err = task.getError();
+                sb.append("Error:\n").append(err.getMessage()).append('\n');
+                if (err.getCause() != null) {
+                    sb.append("Cause: ").append(err.getCause().getMessage()).append('\n');
+                }
+            } else {
+                sb.append("Task completed with no result.").append('\n');
+            }
+        }
+        return sb.toString().trim();
     }
 
     private String rejectIfWaitBudgetExhausted(String sessionId, AtomicInteger emptyWaits) {
@@ -348,8 +387,10 @@ public class WaitAsyncResultsTool {
                             + " resetting counter, session={}",
                     sessionId);
             emptyWaits.set(0);
-            return "Async results have arrived. Continue reasoning — "
-                    + "the results will be injected into your context automatically.";
+            return "Async results have arrived (inbox-any: at least one message). "
+                    + "Continue reasoning — the results will be injected into your context "
+                    + "automatically. Prefer wait_async_results(task_ids=...) or "
+                    + "wait_all=true when you need every task in a group.";
         }
         log.info(
                 "wait_async_results: rejected — {} consecutive empty waits reached, session={}",

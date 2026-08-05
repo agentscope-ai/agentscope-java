@@ -110,7 +110,7 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
-如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。工具执行层启用并行后，这些同步调用可以并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。
+如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
 
 任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。
 
@@ -148,9 +148,11 @@ HarnessAgent.builder()
 
 异步结果有三种常用收集方式：
 
-- **主动通知**：默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入，主 agent 不需要立即轮询。
-- **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果，适合先拿短任务结果、补取被压缩或未注入的结果。
-- **等待 barrier**：用 `wait_async_results(task_ids="id1,id2")` 等指定任务集合全部终态；或用 `wait_async_results(wait_all=true)` 等调用开始时当前 session 的未完成任务快照全部终态。`wait_all=true` 不会把等待期间新创建的任务动态加入 wait set。
+- **主动通知**：不阻塞等待时的默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入。
+- **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果。
+- **等待 barrier（必须等齐时优先）**：用 `wait_async_results(task_ids="id1,id2")` 或 `wait_async_results(wait_all=true)`。barrier 模式会等到集合终态，并**把各任务结果直接写进本次工具返回**，主 agent 可立刻继续推理。`wait_all=true` 以调用开始时的未完成任务快照为准，等待期间新创建的任务不会加入 wait set。
+
+> **遗留 inbox-any**：不传 `task_ids` 且不传 `wait_all` 时，`wait_async_results` 只等到 inbox 中**任意一条**消息到达就返回，这不是 wait-all。需要一组任务全部完成时，请用 `task_ids` 或 `wait_all=true`。
 
 ## 给已存在的子 agent 补一条消息
 

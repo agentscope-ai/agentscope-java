@@ -126,6 +126,9 @@ class WaitAsyncResultsToolTest {
         assertTrue(
                 result.contains("Async results have arrived"),
                 "should return success when inbox has messages, got: " + result);
+        assertTrue(
+                result.contains("inbox-any"),
+                "legacy path should label inbox-any mode, got: " + result);
 
         // Counter should be reset — further empty waits allowed again
         hasMessages.set(false);
@@ -241,6 +244,10 @@ class WaitAsyncResultsToolTest {
         assertTrue(
                 result.contains("All requested background tasks are terminal"),
                 "should complete barrier after both tasks finish, got: " + result);
+        assertTrue(result.contains("task_id: t1"), "should embed t1, got: " + result);
+        assertTrue(result.contains("task_id: t2"), "should embed t2, got: " + result);
+        assertTrue(result.contains("one"), "should embed t1 result, got: " + result);
+        assertTrue(result.contains("two"), "should embed t2 result, got: " + result);
     }
 
     @Test
@@ -308,6 +315,11 @@ class WaitAsyncResultsToolTest {
         assertTrue(
                 result.contains("All requested background tasks are terminal"),
                 "wait_all should use the initial snapshot and ignore later tasks, got: " + result);
+        assertTrue(result.contains("task_id: t1"), "should embed t1, got: " + result);
+        assertTrue(result.contains("done"), "should embed t1 result, got: " + result);
+        assertFalse(
+                result.contains("task_id: t2"),
+                "should not wait for or embed later-started t2, got: " + result);
     }
 
     @Test
@@ -322,6 +334,21 @@ class WaitAsyncResultsToolTest {
 
         assertTrue(result.contains("No running background tasks"), "got: " + result);
         assertTrue(elapsed < 2_000, "should return immediately, took: " + elapsed + "ms");
+    }
+
+    @Test
+    @DisplayName("barrier embeds results and marks tasks delivered")
+    void barrierEmbedsResultsAndMarksDelivered() throws Exception {
+        CompletableFuture<String> done = CompletableFuture.completedFuture("payload-a");
+        BackgroundTask task = new BackgroundTask("t1", "agent-1", done);
+        TrackingTaskRepository repo = new TrackingTaskRepository(List.of(task));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        String result = tool.waitForResults(1, "t1", null, ctx());
+
+        assertTrue(result.contains("Results are included below"), "got: " + result);
+        assertTrue(result.contains("payload-a"), "got: " + result);
+        assertTrue(repo.delivered.contains("t1"), "should mark delivered to avoid duplicate push");
     }
 
     @Test
@@ -464,6 +491,20 @@ class WaitAsyncResultsToolTest {
 
         void add(BackgroundTask task) {
             tasks.add(task);
+        }
+    }
+
+    private static class TrackingTaskRepository extends StubTaskRepository {
+
+        final List<String> delivered = new ArrayList<>();
+
+        TrackingTaskRepository(List<BackgroundTask> tasks) {
+            super(tasks);
+        }
+
+        @Override
+        public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+            delivered.add(taskId);
         }
     }
 }

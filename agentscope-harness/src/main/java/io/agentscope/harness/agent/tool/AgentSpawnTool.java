@@ -206,9 +206,9 @@ public class AgentSpawnTool {
                     agent_send as agent_key), agent_id (the subagent type name), and session_id \
                     (internal; do not use as agent_key). Sync mode returns the reply below that; \
                     async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
-                    task_id is NOT agent_key. Multiple sync tool calls may run in parallel when \
-                    the toolkit enables parallel tool execution; otherwise use async tasks for \
-                    explicit parallelism.\
+                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
+                    by default; pass a Toolkit with parallel=false to serialize, \
+                    or use async tasks for fire-and-forget parallelism.\
                     """)
     public Mono<String> agentSpawn(
             RuntimeContext runtimeContext,
