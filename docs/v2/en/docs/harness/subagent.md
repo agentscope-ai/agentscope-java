@@ -319,10 +319,30 @@ Just set `url` + optional `headers` and the subagent runs through a remote HTTP 
     .description("Remote research subagent")
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
+    .remoteStreaming(true)          // default when unset
+    .remoteAskPolicy(RemoteAskPolicy.DENY)  // default
     .build())
 ```
 
 Same sync (`timeout_seconds>0`) / background (`timeout_seconds=0`) semantics apply.
+
+Declaration knobs specific to remote mode:
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag |
+| `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
+
+### Remote authorization
+
+Parent DENY permission rules are forwarded in the remote submit `context.deny_rules` (same inheritance as local children; opt out with `inheritParentPermissions(false)`).
+
+When the remote agent pauses for tool confirmation (`awaiting_confirm`):
+
+- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) with `decisions[{toolCallId, approved}]`.
+- **Non-streaming parent (`call`) or `remoteAskPolicy=DENY` (default)**: pending confirmations are auto-denied. The tool result includes a note: `remote tool confirmation(s) were auto-denied`.
+
+While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`). Barriers such as `wait_async_results` therefore keep waiting until the task is resumed and reaches a terminal status.
 
 ## Background task storage
 
@@ -431,7 +451,8 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 | `streamEvents()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
 | `call()` mode (non-streaming) | ✗ (child result returns as `tool_result` string) |
 | `timeout_seconds = 0` background task | ✗ (result pushed via reverse notification to parent's next round) |
-| Remote subagent (Agent Protocol) | ✗ |
+| Remote subagent (Agent Protocol) + parent `streamEvents()` + `remoteStreaming=true` (default) | ✔ |
+| Remote subagent + parent `call()` or `remoteStreaming=false` | ✗ |
 
 ### Error handling
 
@@ -443,5 +464,6 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 - [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
 - [Architecture](./architecture.md) — how parent and child cooperate
+- [Agent Protocol](../../integration/protocol/agent-protocol.md) — remote task endpoints (SSE + HITL resume)
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
 - [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

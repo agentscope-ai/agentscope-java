@@ -130,6 +130,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -1522,12 +1523,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 msgs = List.of();
             }
 
-            // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
-            // error results so the agent can continue instead of crashing.
-            if (enablePendingToolRecovery) {
-                maybePatchPendingToolCalls(msgs);
-            }
-
             Set<String> pendingIds = getPendingToolUseIds();
 
             // No pending tools -> normal processing
@@ -1547,6 +1542,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 applyConfirmResults(confirmResults);
                 clearPendingConfirmRequest();
                 return resumeAgent();
+            }
+
+            // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
+            // error results so the agent can continue instead of crashing. This must happen after
+            // the permission HITL flow so ASKING tool calls are handled by confirmation first.
+            if (enablePendingToolRecovery) {
+                maybePatchPendingToolCalls(msgs, pendingIds);
+                pendingIds = getPendingToolUseIds();
+                if (pendingIds.isEmpty()) {
+                    addToContext(msgs);
+                    return coreAgent();
+                }
             }
 
             // Has pending tools but no input -> resume (execute pending tools directly)
@@ -1827,8 +1834,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
-        private void maybePatchPendingToolCalls(List<Msg> msgs) {
-            Set<String> pendingIds = getPendingToolUseIds();
+        private void maybePatchPendingToolCalls(List<Msg> msgs, Set<String> pendingIds) {
             if (pendingIds.isEmpty()) {
                 return;
             }
@@ -1840,10 +1846,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (userProvidedResults) {
                 return;
             }
-            log.warn(
-                    "Pending tool calls detected without results, auto-generating error results."
-                            + " Pending IDs: {}",
-                    pendingIds);
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null) {
                 return;
@@ -1851,7 +1853,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> pendingToolCalls =
                     lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
                             .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                            .filter(toolUse -> toolUse.getState() != ToolCallState.ASKING)
                             .toList();
+            if (pendingToolCalls.isEmpty()) {
+                return;
+            }
+            log.warn(
+                    "Pending tool calls detected without results, auto-generating error results."
+                            + " Pending IDs: {}",
+                    pendingToolCalls.stream().map(ToolUseBlock::getId).toList());
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
                         buildErrorToolResult(
@@ -5028,6 +5038,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 skillCodeExecutionEnabled,
                                 skillWorkDir));
             }
+
+            // List.sort is stable: middlewares with equal order retain their registration order.
+            middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);
             selfRef.set(agent);

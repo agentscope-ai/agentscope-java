@@ -194,7 +194,7 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
 - **类型（软弃用，暂不 `forRemoval`）**
   - `io.agentscope.core.agent.Event`、`EventType`、`EventSource`
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
-  - **当前 gap**：`HarnessAgent.streamEvents(...)` 暂时**不转发子 agent 事件** —— `AgentEvent` 体系还没有等价的 `EventSource` 通道；需要子 agent 事件流的场景仍需用 `stream(...)`（已弃用），等通道落地后再统一切换
+  - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
 
 新代码统一改用：
 
@@ -253,6 +253,7 @@ ReActAgent agent = ReActAgent.builder()
 - 新增 `AgentEventConverter` 与 `AguiEventEnricher` 扩展点：converter 负责语义映射，enricher 负责 `timestamp` / `rawEvent` 等横切属性；Spring Boot starter 会自动收集对应 bean
 - 所有 `AguiEvent` 支持 AG-UI base event properties；默认不启用 `BaseEventPropertiesEnricher`，显式开启后只补缺失 `timestamp`，不默认填 `rawEvent`
 - `AguiAdapterConfig.emitTokenUsage` 可选输出 `CUSTOM token_usage` 事件，包含当前模型调用 delta 与本次 run cumulative token usage
+- **行为变更：** `source != null` 的 AgentEvent（子 agent 事件）默认映射为 AG-UI `CUSTOM`（`subagent.lifecycle` / `subagent.text` / `subagent.thinking` / `subagent.tool_call` / `subagent.tool_result` / `subagent.require_confirm`），不再走原生 `TEXT_MESSAGE_*` / `RUN_*`。设 `emitSubagentEventsAsNative(true)` 可恢复旧的原生映射
 - Spring Boot starter 支持 `AguiRuntimeContextResolver` 和自定义 `AguiAgentAdapterFactory`，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出
 
 详见 → [AG-UI](../integration/protocol/agui.md)
