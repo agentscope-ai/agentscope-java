@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-25T04:12:58+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
+    <meta property="article:modified_time" content="2026-08-05T00:57:26+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/task/tool.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1276,7 +1276,7 @@
 <section id="id18">
 <h2>配置选项<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">(</span><span class="n">ToolkitConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">parallel</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 并行执行多个工具</span>
+<span class="w">    </span><span class="p">.</span><span class="na">parallel</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 串行执行多个工具（默认并行）</span>
 <span class="w">    </span><span class="p">.</span><span class="na">allowToolDeletion</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">          </span><span class="c1">// 禁止删除工具</span>
 <span class="w">    </span><span class="p">.</span><span class="na">executionConfig</span><span class="p">(</span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span>
@@ -1295,7 +1295,7 @@
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parallel</span></code></p></td>
 <td><p>是否并行执行多个工具</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">allowToolDeletion</span></code></p></td>
 <td><p>是否允许删除工具</p></td>
@@ -1452,7 +1452,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-25</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

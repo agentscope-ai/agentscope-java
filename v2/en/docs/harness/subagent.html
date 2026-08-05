@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T15:52:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-08-05T00:57:26+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1048,7 +1048,7 @@ You are a subagent focused on code review.
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> (default 30, max 600) — <strong>synchronous</strong> call; the parent blocks on this step, result returns as the tool result.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> — <strong>background</strong> call; returns a <code class="docutils literal notranslate"><span class="pre">task_id</span></code> immediately, subagent runs in the background.</p></li>
 </ul>
-<p>If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. When tool execution is configured for parallelism, those synchronous calls can advance in parallel; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier.</p>
+<p>If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (<code class="docutils literal notranslate"><span class="pre">ToolkitConfig.parallel=true</span></code>), so those synchronous calls advance in parallel on both <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> and <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code> built with <code class="docutils literal notranslate"><span class="pre">ToolkitConfig.builder().parallel(false).build()</span></code>.</p>
 <p>Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.</p>
 <section id="background-tasks-push-back-automatically">
 <h3>Background tasks push back automatically<a class="headerlink" href="#background-tasks-push-back-automatically" title="Link to this heading">¶</a></h3>
@@ -1103,10 +1103,13 @@ You are a subagent focused on code review.
 </div></blockquote>
 <p>There are three common ways to collect asynchronous results:</p>
 <ul class="simple">
-<li><p><strong>Automatic push-back</strong>: the default path. Completed child tasks are injected as a <code class="docutils literal notranslate"><span class="pre">&lt;system-reminder&gt;</span></code> before the next reasoning step, so the parent does not need to poll immediately.</p></li>
-<li><p><strong>Targeted task check</strong>: call <code class="docutils literal notranslate"><span class="pre">task_output(task_id,</span> <span class="pre">block=false)</span></code> to inspect one task’s current state or final result. This is useful for taking short-task results early, or recovering results that were compacted or not injected.</p></li>
-<li><p><strong>Wait barrier</strong>: call <code class="docutils literal notranslate"><span class="pre">wait_async_results(task_ids=&quot;id1,id2&quot;)</span></code> to wait until all listed tasks are terminal; or call <code class="docutils literal notranslate"><span class="pre">wait_async_results(wait_all=true)</span></code> to wait for the snapshot of unfinished tasks in the current session at the start of the call. <code class="docutils literal notranslate"><span class="pre">wait_all=true</span></code> does not dynamically add tasks created while it is waiting.</p></li>
+<li><p><strong>Automatic push-back</strong>: the default path when you do not block. Completed child tasks are injected as a <code class="docutils literal notranslate"><span class="pre">&lt;system-reminder&gt;</span></code> before the next reasoning step.</p></li>
+<li><p><strong>Targeted task check</strong>: call <code class="docutils literal notranslate"><span class="pre">task_output(task_id,</span> <span class="pre">block=false)</span></code> to inspect one task’s current state or final result.</p></li>
+<li><p><strong>Wait barrier (preferred for must-collect-all)</strong>: call <code class="docutils literal notranslate"><span class="pre">wait_async_results(task_ids=&quot;id1,id2&quot;)</span></code> or <code class="docutils literal notranslate"><span class="pre">wait_async_results(wait_all=true)</span></code>. Barrier mode waits until the set is terminal and <strong>embeds each task’s result in the tool return</strong>, so you can continue immediately. <code class="docutils literal notranslate"><span class="pre">wait_all=true</span></code> uses a snapshot of unfinished tasks at call start and does not add tasks created while waiting.</p></li>
 </ul>
+<blockquote>
+<div><p><strong>Legacy inbox-any</strong>: calling <code class="docutils literal notranslate"><span class="pre">wait_async_results</span></code> without <code class="docutils literal notranslate"><span class="pre">task_ids</span></code> and without <code class="docutils literal notranslate"><span class="pre">wait_all</span></code> only waits until <em>any</em> inbox message arrives. That is not a wait-all barrier — use <code class="docutils literal notranslate"><span class="pre">task_ids</span></code> or <code class="docutils literal notranslate"><span class="pre">wait_all=true</span></code> when every task in a group must finish.</p>
+</div></blockquote>
 </section>
 </section>
 <section id="send-a-follow-up-to-an-existing-subagent">
@@ -1452,7 +1455,7 @@ description: Investigates topics and returns a synthesized report.
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
