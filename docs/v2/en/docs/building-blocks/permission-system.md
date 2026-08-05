@@ -388,6 +388,11 @@ Msg resumeMsg =
 agent.call(List.of(resumeMsg)).block();
 ```
 
+If the resume is sent with `streamEvents(List.of(resumeMsg))`, the stream includes a
+`UserConfirmResultEvent` before the resumed tool execution. Use its `replyId` to associate
+the accepted results with the earlier `RequireUserConfirmEvent`; the event contains only
+the confirmations included in that resume call.
+
 Comparison of the two modes:
 
 | | Blocking `call()` | Streaming `streamEvents()` |
