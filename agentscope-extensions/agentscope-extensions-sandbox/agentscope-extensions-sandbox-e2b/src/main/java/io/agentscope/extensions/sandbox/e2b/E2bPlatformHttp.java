@@ -182,6 +182,38 @@ final class E2bPlatformHttp {
         return all;
     }
 
+    /**
+     * One-shot cleanup of a session's snapshot record: keeps the newest {@code retention} ids by
+     * their embedded timestamp and deletes the rest, regardless of any residue left by earlier
+     * persists. {@code retention <= 0} keeps everything. Callers invoke this once the sandbox has
+     * been killed and E2B no longer locks the restored template.
+     *
+     * @param snapshotIds the session's recorded snapshot ids (most recent persist last)
+     * @param retention max snapshots to keep; {@code <= 0} keeps all
+     * @return the ids to keep afterwards
+     */
+    List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
+        List<String> ids = snapshotIds != null ? new ArrayList<>(snapshotIds) : new ArrayList<>();
+        if (retention <= 0 || ids.isEmpty()) {
+            return ids;
+        }
+        String keep = null;
+        long keepTs = -1;
+        for (String id : ids) {
+            long ts = snapshotTimestampMillis(id);
+            if (ts > keepTs) {
+                keepTs = ts;
+                keep = id;
+            }
+        }
+        if (keep == null) {
+            return ids;
+        }
+        List<String> older = new ArrayList<>(ids);
+        older.remove(keep);
+        return pruneSnapshots(keep, older, retention);
+    }
+
     void killSandbox(String sandboxId) throws IOException {
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId;
         Request req =

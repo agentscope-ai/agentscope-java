@@ -25,7 +25,6 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -51,14 +50,6 @@ public class E2bSandbox extends AbstractBaseSandbox {
     private final E2bSandboxClientOptions opt;
     private final E2bPlatformHttp platform;
     private E2bEnvdProcessClient envd;
-
-    /**
-     * Snapshot the running sandbox was restored from (if any). While the sandbox lives, E2B treats
-     * this snapshot template as in use and rejects deleting it with {@code 400}, so it must never be
-     * a prune candidate; it is dropped from the record once a later sandbox is restored from a newer
-     * snapshot.
-     */
-    private String currentSandboxSourceSnapshotId;
 
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
         super(state);
@@ -87,10 +78,9 @@ public class E2bSandbox extends AbstractBaseSandbox {
         if (id != null && !id.isBlank()) {
             platform.killSandbox(id);
         }
-        // Only now is the snapshot this sandbox was restored from unlocked by E2B (deleting it
-        // while the sandbox ran returned 400), so drop it to converge back to retention per
-        // session.
-        deleteSourceSnapshotBestEffort();
+        // Only after killSandbox are the snapshot templates unlocked by E2B (deleting them while a
+        // sandbox restored from one runs returns 400), so clean up here to converge to retention.
+        cleanupSnapshots();
     }
 
     @Override
@@ -109,7 +99,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
                         SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
                         "E2B snapshot response missing snapshotID: " + snap);
             }
-            pruneSnapshotsBestEffort(id);
+            e2bState.getSnapshotIds().add(id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
@@ -218,7 +208,6 @@ public class E2bSandbox extends AbstractBaseSandbox {
     }
 
     private void restoreSandboxFromSnapshotTemplate(String snapshotTemplateId) throws Exception {
-        this.currentSandboxSourceSnapshotId = snapshotTemplateId;
         String oldId = e2bState.getSandboxId();
         JsonNode created =
                 platform.createSandbox(snapshotTemplateId, opt.getSandboxTimeoutSeconds());
@@ -238,46 +227,19 @@ public class E2bSandbox extends AbstractBaseSandbox {
         envd = null;
     }
 
-    private void pruneSnapshotsBestEffort(String keepSnapshotId) {
-        try {
-            List<String> older = new ArrayList<>(e2bState.getSnapshotIds());
-            String source = currentSandboxSourceSnapshotId;
-            if (source != null && !source.isBlank()) {
-                // The running sandbox is restored from this snapshot; E2B locks it and rejects
-                // deletion with 400 while the sandbox lives. It is dropped on shutdown instead.
-                older.remove(source);
-            }
-            List<String> kept =
-                    platform.pruneSnapshots(keepSnapshotId, older, opt.getSnapshotRetention());
-            if (source != null && !source.isBlank()) {
-                kept.add(source);
-            }
-            e2bState.setSnapshotIds(kept);
-        } catch (Exception e) {
-            log.warn("[sandbox-e2b] snapshot pruning best-effort skipped: {}", e.getMessage());
-        }
-    }
-
-    private void deleteSourceSnapshotBestEffort() {
-        String source = currentSandboxSourceSnapshotId;
+    private void cleanupSnapshots() {
         int retention = opt.getSnapshotRetention();
-        if (source == null || source.isBlank() || retention <= 0) {
+        if (retention <= 0) {
             return;
         }
-        List<String> ids = e2bState.getSnapshotIds();
-        // The source snapshot is still a valid recovery point; only drop it once the session keeps
-        // >= retention snapshots after deletion, so retention is honoured for older sessions.
-        if (ids.size() - 1 >= retention) {
-            try {
-                platform.deleteSnapshot(source);
-                currentSandboxSourceSnapshotId = null;
-                ids.remove(source);
-            } catch (Exception e) {
-                log.debug(
-                        "[sandbox-e2b] failed to delete source snapshot {}: {}",
-                        source,
-                        e.getMessage());
-            }
+        // One-shot correction regardless of any earlier residue: keep the newest retention by
+        // embedded timestamp and delete the rest. E2B only unlocks the templates after
+        // killSandbox, so this runs on shutdown.
+        try {
+            List<String> kept = platform.cleanupSnapshots(e2bState.getSnapshotIds(), retention);
+            e2bState.setSnapshotIds(kept);
+        } catch (Exception e) {
+            log.warn("[sandbox-e2b] snapshot cleanup best-effort skipped: {}", e.getMessage());
         }
     }
 
