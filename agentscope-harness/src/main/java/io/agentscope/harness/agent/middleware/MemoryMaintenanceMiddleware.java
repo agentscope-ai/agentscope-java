@@ -23,7 +23,9 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
+import io.agentscope.harness.agent.memory.MemoryOperationScheduler;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
@@ -41,9 +43,9 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
- * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
- * does not run on every single call.
+ * <p>Fires after the agent invocation completes and, when asynchronous memory execution is
+ * enabled, is queued after {@link MemoryFlushMiddleware} for the same isolation key. It is
+ * throttled by a configurable minimum gap so it does not run on every single call.
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -76,6 +78,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final int sessionRetentionDays;
     private final Duration minGap;
     private final IsolationScope isolationScope;
+    private final MemoryConfig.ExecutionMode executionMode;
+    private final MemoryOperationScheduler operationScheduler;
 
     /**
      * Process-wide per-isolation-key maintenance timestamps. Static so that the throttle window
@@ -109,7 +113,9 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 dailyFileRetentionDays,
                 sessionRetentionDays,
                 minGap,
-                IsolationScope.USER);
+                IsolationScope.USER,
+                MemoryConfig.ExecutionMode.BLOCKING,
+                null);
     }
 
     public MemoryMaintenanceMiddleware(
@@ -119,12 +125,39 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             int sessionRetentionDays,
             Duration minGap,
             IsolationScope isolationScope) {
+        this(
+                workspaceManager,
+                consolidator,
+                dailyFileRetentionDays,
+                sessionRetentionDays,
+                minGap,
+                isolationScope,
+                MemoryConfig.ExecutionMode.BLOCKING,
+                null);
+    }
+
+    public MemoryMaintenanceMiddleware(
+            WorkspaceManager workspaceManager,
+            MemoryConsolidator consolidator,
+            int dailyFileRetentionDays,
+            int sessionRetentionDays,
+            Duration minGap,
+            IsolationScope isolationScope,
+            MemoryConfig.ExecutionMode executionMode,
+            MemoryOperationScheduler operationScheduler) {
         this.workspaceManager = workspaceManager;
         this.consolidator = consolidator;
         this.dailyFileRetentionDays = dailyFileRetentionDays;
         this.sessionRetentionDays = sessionRetentionDays;
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.executionMode =
+                executionMode != null ? executionMode : MemoryConfig.ExecutionMode.BLOCKING;
+        if (this.executionMode == MemoryConfig.ExecutionMode.ASYNC && operationScheduler == null) {
+            throw new IllegalArgumentException(
+                    "operationScheduler is required for asynchronous memory execution");
+        }
+        this.operationScheduler = operationScheduler;
     }
 
     public MemoryMaintenanceMiddleware(
@@ -139,17 +172,22 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input)
-                .concatWith(
-                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn(
-                                                    "Memory maintenance failed: {}",
-                                                    e.getMessage());
-                                            return Mono.empty();
-                                        }));
+        Flux<AgentEvent> events = next.apply(input);
+        if (executionMode == MemoryConfig.ExecutionMode.ASYNC) {
+            return events.doOnComplete(
+                    () ->
+                            operationScheduler.submit(
+                                    compositeTimerKey(rc),
+                                    () -> Mono.fromRunnable(() -> maybeRunMaintenance(rc)).then()));
+        }
+        return events.concatWith(
+                Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .onErrorResume(
+                                e -> {
+                                    log.warn("Memory maintenance failed: {}", e.getMessage());
+                                    return Mono.empty();
+                                }));
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

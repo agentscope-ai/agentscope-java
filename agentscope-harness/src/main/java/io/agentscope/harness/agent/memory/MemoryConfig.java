@@ -42,10 +42,19 @@ import java.util.Objects;
  *       configure via {@code .compaction(CompactionConfig...)} rather than here.</li>
  * </ol>
  *
- * <p>All fields have sensible defaults; {@link #defaults()} returns a config equivalent
- * to the harness's historical behavior so adopting this class is a no-op upgrade.
+ * <p>All fields have sensible defaults; {@link #defaults()} retains the harness's historical
+ * completion semantics. Applications that manage the agent lifecycle can opt into asynchronous
+ * post-call memory work with {@link Builder#executionMode(ExecutionMode)}.
  */
 public final class MemoryConfig {
+
+    /** Determines whether post-call memory work delays completion of the agent call. */
+    public enum ExecutionMode {
+        /** Queue memory work in the background, ordered by the configured isolation key. */
+        ASYNC,
+        /** Wait for memory work before completing the agent call (historical behavior). */
+        BLOCKING
+    }
 
     /** Default {@code consolidationMaxTokens}. */
     public static final int DEFAULT_CONSOLIDATION_MAX_TOKENS = 4_000;
@@ -58,6 +67,9 @@ public final class MemoryConfig {
 
     /** Default retention before a session JSONL log is pruned. */
     public static final int DEFAULT_SESSION_RETENTION_DAYS = 180;
+
+    /** Default upper bound for running and queued asynchronous memory operations. */
+    public static final int DEFAULT_MAX_PENDING_MEMORY_OPERATIONS = 256;
 
     /** Strategy for the per-call flush hook. See {@link FlushTrigger}. */
     public enum FlushMode {
@@ -147,6 +159,8 @@ public final class MemoryConfig {
     private final int dailyFileRetentionDays;
     private final int sessionRetentionDays;
     private final FlushTrigger flushTrigger;
+    private final ExecutionMode executionMode;
+    private final int maxPendingMemoryOperations;
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
@@ -157,6 +171,8 @@ public final class MemoryConfig {
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
         this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
+        this.executionMode = b.executionMode;
+        this.maxPendingMemoryOperations = b.maxPendingMemoryOperations;
     }
 
     /**
@@ -206,7 +222,15 @@ public final class MemoryConfig {
         return flushTrigger;
     }
 
-    /** Returns a config equivalent to the harness's historical defaults. */
+    public ExecutionMode executionMode() {
+        return executionMode;
+    }
+
+    public int maxPendingMemoryOperations() {
+        return maxPendingMemoryOperations;
+    }
+
+    /** Returns the default memory configuration. */
     public static MemoryConfig defaults() {
         return new Builder().build();
     }
@@ -225,6 +249,8 @@ public final class MemoryConfig {
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
         private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
+        private ExecutionMode executionMode = ExecutionMode.BLOCKING;
+        private int maxPendingMemoryOperations = DEFAULT_MAX_PENDING_MEMORY_OPERATIONS;
 
         /**
          * Sets a dedicated model for memory operations (flush + consolidation),
@@ -328,6 +354,33 @@ public final class MemoryConfig {
                 throw new IllegalArgumentException("flushTrigger must not be null");
             }
             this.flushTrigger = flushTrigger;
+            return this;
+        }
+
+        /**
+         * Controls whether flush and maintenance work runs after the agent call completes or
+         * remains part of its completion path. Must not be null.
+         */
+        public Builder executionMode(ExecutionMode executionMode) {
+            if (executionMode == null) {
+                throw new IllegalArgumentException("executionMode must not be null");
+            }
+            this.executionMode = executionMode;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of running and queued asynchronous memory operations. Once the
+         * limit is reached, new submissions apply backpressure until capacity becomes available.
+         * Must be positive.
+         */
+        public Builder maxPendingMemoryOperations(int maxPendingMemoryOperations) {
+            if (maxPendingMemoryOperations <= 0) {
+                throw new IllegalArgumentException(
+                        "maxPendingMemoryOperations must be positive, got "
+                                + maxPendingMemoryOperations);
+            }
+            this.maxPendingMemoryOperations = maxPendingMemoryOperations;
             return this;
         }
 
