@@ -260,18 +260,24 @@ public class E2bSandbox extends AbstractBaseSandbox {
 
     private void deleteSourceSnapshotBestEffort() {
         String source = currentSandboxSourceSnapshotId;
-        if (source == null || source.isBlank()) {
+        int retention = opt.getSnapshotRetention();
+        if (source == null || source.isBlank() || retention <= 0) {
             return;
         }
-        try {
-            platform.deleteSnapshot(source);
-            currentSandboxSourceSnapshotId = null;
-            e2bState.getSnapshotIds().remove(source);
-        } catch (Exception e) {
-            log.debug(
-                    "[sandbox-e2b] failed to delete source snapshot {}: {}",
-                    source,
-                    e.getMessage());
+        List<String> ids = e2bState.getSnapshotIds();
+        // The source snapshot is still a valid recovery point; only drop it once the session keeps
+        // >= retention snapshots after deletion, so retention is honoured for older sessions.
+        if (ids.size() - 1 >= retention) {
+            try {
+                platform.deleteSnapshot(source);
+                currentSandboxSourceSnapshotId = null;
+                ids.remove(source);
+            } catch (Exception e) {
+                log.debug(
+                        "[sandbox-e2b] failed to delete source snapshot {}: {}",
+                        source,
+                        e.getMessage());
+            }
         }
     }
 
