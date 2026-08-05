@@ -259,9 +259,7 @@ public final class LocalTeamClient implements TeamClient {
                 .append(task.taskId())
                 .append(" to start, then completeTask with a result summary, or failTask with a")
                 .append(" reason.");
-        sendMessage(task.namespace(), task.teamName(), LEAD, owner, sb.toString())
-                .onErrorComplete()
-                .subscribe();
+        deliverNotification(task.namespace(), task.teamName(), LEAD, owner, sb.toString());
     }
 
     /**
@@ -288,9 +286,22 @@ public final class LocalTeamClient implements TeamClient {
                         + label
                         + ":\n"
                         + body;
-        sendMessage(task.namespace(), task.teamName(), owner, LEAD, content)
-                .onErrorComplete()
-                .subscribe();
+        deliverNotification(task.namespace(), task.teamName(), owner, LEAD, content);
+    }
+
+    /**
+     * Persists a notification synchronously. These calls run inside {@code Mono.fromCallable}
+     * blocks on boundedElastic threads, so blocking here guarantees the message is visible in the
+     * store before the triggering operation (createTask/failTask/...) completes. A fire-and-forget
+     * subscription raced with callers reading the inbox immediately afterwards.
+     */
+    private void deliverNotification(
+            String namespace, String teamName, String from, String to, String content) {
+        try {
+            sendMessage(namespace, teamName, from, to, content).block();
+        } catch (RuntimeException ex) {
+            // Notification failures never break the task transition itself.
+        }
     }
 
     @Override
