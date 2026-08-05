@@ -29,6 +29,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
@@ -43,6 +44,8 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,6 +56,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -126,6 +130,8 @@ public class AgentSpawnTool {
             status: accepted
             task_id: %s
             Use task_output(task_id='%s', block=false) to check status, \
+            wait_async_results(task_ids=...) to wait for a chosen group, \
+            wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
             Do NOT call task_output immediately — the task has just started.\
             """;
@@ -199,7 +205,10 @@ public class AgentSpawnTool {
                     Every response starts with three lines: agent_key (pass this verbatim to \
                     agent_send as agent_key), agent_id (the subagent type name), and session_id \
                     (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output — task_id is NOT agent_key.\
+                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
+                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
+                    by default; pass a Toolkit with parallel=false to serialize, \
+                    or use async tasks for fire-and-forget parallelism.\
                     """)
     public Mono<String> agentSpawn(
             RuntimeContext runtimeContext,
@@ -279,6 +288,12 @@ public class AgentSpawnTool {
             if (existing != null) {
                 propagatePlanMode(
                         parentState, currentUserId, existing.sessionId(), existing.agent());
+                propagateParentDenyRules(
+                        parentState,
+                        currentUserId,
+                        existing.sessionId(),
+                        existing.agent(),
+                        declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
@@ -309,10 +324,7 @@ public class AgentSpawnTool {
         propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -438,7 +450,7 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
                     """)
     public Mono<String> agentSend(
             RuntimeContext runtimeContext,
@@ -510,6 +522,8 @@ public class AgentSpawnTool {
         DefaultAgentManager manager = managerFor(runtimeContext);
         propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
         var declOpt = manager.getDeclaration(spawned.agentId());
+        propagateParentDenyRules(
+                parentState, currentUserId, spawned.sessionId(), spawned.agent(), declOpt);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -665,17 +679,33 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
+                        AtomicBoolean endEmitted = new AtomicBoolean();
+                        Runnable emitEnd =
+                                () -> {
+                                    if (endEmitted.compareAndSet(false, true)) {
+                                        parentEmitter.emit(
+                                                new AgentEndEvent(null).withSource(sourcePath));
+                                    }
+                                };
+
                         return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                .doOnTerminate(
-                                        () ->
-                                                parentEmitter.emit(
-                                                        new AgentEndEvent(null)
-                                                                .withSource(sourcePath)));
+                                // Emit before success or error reaches the parent, which may
+                                // otherwise complete its event sink before doFinally runs.
+                                .doOnSuccess(ignored -> emitEnd.run())
+                                .doOnError(ignored -> emitEnd.run())
+                                // Preserve best-effort cancellation signaling without emitting a
+                                // duplicate if cancellation races with normal termination.
+                                .doFinally(
+                                        signal -> {
+                                            if (signal == SignalType.CANCEL) {
+                                                emitEnd.run();
+                                            }
+                                        });
                     }
 
                     // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
@@ -966,6 +996,7 @@ public class AgentSpawnTool {
                 task_id: %s
                 The task exceeded the %ds sync timeout but is still running in the background. \
                 Use task_output(task_id='%s', block=false) to check status, \
+                wait_async_results(task_ids=...) when this task is part of a required barrier, \
                 or wait — completed tasks are pushed back to you automatically. \
                 Do NOT retry the same task.\
                 """,
@@ -1233,25 +1264,86 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
+    private static void propagateParentDenyRules(
+            AgentState parentState,
+            String userId,
+            String childSessionId,
+            Agent childAgent,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return;
+        }
+
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return;
+        }
+
+        if (childAgent instanceof HarnessAgent harnessAgent) {
+            mergeParentDenyRulesIntoSlot(
+                    userId, childSessionId, harnessAgent.getDelegate(), parentPermissions);
+        } else if (childAgent instanceof ReActAgent reactAgent) {
+            mergeParentDenyRulesIntoSlot(userId, childSessionId, reactAgent, parentPermissions);
+        }
+    }
+
+    private static void mergeParentDenyRulesIntoSlot(
+            String userId,
+            String childSessionId,
+            ReActAgent child,
+            PermissionContextState parentPermissions) {
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState merged = mergeParentDenyRules(childPermissions, parentPermissions);
+        if (!merged.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, merged);
+        }
+    }
+
     /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
+     * Adds parent DENY rules without widening the child's configured permissions.
+     *
+     * <p>A trivial child uses the legacy lightweight permission path, where a tool-level
+     * {@code PASSTHROUGH} is allowed. Adding the first DENY rule makes the context non-trivial and
+     * activates the full engine; {@link PermissionMode#BYPASS} preserves that prior fallback while
+     * explicit DENY rules still take precedence.
      */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
-            return;
-        }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
-            return;
-        }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
-        }
+    private static PermissionContextState mergeParentDenyRules(
+            PermissionContextState child, PermissionContextState parent) {
+        PermissionContextState.Builder merged =
+                PermissionContextState.builder()
+                        .mode(child.isTrivial() ? PermissionMode.BYPASS : child.getMode());
+
+        child.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+        child.getAllowRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAllowRule(toolName, rule)));
+
+        Map<String, List<PermissionRule>> denyRules = new LinkedHashMap<>();
+        child.getDenyRules()
+                .forEach((toolName, rules) -> denyRules.put(toolName, new ArrayList<>(rules)));
+        parent.getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            List<PermissionRule> targetRules =
+                                    denyRules.computeIfAbsent(
+                                            toolName, ignored -> new ArrayList<>());
+                            for (PermissionRule rule : rules) {
+                                if (!targetRules.contains(rule)) {
+                                    targetRules.add(rule);
+                                }
+                            }
+                        });
+        denyRules.forEach(
+                (toolName, rules) -> rules.forEach(rule -> merged.addDenyRule(toolName, rule)));
+
+        child.getAskRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAskRule(toolName, rule)));
+        return merged.build();
     }
 }

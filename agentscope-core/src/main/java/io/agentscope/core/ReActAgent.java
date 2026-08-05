@@ -50,6 +50,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.hook.Hook;
@@ -1539,36 +1540,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
-                if (confirmResults.isEmpty()) {
-                    String pendingSummary =
-                            asking.stream()
-                                    .map(t -> t.getName() + " (id=" + t.getId() + ")")
-                                    .collect(Collectors.joining(", "));
-                    throw new IllegalStateException(
-                            "Agent is paused for human-in-the-loop confirmation: the following"
-                                    + " tool call(s) are in ASKING state and need your approval"
-                                    + " before the agent can continue: ["
-                                    + pendingSummary
-                                    + "]. This call supplied no confirmation, so it cannot"
-                                    + " proceed.\n"
-                                    + "To resume, send a follow-up message that carries a"
-                                    + " List<ConfirmResult> under the metadata key \""
-                                    + Msg.METADATA_CONFIRM_RESULTS
-                                    + "\", e.g.:\n"
-                                    + "    UserMessage.builder()\n"
-                                    + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
-                                    + "            List.of(new ConfirmResult(true, toolCall))))\n"
-                                    + "        .build();\n"
-                                    + "Tip: capture the ToolUseBlocks from the"
-                                    + " RequireUserConfirmEvent emitted when the agent paused.\n"
-                                    + "If you did NOT expect a pending confirmation here, a"
-                                    + " previous run most likely paused on one of these tool calls"
-                                    + " and persisted that state under the same (agentId,"
-                                    + " sessionId); start a fresh session, clear the persisted"
-                                    + " state, or use an in-memory state store to begin clean.");
-                }
+                List<ConfirmResult> confirmResults = extractAndValidateConfirmResults(msgs, asking);
+                publishEvent(
+                        new UserConfirmResultEvent(
+                                resolvePendingConfirmRequestReplyId(), confirmResults));
                 applyConfirmResults(confirmResults);
+                clearPendingConfirmRequest();
                 return resumeAgent();
             }
 
@@ -1621,6 +1598,142 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
             return collected;
+        }
+
+        /**
+         * Validate the user-provided confirmation payload against the currently ASKING tool calls.
+         *
+         * <p>Permission HITL resumes with one or more confirmations for currently ASKING tool
+         * calls. Confirmations may cover a subset of ASKING calls, but no result may reference a
+         * stale or unrelated tool call. Returning a copied list gives downstream event emission and
+         * state mutation the same trusted payload.
+         */
+        private List<ConfirmResult> extractAndValidateConfirmResults(
+                List<Msg> msgs, List<ToolUseBlock> asking) {
+            List<ConfirmResult> results = extractConfirmResults(msgs);
+            if (results.isEmpty()) {
+                String pendingSummary =
+                        asking.stream()
+                                .map(t -> t.getName() + " (id=" + t.getId() + ")")
+                                .collect(Collectors.joining(", "));
+                throw new IllegalStateException(
+                        "Agent is paused for human-in-the-loop confirmation: the following"
+                                + " tool call(s) are in ASKING state and need your approval"
+                                + " before the agent can continue: ["
+                                + pendingSummary
+                                + "]. This call supplied no confirmation, so it cannot"
+                                + " proceed.\n"
+                                + "To resume, send a follow-up message that carries a"
+                                + " List<ConfirmResult> under the metadata key \""
+                                + Msg.METADATA_CONFIRM_RESULTS
+                                + "\", e.g.:\n"
+                                + "    UserMessage.builder()\n"
+                                + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
+                                + "            List.of(new ConfirmResult(true, toolCall))))\n"
+                                + "        .build();\n"
+                                + "Tip: capture the ToolUseBlocks from the"
+                                + " RequireUserConfirmEvent emitted when the agent paused.\n"
+                                + "If you did NOT expect a pending confirmation here, a"
+                                + " previous run most likely paused on one of these tool calls"
+                                + " and persisted that state under the same (agentId,"
+                                + " sessionId); start a fresh session, clear the persisted"
+                                + " state, or use an in-memory state store to begin clean.");
+            }
+
+            Set<String> expectedIds =
+                    asking.stream()
+                            .map(ToolUseBlock::getId)
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            Set<String> providedIds = new LinkedHashSet<>();
+            List<ConfirmResult> normalized = new ArrayList<>();
+
+            for (ConfirmResult result : results) {
+                if (result == null || result.getToolCall() == null) {
+                    throw new IllegalStateException(
+                            "ConfirmResult and ConfirmResult.toolCall must not be null.");
+                }
+                ToolUseBlock toolCall = result.getToolCall();
+                String toolCallId = toolCall.getId();
+                if (toolCallId == null || toolCallId.isEmpty()) {
+                    throw new IllegalStateException("ConfirmResult.toolCall.id must not be empty.");
+                }
+                if (!providedIds.add(toolCallId)) {
+                    throw new IllegalStateException(
+                            "Duplicate ConfirmResult for tool call ID: " + toolCallId);
+                }
+                if (!expectedIds.contains(toolCallId)) {
+                    throw new IllegalStateException(
+                            "ConfirmResult references non-ASKING tool call ID: "
+                                    + toolCallId
+                                    + ". Expected: "
+                                    + expectedIds);
+                }
+                normalized.add(result);
+            }
+            return normalized;
+        }
+
+        /**
+         * Resolve the reply id from the assistant message that originally paused for confirmation.
+         *
+         * <p>This keeps {@link UserConfirmResultEvent} correlated with the prior
+         * {@link RequireUserConfirmEvent}, even though the confirmation arrives in a later
+         * {@code agent.call(...)} invocation.
+         */
+        private String resolvePendingConfirmRequestReplyId() {
+            Msg confirmRequestMsg = findLastAssistantMsg();
+            if (confirmRequestMsg == null || confirmRequestMsg.getMetadata() == null) {
+                return "";
+            }
+            Object raw = confirmRequestMsg.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            return raw instanceof String s ? s : "";
+        }
+
+        /**
+         * Persist the reply id for the pending confirmation request on the live assistant message.
+         *
+         * <p>The assistant message already owns the ASKING {@link ToolUseBlock}s, so storing the
+         * correlation metadata there lets the next call recover it from session state.
+         */
+        private void persistPendingConfirmRequest(String replyId) {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        /**
+         * Remove confirmation-request correlation metadata after the resume payload is accepted.
+         *
+         * <p>Leaving it behind would make later agent turns appear to belong to an already-closed
+         * HITL request.
+         */
+        private void clearPendingConfirmRequest() {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null || lastAssistant.getMetadata() == null) {
+                return;
+            }
+            if (!lastAssistant.getMetadata().containsKey(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID)) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.remove(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        private void replaceLastAssistantMsg(Msg replacement) {
+            List<Msg> ctx = state.contextMutable();
+            for (int i = ctx.size() - 1; i >= 0; i--) {
+                if (ctx.get(i).getRole() == MsgRole.ASSISTANT) {
+                    ctx.set(i, replacement);
+                    return;
+                }
+            }
         }
 
         /**
@@ -2140,13 +2253,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
                     mci -> modelCallStream(context, mci, true);
 
+            StringBuilder transformedText = new StringBuilder();
+            AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
                             middlewares,
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent textDelta) {
+                                    sawTransformedTextDelta.set(true);
+                                    if (textDelta.getDelta() != null) {
+                                        transformedText.append(textDelta.getDelta());
+                                    }
+                                }
+                            })
+                    .doOnTerminate(
+                            () -> {
+                                if (sawTransformedTextDelta.get()
+                                        || !context.getAccumulatedText().isEmpty()) {
+                                    context.replaceAccumulatedText(transformedText.toString());
+                                }
+                            });
         }
 
         private Flux<AgentEvent> modelCallStream(
@@ -2518,6 +2649,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 writeAutoDeniedResults(toolCalls, autoDenied);
             }
             resultHolder.set(List.of());
+            persistPendingConfirmRequest(replyId);
             return Flux.just(
                     new RequireUserConfirmEvent(replyId, pending),
                     new RequestStopEvent(reason, GenerateReason.PERMISSION_ASKING));
@@ -2671,7 +2803,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             for (ToolUseBlock tc : toolCalls) {
                 if (deniedIds.contains(tc.getId())) {
                     ToolResultBlock denied =
-                            ToolResultBlock.text("Permission denied by user")
+                            ToolResultBlock.text("Permission denied by rules")
                                     .withIdAndName(tc.getId(), tc.getName())
                                     .withState(ToolResultState.DENIED);
                     deniedEntries.add(Map.entry(tc, denied));
@@ -2692,7 +2824,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
-                                                        "Permission denied by user"),
+                                                        "Permission denied by rules"),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
@@ -3817,6 +3949,80 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
+     * are preserved. When an {@link AgentStateStore} is configured and the session has already
+     * been persisted, the latest persisted state is reloaded before clearing so only the
+     * conversation messages and any compaction summary are removed. The updated state is persisted
+     * immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearContext(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearContext(uid, sid);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session keeps the same identity. Unlike creating a new session, this only removes
+     * the conversation messages and compaction summary, so permission configuration, tool state,
+     * tasks, and plan-mode state remain available. When an {@link AgentStateStore} is configured
+     * and the session has already been persisted, the latest persisted state is reloaded before
+     * clearing. The updated state is persisted immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        AgentState state;
+        if (stateStore != null) {
+            if (stateStore.exists(userId, sid)) {
+                state =
+                        loadOrCreateAgentStateForSlot(
+                                stateStore,
+                                userId,
+                                sid,
+                                initialPermissionContext,
+                                getAgentId(),
+                                initialActiveToolGroups);
+                stateCache.put(slot, state);
+            } else {
+                state = stateCache.get(slot);
+                if (state == null) {
+                    return;
+                }
+            }
+        } else {
+            state = stateCache.get(slot);
+            if (state == null) {
+                return;
+            }
+        }
+        state.contextMutable().clear();
+        state.setSummary("");
+        saveAgentState(userId, sid);
+    }
+
+    /**
      * Switches the {@link PermissionMode} for the given {@code (userId, sessionId)} session at
      * runtime and rebuilds that session's cached {@link PermissionEngine} so the change takes
      * effect on the next tool evaluation. The configured rules and working directories are
@@ -3838,11 +4044,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
-        AgentState s = getAgentState(userId, sid);
-        s.setPermissionContext(s.getPermissionContext().withMode(mode));
-        permissionEngineCache.put(slot, new PermissionEngine(s.getPermissionContext()));
-        saveAgentState(userId, sid);
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, state.getPermissionContext().withMode(mode));
+    }
+
+    /**
+     * Replaces the permission context for one {@code (userId, sessionId)} slot, rebuilds that
+     * slot's permission engine, and persists the updated state.
+     *
+     * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
+     * to subsequent calls on this slot and does not affect any other user or session.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param permissionContext complete replacement context
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        Objects.requireNonNull(permissionContext, "permissionContext must not be null");
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, permissionContext);
+    }
+
+    private void installPermissionContext(
+            String userId,
+            String sessionId,
+            AgentState state,
+            PermissionContextState permissionContext) {
+        state.setPermissionContext(permissionContext);
+        permissionEngineCache.put(
+                slotKey(userId, sessionId), new PermissionEngine(permissionContext));
+        saveAgentState(userId, sessionId);
     }
 
     /**

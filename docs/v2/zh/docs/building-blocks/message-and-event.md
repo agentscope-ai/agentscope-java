@@ -296,7 +296,13 @@ sequenceDiagram
 
     **RequireExternalExecutionEvent** — 智能体暂停等待外部执行。
 
-    **UserConfirmResultEvent** — 用户提供确认结果（输入事件）。携带 `List<ConfirmResult>`。
+    **UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`。
+     `replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同。
+
+    | 方法 | 类型 | 描述 |
+    |------|------|------|
+    | `getReplyId()` | `String` | 关联的 `RequireUserConfirmEvent` 的回复 ID |
+    | `getConfirmResults()` | `List<ConfirmResult>` | 本次恢复接受的确认结果 |
 
     **ExternalExecutionResultEvent** — 外部系统提供执行结果（输入事件）。携带 `List<ToolResultBlock>`。
 
