@@ -38,6 +38,8 @@ public final class LocalHandsToolExecutor {
 
     private static final int DEFAULT_EXEC_TIMEOUT_SECONDS = 30;
     private static final int MAX_CAPTURED_BYTES = 200_000;
+    private static final boolean WINDOWS =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
 
     private final Path workDir;
 
@@ -86,10 +88,21 @@ public final class LocalHandsToolExecutor {
                 return ToolExecResult.error(
                         "working_directory must be a relative path within the workspace");
             }
-            effective = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            if (WINDOWS) {
+                if (wd.contains("\"")) {
+                    return ToolExecResult.error("working_directory must not contain quotes");
+                }
+                effective = "cd /d \"" + wd + "\" && " + command;
+            } else {
+                effective = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            }
         }
         int timeout = intOf(input, "timeout", DEFAULT_EXEC_TIMEOUT_SECONDS);
-        ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-lc", effective);
+        // Shell choice is OS-dependent so the executor also works on Windows hosts.
+        ProcessBuilder pb =
+                WINDOWS
+                        ? new ProcessBuilder("cmd.exe", "/c", effective)
+                        : new ProcessBuilder("/bin/bash", "-lc", effective);
         pb.directory(workDir.toFile());
         pb.redirectErrorStream(true);
         Process process = pb.start();
