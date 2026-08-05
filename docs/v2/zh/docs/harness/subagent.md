@@ -110,6 +110,10 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
+如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
+
+任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。
+
 ### 后台任务自动反向通知
 
 后台任务跑完了，**主 agent 不需要轮询**——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：
@@ -134,12 +138,21 @@ HarnessAgent.builder()
 | `agent_send` | 向已存在的子 agent 追加消息 |
 | `agent_list` | 列出当前活跃的子 agent 实例 |
 | `task_output` | 通过 `task_id` 获取后台任务结果（阻塞或非阻塞） |
+| `wait_async_results` | 等待后台结果到达；可按 `task_ids` 等指定任务全部完成，或用 `wait_all=true` 等待当前 session 未完成任务快照全部完成 |
 | `task_cancel` | 取消正在运行的后台任务 |
 | `task_list` | 列出所有后台任务及其当前状态 |
 
-`agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
+`agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `wait_async_results` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、等待、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
 
-> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+
+异步结果有三种常用收集方式：
+
+- **主动通知**：不阻塞等待时的默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入。
+- **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果。
+- **等待 barrier（必须等齐时优先）**：用 `wait_async_results(task_ids="id1,id2")` 或 `wait_async_results(wait_all=true)`。barrier 模式会等到集合终态，并**把各任务结果直接写进本次工具返回**，主 agent 可立刻继续推理。`wait_all=true` 以调用开始时的未完成任务快照为准，等待期间新创建的任务不会加入 wait set。
+
+> **遗留 inbox-any**：不传 `task_ids` 且不传 `wait_all` 时，`wait_async_results` 只等到 inbox 中**任意一条**消息到达就返回，这不是 wait-all。需要一组任务全部完成时，请用 `task_ids` 或 `wait_all=true`。
 
 ## 给已存在的子 agent 补一条消息
 
@@ -306,10 +319,30 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
     .description("远端调研子 agent")
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
+    .remoteStreaming(true)          // 未设置时默认 true
+    .remoteAskPolicy(RemoteAskPolicy.DENY)  // 默认
     .build())
 ```
 
 同样支持同步（`timeout_seconds>0`）和后台（`timeout_seconds=0`）。
+
+远程模式专用声明字段：
+
+| 字段 | 默认 | 说明 |
+|------|------|------|
+| `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记 |
+| `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
+
+### 远程授权
+
+父代理的 DENY 权限规则会随远程提交的 `context.deny_rules` 一并转发（与本地子 agent 的权限继承一致；可用 `inheritParentPermissions(false)` 关闭）。
+
+远程 agent 因工具确认而暂停（`awaiting_confirm`）时：
+
+- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) 恢复，请求体为 `decisions[{toolCallId, approved}]`。
+- **父代理非流式（`call`）或 `remoteAskPolicy=DENY`（默认）**：自动拒绝待确认项。工具结果中会附注：`remote tool confirmation(s) were auto-denied`。
+
+等待确认期间任务状态保持 `RUNNING`（`awaitingConfirm=true`）。因此 `wait_async_results` 等 barrier 会继续等待，直到任务被 resume 并进入终态。
 
 ## 异步任务的存储位置
 
@@ -418,7 +451,8 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 | `streamEvents()` + 同步本地子 agent（`timeout_seconds > 0`） | ✔ |
 | `call()` 模式（非流式） | ✗（子结果以 `tool_result` 字符串返回） |
 | `timeout_seconds = 0` 后台任务 | ✗（终态会通过反向通知给父 agent 下一轮） |
-| 远程子 agent（Agent Protocol） | ✗ |
+| 远程子 agent（Agent Protocol）+ 父 `streamEvents()` + `remoteStreaming=true`（默认） | ✔ |
+| 远程子 agent + 父 `call()` 或 `remoteStreaming=false` | ✗ |
 
 ### 错误处理
 
@@ -430,5 +464,6 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 - [工作区](./workspace.md) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
 - [计划模式](./plan-mode.md) — plan 阶段对子 agent 的限制
 - [架构](./architecture.md) — 主/子 agent 怎么协作
+- [Agent Protocol](../../integration/protocol/agent-protocol.md) — 远程任务端点（SSE + HITL resume）
 - [消息与事件](../building-blocks/message-and-event.md) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
 - [V1 迁移指南 B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线

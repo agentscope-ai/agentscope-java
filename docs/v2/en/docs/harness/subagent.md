@@ -110,6 +110,10 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
+If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
+
+Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.
+
 ### Background tasks push back automatically
 
 When a background task finishes, the parent **does not need to poll** — before the parent's next reasoning step, the framework injects completed task results as a system reminder at the end of the conversation:
@@ -134,12 +138,21 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 | `agent_send` | Send a follow-up message to an existing subagent |
 | `agent_list` | List active subagent instances |
 | `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
+| `wait_async_results` | Wait for background results; can wait for specific `task_ids` to all finish, or use `wait_all=true` for a snapshot of unfinished tasks in the current session |
 | `task_cancel` | Cancel a running background task |
 | `task_list` | List all background tasks with their current statuses |
 
-`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
+`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `wait_async_results` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, wait, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
 
-> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+
+There are three common ways to collect asynchronous results:
+
+- **Automatic push-back**: the default path when you do not block. Completed child tasks are injected as a `<system-reminder>` before the next reasoning step.
+- **Targeted task check**: call `task_output(task_id, block=false)` to inspect one task's current state or final result.
+- **Wait barrier (preferred for must-collect-all)**: call `wait_async_results(task_ids="id1,id2")` or `wait_async_results(wait_all=true)`. Barrier mode waits until the set is terminal and **embeds each task's result in the tool return**, so you can continue immediately. `wait_all=true` uses a snapshot of unfinished tasks at call start and does not add tasks created while waiting.
+
+> **Legacy inbox-any**: calling `wait_async_results` without `task_ids` and without `wait_all` only waits until *any* inbox message arrives. That is not a wait-all barrier — use `task_ids` or `wait_all=true` when every task in a group must finish.
 
 ## Send a follow-up to an existing subagent
 
@@ -306,10 +319,30 @@ Just set `url` + optional `headers` and the subagent runs through a remote HTTP 
     .description("Remote research subagent")
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
+    .remoteStreaming(true)          // default when unset
+    .remoteAskPolicy(RemoteAskPolicy.DENY)  // default
     .build())
 ```
 
 Same sync (`timeout_seconds>0`) / background (`timeout_seconds=0`) semantics apply.
+
+Declaration knobs specific to remote mode:
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag |
+| `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
+
+### Remote authorization
+
+Parent DENY permission rules are forwarded in the remote submit `context.deny_rules` (same inheritance as local children; opt out with `inheritParentPermissions(false)`).
+
+When the remote agent pauses for tool confirmation (`awaiting_confirm`):
+
+- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) with `decisions[{toolCallId, approved}]`.
+- **Non-streaming parent (`call`) or `remoteAskPolicy=DENY` (default)**: pending confirmations are auto-denied. The tool result includes a note: `remote tool confirmation(s) were auto-denied`.
+
+While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`). Barriers such as `wait_async_results` therefore keep waiting until the task is resumed and reaches a terminal status.
 
 ## Background task storage
 
@@ -418,7 +451,8 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 | `streamEvents()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
 | `call()` mode (non-streaming) | ✗ (child result returns as `tool_result` string) |
 | `timeout_seconds = 0` background task | ✗ (result pushed via reverse notification to parent's next round) |
-| Remote subagent (Agent Protocol) | ✗ |
+| Remote subagent (Agent Protocol) + parent `streamEvents()` + `remoteStreaming=true` (default) | ✔ |
+| Remote subagent + parent `call()` or `remoteStreaming=false` | ✗ |
 
 ### Error handling
 
@@ -430,5 +464,6 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 - [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
 - [Architecture](./architecture.md) — how parent and child cooperate
+- [Agent Protocol](../../integration/protocol/agent-protocol.md) — remote task endpoints (SSE + HITL resume)
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
 - [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

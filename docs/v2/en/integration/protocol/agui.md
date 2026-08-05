@@ -1,6 +1,14 @@
 # AG-UI
 
+## Compatibility Notes
+
 `agentscope-extensions-agui` converts AgentScope v2 `AgentEvent` streams into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.
+
+`AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
+
+Multimodal input is supported, but document types are not supported yet.
+
+`AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 
 ## When To Use
 
@@ -70,6 +78,29 @@ The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, 
 | Unmapped `AgentEvent`                  | `RAW`, with official `event` and `source` fields |
 
 Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStartEvent` and `AgentEndEvent`. If a normal stream completes without an upstream `AgentEndEvent`, the adapter does not synthesize `RUN_FINISHED`. On errors, the adapter emits a `RUN_ERROR` with a `timestamp`, then emits a fallback `RUN_FINISHED`.
+
+## Subagent events
+
+By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `source` (child / remote subagent events) are **not** mapped to native `TEXT_MESSAGE_*` / `RUN_*` / tool-call events. They become AG-UI `CUSTOM` events under the `subagent.*` namespace so they do not pollute the parent run lifecycle or text stream:
+
+| CUSTOM `name` | Typical AgentEvent |
+| --- | --- |
+| `subagent.lifecycle` | `AgentStartEvent` / `AgentEndEvent` |
+| `subagent.text` | `TextBlockDeltaEvent` |
+| `subagent.thinking` | `ThinkingBlockDeltaEvent` |
+| `subagent.tool_call` | `ToolCallStartEvent` / `ToolCallEndEvent` |
+| `subagent.tool_result` | `ToolResultEndEvent` |
+| `subagent.require_confirm` | `RequireUserConfirmEvent` |
+
+Each payload includes at least `source` and `type` (plus type-specific fields such as `delta` or `toolCallId`).
+
+To restore the previous behavior where child events used the same native converters as the parent:
+
+```java
+AguiAdapterConfig config = AguiAdapterConfig.builder()
+    .emitSubagentEventsAsNative(true)
+    .build();
+```
 
 ## AG-UI Base Event Properties
 

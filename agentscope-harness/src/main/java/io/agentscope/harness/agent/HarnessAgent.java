@@ -327,6 +327,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void clearContext(RuntimeContext ctx) {
+        delegate.clearContext(ctx);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        delegate.clearContext(userId, sessionId);
+    }
+
+    /**
      * Enters plan mode for the given {@code (userId, sessionId)} session, independent of which slot
      * is currently active. The change is persisted so the next {@code call} on that session sees
      * it.
@@ -1070,7 +1095,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String sysPrompt;
         boolean checkRunning = true;
         Model model;
-        Toolkit toolkit = new Toolkit();
+        Toolkit toolkit = newDefaultToolkit();
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -1358,10 +1383,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit != null ? toolkit : new Toolkit();
+            this.toolkit = toolkit != null ? toolkit : newDefaultToolkit();
             // Don't push to inner yet — orchestration will register harness tools on this toolkit
             // and then push the final result via inner.toolkit(...) at build() time.
             return this;
+        }
+
+        /**
+         * Default toolkit for Harness agents. Uses {@link Toolkit}'s default config (parallel
+         * tool execution enabled). Pass a custom {@link Toolkit} with
+         * {@code ToolkitConfig.parallel(false)} to opt out.
+         */
+        static Toolkit newDefaultToolkit() {
+            return new Toolkit();
         }
 
         public Builder maxIters(int maxIters) {
@@ -1923,11 +1957,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
+         * {@code session_search}, and omits matching Memory Recall / tool-based Persistence
+         * guidance from the workspace system prompt.
+         */
         public Builder disableMemoryTools() {
             this.disableMemoryTools = true;
             return this;
         }
 
+        /**
+         * Disables memory flush + background consolidation, and removes the "automatically
+         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
+         * {@code <memory_context>}.
+         */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
             return this;
@@ -2190,7 +2235,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 wsManager,
                                 name != null ? name : "ReActAgent",
                                 environmentMemory,
-                                maxContextTokens);
+                                maxContextTokens,
+                                disableMemoryTools,
+                                disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 inner.middleware(markdownMw);
             }

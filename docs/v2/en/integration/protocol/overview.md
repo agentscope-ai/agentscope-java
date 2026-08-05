@@ -13,5 +13,7 @@ AgentScope offers a few protocol adapters to let an Agent talk to the outside wo
 ## Choosing one
 
 - **Stream Agent events to a front-end UI (incl. ThinkingBlock)** → AG-UI
-- **Let other backend systems schedule the Agent over REST** → Agent Protocol
+- **Let other backend systems schedule the Agent over REST / host a remote subagent** → Agent Protocol
 - **Let multiple Agents (yours or third-party) call each other** → A2A
+
+> Layering: AG-UI is user-facing; Agent Protocol is the internal remote-subagent / task HTTP surface; A2A is external interop.

@@ -31,6 +31,7 @@ build/
 .vscode/
 .claude/
 .codex
+.cursor
 ### Mac OS ###
 .DS_Store
 
