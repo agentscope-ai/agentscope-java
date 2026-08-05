@@ -1079,6 +1079,22 @@ public class AgentSpawnTool {
     }
 
     /**
+     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path and
+     * the harness {@link AgentEvent#METADATA_TASK_ID} so concurrent calls to the same remote agent
+     * stay correlatable to distinct {@code TaskRecord}s.
+     */
+    static AgentEvent tagRemoteForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+        if (event == null) {
+            return null;
+        }
+        event.withSource(sourcePath);
+        if (taskId != null && !taskId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+        }
+        return event;
+    }
+
+    /**
      * Builds submission metadata for a remote task (streaming preference, parent identity, denied
      * permission rules).
      */
@@ -1207,8 +1223,10 @@ public class AgentSpawnTool {
                                                 .ifPresent(
                                                         ae ->
                                                                 emitter.emit(
-                                                                        ae.withSource(
-                                                                                sourcePath))));
+                                                                        tagRemoteForwardedEvent(
+                                                                                ae,
+                                                                                sourcePath,
+                                                                                taskId))));
             }
 
             long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0L);

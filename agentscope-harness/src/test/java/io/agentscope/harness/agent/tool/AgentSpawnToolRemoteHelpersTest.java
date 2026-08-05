@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
@@ -45,6 +47,19 @@ class AgentSpawnToolRemoteHelpersTest {
         assertEquals("main/remote", AgentSpawnTool.buildRemoteSourcePath("  ", ""));
         assertEquals("sess/remote", AgentSpawnTool.buildRemoteSourcePath("sess", null));
         assertEquals("main/agent", AgentSpawnTool.buildRemoteSourcePath(null, "agent"));
+    }
+
+    @Test
+    void tagRemoteForwardedEvent_setsSourceAndTaskIdMetadata() {
+        TextBlockDeltaEvent event = new TextBlockDeltaEvent(null, "b1", "hello");
+        event.withMetadataEntry("keep", "me");
+
+        AgentEvent tagged =
+                AgentSpawnTool.tagRemoteForwardedEvent(event, "parent/worker", "task_abc");
+
+        assertEquals("parent/worker", tagged.getSource());
+        assertEquals("task_abc", tagged.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertEquals("me", tagged.getMetadata().get("keep"));
     }
 
     @Test
