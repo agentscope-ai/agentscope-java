@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -183,6 +184,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ctx.userId() != null && !ctx.userId().isBlank()) {
             rtcBuilder.userId(ctx.userId());
         }
+        injectBusinessContext(rtcBuilder, ctx);
         RuntimeContext runtimeContext = rtcBuilder.build();
 
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
@@ -217,6 +219,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ctx.userId() != null && !ctx.userId().isBlank()) {
             rtcBuilder.userId(ctx.userId());
         }
+        injectBusinessContext(rtcBuilder, ctx);
         RuntimeContext runtimeContext = rtcBuilder.build();
 
         return withGatedStream(gateKey, () -> ha.streamEvents(messages, runtimeContext));
@@ -446,6 +449,45 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         String sessionId = sessionMap.computeIfAbsent(gateKey, HarnessGateway::generateSessionId);
         sessionToGateKey.put(sessionId, gateKey);
         return sessionId;
+    }
+
+    /**
+     * String keys that {@link HarnessGateway} writes into {@link RuntimeContext} itself. Business
+     * context entries with these keys are dropped (with a warning log) rather than allowed to
+     * silently overwrite framework-owned values. Keep this set in sync with the {@code
+     * builder.put(...)} calls in {@link #run} and {@link #runStream}.
+     */
+    static final Set<String> RESERVED_RUNTIME_CONTEXT_KEYS =
+            Set.of("msgContext", "gateKey", "outboundAddress");
+
+    /**
+     * Injects business context parameters from {@link MsgContext#businessContext()} into the {@link
+     * RuntimeContext.Builder} so middlewares and tools can access them via
+     * {@link RuntimeContext#get(String)}. Entries whose key collides with a framework-owned
+     * runtime-context key ({@link #RESERVED_RUNTIME_CONTEXT_KEYS}) are dropped and logged at WARN
+     * so the framework's own values (e.g. the {@code OutboundAddress} used by
+     * {@code AgentSpawnTool}) cannot be silently overwritten by caller-supplied business
+     * parameters.
+     */
+    static void injectBusinessContext(RuntimeContext.Builder builder, MsgContext ctx) {
+        Map<String, Object> businessContext = ctx.businessContext();
+        if (businessContext == null || businessContext.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : businessContext.entrySet()) {
+            String key = entry.getKey();
+            if (key == null) {
+                continue;
+            }
+            if (RESERVED_RUNTIME_CONTEXT_KEYS.contains(key)) {
+                log.warn(
+                        "Ignoring business context entry '{}' — key is reserved for"
+                                + " framework-internal use in RuntimeContext",
+                        key);
+                continue;
+            }
+            builder.put(key, entry.getValue());
+        }
     }
 
     /**
