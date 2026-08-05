@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
+    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/skill.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1184,7 +1184,6 @@ name: code-reviewer
 <h3>第三步：后台周期性整理<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">enableSkillCurator</span><span class="p">(</span><span class="n">SkillCuratorConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">intervalHours</span><span class="p">(</span><span class="mi">7</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">24</span><span class="p">)</span><span class="w">        </span><span class="c1">// 一周跑一次</span>
-<span class="w">    </span><span class="p">.</span><span class="na">minIdleHours</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="w">              </span><span class="c1">// 距上次 call 至少过 2 小时才允许跑</span>
 <span class="w">    </span><span class="p">.</span><span class="na">staleAfterDays</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">archiveAfterDays</span><span class="p">(</span><span class="mi">90</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1468,7 +1467,7 @@ name: code-reviewer
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

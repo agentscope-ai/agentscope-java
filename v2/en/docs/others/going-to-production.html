@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
+    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/others/going-to-production.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -952,6 +952,18 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<section id="alternative-aistio-hosted-store">
+<h2>Alternative: aistio hosted store<a class="headerlink" href="#alternative-aistio-hosted-store" title="Link to this heading">¶</a></h2>
+<p>If you run an aistio control plane, it can host BaseStore / sandbox lock &amp; snapshot / MessageBus / AsyncToolRegistry / <strong>TaskRepository</strong> / optional <strong>SessionTurnGate</strong>. You still supply <strong>one</strong> <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (Redis/MySQL/Postgres/OSS); core provides <code class="docutils literal notranslate"><span class="pre">getVersioned</span></code> / <code class="docutils literal notranslate"><span class="pre">saveIfVersion</span></code>, but storage stays off the control plane:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ControlPlaneStores</span><span class="w"> </span><span class="n">cp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ControlPlaneStores</span><span class="p">.</span><span class="na">fromEnv</span><span class="p">();</span>
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">cp</span><span class="p">.</span><span class="na">withAgentStateStore</span><span class="p">(</span><span class="n">redis</span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">().</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Enable with <code class="docutils literal notranslate"><span class="pre">--enable-hosted-store</span></code> on the control plane (Postgres recommended). <code class="docutils literal notranslate"><span class="pre">withAgentStateStore</span></code> includes hosted TaskRepository; <strong>subagent background tasks in SandboxFilesystem mode</strong> need this path. Redis/Postgres/MySQL/InMemory AgentStateStore backends support versioning CAS; others remain LWW. Turn gate + <code class="docutils literal notranslate"><span class="pre">ConflictPolicy.FAIL</span></code> are optional for multi-replica duplicate-turn reduction; correctness comes from CAS. Auth is a shared internal token with tenant from the request body — not for mutually untrusted multi-tenant agents on one CP. <code class="docutils literal notranslate"><span class="pre">queueDrain</span></code> is destructive (ack-on-read). See <span class="xref myst">Distributed Storage — aistio Hosted Store</span>.</p>
+</section>
 <section id="at-a-glance-single-node-defaults-vs-distributed-production">
 <h2>At a glance: single-node defaults vs. distributed production<a class="headerlink" href="#at-a-glance-single-node-defaults-vs-distributed-production" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1780,7 +1792,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1816,6 +1828,7 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Going to Production</a><ul>
+<li><a class="reference internal" href="#alternative-aistio-hosted-store">Alternative: aistio hosted store</a></li>
 <li><a class="reference internal" href="#at-a-glance-single-node-defaults-vs-distributed-production">At a glance: single-node defaults vs. distributed production</a><ul>
 <li><a class="reference internal" href="#distributedstore-capability-matrix">DistributedStore capability matrix</a></li>
 </ul>

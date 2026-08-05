@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
+    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/others/going-to-production.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -952,6 +952,18 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<section id="aistio-store">
+<h2>备选：aistio 托管 Store<a class="headerlink" href="#aistio-store" title="Link to this heading">¶</a></h2>
+<p>若已部署 aistio 控制面，可由其托管 BaseStore / 沙箱锁与快照 / MessageBus / AsyncToolRegistry / <strong>TaskRepository</strong> / 可选 <strong>SessionTurnGate</strong>。<strong>仍需自备一个 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>（Redis/MySQL/Postgres/OSS）；core 提供 <code class="docutils literal notranslate"><span class="pre">getVersioned</span></code> / <code class="docutils literal notranslate"><span class="pre">saveIfVersion</span></code>，但存储不在控制面：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ControlPlaneStores</span><span class="w"> </span><span class="n">cp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ControlPlaneStores</span><span class="p">.</span><span class="na">fromEnv</span><span class="p">();</span>
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">cp</span><span class="p">.</span><span class="na">withAgentStateStore</span><span class="p">(</span><span class="n">redis</span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">().</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>控制面开启 <code class="docutils literal notranslate"><span class="pre">--enable-hosted-store</span></code>（生产建议 Postgres）。<code class="docutils literal notranslate"><span class="pre">withAgentStateStore</span></code> 已含托管 TaskRepository；<strong>SandboxFilesystem 模式下的子 agent 后台任务</strong>需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + <code class="docutils literal notranslate"><span class="pre">ConflictPolicy.FAIL</span></code> 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。<code class="docutils literal notranslate"><span class="pre">queueDrain</span></code> 为 destructive（读即 ack）。详见 <span class="xref myst">分布式存储 — aistio 托管 Store</span>。</p>
+</section>
 <section id="vs">
 <h2>一图速览：单机默认 vs 分布式生产<a class="headerlink" href="#vs" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1783,7 +1795,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1819,6 +1831,7 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">上生产（Going to Production）</a><ul>
+<li><a class="reference internal" href="#aistio-store">备选：aistio 托管 Store</a></li>
 <li><a class="reference internal" href="#vs">一图速览：单机默认 vs 分布式生产</a><ul>
 <li><a class="reference internal" href="#distributedstore">DistributedStore 能力矩阵</a></li>
 </ul>

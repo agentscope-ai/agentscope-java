@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="社区" href="../community/overview.html"><link rel="prev" title="首个Harness Framework发布 – 把OpenClaw的「持续进化」体验，装进企业级的安全边界。" href="agentscope-v1-harness.html">
+    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="社区" href="../community/overview.html"><link rel="prev" title="首个Harness Framework发布 – 把OpenClaw的「持续进化」体验，装进企业级的安全边界。" href="agentscope-v1-harness.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/blogs/agentscope-v1-builder.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -1221,7 +1221,7 @@ mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents
 java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
 </pre></div>
 </div>
-<p>打开 <a class="reference external" href="http://localhost:8080">http://localhost:8080</a>，默认主目录是 <code class="docutils literal notranslate"><span class="pre">~/.agentscope</span></code>。需要接钉钉 / 企微 / 飞书等通道的，编辑 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/agentscope.json</span></code> 添加对应的 channel 条目即可。详见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-claw">Claw README</a>。</p>
+<p>打开 <a class="reference external" href="http://localhost:8080">http://localhost:8080</a>，默认主目录是 <code class="docutils literal notranslate"><span class="pre">~/.agentscope</span></code>。需要接钉钉 / 企微 / 飞书等通道的，编辑 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/agentscope.json</span></code> 添加对应的 channel 条目即可。详见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-paw">Claw README</a>。</p>
 </section>
 <section id="id6">
 <h3>Builder<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
@@ -1231,7 +1231,7 @@ mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents
 java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agents/agentscope-builder/target/agentscope-builder-*.jar
 </pre></div>
 </div>
-<p>服务起在 8080 端口，用 <code class="docutils literal notranslate"><span class="pre">admin/admin</span></code>、<code class="docutils literal notranslate"><span class="pre">bob/bob</span></code> 或 <code class="docutils literal notranslate"><span class="pre">alice/alice</span></code> 登录就能进入完整的 UI。生产部署相关的内容（数据库切换、沙箱镜像、分布式后端）见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-builder">Builder README</a>。</p>
+<p>服务起在 8080 端口，用 <code class="docutils literal notranslate"><span class="pre">admin/admin</span></code>、<code class="docutils literal notranslate"><span class="pre">bob/bob</span></code> 或 <code class="docutils literal notranslate"><span class="pre">alice/alice</span></code> 登录就能进入完整的 UI。生产部署相关的内容（数据库切换、沙箱镜像、分布式后端）见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service">Builder README</a>。</p>
 </section>
 </section>
 <hr class="docutils" />
@@ -1289,7 +1289,7 @@ java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agen
 <li><p><strong>Builder 证明</strong>：同一套 Harness 运行时，加上一层”workspace 隔离与共享”的运维外壳，就能直接演化成一个面向团队的多租户平台。从 claw 到 Builder，<strong>Agent 业务逻辑一行没有改</strong>，改的只是底层 CompositeFilesystem 在哪一层提供隔离、把数据落到哪个介质上。</p></li>
 </ul>
 <p>这正是 Harness 设计之初就承诺要做到的：<strong>写一套 Agent 逻辑，按需切换形态</strong>。从今天起，这个承诺在仓库里就有两个跑得起来的实证。</p>
-<p>如果你的需求是个人助手，从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-claw">Claw README</a> 跑通 quick start 开始；如果是团队 / 公司平台，直接从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-builder">Builder README</a> 起步。两条路汇聚到的是同一套 Harness —— 这也是我们做这件事的初衷。</p>
+<p>如果你的需求是个人助手，从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-paw">Claw README</a> 跑通 quick start 开始；如果是团队 / 公司平台，直接从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service">Builder README</a> 起步。两条路汇聚到的是同一套 Harness —— 这也是我们做这件事的初衷。</p>
 </section>
 </section>
 
@@ -1346,7 +1346,7 @@ java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agen
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
