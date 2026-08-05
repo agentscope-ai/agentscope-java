@@ -246,6 +246,38 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseUsageMetadataReadsCachedContentTokenCount() {
+        // Gemini 报告的 cachedContentTokenCount 必须透传到 ChatUsage.cachedTokens,
+        // 否则下游记账无法识别缓存命中、定价会按全量 prompt 估算。
+        Part textPart = Part.builder().text("Response text").build();
+
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(100)
+                        .candidatesTokenCount(60)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(160)
+                        .cachedContentTokenCount(300)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-cached")
+                        .candidates(List.of(candidate))
+                        .usageMetadata(usageMetadata)
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(300, chatResponse.getUsage().getCachedTokens());
+    }
+
+    @Test
     void testParseEmptyResponse() {
         // Build empty response (no candidates)
         GenerateContentResponse response =
