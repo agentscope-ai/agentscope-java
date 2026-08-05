@@ -98,6 +98,29 @@
         <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
         <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
         <plugins>
+            <!--
+              maven-javadoc-plugin prints "No Javadoc in project" for a Kotlin-only module and
+              creates no archive, but Maven Central requires a javadoc jar for every published
+              artifact. Package a placeholder jar under the javadoc classifier instead; the real
+              API docs are KDoc, shipped in the sources jar.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>javadoc-placeholder-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>javadoc</classifier>
+                            <classesDirectory>${project.basedir}/src/main/javadoc</classesDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-maven-plugin</artifactId>

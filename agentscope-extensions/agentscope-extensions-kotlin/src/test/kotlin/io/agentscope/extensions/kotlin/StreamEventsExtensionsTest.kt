@@ -16,6 +16,7 @@
 package io.agentscope.extensions.kotlin
 
 import io.agentscope.core.ReActAgent
+import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.agent.test.MockModel
 import io.agentscope.core.event.AgentEndEvent
 import io.agentscope.core.event.AgentEvent
@@ -64,6 +65,20 @@ class StreamEventsExtensionsTest {
 
         assertTrue(fromMsg.isNotEmpty())
         assertTrue(fromList.isNotEmpty())
+    }
+
+    @Test
+    fun `streamEventsFlow overloads with a RuntimeContext emit the event stream`() = runBlocking {
+        val ctx = RuntimeContext.builder().sessionId("kotlin-ctx").build()
+
+        val fromText = newAgent().streamEventsFlow("hi", ctx).toList()
+        val fromMsg = newAgent().streamEventsFlow(userMsg("hi"), ctx).toList()
+        val fromList = newAgent().streamEventsFlow(listOf(userMsg("hi")), ctx).toList()
+
+        for (events in listOf(fromText, fromMsg, fromList)) {
+            assertTrue(events.first() is AgentStartEvent)
+            assertTrue(events.last() is AgentEndEvent)
+        }
     }
 
     @Test

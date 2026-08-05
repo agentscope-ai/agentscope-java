@@ -131,6 +131,17 @@ class AgentExtensionsTest {
     }
 
     @Test
+    fun `callSuspend with a message list delegates as-is`() = runBlocking {
+        val agent = RecordingAgent()
+        val msgs = listOf(userMsg("one"), userMsg("two"))
+
+        agent.callSuspend(msgs)
+
+        assertEquals("call(List)", agent.lastMethod)
+        assertEquals(2, agent.lastMsgs?.size)
+    }
+
+    @Test
     fun `callSuspend forwards a structured-output class`() = runBlocking {
         val agent = RecordingAgent()
 
@@ -138,6 +149,22 @@ class AgentExtensionsTest {
 
         assertEquals("call(List,Class)", agent.lastMethod)
         assertEquals(String::class.java, agent.lastStructuredModel)
+    }
+
+    @Test
+    fun `every structured-class overload reaches call(List,Class)`() = runBlocking {
+        for (invoke in
+            listOf<suspend (RecordingAgent) -> Msg>(
+                { it.callSuspend(String::class.java) },
+                { it.callSuspend(userMsg("m"), String::class.java) },
+                { it.callSuspend(listOf(userMsg("m")), String::class.java) },
+                { it.callSuspend("text", String::class.java) },
+            )) {
+            val agent = RecordingAgent()
+            invoke(agent)
+            assertEquals("call(List,Class)", agent.lastMethod)
+            assertEquals(String::class.java, agent.lastStructuredModel)
+        }
     }
 
     @Test
@@ -152,6 +179,22 @@ class AgentExtensionsTest {
     }
 
     @Test
+    fun `every JSON-schema overload reaches call(List,JsonNode)`() = runBlocking {
+        val schema = json.readTree("""{"type":"object"}""")
+        for (invoke in
+            listOf<suspend (RecordingAgent) -> Msg>(
+                { it.callSuspend(schema) },
+                { it.callSuspend(userMsg("m"), schema) },
+                { it.callSuspend("text", schema) },
+            )) {
+            val agent = RecordingAgent()
+            invoke(agent)
+            assertEquals("call(List,JsonNode)", agent.lastMethod)
+            assertEquals(schema, agent.lastSchema)
+        }
+    }
+
+    @Test
     fun `observeSuspend completes and forwards the messages`() = runBlocking {
         val agent = RecordingAgent()
         val msgs = listOf(userMsg("one"), userMsg("two"))
@@ -160,6 +203,16 @@ class AgentExtensionsTest {
 
         assertEquals(2, agent.observedMsgs?.size)
         assertEquals("two", agent.observedMsgs?.last()?.textContent)
+    }
+
+    @Test
+    fun `observeSuspend with a single message forwards it`() = runBlocking {
+        val agent = RecordingAgent()
+
+        agent.observeSuspend(userMsg("solo"))
+
+        assertEquals(1, agent.observedMsgs?.size)
+        assertEquals("solo", agent.observedMsgs?.first()?.textContent)
     }
 
     /* ---------- error and cancellation semantics ---------- */
