@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.subagent.protocol;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Objects;
 
 /**
  * A single remote tool call awaiting user confirmation (HITL).
@@ -59,5 +60,23 @@ public class RemotePendingConfirm {
 
     public void setToolInputJson(String toolInputJson) {
         this.toolInputJson = toolInputJson;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof RemotePendingConfirm that)) {
+            return false;
+        }
+        return Objects.equals(toolCallId, that.toolCallId)
+                && Objects.equals(toolName, that.toolName)
+                && Objects.equals(toolInputJson, that.toolInputJson);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(toolCallId, toolName, toolInputJson);
     }
 }

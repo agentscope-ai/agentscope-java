@@ -66,7 +66,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
     void remoteTask_togglesAwaitingConfirm_thenFiresCompletionOnSuccess() throws Exception {
         AtomicInteger statusCalls = new AtomicInteger();
         List<Boolean> awaitingSnapshots = new CopyOnWriteArrayList<>();
-        FakeTransport transport = new FakeTransport(statusCalls);
+        FakeTransport transport = new FakeTransport(statusCalls, 2);
         repo.setTransport(transport);
 
         AtomicReference<String> completedResult = new AtomicReference<>();
@@ -113,6 +113,50 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         assertTrue(transport.submitCalled);
     }
 
+    @Test
+    void awaitingConfirm_doesNotRewriteWorkspaceEveryPoll() throws Exception {
+        CountingWorkspaceManager countingWm = new CountingWorkspaceManager(tempDir);
+        repo.shutdown();
+        workspaceManager = countingWm;
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
+
+        AtomicInteger statusCalls = new AtomicInteger();
+        // Stay in awaiting_confirm for several polls so a naive rewrite-every-poll would write
+        // often.
+        FakeTransport transport = new FakeTransport(statusCalls, 5);
+        repo.setTransport(transport);
+
+        String session = "sess-no-rewrite";
+        String taskId = "task-no-rewrite";
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "remote-worker",
+                session,
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        "http://remote.test",
+                        Map.of(),
+                        "remote-worker",
+                        "do work",
+                        RemoteSubmitContext.empty()));
+
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus().isTerminal();
+                });
+
+        assertTrue(statusCalls.get() >= 5, "expected multiple awaiting_confirm polls");
+        // PENDING persist + RUNNING + enter awaiting_confirm + leave awaiting + COMPLETED.
+        // Without the noop, five awaiting polls would add four extra writes (9 total).
+        assertEquals(
+                5,
+                countingWm.writeCount.get(),
+                "awaiting_confirm polls with unchanged pending must not re-persist");
+    }
+
     private static void awaitCondition(Condition condition) throws Exception {
         long deadline = System.currentTimeMillis() + 10_000;
         while (!condition.get()) {
@@ -128,13 +172,30 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         boolean get() throws Exception;
     }
 
-    /** Returns awaiting_confirm twice, then success. */
+    private static final class CountingWorkspaceManager extends WorkspaceManager {
+        private final AtomicInteger writeCount = new AtomicInteger();
+
+        CountingWorkspaceManager(Path workspace) {
+            super(workspace);
+        }
+
+        @Override
+        public void writeTaskRecord(
+                RuntimeContext rc, String agentId, String sessionId, TaskRecord record) {
+            writeCount.incrementAndGet();
+            super.writeTaskRecord(rc, agentId, sessionId, record);
+        }
+    }
+
+    /** Returns awaiting_confirm for {@code awaitingPolls} status calls, then success. */
     private static final class FakeTransport implements RemoteSubagentTransport {
         private final AtomicInteger statusCalls;
+        private final int awaitingPolls;
         volatile boolean submitCalled;
 
-        FakeTransport(AtomicInteger statusCalls) {
+        FakeTransport(AtomicInteger statusCalls, int awaitingPolls) {
             this.statusCalls = statusCalls;
+            this.awaitingPolls = awaitingPolls;
         }
 
         @Override
@@ -155,7 +216,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         @Override
         public RemoteTaskStatus getStatus(RemoteTarget target, String taskId) {
             int n = statusCalls.incrementAndGet();
-            if (n <= 2) {
+            if (n <= awaitingPolls) {
                 return new RemoteTaskStatus(
                         "awaiting_confirm",
                         null,

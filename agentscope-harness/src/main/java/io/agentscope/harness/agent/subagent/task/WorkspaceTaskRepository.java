@@ -432,7 +432,9 @@ public class WorkspaceTaskRepository implements TaskRepository {
     /**
      * Persists {@link TaskRecord#isAwaitingConfirm()} and {@link TaskRecord#getPendingConfirms()}
      * without touching {@link TaskRecord#getStatus()} — the task remains {@code RUNNING} while
-     * paused for user confirmation. No-op once the record has reached a terminal state.
+     * paused for user confirmation. No-op once the record has reached a terminal state, and no-op
+     * when the awaiting flag and pending list are unchanged (avoids rewriting workspace JSON on
+     * every poll while blocked on confirmation).
      */
     private void updateAwaitingConfirm(
             RuntimeContext rc,
@@ -449,9 +451,25 @@ public class WorkspaceTaskRepository implements TaskRepository {
         if (record.getStatus() != null && record.getStatus().isTerminal()) {
             return;
         }
+        List<RemotePendingConfirm> nextPending = awaiting ? pendingConfirms : null;
+        if (record.isAwaitingConfirm() == awaiting
+                && pendingConfirmsUnchanged(record.getPendingConfirms(), nextPending)) {
+            return;
+        }
         record.setAwaitingConfirm(awaiting);
-        record.setPendingConfirms(awaiting ? pendingConfirms : null);
+        record.setPendingConfirms(nextPending);
         persistRecord(rc, sessionId, record);
+    }
+
+    private static boolean pendingConfirmsUnchanged(
+            List<RemotePendingConfirm> current, List<RemotePendingConfirm> next) {
+        if (current == null || current.isEmpty()) {
+            return next == null || next.isEmpty();
+        }
+        if (next == null || next.isEmpty()) {
+            return false;
+        }
+        return current.equals(next);
     }
 
     @Override
