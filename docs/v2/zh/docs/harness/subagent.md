@@ -319,10 +319,30 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
     .description("远端调研子 agent")
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
+    .remoteStreaming(true)          // 未设置时默认 true
+    .remoteAskPolicy(RemoteAskPolicy.DENY)  // 默认
     .build())
 ```
 
 同样支持同步（`timeout_seconds>0`）和后台（`timeout_seconds=0`）。
+
+远程模式专用声明字段：
+
+| 字段 | 默认 | 说明 |
+|------|------|------|
+| `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记 |
+| `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
+
+### 远程授权
+
+父代理的 DENY 权限规则会随远程提交的 `context.deny_rules` 一并转发（与本地子 agent 的权限继承一致；可用 `inheritParentPermissions(false)` 关闭）。
+
+远程 agent 因工具确认而暂停（`awaiting_confirm`）时：
+
+- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) 恢复，请求体为 `decisions[{toolCallId, approved}]`。
+- **父代理非流式（`call`）或 `remoteAskPolicy=DENY`（默认）**：自动拒绝待确认项。工具结果中会附注：`remote tool confirmation(s) were auto-denied`。
+
+等待确认期间任务状态保持 `RUNNING`（`awaitingConfirm=true`）。因此 `wait_async_results` 等 barrier 会继续等待，直到任务被 resume 并进入终态。
 
 ## 异步任务的存储位置
 
@@ -431,7 +451,8 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 | `streamEvents()` + 同步本地子 agent（`timeout_seconds > 0`） | ✔ |
 | `call()` 模式（非流式） | ✗（子结果以 `tool_result` 字符串返回） |
 | `timeout_seconds = 0` 后台任务 | ✗（终态会通过反向通知给父 agent 下一轮） |
-| 远程子 agent（Agent Protocol） | ✗ |
+| 远程子 agent（Agent Protocol）+ 父 `streamEvents()` + `remoteStreaming=true`（默认） | ✔ |
+| 远程子 agent + 父 `call()` 或 `remoteStreaming=false` | ✗ |
 
 ### 错误处理
 
@@ -443,5 +464,6 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 - [工作区](./workspace.md) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
 - [计划模式](./plan-mode.md) — plan 阶段对子 agent 的限制
 - [架构](./architecture.md) — 主/子 agent 怎么协作
+- [Agent Protocol](../../integration/protocol/agent-protocol.md) — 远程任务端点（SSE + HITL resume）
 - [消息与事件](../building-blocks/message-and-event.md) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
 - [V1 迁移指南 B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线
