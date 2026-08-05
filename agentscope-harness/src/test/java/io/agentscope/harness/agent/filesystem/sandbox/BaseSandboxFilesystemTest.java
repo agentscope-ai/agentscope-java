@@ -130,6 +130,35 @@ class BaseSandboxFilesystemTest {
             assertTrue(dir.isDirectory());
             assertFalse(dir.modifiedAt().isEmpty(), "dir modifiedAt should be populated");
         }
+
+        @Test
+        void edit_pythonCommand_usesRealNewlinesNotLiteralBackslashN() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+            filesystem.nextEditResponse = new ExecuteResponse("{\"count\": 1}", 0, false);
+
+            var result = filesystem.edit(RT, "/tmp/example.txt", "old", "new", false);
+
+            assertTrue(result.isSuccess());
+            // Real LF between "json" and "payload" — not the two-char sequence '\' + 'n'.
+            assertTrue(
+                    filesystem.lastCommand.contains("json\npayload"),
+                    "python -c program must contain real newlines");
+            assertFalse(
+                    filesystem.lastCommand.contains("json" + "\\" + "npayload"),
+                    "must not emit literal backslash-n (POSIX shell / Python SyntaxError)");
+        }
+
+        @Test
+        void edit_nonzeroExitCode_returnsFailureWithOutput() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+            filesystem.nextEditResponse =
+                    new ExecuteResponse("SyntaxError: unexpected character", 1, false);
+
+            var result = filesystem.edit(RT, "/tmp/example.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("SyntaxError"));
+        }
     }
 
     // ================================================================
@@ -215,6 +244,7 @@ class BaseSandboxFilesystemTest {
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
         String lastCommand;
+        ExecuteResponse nextEditResponse;
 
         @Override
         public String id() {
@@ -225,6 +255,9 @@ class BaseSandboxFilesystemTest {
         public ExecuteResponse execute(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             lastCommand = command;
+            if (command.startsWith("python3 -c") && nextEditResponse != null) {
+                return nextEditResponse;
+            }
             if (command.startsWith("for f in ") && command.contains("stat -c")) {
                 return new ExecuteResponse(
                         "DIR:/workspace/docs\t1719300000\n"

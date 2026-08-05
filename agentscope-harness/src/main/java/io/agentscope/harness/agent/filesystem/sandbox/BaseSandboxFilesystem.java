@@ -224,32 +224,43 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
+        // Use real newlines inside the python3 -c program. Java "\\n" would emit a
+        // literal backslash-n, which POSIX shells pass through and Python rejects
+        // as a SyntaxError (see #2571).
         String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
+                "python3 -c \"import sys, os, base64, json\n"
                     + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
+                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\n"
+                    + "path, old, new = payload['path'], payload['old'], payload['new']\n"
+                    + "replace_all = payload.get('replace_all', False)\n"
+                    + "if not os.path.isfile(path):\n"
+                    + "    print(json.dumps({'error': 'file_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\n"
+                    + "count = text.count(old)\n"
+                    + "if count == 0:\n"
+                    + "    print(json.dumps({'error': 'string_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "if count > 1 and not replace_all:\n"
+                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\n"
+                    + "    sys.exit(0)\n"
                     + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
+                    + " 1)\n"
+                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\n"
+                    + "print(json.dumps({'count': count}))\n"
                     + "\" 2>&1 <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (result.exitCode() != null && result.exitCode() != 0) {
+            String err = result.output() != null ? result.output().strip() : "";
+            return EditResult.fail(
+                    "Error editing file '"
+                            + filePath
+                            + "': "
+                            + err.substring(0, Math.min(200, err.length())));
+        }
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.contains("\"error\"")) {
