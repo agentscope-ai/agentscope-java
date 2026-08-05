@@ -128,6 +128,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -4885,6 +4886,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 skillCodeExecutionEnabled,
                                 skillWorkDir));
             }
+
+            // List.sort is stable: middlewares with equal order retain their registration order.
+            middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);
             selfRef.set(agent);
