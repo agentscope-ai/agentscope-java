@@ -64,6 +64,7 @@ class OpenAIModelProviderTest {
                         .component(GenerateOptions.class, GenerateOptions.builder().build())
                         .component(ProxyConfig.class, ProxyConfig.http("localhost", 8080))
                         .option("contextWindowSize", 128000)
+                        .option("nativeStructuredOutput", false)
                         .option("nativeStructuredOutputWithTools", true)
                         .build();
 
@@ -72,6 +73,7 @@ class OpenAIModelProviderTest {
         assertTrue(model instanceof OpenAIChatModel);
         assertTrue(model.getModelName().equals("gpt-4o-mini"));
         assertEquals(128000, model.getContextWindowSize());
+        assertFalse(model.supportsNativeStructuredOutput());
     }
 
     @Test

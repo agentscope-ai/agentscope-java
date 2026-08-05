@@ -23,61 +23,6 @@ A **Credential** carries a provider's API auth fields (`apiKey`, `baseUrl`, …)
 
 This layering matches the natural UX in a frontend — register the credential first, then pick a model under it — so the UI authenticates once and shows everything that provider supports.
 
-## Choose a creation path
-
-### String model id
-
-For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus` or `openai:gpt-4.1-mini`. Add the matching model extension module, set the provider's `API_KEY` in the environment variable, and pass the id directly to the agent:
-
-```java
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model("dashscope:qwen-plus") // resolved internally by ModelRegistry.resolve(modelId)
-                .build();
-```
-
-The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
-
-### Explicit model builder
-
-When you need a custom API key, base URL, formatter, transport, timeout, generation options, or other provider-specific configuration, build the model explicitly and pass the `Model` instance to the agent:
-
-```java
-import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
-import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
-
-DashScopeChatModel model =
-        DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .stream(true)
-                .formatter(new DashScopeChatFormatter())
-                .build();
-
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .build();
-```
-
-### Spring Boot applications
-
-For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, and `agentscope-anthropic-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
-
-OpenAI example:
-
-```yaml
-agentscope:
-  model:
-    provider: openai
-  openai:
-    api-key: ${OPENAI_API_KEY}
-    model-name: gpt-4.1-mini
-    stream: true
-```
-
 ## Model extension modules
 
 Provider-specific model implementations have been moved out of `agentscope-core` into independent extension modules. Each provider module owns its chat model, credential, formatter, DTO, exception, and SDK/API client, etc.
@@ -114,11 +59,108 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 </dependency>
 ```
 
+## Choose a creation path
+
+### String model id
+
+For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus`, `openai:gpt-4.1-mini`, or `deepseek:deepseek-v4-flash`. Add the matching model extension module, set the provider's standard environment variable such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`, and pass the id directly to the agent:
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model("dashscope:qwen-plus") // resolved internally by ModelRegistry.resolve(modelId)
+                .build();
+```
+
+The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GLM_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
+
+### Explicit model builder
+
+When you need a custom API key, base URL, formatter, transport, timeout, generation options, or other provider-specific configuration, build the model explicitly and pass the `Model` instance to the agent:
+
+```java
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+
+DashScopeChatModel model =
+        DashScopeChatModel.builder()
+                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+                .modelName("qwen-plus")
+                .stream(true)
+                .formatter(new DashScopeChatFormatter())
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .build();
+```
+
+### Spring Boot applications
+
+For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
+
+OpenAI example:
+
+```yaml
+agentscope:
+  model:
+    provider: openai
+  openai:
+    api-key: ${OPENAI_API_KEY}
+    model-name: gpt-4.1-mini
+    stream: true
+```
+
+#### Builder customizers
+
+Provider-specific starters also expose ordered Spring bean customizers for the
+auto-configured chat model builders. Use them when property binding covers the common
+settings but you still need to tune builder-only options such as custom formatters,
+default generation options, proxy/client settings, or provider-specific flags.
+
+| Starter | Customizer type |
+|---------|-----------------|
+| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
+| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
+| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+| `agentscope-ollama-spring-boot-starter` | `OllamaChatModelBuilderCustomizer` |
+
+Customizer beans are applied after starter properties are bound and before
+`builder.build()` is called. Multiple customizers are supported and follow Spring's
+`@Order` / `Ordered` ordering.
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.spring.boot.openai.OpenAIChatModelBuilderCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+@Configuration(proxyBeanMethods = false)
+class ModelCustomizerConfiguration {
+
+    @Bean
+    @Order(0)
+    OpenAIChatModelBuilderCustomizer openAIModelDefaults() {
+        return builder ->
+                builder.defaultOptions(
+                        GenerateOptions.builder()
+                                .temperature(0.2)
+                                .parallelToolCalls(false)
+                                .build());
+    }
+}
+```
+
 ## ModelRegistry and ModelCreationContext
 
 `ModelRegistry` is a global registry for model instance creation and lookup, supporting multiple resolution strategies. During resolution, it tries in priority order: named model instances directly registered via `ModelRegistry.register(name, model)`, custom factories registered via `registerFactory(regex, factory)`, and `ModelProvider` implementations automatically discovered from extension modules through the Java SPI mechanism.
 
-For simple scenarios, prefer a string id in the `provider:model` format together with the `API_KEY` environment variable; for fine-grained control, use explicit model builders and `ModelCreationContext` for configuration.
+For simple scenarios, prefer a string id in the `provider:model` format together with the provider's standard environment variable; for fine-grained control, use explicit model builders. `ModelCreationContext` is mainly for integration-layer code that must resolve models dynamically.
 
 ### Advanced integration context
 

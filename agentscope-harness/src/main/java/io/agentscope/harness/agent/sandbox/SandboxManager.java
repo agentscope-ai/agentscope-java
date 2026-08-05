@@ -105,6 +105,10 @@ public class SandboxManager {
                         SandboxState state =
                                 client.deserializeState(
                                         stateJson.get(), sandboxContext.getSnapshotSpec());
+                        // Overwrite stale WorkspaceSpec with current application config
+                        if (sandboxContext.getWorkspaceSpec() != null) {
+                            state.setWorkspaceSpec(sandboxContext.getWorkspaceSpec().copy());
+                        }
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }

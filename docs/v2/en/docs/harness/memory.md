@@ -251,15 +251,18 @@ If you want to handle memory yourself or wire your own tools:
 ```java
 HarnessAgent.builder()
     ...
-    .disableMemoryHooks()      // disables flush + background maintenance
-    .disableMemoryTools()      // skips memory_search / memory_get / session_search registration
+    .disableMemoryHooks()      // disables flush + background maintenance (+ auto-extract prompt line)
+    .disableMemoryTools()      // skips memory_search / memory_get / memory_save / session_search
+                               // and matching Memory Recall / tool Persistence guidance
     .build();
 ```
 
-`disableMemoryHooks()` is the nuclear option; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
+Together these also skip `<memory_context>` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
+
+`disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
 
 ## Related Pages
 
-- [Workspace](./workspace) — where `MEMORY.md` / `memory/` live in the workspace
-- [Context](./context) — the never-compacted `*.log.jsonl` conversation log
-- [Architecture](./architecture) — how facts in long conversations settle into `MEMORY.md`
+- [Workspace](./workspace.md) — where `MEMORY.md` / `memory/` live in the workspace
+- [Context](../building-blocks/context.md) — the never-compacted `*.log.jsonl` conversation log
+- [Architecture](./architecture.md) — how facts in long conversations settle into `MEMORY.md`

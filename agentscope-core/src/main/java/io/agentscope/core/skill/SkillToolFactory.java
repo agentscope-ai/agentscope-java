@@ -379,5 +379,23 @@ class SkillToolFactory {
                     toolsGroupName,
                     toolkit.getToolGroup(toolsGroupName).getTools());
         }
+
+        // Also activate any SkillToolGroup bound to this skill via activateOnSkill
+        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
+        if (agentSkill != null) {
+            List<String> boundGroups =
+                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+            for (String group : boundGroups) {
+                if (!group.equals(toolsGroupName)
+                        && toolkit.getToolGroup(group) != null
+                        && !toolkit.getToolGroup(group).isActive()) {
+                    toolkit.updateToolGroups(List.of(group), true);
+                    logger.info(
+                            "Activated skill-bound tool group: {} for skill: {}",
+                            group,
+                            agentSkill.getName());
+                }
+            }
+        }
     }
 }

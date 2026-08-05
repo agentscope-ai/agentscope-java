@@ -130,6 +130,8 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `endpointType` | API endpoint type (default `AUTO` auto-detect), options: `TEXT` (force text API) or `MULTIMODAL` (force multimodal API) |
 | `defaultOptions` | Default generation options (temperature, maxTokens, etc.) |
 | `formatter` | Message formatter (default `DashScopeChatFormatter`) |
+| `nativeStructuredOutput` | Enable native `response_format` structured output, default `false` |
+| `nativeStructuredOutputWithTools` | Enable native structured output when tools are present, defaults to `nativeStructuredOutput` |
 
 ### Endpoint Type (endpointType)
 
@@ -191,13 +193,16 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 ### Compatible APIs
 
-For DeepSeek, vLLM, and other compatible providers:
+For DeepSeek, vLLM, and other compatible providers. Note that you need to configure the appropriate Formatter and structured output capabilities:
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("your-api-key")
         .modelName("deepseek-chat")
         .baseUrl("https://api.deepseek.com")
+        .formatter(new DeepSeekFormatter())
+        .nativeStructuredOutput(false)
+        .nativeStructuredOutputWithTools(false)
         .build();
 ```
 
@@ -208,8 +213,14 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `apiKey` | API key |
 | `modelName` | Model name, e.g., `gpt-4o`, `gpt-4o-mini` |
 | `baseUrl` | Custom API endpoint (optional) |
+| `endpointPath` | Custom request path (optional), e.g., `/v4/chat/completions` |
 | `stream` | Enable streaming, default `true` |
 | `generateOptions` | Default generation options (note: OpenAI uses `.generateOptions()` instead of `.defaultOptions()`) |
+| `formatter` | Message formatter (default `OpenAIChatFormatter`). Compatible providers need their own Formatter (e.g., `DeepSeekFormatter`, `GLMFormatter`) |
+| `nativeStructuredOutput` | Enable native `response_format` structured output, default `true`. Unsupported providers (DeepSeek, vLLM, etc.) should set to `false` |
+| `nativeStructuredOutputWithTools` | Enable native structured output when tools are present, default `true`. Some providers prioritize `response_format` over tool calls, should set to `false` |
+| `contextWindowSize` | Override context window size (optional, auto-inferred from model name by default) |
+| `proxy` | Proxy configuration (optional), e.g., `ProxyConfig.http("localhost", 8080)` |
 
 ## Anthropic
 

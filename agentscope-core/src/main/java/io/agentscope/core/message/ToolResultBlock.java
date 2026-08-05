@@ -255,7 +255,8 @@ public final class ToolResultBlock extends ContentBlock {
                 null,
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
-                null);
+                null,
+                ToolResultState.ERROR);
     }
 
     /**

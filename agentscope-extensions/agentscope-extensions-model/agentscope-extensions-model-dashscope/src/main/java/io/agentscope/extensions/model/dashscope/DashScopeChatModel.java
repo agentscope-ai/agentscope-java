@@ -69,7 +69,6 @@ public class DashScopeChatModel extends ChatModelBase {
     private final boolean stream;
     private final Boolean enableThinking; // nullable
     private final Boolean enableSearch; // nullable
-    private Boolean nativeStructuredOutput; // nullable, set by Builder
     private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
@@ -161,7 +160,6 @@ public class DashScopeChatModel extends ChatModelBase {
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
-        this.nativeStructuredOutput = null;
         this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
@@ -397,10 +395,7 @@ public class DashScopeChatModel extends ChatModelBase {
         if (Boolean.TRUE.equals(enableThinking)) {
             return false;
         }
-        if (nativeStructuredOutput != null) {
-            return nativeStructuredOutput;
-        }
-        return false;
+        return super.supportsNativeStructuredOutput();
     }
 
     public static class Builder {
@@ -737,7 +732,7 @@ public class DashScopeChatModel extends ChatModelBase {
                             ? contextWindowSize
                             : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
             if (nativeStructuredOutput != null) {
-                model.nativeStructuredOutput = nativeStructuredOutput;
+                model.setNativeStructuredOutput(nativeStructuredOutput);
             }
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);

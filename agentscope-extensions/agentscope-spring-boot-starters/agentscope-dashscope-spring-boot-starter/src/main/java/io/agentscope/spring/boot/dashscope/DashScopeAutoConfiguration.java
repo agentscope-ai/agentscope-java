@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.dashscope;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,7 +42,9 @@ public class DashScopeAutoConfiguration {
             havingValue = "true",
             matchIfMissing = true)
     @ConditionalOnMissingBean(Model.class)
-    public DashScopeChatModel dashScopeChatModel(DashScopeProperties properties) {
+    public DashScopeChatModel dashScopeChatModel(
+            DashScopeProperties properties,
+            ObjectProvider<DashScopeChatModelBuilderCustomizer> customizerObjectProvider) {
         String apiKey = trimToNull(properties.getApiKey());
         if (apiKey == null) {
             throw new IllegalStateException(
@@ -68,6 +71,10 @@ public class DashScopeAutoConfiguration {
         if (properties.getEnableThinking() != null) {
             builder.enableThinking(properties.getEnableThinking());
         }
+
+        customizerObjectProvider
+                .orderedStream()
+                .forEach(customizer -> customizer.customize(builder));
 
         return builder.build();
     }

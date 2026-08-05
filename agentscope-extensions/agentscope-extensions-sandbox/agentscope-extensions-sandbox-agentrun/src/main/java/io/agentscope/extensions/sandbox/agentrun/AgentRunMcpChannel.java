@@ -226,26 +226,34 @@ final class AgentRunMcpChannel implements AutoCloseable {
     /**
      * Parses an AgentRun exec MCP response. AgentRun returns either a JSON object such as
      * {@code {"exitCode":0,"stdout":"...","stderr":"..."}} or a plain stdout/stderr string. We
-     * accept both shapes.
+     * accept both shapes, including the nested format {@code {"result":{"exitCode":...}}} and
+     * responses with markdown banner prefixes before the JSON payload.
      */
     private static ExecResult parseExecPayload(String text) {
         if (text == null) {
             return new ExecResult(0, "", "");
         }
         String trimmed = text.strip();
-        if (trimmed.startsWith("{")) {
+
+        int braceIdx = trimmed.indexOf('{');
+        if (braceIdx >= 0) {
+            String jsonText = braceIdx == 0 ? trimmed : trimmed.substring(braceIdx);
             try {
-                JsonNode node = JSON.readTree(trimmed);
-                int exit =
-                        node.has("exitCode")
-                                ? node.path("exitCode").asInt(0)
-                                : node.path("exit_code").asInt(0);
-                String stdout =
-                        node.has("stdout")
-                                ? node.path("stdout").asText("")
-                                : node.path("output").asText("");
-                String stderr = node.path("stderr").asText("");
-                return new ExecResult(exit, stdout, stderr);
+                JsonNode node = JSON.readTree(jsonText);
+                JsonNode result = node.path("result");
+                JsonNode source = result.isObject() ? result : node;
+                if (source.has("exitCode") || source.has("exit_code")) {
+                    int exit =
+                            source.has("exitCode")
+                                    ? source.path("exitCode").asInt(0)
+                                    : source.path("exit_code").asInt(0);
+                    String stdout =
+                            source.has("stdout")
+                                    ? source.path("stdout").asText("")
+                                    : source.path("output").asText("");
+                    String stderr = source.path("stderr").asText("");
+                    return new ExecResult(exit, stdout, stderr);
+                }
             } catch (Exception ignore) {
                 // fall through to plain-text handling
             }

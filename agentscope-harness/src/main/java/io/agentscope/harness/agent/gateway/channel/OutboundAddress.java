@@ -24,7 +24,7 @@ import java.util.Objects;
  *
  * @param channelId the channel adapter to deliver through (e.g. {@code "chatui"}, {@code "slack"})
  * @param accountId optional multi-account identifier (nullable for single-account channels)
- * @param to delivery address in {@code "channel:peerId"} format (e.g. {@code "telegram:12345"})
+ * @param to delivery address in {@code "channelId:peerKind:peerId"} format (e.g. {@code "dingtalk:GROUP:cidXXX"})
  * @param threadId optional thread context for threaded replies (nullable)
  */
 public record OutboundAddress(String channelId, String accountId, String to, String threadId) {

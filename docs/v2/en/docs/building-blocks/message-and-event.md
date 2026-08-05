@@ -31,7 +31,7 @@ The core fields on `Msg` (via getters):
 | `getMetadata()` | `Map<String, Object>` | Arbitrary key/value metadata |
 | `getTimestamp()` | `String` | Creation time (`yyyy-MM-dd HH:mm:ss.SSS`) |
 | `getUsage()` | `ChatUsage` | Token usage (assistant messages only) |
-| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `INTERRUPTED` / `MAX_ITERATIONS` |
+| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### Content blocks
 
@@ -296,9 +296,21 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **RequireExternalExecutionEvent** — agent pauses for external execution.
 
-    **UserConfirmResultEvent** — user provides confirmation results (input event); carries `List<ConfirmResult>`.
+    **UserConfirmResultEvent** — emitted when a later `call()` resumes a paused permission HITL request.
+    It carries one or more `ConfirmResult`s, and its `replyId` matches the earlier `RequireUserConfirmEvent`.
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply ID of the correlated `RequireUserConfirmEvent` |
+    | `getConfirmResults()` | `List<ConfirmResult>` | Confirmation results accepted for this resume |
 
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
+
+    **AllToolsDeniedEvent** — the user denied all tool calls from the most recent reasoning step via HITL confirmation. This event is emitted through the `onActing` middleware chain, allowing middlewares to emit a `RequestStopEvent` to stop the agent. If no middleware handles it, the agent continues to the next reasoning iteration (backward compatible).
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getDeniedToolCalls()` | `List<ToolUseBlock>` | The denied tool calls |
 :::
 
   :::{dropdown} Subagent events

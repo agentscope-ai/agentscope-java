@@ -180,6 +180,7 @@ public abstract class ToolBase implements AgentTool {
         return concurrencySafe;
     }
 
+    @Override
     public final boolean isReadOnly() {
         return readOnly;
     }

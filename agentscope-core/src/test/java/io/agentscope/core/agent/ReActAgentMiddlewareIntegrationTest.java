@@ -16,13 +16,18 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -72,6 +77,26 @@ class ReActAgentMiddlewareIntegrationTest {
                     ChatResponse.builder()
                             .content(List.<ContentBlock>of(TextBlock.builder().text(text).build()))
                             .build());
+        }
+    }
+
+    private static final class InterruptedAfterTextModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "interrupted-after-text";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.concat(
+                    Flux.just(
+                            ChatResponse.builder()
+                                    .content(
+                                            List.<ContentBlock>of(
+                                                    TextBlock.builder().text("raw").build()))
+                                    .build()),
+                    Flux.error(new InterruptedException("interrupted after text")));
         }
     }
 
@@ -161,6 +186,43 @@ class ReActAgentMiddlewareIntegrationTest {
     }
 
     @Test
+    void reasoningMiddlewareEventsAreForwardedExactlyOnce() {
+        MiddlewareBase hintMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        HintBlockEvent hint =
+                                new HintBlockEvent(
+                                        "reply-hint", "block-hint", "child-agent", "completed");
+                        return Flux.concat(Flux.just(hint), next.apply(input));
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(hintMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        List<HintBlockEvent> hints =
+                events.stream()
+                        .filter(HintBlockEvent.class::isInstance)
+                        .map(HintBlockEvent.class::cast)
+                        .toList();
+        assertEquals(1, hints.size());
+        assertEquals("reply-hint", hints.get(0).getReplyId());
+        assertEquals("block-hint", hints.get(0).getBlockId());
+        assertEquals("child-agent", hints.get(0).getHintSource());
+        assertEquals("completed", hints.get(0).getHint());
+        assertEquals(
+                1,
+                events.stream().filter(ModelCallStartEvent.class::isInstance).count(),
+                "core model events must not be published twice");
+    }
+
+    @Test
     void onionOrderingFollowsRegistrationForReplyHook() {
         List<String> trace = new CopyOnWriteArrayList<>();
         ReActAgent agent =
@@ -192,6 +254,102 @@ class ReActAgentMiddlewareIntegrationTest {
                 reasoningEnters,
                 modelCallEnters,
                 "reasoning and modelCall enter counts must match");
+    }
+
+    @Test
+    void modelCallMiddlewareCanDropAllTextDeltas() {
+        MiddlewareBase droppingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .filter(event -> !(event instanceof TextBlockDeltaEvent));
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(droppingMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertFalse(events.stream().anyMatch(TextBlockDeltaEvent.class::isInstance));
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void modelCallMiddlewareCanReplaceTextDeltaWithNull() {
+        MiddlewareBase nullingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            return new TextBlockDeltaEvent(
+                                                    textDelta.getReplyId(),
+                                                    textDelta.getBlockId(),
+                                                    null);
+                                        });
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(nullingMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        TextBlockDeltaEvent textDelta =
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertNull(textDelta.getDelta());
+    }
+
+    @Test
+    void transformedTextIsUsedForPartialMessageWhenModelCallIsInterrupted() {
+        MiddlewareBase replacingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            return new TextBlockDeltaEvent(
+                                                    textDelta.getReplyId(),
+                                                    textDelta.getBlockId(),
+                                                    "transformed");
+                                        });
+                    }
+                };
+        ReActAgent agent =
+                buildAgent(new InterruptedAfterTextModel(), List.of(replacingMiddleware));
+
+        agent.streamEvents(List.of()).onErrorResume(error -> Flux.empty()).blockLast();
+
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "transformed".equals(message.getTextContent())));
+        assertFalse(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "raw".equals(message.getTextContent())));
     }
 
     /**

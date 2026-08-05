@@ -46,6 +46,8 @@ public class MessageConstants {
 
     public static final String BLOCK_TYPE_METADATA_KEY = "_agentscope_block_type";
 
+    public static final String STREAM_CHUNK_METADATA_KEY = "_agentscope_stream_chunk";
+
     public static final String TOOL_NAME_METADATA_KEY = "_agentscope_tool_name";
 
     public static final String TOOL_CALL_ID_METADATA_KEY = "_agentscope_tool_call_id";

@@ -74,6 +74,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -179,6 +180,35 @@ public class A2aAgentTest {
         assertThrows(
                 RuntimeException.class,
                 () -> agent.call(Msg.builder().textContent("test").build()).block());
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should fail when stream completes without final response")
+    void testCallAgentWithCompletedStreamButNoFinalResponse() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .hook(new ReplaceA2aClientHook())
+                        .build();
+
+        doAnswer(
+                        invocationOnMock -> {
+                            @SuppressWarnings("unchecked")
+                            Consumer<Throwable> errorCallback =
+                                    invocationOnMock.getArgument(2, Consumer.class);
+                            errorCallback.accept(null);
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(Msg.builder().textContent("test").build()).block());
+        assertEquals("A2A stream completed before final response.", exception.getMessage());
         verify(a2aClient).close();
     }
 
