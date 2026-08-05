@@ -33,8 +33,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
 
 /**
- * Spring Boot auto-configuration that exposes default Memory, Toolkit and ReActAgent beans for
- * AgentScope.
+ * Spring Boot auto-configuration that exposes default Toolkit and ReActAgent beans for AgentScope,
+ * plus a legacy Memory compatibility bean.
  *
  * <p>Model beans are provided by provider-specific starters such as
  * {@code agentscope-dashscope-spring-boot-starter}, {@code agentscope-openai-spring-boot-starter},
@@ -58,19 +58,17 @@ import org.springframework.context.annotation.Scope;
 public class AgentscopeAutoConfiguration {
 
     /**
-     * Default Memory implementation backed by InMemoryMemory.
+     * Legacy Memory implementation backed by InMemoryMemory.
      *
-     * <p>
-     * Memory is stateful and not thread-safe, so we expose it as a prototype-scoped
-     * bean.
-     * In multi-threaded / web environments, it is recommended to obtain instances
-     * lazily via
-     * {@code ObjectProvider<Memory>} or method injection.
+     * <p>Current agents, including the Responses API default agent, keep conversation context in
+     * AgentState and do not consume this bean. It remains prototype-scoped only for applications
+     * that still use the 1.x Memory compatibility API.
      */
     @Bean
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    @SuppressWarnings("removal")
     public Memory agentscopeMemory() {
         return new InMemoryMemory();
     }
@@ -94,16 +92,20 @@ public class AgentscopeAutoConfiguration {
     }
 
     /**
-     * Default ReActAgent that wires together the configured Model, Memory and
-     * Toolkit beans using
-     * {@link AgentProperties}.
+     * Default ReActAgent that wires together the configured Model and Toolkit beans using {@link
+     * AgentProperties}.
      *
-     * ReActAgent in 2.0 is thread-safe, so we just use a singleton instance.
+     * <p>The legacy {@link Memory} parameter is retained for compatibility with the existing bean
+     * factory signature. ReActAgent in 2.0 stores conversation state in AgentState and does not
+     * consume this bean.
+     *
+     * <p>ReActAgent in 2.0 is thread-safe, so we just use a singleton instance.
      */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(Model.class)
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @SuppressWarnings("removal")
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
         AgentProperties config = properties.getAgent();

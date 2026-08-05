@@ -128,12 +128,13 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        reloadSkills(rc);
-        if (currentSkillBox == null) {
+        Toolkit callToolkit = RuntimeContext.resolveToolkit(rc, agent);
+        SkillBox skillBox = reloadSkills(rc, callToolkit);
+        if (skillBox == null) {
             return Mono.just(currentPrompt);
         }
         SkillFilter effectiveFilter = resolveFilter(rc);
-        String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
+        String prompt = skillBox.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
             return Mono.just(currentPrompt);
         }
@@ -163,11 +164,11 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         return builderFilter.overlay(runtimeOverlay);
     }
 
-    private void reloadSkills(RuntimeContext ctx) {
+    private synchronized SkillBox reloadSkills(RuntimeContext ctx, Toolkit callToolkit) {
         if (repositories.isEmpty()) {
             currentSkillBox = null;
             lastSignature = null;
-            return;
+            return null;
         }
         Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
         for (AgentSkillRepository repo : repositories) {
@@ -194,7 +195,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         if (skillsByName.isEmpty()) {
             currentSkillBox = null;
             lastSignature = null;
-            return;
+            return null;
         }
         // Apply subclass visibility hook before the SkillBox is rebuilt so the prompt only
         // sees skills the current ctx is allowed to see.
@@ -212,7 +213,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         if (visible.isEmpty()) {
             currentSkillBox = null;
             lastSignature = null;
-            return;
+            return null;
         }
 
         // Content-keyed short-circuit: if the (sorted) merged view hashes to the same value as
@@ -221,24 +222,21 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         // change between most turns.
         String signature = computeSignature(visible);
         if (signature.equals(lastSignature) && currentSkillBox != null) {
-            return;
+            if (callToolkit != null && callToolkit != toolkit) {
+                registerSkillLoader(currentSkillBox, callToolkit);
+            }
+            return currentSkillBox;
         }
 
-        SkillBox box = new SkillBox(toolkit);
+        Toolkit targetToolkit = callToolkit != null ? callToolkit : toolkit;
+        SkillBox box = new SkillBox(targetToolkit);
         // Hand it the stable workDir BEFORE uploadSkillFiles runs so the upload lands at a
         // predictable location and we don't mkdtemp per call.
         box.setWorkDir(ensureStableWorkDir());
         for (AgentSkill skill : visible) {
             box.registerSkill(skill);
         }
-        if (toolkit != null) {
-            try {
-                box.bindToolkit(toolkit);
-                box.registerSkillLoadTool();
-            } catch (Exception e) {
-                log.warn("Failed to bind skill toolkit hooks: {}", e.getMessage());
-            }
-        }
+        registerSkillLoader(box, targetToolkit);
         if (box.isAutoUploadSkill()) {
             try {
                 box.uploadSkillFiles();
@@ -253,6 +251,20 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         box.getSkillPromptProvider().setCodeExecutionEnable(codeExecutionEnabled);
         currentSkillBox = box;
         lastSignature = signature;
+        return box;
+    }
+
+    private void registerSkillLoader(SkillBox box, Toolkit callToolkit) {
+        Toolkit targetToolkit = callToolkit != null ? callToolkit : toolkit;
+        if (targetToolkit == null) {
+            return;
+        }
+        try {
+            box.bindToolkit(targetToolkit);
+            box.registerSkillLoadTool();
+        } catch (Exception e) {
+            log.warn("Failed to bind skill toolkit hooks: {}", e.getMessage());
+        }
     }
 
     /**

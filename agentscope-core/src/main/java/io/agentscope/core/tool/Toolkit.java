@@ -741,12 +741,14 @@ public class Toolkit {
      * allowing the agent to activate tool groups during execution.
      */
     public void registerMetaTool() {
-        AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
-
-        // Register without group (meta tool is always available)
-        registerAgentTool(metaTool, null, null, null, null);
+        registerMetaToolInternal();
 
         logger.info("Registered meta tool: reset_equipped_tools");
+    }
+
+    private void registerMetaToolInternal() {
+        AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        registerAgentTool(metaTool, null, null, null, null);
     }
 
     /**
@@ -770,13 +772,14 @@ public class Toolkit {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
-    // ==================== Deep Copy ====================
+    // ==================== Copy ====================
 
     /**
-     * Create a deep copy of this toolkit.
+     * Create a copy with independent mutable registry and tool-group state.
      *
-     * <p>Note: User-defined chunk callbacks are preserved during copy so they continue to work
-     * when the toolkit is passed into ReActAgent.Builder and copied internally.
+     * <p>Registered {@link AgentTool} implementations are reused and therefore must be safe for
+     * concurrent invocation when copies execute in parallel. User-defined chunk callbacks are also
+     * preserved so they continue to work when the toolkit is copied internally.
      *
      * @return A new Toolkit instance with copied state
      */
@@ -789,9 +792,29 @@ public class Toolkit {
         // Copy all tool groups and their states
         this.groupManager.copyTo(copy.groupManager);
 
+        AgentTool metaTool = this.toolRegistry.getTool(MetaToolFactory.RESET_EQUIPPED_TOOLS_NAME);
+        if (this.metaToolFactory.isResetEquippedToolsAgentTool(metaTool)) {
+            copy.registerMetaToolInternal();
+        }
+
         // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
         copy.executor.setChunkCallback(this.executor.getChunkCallback());
 
+        return copy;
+    }
+
+    /**
+     * Create a copy of this toolkit's configuration and group state without registered tools.
+     *
+     * <p>This is used for invocations that intentionally replace configured tools with request-only
+     * schemas. Chunk callbacks are preserved, while the source toolkit remains unchanged.
+     *
+     * @return A new Toolkit instance without registered tools
+     */
+    public Toolkit copyWithoutTools() {
+        Toolkit copy = new Toolkit(this.config);
+        this.groupManager.copyTo(copy.groupManager);
+        copy.executor.setChunkCallback(this.executor.getChunkCallback());
         return copy;
     }
 

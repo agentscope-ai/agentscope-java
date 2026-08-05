@@ -434,6 +434,8 @@ parts:
       title: Overview
     - file: v2/en/integration/ecosystem/chat-completions-web
       title: Chat Completions Web
+    - file: v2/en/integration/ecosystem/responses-web
+      title: Responses Web
     - file: v2/en/integration/ecosystem/studio
       title: Studio
     - file: v2/en/integration/ecosystem/training
@@ -613,6 +615,8 @@ parts:
       title: 概览
     - file: v2/zh/integration/ecosystem/chat-completions-web
       title: Chat Completions Web
+    - file: v2/zh/integration/ecosystem/responses-web
+      title: Responses Web
     - file: v2/zh/integration/ecosystem/studio
       title: Studio
     - file: v2/zh/integration/ecosystem/training

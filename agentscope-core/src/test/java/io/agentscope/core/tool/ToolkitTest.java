@@ -66,6 +66,30 @@ class ToolkitTest {
         sampleTools = new SampleTools();
     }
 
+    @Test
+    void copyShouldBindMetaToolToCopiedGroupState() {
+        toolkit.createToolGroup("search", "Search tools", true);
+        toolkit.registerMetaTool();
+
+        Toolkit copied = toolkit.copy();
+        Map<String, Object> input = Map.of("to_activate", List.of());
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .id("reset-id")
+                        .name("reset_equipped_tools")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                copied.callTool(ToolCallParam.builder().toolUseBlock(call).input(input).build())
+                        .block();
+
+        assertFalse(isErrorResult(result), getResultText(result));
+        assertFalse(copied.getToolGroup("search").isActive());
+        assertTrue(toolkit.getToolGroup("search").isActive());
+    }
+
     /**
      * Helper method to check if a ToolResultBlock represents an error.
      * Error results have output containing TextBlock with text starting with "Error:"
@@ -757,6 +781,34 @@ class ToolkitTest {
         ToolResultBlock result2 =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall2).build()).block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
+    }
+
+    @Test
+    void copyShouldIsolatePresetParameterUpdates() {
+        class DynamicContextTool {
+            @Tool(description = "Tool with dynamic context")
+            public ToolResultBlock dynamicContext(@ToolParam(name = "sessionId") String sessionId) {
+                return ToolResultBlock.text(sessionId);
+            }
+        }
+        toolkit.registration()
+                .tool(new DynamicContextTool())
+                .presetParameters(Map.of("dynamicContext", Map.of("sessionId", "original")))
+                .apply();
+        Toolkit copied = toolkit.copy();
+
+        copied.updateToolPresetParameters("dynamicContext", Map.of("sessionId", "copied"));
+
+        Map<String, Object> input = Map.of();
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .name("dynamicContext")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(call).build();
+        assertEquals("copied", getResultText(copied.callTool(param).block()));
+        assertEquals("original", getResultText(toolkit.callTool(param).block()));
     }
 
     @Test
