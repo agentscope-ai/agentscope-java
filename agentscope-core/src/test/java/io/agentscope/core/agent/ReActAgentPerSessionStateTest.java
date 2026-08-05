@@ -166,6 +166,52 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearStateCache releases all local session state and permission engines")
+    void clearStateCacheReleasesAllLocalCaches() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState sessA = agent.getAgentState("u1", "sessA");
+        AgentState sessB = agent.getAgentState("u1", "sessB");
+        var defaultPermissionEngine = agent.getPermissionEngine();
+
+        agent.clearStateCache();
+
+        assertNotSame(sessA, agent.getAgentState("u1", "sessA"));
+        assertNotSame(sessB, agent.getAgentState("u1", "sessB"));
+        assertNotSame(defaultPermissionEngine, agent.getPermissionEngine());
+    }
+
+    @Test
+    @DisplayName("clearStateCache removes only the targeted session")
+    void clearStateCacheRemovesOnlyTargetedSession() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState target = agent.getAgentState("u1", "sessA");
+        AgentState other = agent.getAgentState("u1", "sessB");
+
+        agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertNotSame(target, agent.getAgentState("u1", "sessA"));
+        assertSame(other, agent.getAgentState("u1", "sessB"));
+    }
+
+    @Test
+    @DisplayName("clearStateCache preserves persisted session state")
+    void clearStateCachePreservesPersistedState(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent agent = agent(store);
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.setSummary("remembered");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.clearStateCache("u1", "sessA");
+
+        AgentState reloaded = agent.getAgentState("u1", "sessA");
+        assertNotSame(state, reloaded);
+        assertEquals("remembered", reloaded.getSummary());
+    }
+
+    @Test
     @DisplayName("saveAgentState(uid,sid) round-trips through the store into a fresh engine")
     void savePersistsPerSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
