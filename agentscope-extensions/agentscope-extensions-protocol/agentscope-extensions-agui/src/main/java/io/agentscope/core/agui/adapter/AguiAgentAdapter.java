@@ -107,7 +107,9 @@ public class AguiAgentAdapter {
         this.toolConverter = new AguiToolConverter();
         this.agentEventConverterRegistry =
                 new AgentEventConverterRegistry(
-                        config.getEventConverters(), config.getEventEnrichers());
+                        config.getEventConverters(),
+                        config.getEventEnrichers(),
+                        config.isEmitSubagentEventsAsNative());
     }
 
     /**

@@ -1952,11 +1952,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
+         * {@code session_search}, and omits matching Memory Recall / tool-based Persistence
+         * guidance from the workspace system prompt.
+         */
         public Builder disableMemoryTools() {
             this.disableMemoryTools = true;
             return this;
         }
 
+        /**
+         * Disables memory flush + background consolidation, and removes the "automatically
+         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
+         * {@code <memory_context>}.
+         */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
             return this;
@@ -2218,7 +2229,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 wsManager,
                                 name != null ? name : "ReActAgent",
                                 environmentMemory,
-                                maxContextTokens);
+                                maxContextTokens,
+                                disableMemoryTools,
+                                disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 inner.middleware(markdownMw);
             }

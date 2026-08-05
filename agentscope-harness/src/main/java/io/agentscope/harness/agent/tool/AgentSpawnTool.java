@@ -39,11 +39,22 @@ import io.agentscope.harness.agent.gateway.SessionIdUtils;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
+import io.agentscope.harness.agent.subagent.RemoteAskPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
+import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
+import io.agentscope.harness.agent.subagent.task.AgentProtocolTransport;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
+import io.agentscope.harness.agent.subagent.task.RemoteSubmitContext;
+import io.agentscope.harness.agent.subagent.task.RemoteTarget;
+import io.agentscope.harness.agent.subagent.task.RemoteTaskStatus;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -136,10 +147,14 @@ public class AgentSpawnTool {
             Do NOT call task_output immediately — the task has just started.\
             """;
 
+    /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
+    private static final long REMOTE_CONFIRM_POLL_MS = 1_000L;
+
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
     private volatile SubagentGatewayBridge gatewayBridge;
+    private volatile RemoteSubagentTransport remoteTransport = new AgentProtocolTransport();
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -194,6 +209,11 @@ public class AgentSpawnTool {
      */
     public void setGatewayBridge(SubagentGatewayBridge gatewayBridge) {
         this.gatewayBridge = gatewayBridge;
+    }
+
+    /** Test-only hook to inject a fake {@link RemoteSubagentTransport} for remote streaming/HITL tests. */
+    void setRemoteTransport(RemoteSubagentTransport remoteTransport) {
+        this.remoteTransport = Objects.requireNonNull(remoteTransport, "remoteTransport");
     }
 
     @Tool(
@@ -300,7 +320,13 @@ public class AgentSpawnTool {
                     return Mono.just(spawnInfo + "\nstatus: accepted (reused)");
                 }
                 return execSpawnTask(
-                        existing, runtimeContext, spawnInfo, task, timeoutSeconds, declOpt);
+                        existing,
+                        runtimeContext,
+                        parentState,
+                        spawnInfo,
+                        task,
+                        timeoutSeconds,
+                        declOpt);
             }
         } else {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
@@ -365,7 +391,11 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), agentId, capturedTask);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                agentId,
+                                capturedTask,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
@@ -403,16 +433,15 @@ public class AgentSpawnTool {
         if (remote) {
             final String finalTask = task;
             return withSubagentExposedEvent(
-                    Mono.fromCallable(
-                            () ->
-                                    runRemoteSync(
-                                            runtimeContext,
-                                            spawnInfo,
-                                            agentId,
-                                            parentSessionId,
-                                            declOpt.get(),
-                                            finalTask.trim(),
-                                            timeoutMs)),
+                    runRemoteSyncReactive(
+                            runtimeContext,
+                            parentState,
+                            spawnInfo,
+                            agentId,
+                            parentSessionId,
+                            declOpt.get(),
+                            finalTask.trim(),
+                            timeoutMs),
                     subagentId,
                     agentId,
                     sessionId,
@@ -534,7 +563,11 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), spawned.agentId(), capturedMessage);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                spawned.agentId(),
+                                capturedMessage,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
@@ -565,16 +598,15 @@ public class AgentSpawnTool {
         if (remote) {
             final String finalMessage = message;
             final String finalKey = key;
-            return Mono.fromCallable(
-                    () ->
-                            runRemoteSync(
-                                    runtimeContext,
-                                    "agent_key: " + finalKey,
-                                    spawned.agentId(),
-                                    parentSessionId,
-                                    declOpt.get(),
-                                    finalMessage.trim(),
-                                    timeoutMs));
+            return runRemoteSyncReactive(
+                    runtimeContext,
+                    parentState,
+                    "agent_key: " + finalKey,
+                    spawned.agentId(),
+                    parentSessionId,
+                    declOpt.get(),
+                    finalMessage.trim(),
+                    timeoutMs);
         }
 
         final String finalKey = key;
@@ -1036,30 +1068,209 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Submits a remote task through {@link TaskRepository} (for durable state) and blocks until
-     * it completes or the timeout elapses.
-     *
-     * <p>Using the repository ensures the task is visible to {@code task_list} and survives
-     * conversation compaction, just like async remote tasks do.
+     * Builds a {@code parentSession/agentId} source path for remote events forwarded into the
+     * parent's stream.
      */
-    private String runRemoteSync(
+    static String buildRemoteSourcePath(String parentSessionId, String agentId) {
+        String parent =
+                parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
+        String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
+        return parent + "/" + child;
+    }
+
+    /**
+     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path and
+     * the harness {@link AgentEvent#METADATA_TASK_ID} so concurrent calls to the same remote agent
+     * stay correlatable to distinct {@code TaskRecord}s.
+     */
+    static AgentEvent tagRemoteForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+        if (event == null) {
+            return null;
+        }
+        event.withSource(sourcePath);
+        if (taskId != null && !taskId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+        }
+        return event;
+    }
+
+    /**
+     * Builds submission metadata for a remote task (streaming preference, parent identity, denied
+     * permission rules).
+     */
+    private RemoteSubmitContext buildRemoteSubmitContext(
+            RuntimeContext runtimeContext, AgentState parentState, SubagentDeclaration decl) {
+        String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        boolean stream = decl != null && decl.isRemoteStreaming();
+        return RemoteSubmitContext.builder().userId(userId).parentSessionId(parentSessionId).stream(
+                        stream)
+                .detail(stream ? "full" : "status")
+                .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
+                .build();
+    }
+
+    /**
+     * Flattens parent DENY rules into wire maps for {@link RemoteSubmitContext}. Returns an empty
+     * list when inheritance is disabled or the parent has no DENY rules.
+     */
+    static List<Map<String, String>> collectParentDenyRules(
+            AgentState parentState, Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return List.of();
+        }
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, String>> out = new ArrayList<>();
+        parentPermissions
+                .getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            for (PermissionRule rule : rules) {
+                                Map<String, String> m = new LinkedHashMap<>();
+                                m.put("tool_name", rule.toolName());
+                                if (rule.ruleContent() != null) {
+                                    m.put("rule_content", rule.ruleContent());
+                                }
+                                m.put("behavior", rule.behavior().name());
+                                m.put("source", rule.source());
+                                out.add(m);
+                            }
+                        });
+        return out;
+    }
+
+    /**
+     * Reactive entry for remote sync execution. Captures {@link AgentEventEmitter} from Reactor
+     * Context before blocking on the remote task.
+     */
+    private Mono<String> runRemoteSyncReactive(
             RuntimeContext runtimeContext,
+            AgentState parentState,
             String header,
             String agentId,
             String parentSessionId,
             SubagentDeclaration decl,
             String input,
             long timeoutMs) {
+        return Mono.deferContextual(
+                ctxView -> {
+                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
+                    return Mono.fromCallable(
+                            () ->
+                                    runRemoteSync(
+                                            runtimeContext,
+                                            parentState,
+                                            header,
+                                            agentId,
+                                            parentSessionId,
+                                            decl,
+                                            input,
+                                            timeoutMs,
+                                            emitterOpt.orElse(null)));
+                });
+    }
+
+    /**
+     * Submits a remote task through {@link TaskRepository} (for durable state) and blocks until
+     * it completes or the timeout elapses.
+     *
+     * <p>When an {@link AgentEventEmitter} is present and {@link SubagentDeclaration#isRemoteStreaming()}
+     * is true, remote events are forwarded into the parent stream. Without an emitter, or when
+     * {@link RemoteAskPolicy#DENY} applies, pending remote confirmations are auto-denied via
+     * {@link RemoteSubagentTransport#resume}.
+     */
+    private String runRemoteSync(
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            String header,
+            String agentId,
+            String parentSessionId,
+            SubagentDeclaration decl,
+            String input,
+            long timeoutMs,
+            AgentEventEmitter emitter) {
         String taskId = "task_" + UUID.randomUUID();
+        RemoteSubmitContext submitContext =
+                buildRemoteSubmitContext(runtimeContext, parentState, decl);
         TaskRunSpec spec =
-                new TaskRunSpec.RemoteTaskRunSpec(decl.getUrl(), decl.getHeaders(), agentId, input);
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        decl.getUrl(), decl.getHeaders(), agentId, input, submitContext);
         BackgroundTask bgTask =
                 taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
+
+        RemoteTarget target = new RemoteTarget(decl.getUrl(), decl.getHeaders());
+        RemoteSubagentTransport transport = this.remoteTransport;
+        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId);
+        boolean wantStream = emitter != null && decl.isRemoteStreaming();
+        AtomicBoolean autoDenied = new AtomicBoolean(false);
+        AtomicBoolean resumedEpisode = new AtomicBoolean(false);
+
+        Closeable streamHandle = () -> {};
         try {
-            boolean done = bgTask.waitForCompletion(timeoutMs);
-            if (!done) {
-                return header + "\nstatus: timeout\ntask_id: " + taskId;
+            if (wantStream) {
+                streamHandle =
+                        transport.streamEvents(
+                                target,
+                                taskId,
+                                0L,
+                                remoteEvent ->
+                                        RemoteEventCodec.toAgentEvent(remoteEvent)
+                                                .ifPresent(
+                                                        ae ->
+                                                                emitter.emit(
+                                                                        tagRemoteForwardedEvent(
+                                                                                ae,
+                                                                                sourcePath,
+                                                                                taskId))));
             }
+
+            long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0L);
+            while (true) {
+                long remaining = deadlineMs - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    return header + "\nstatus: timeout\ntask_id: " + taskId;
+                }
+                long slice = Math.min(REMOTE_CONFIRM_POLL_MS, remaining);
+                boolean done = bgTask.waitForCompletion(slice);
+
+                try {
+                    RemoteTaskStatus st = transport.getStatus(target, taskId);
+                    if (st.isAwaitingConfirm()) {
+                        boolean shouldAutoDeny =
+                                emitter == null
+                                        || decl.getRemoteAskPolicy() == RemoteAskPolicy.DENY;
+                        if (shouldAutoDeny && resumedEpisode.compareAndSet(false, true)) {
+                            List<RemotePendingConfirm> pending =
+                                    st.pendingConfirms() != null ? st.pendingConfirms() : List.of();
+                            List<RemoteConfirmDecision> decisions = new ArrayList<>(pending.size());
+                            for (RemotePendingConfirm p : pending) {
+                                decisions.add(new RemoteConfirmDecision(p.getToolCallId(), false));
+                            }
+                            if (!decisions.isEmpty()) {
+                                transport.resume(target, taskId, decisions);
+                                autoDenied.set(true);
+                            }
+                        }
+                    } else {
+                        resumedEpisode.set(false);
+                    }
+                } catch (Exception e) {
+                    log.debug(
+                            "Remote status poll during sync wait failed for {}: {}",
+                            taskId,
+                            e.getMessage());
+                }
+
+                if (done) {
+                    break;
+                }
+            }
+
             TaskStatus ts = bgTask.getTaskStatus();
             if (ts == TaskStatus.FAILED) {
                 Exception err = bgTask.getError();
@@ -1070,11 +1281,22 @@ public class AgentSpawnTool {
                 return header + "\nstatus: cancelled\ntask_id: " + taskId;
             }
             String result = bgTask.getResult();
-            return header + "\nstatus: ok\nreply:\n" + (result != null ? result : "");
+            StringBuilder sb = new StringBuilder(header).append("\nstatus: ok");
+            if (autoDenied.get()) {
+                sb.append("\nnote: remote tool confirmation(s) were auto-denied");
+            }
+            sb.append("\nreply:\n").append(result != null ? result : "");
+            return sb.toString();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("agent remote sync interrupted: agentId={}", agentId);
             return header + "\nstatus: error\nerror: interrupted";
+        } finally {
+            try {
+                streamHandle.close();
+            } catch (IOException e) {
+                log.debug("Closing remote event stream failed: {}", e.getMessage());
+            }
         }
     }
 
@@ -1178,6 +1400,7 @@ public class AgentSpawnTool {
     private Mono<String> execSpawnTask(
             SpawnedAgent spawned,
             RuntimeContext runtimeContext,
+            AgentState parentState,
             String spawnInfo,
             String task,
             Integer timeoutSeconds,
@@ -1196,7 +1419,11 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), spawned.agentId(), capturedTask);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                spawned.agentId(),
+                                capturedTask,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
@@ -1227,16 +1454,15 @@ public class AgentSpawnTool {
 
         if (remote) {
             final String finalTask = task;
-            return Mono.fromCallable(
-                    () ->
-                            runRemoteSync(
-                                    runtimeContext,
-                                    spawnInfo,
-                                    spawned.agentId(),
-                                    parentSessionId,
-                                    declOpt.get(),
-                                    finalTask.trim(),
-                                    timeoutMs));
+            return runRemoteSyncReactive(
+                    runtimeContext,
+                    parentState,
+                    spawnInfo,
+                    spawned.agentId(),
+                    parentSessionId,
+                    declOpt.get(),
+                    finalTask.trim(),
+                    timeoutMs);
         }
 
         final String finalTask = task.trim();
