@@ -50,26 +50,6 @@ class E2bPlatformHttpTest {
     }
 
     @Test
-    void listSnapshotsParsesSnapshotIdsAndFiltersBlank() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"team/a:v1\",\"names\":[\"team/a:v1\"]},"
-                                    + "{\"snapshotID\":\"team/b:v1\",\"names\":[\"team/b:v1\"]},"
-                                    + "{\"names\":[\"no-id\"]}]"));
-        server.enqueue(new MockResponse().setBody("[]"));
-
-        List<String> ids = platform.listSnapshots("sandbox-1");
-
-        assertEquals(List.of("team/a:v1", "team/b:v1"), ids);
-        RecordedRequest req = server.takeRequest(5, TimeUnit.SECONDS);
-        assertEquals("GET", req.getMethod());
-        assertEquals("/snapshots?sandboxID=sandbox-1", req.getPath());
-        assertEquals("test-key", req.getHeader("X-API-Key"));
-        assertEquals("[]", platform.listSnapshots("sandbox-2").toString());
-    }
-
-    @Test
     void createSandboxSnapshotSendsNameWhenProvided() throws Exception {
         server.enqueue(
                 new MockResponse()

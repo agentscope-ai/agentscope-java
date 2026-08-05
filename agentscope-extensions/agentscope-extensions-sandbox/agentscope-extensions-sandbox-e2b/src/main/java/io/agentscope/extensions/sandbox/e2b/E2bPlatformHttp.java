@@ -95,26 +95,6 @@ final class E2bPlatformHttp {
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
     }
 
-    List<String> listSnapshots(String sandboxId) throws IOException {
-        HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/snapshots");
-        if (parsed == null) {
-            throw new SandboxException.SandboxConfigurationException(
-                    "Invalid E2B apiBaseUrl: " + opt.getApiBaseUrl());
-        }
-        HttpUrl url = parsed.newBuilder().addQueryParameter("sandboxID", sandboxId).build();
-        JsonNode node = E2bRetry.withRetries(opt.getMaxRetries(), () -> getJson(url.toString()));
-        List<String> ids = new ArrayList<>();
-        if (node != null && node.isArray()) {
-            for (JsonNode item : node) {
-                String id = item.path("snapshotID").asText("");
-                if (!id.isBlank()) {
-                    ids.add(id);
-                }
-            }
-        }
-        return ids;
-    }
-
     void deleteSnapshot(String snapshotId) throws IOException {
         HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/templates");
         if (parsed == null) {
@@ -234,27 +214,6 @@ final class E2bPlatformHttp {
         }
         if (node.hasNonNull("envdVersion")) {
             state.setEnvdVersion(node.get("envdVersion").asText());
-        }
-    }
-
-    private JsonNode getJson(String url) throws IOException {
-        Request req =
-                new Request.Builder()
-                        .url(url)
-                        .addHeader("X-API-Key", requireApiKey())
-                        .get()
-                        .build();
-        try (Response res = http.newCall(req).execute()) {
-            String text = res.body() != null ? res.body().string() : "";
-            if (!res.isSuccessful()) {
-                throw new SandboxException.SandboxRuntimeException(
-                        SandboxErrorCode.SNAPSHOT_PERSIST_ERROR,
-                        "E2B HTTP " + res.code() + ": " + text);
-            }
-            if (text.isBlank()) {
-                return json.createArrayNode();
-            }
-            return json.readTree(text);
         }
     }
 
