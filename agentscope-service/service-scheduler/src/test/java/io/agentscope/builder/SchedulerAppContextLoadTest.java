@@ -37,7 +37,9 @@ import org.springframework.test.context.TestPropertySource;
             "builder.control-plane-url=http://localhost:8081",
             "builder.data-plane-url=http://localhost:8082",
             "builder.workspace=${java.io.tmpdir}/agentscope-builder-scheduler-ctx",
-            "spring.datasource.url=jdbc:h2:mem:schedulerCtx;DB_CLOSE_DELAY=-1;MODE=MYSQL",
+            // INIT pre-creates the dp schema required by hibernate.default_schema (see
+            // application.yml); without it schema-qualified H2 statements fail.
+            "spring.datasource.url=jdbc:h2:mem:schedulerCtx;DB_CLOSE_DELAY=-1;MODE=MYSQL;INIT=CREATE SCHEMA IF NOT EXISTS dp",
             "spring.datasource.driver-class-name=org.h2.Driver",
             "spring.datasource.username=sa",
             "spring.datasource.password=",

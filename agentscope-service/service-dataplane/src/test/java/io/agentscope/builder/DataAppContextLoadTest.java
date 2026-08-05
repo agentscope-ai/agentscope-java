@@ -43,7 +43,9 @@ import reactor.core.publisher.Flux;
             "builder.dataplane.register-enabled=false",
             "builder.workspace=${java.io.tmpdir}/agentscope-builder-data-ctx",
             "builder.dashscope.api-key=",
-            "spring.datasource.url=jdbc:h2:mem:dataCtx;DB_CLOSE_DELAY=-1;MODE=MYSQL",
+            // INIT pre-creates the dp schema required by hibernate.default_schema (see
+            // application.yml); without it schema-qualified H2 statements fail.
+            "spring.datasource.url=jdbc:h2:mem:dataCtx;DB_CLOSE_DELAY=-1;MODE=MYSQL;INIT=CREATE SCHEMA IF NOT EXISTS dp",
             "spring.datasource.driver-class-name=org.h2.Driver",
             "spring.datasource.username=sa",
             "spring.datasource.password=",
