@@ -21,10 +21,17 @@ import io.agentscope.core.util.JsonUtils;
 /**
  * Parses AG-UI HTTP request bodies with AgentScope {@link JsonUtils} (Jackson 2).
  *
- * <p>Spring Boot 4 defaults to Jackson 3 for {@code @RequestBody} / {@code bodyToMono(T)}.
- * Jackson 3 does not honor Jackson-2 databind annotations such as {@code @JsonDeserialize}
- * on {@code MessageContent}, which leads to {@code Type definition error}. Decoding the
- * raw JSON string via {@link JsonUtils} keeps custom AG-UI deserializers working.
+ * <p><b>Why this exists:</b> Spring Boot 4 defaults to Jackson 3 for
+ * {@code @RequestBody} and {@code bodyToMono(T)}. Jackson 3 ignores Jackson-2
+ * databind annotations such as {@code @JsonDeserialize} /
+ * {@code @JsonSerialize} (they moved to {@code tools.jackson.databind.annotation}).
+ * AG-UI {@code MessageContent} depends on those annotations for the
+ * {@code string | InputContent[]} union; without them Spring fails with
+ * {@code Type definition error: [simple type, class ...MessageContent]}.
+ *
+ * <p>MVC and WebFlux handlers therefore read the body as raw JSON text and
+ * decode it here with AgentScope's Jackson 2 codec, so the existing custom
+ * deserializers continue to work.
  *
  * @author dengyoutao
  * @since 2026-08-05
@@ -34,7 +41,7 @@ public final class AguiRequestBodyParser {
     private AguiRequestBodyParser() {}
 
     /**
-     * Deserialize a JSON request body into {@link RunAgentInput}.
+     * Deserialize a JSON request body into {@link RunAgentInput} using Jackson 2.
      *
      * @param body raw JSON request body
      * @return parsed run input

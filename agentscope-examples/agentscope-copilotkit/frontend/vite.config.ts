@@ -10,6 +10,10 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    outDir: "../src/main/resources/static",
+    emptyOutDir: true,
+  },
   server: {
     port: 5173,
     proxy: {

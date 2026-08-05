@@ -16,13 +16,17 @@
 package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -30,6 +34,20 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * <p>This controller exposes the AG-UI run endpoints for Spring MVC applications.
  * It delegates the actual processing to {@link AguiMvcController}.
+ *
+ * <p><b>Why raw JSON + {@link AguiRequestBodyParser} instead of
+ * {@code @RequestBody RunAgentInput}?</b>
+ * <ul>
+ *   <li>Spring Boot 4 uses Jackson 3 by default for {@code @RequestBody} binding.</li>
+ *   <li>AG-UI {@code MessageContent} relies on Jackson 2 databind annotations
+ *       ({@code @JsonDeserialize} / {@code @JsonSerialize} under
+ *       {@code com.fasterxml.jackson.databind.annotation}).</li>
+ *   <li>Those databind annotations moved to {@code tools.jackson.databind.annotation}
+ *       in Jackson 3, so Jackson 3 ignores the existing ones and fails with
+ *       {@code Type definition error: [simple type, class ...MessageContent]}.</li>
+ *   <li>Reading the body as a raw JSON string and decoding it with AgentScope
+ *       {@code JsonUtils} (Jackson 2) keeps the custom AG-UI deserializers working.</li>
+ * </ul>
  */
 @RestController
 public class AguiRestController {
@@ -63,8 +81,13 @@ public class AguiRestController {
      *   <li>"default"</li>
      * </ol>
      *
-     * @param input The run agent input
+     * <p>The body is bound as a raw JSON {@link String} (not {@link RunAgentInput}) so
+     * Spring's Jackson 3 converter does not attempt to construct {@code MessageContent}.
+     * See class-level Javadoc for the Spring Boot 4 / Jackson 3 rationale.
+     *
+     * @param body The raw JSON run-agent request body
      * @param agentIdHeader The agent ID from HTTP header (optional)
+     * @param request The native servlet request
      * @return An SseEmitter for streaming AG-UI events
      */
     @PostMapping(
@@ -72,13 +95,13 @@ public class AguiRestController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
-        return aguiMvcController.handle(input, agentIdHeader, request);
+        return aguiMvcController.handle(parseBody(body), agentIdHeader, request);
     }
 
     /**
@@ -86,9 +109,14 @@ public class AguiRestController {
      *
      * <p>The path variable takes highest priority for agent resolution.
      *
+     * <p>The body is bound as a raw JSON {@link String} (not {@link RunAgentInput}) so
+     * Spring's Jackson 3 converter does not attempt to construct {@code MessageContent}.
+     * See class-level Javadoc for the Spring Boot 4 / Jackson 3 rationale.
+     *
      * @param agentId The agent ID from path variable
-     * @param input The run agent input
+     * @param body The raw JSON run-agent request body
      * @param agentIdHeader The agent ID from HTTP header (optional)
+     * @param request The native servlet request
      * @return An SseEmitter for streaming AG-UI events
      */
     @PostMapping(
@@ -97,12 +125,32 @@ public class AguiRestController {
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter runWithAgentId(
             @PathVariable String agentId,
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
-        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, request);
+        return aguiMvcController.handleWithAgentId(
+                parseBody(body), agentIdHeader, agentId, request);
+    }
+
+    /**
+     * Decode the raw JSON body with AgentScope Jackson 2 ({@link AguiRequestBodyParser}).
+     *
+     * <p>Do not replace this with Spring's {@code @RequestBody RunAgentInput}: Boot 4's
+     * Jackson 3 stack cannot bind {@code MessageContent} via the existing Jackson-2
+     * {@code @JsonDeserialize} annotation.
+     *
+     * @param body raw JSON request body
+     * @return parsed AG-UI run input
+     */
+    private static RunAgentInput parseBody(String body) {
+        try {
+            return AguiRequestBodyParser.parseRunAgentInput(body);
+        } catch (JsonException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Failed to parse request: " + e.getMessage(), e);
+        }
     }
 }
