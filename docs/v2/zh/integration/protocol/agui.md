@@ -1,6 +1,14 @@
 # AG-UI
 
+## 兼容性说明
+
 `agentscope-extensions-agui` 把 AgentScope v2 的 `AgentEvent` 流转换为 [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) 事件，让前端 UI 可以实时渲染 agent 的运行过程，包括文本、推理内容、工具调用、状态、自定义事件、token usage 和 HITL interrupt。
+
+`AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
+
+已支持多模态输入，但是暂不支持文档类型。
+
+`AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
 
 ## 何时使用
 
