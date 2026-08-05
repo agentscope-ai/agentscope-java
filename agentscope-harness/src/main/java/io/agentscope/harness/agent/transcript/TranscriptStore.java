@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.transcript;
 
+import io.agentscope.core.agent.RuntimeContext;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
@@ -55,6 +56,18 @@ public interface TranscriptStore {
 
     /** Optional compaction of small segments into a single object. */
     default void compact(TranscriptRef ref) {}
+
+    /**
+     * Returns a store view bound to the given per-call {@link RuntimeContext} so that
+     * namespace-scoped backends (e.g., per-user local filesystems) route transcript segments
+     * into the caller's namespace instead of the un-namespaced root.
+     *
+     * <p>Stores whose location is fixed at construction time may ignore the context and return
+     * {@code this}.
+     */
+    default TranscriptStore withRuntimeContext(RuntimeContext rc) {
+        return this;
+    }
 
     /** Deletes all segments for the transcript. */
     void delete(TranscriptRef ref);

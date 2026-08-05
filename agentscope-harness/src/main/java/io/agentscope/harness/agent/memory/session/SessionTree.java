@@ -40,6 +40,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +94,31 @@ public class SessionTree {
                         t.setDaemon(true);
                         return t;
                     });
+
+    /**
+     * Blocks until all remote-mirror tasks submitted before this call have finished.
+     *
+     * <p>The mirror executor is single-threaded and serial, so waiting on a sentinel task
+     * guarantees that every previously scheduled mirror upload has completed. Intended for
+     * graceful shutdown ({@code HarnessAgent.close()}) so asynchronous transcript/session
+     * mirrors do not race with resource cleanup (e.g., temp workspace deletion).
+     *
+     * @param timeout maximum time to wait
+     * @param unit time unit of {@code timeout}
+     * @return {@code true} if the mirrors quiesced within the timeout
+     */
+    public static boolean awaitMirrorQuiescence(long timeout, TimeUnit unit) {
+        try {
+            MIRROR_EXECUTOR.submit(() -> {}).get(timeout, unit);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.debug("awaitMirrorQuiescence did not complete cleanly: {}", e.getMessage());
+            return false;
+        }
+    }
 
     private final Path contextFile;
     private final Path logFile;
@@ -446,15 +472,16 @@ public class SessionTree {
 
     private void syncFromTranscriptStore() {
         try {
+            TranscriptStore scopedStore = transcriptStore.withRuntimeContext(fsRc);
             List<TranscriptStore.SegmentInfo> segments =
-                    transcriptStore.listSegments(transcriptRef);
+                    scopedStore.listSegments(transcriptRef);
             if (segments.isEmpty()) {
                 return;
             }
             List<SessionEntry> remoteEntries = new ArrayList<>();
             Set<String> seen = new LinkedHashSet<>();
             for (TranscriptStore.SegmentInfo seg : segments) {
-                try (InputStream in = transcriptStore.readSegment(seg.key())) {
+                try (InputStream in = scopedStore.readSegment(seg.key())) {
                     String content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
                     for (SessionEntry e : parseJsonlEntries(content)) {
                         if (seen.add(e.getId())) {
@@ -515,7 +542,7 @@ public class SessionTree {
     }
 
     private void scheduleSegmentMirror(List<SessionEntry> entries, long seqStart, long seqEnd) {
-        final TranscriptStore store = transcriptStore;
+        final TranscriptStore store = transcriptStore.withRuntimeContext(fsRc);
         final TranscriptRef ref = transcriptRef;
         if (store == null || ref == null || entries.isEmpty()) {
             return;

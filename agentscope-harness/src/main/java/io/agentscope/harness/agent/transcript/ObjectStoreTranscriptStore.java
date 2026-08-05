@@ -63,6 +63,14 @@ public class ObjectStoreTranscriptStore implements TranscriptStore {
     }
 
     @Override
+    public TranscriptStore withRuntimeContext(RuntimeContext rc) {
+        if (rc == null) {
+            return this;
+        }
+        return new ObjectStoreTranscriptStore(filesystem, rc, rootPrefix);
+    }
+
+    @Override
     public String appendSegment(
             TranscriptRef ref, long seqStart, long seqEnd, String writerId, byte[] jsonl) {
         String name = seqStart + "-" + seqEnd + "-" + sanitize(writerId) + ".jsonl";
