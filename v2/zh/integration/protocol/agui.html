@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T16:13:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1028,6 +1028,46 @@
 </div>
 <p>正常运行的 <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 由上游 <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 决定。正常流结束但上游没有发 <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 时，adapter 不会额外补 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。异常路径会输出带 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 的 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>，并补发一个 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。</p>
 </section>
+<section id="agent">
+<h2>子 agent 事件<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
+<p>默认（<code class="docutils literal notranslate"><span class="pre">emitSubagentEventsAsNative=false</span></code>）下，带非空 <code class="docutils literal notranslate"><span class="pre">source</span></code> 的 AgentEvent（子 / 远程子 agent 事件）<strong>不会</strong>映射为原生的 <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code> / <code class="docutils literal notranslate"><span class="pre">RUN_*</span></code> / 工具调用事件，而是变成 <code class="docutils literal notranslate"><span class="pre">subagent.*</span></code> 命名空间下的 AG-UI <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> 事件，避免污染父 run 的生命周期与文本流：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>CUSTOM <code class="docutils literal notranslate"><span class="pre">name</span></code></p></th>
+<th class="head"><p>典型 AgentEvent</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.lifecycle</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.text</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TextBlockDeltaEvent</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.thinking</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ThinkingBlockDeltaEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.tool_call</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ToolCallStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">ToolCallEndEvent</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.tool_result</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ToolResultEndEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.require_confirm</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>payload 至少包含 <code class="docutils literal notranslate"><span class="pre">source</span></code> 与 <code class="docutils literal notranslate"><span class="pre">type</span></code>（以及 <code class="docutils literal notranslate"><span class="pre">delta</span></code>、<code class="docutils literal notranslate"><span class="pre">toolCallId</span></code> 等类型相关字段）。</p>
+<p>若要恢复子事件与父事件使用同一套原生 converter 的旧行为：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitSubagentEventsAsNative</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 <section id="ag-ui-base-event-properties">
 <h2>AG-UI Base Event Properties<a class="headerlink" href="#ag-ui-base-event-properties" title="Link to this heading">¶</a></h2>
 <p>所有 <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> 都支持官方 base event properties：可选 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 和 <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>。</p>
@@ -1309,7 +1349,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1350,6 +1390,7 @@ mvn<span class="w"> </span>spring-boot:run
 <li><a class="reference internal" href="#id3">添加依赖</a></li>
 <li><a class="reference internal" href="#id4">快速上手</a></li>
 <li><a class="reference internal" href="#id5">事件映射</a></li>
+<li><a class="reference internal" href="#agent">子 agent 事件</a></li>
 <li><a class="reference internal" href="#ag-ui-base-event-properties">AG-UI Base Event Properties</a></li>
 <li><a class="reference internal" href="#converter-enricher">自定义 Converter 与 Enricher</a></li>
 <li><a class="reference internal" href="#token-usage">Token Usage</a></li>

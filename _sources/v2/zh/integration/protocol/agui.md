@@ -79,6 +79,29 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`，并补发一个 `RUN_FINISHED`。
 
+## 子 agent 事件
+
+默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：
+
+| CUSTOM `name` | 典型 AgentEvent |
+| --- | --- |
+| `subagent.lifecycle` | `AgentStartEvent` / `AgentEndEvent` |
+| `subagent.text` | `TextBlockDeltaEvent` |
+| `subagent.thinking` | `ThinkingBlockDeltaEvent` |
+| `subagent.tool_call` | `ToolCallStartEvent` / `ToolCallEndEvent` |
+| `subagent.tool_result` | `ToolResultEndEvent` |
+| `subagent.require_confirm` | `RequireUserConfirmEvent` |
+
+payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
+
+若要恢复子事件与父事件使用同一套原生 converter 的旧行为：
+
+```java
+AguiAdapterConfig config = AguiAdapterConfig.builder()
+    .emitSubagentEventsAsNative(true)
+    .build();
+```
+
 ## AG-UI Base Event Properties
 
 所有 `AguiEvent` 都支持官方 base event properties：可选 `timestamp` 和 `rawEvent`。

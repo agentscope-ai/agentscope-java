@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="基础设施 / 中间件" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="基础设施 / 中间件" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agent-protocol.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -936,10 +936,35 @@
 <li><p>想让 Agent 像云函数一样被远程调度。</p></li>
 <li><p>已有团队在用 Agent Protocol 客户端，想直接接进去。</p></li>
 <li><p>把 AgentScope Harness Agent 嵌进 Spring Boot 服务，自动暴露 <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST 端点。</p></li>
+<li><p>作为 <a class="reference internal" href="../../docs/harness/subagent.html#id14"><span class="std std-ref">远程子 agent</span></a> 的托管端，供另一个 Harness 父代理通过 HTTP 调用。</p></li>
 </ul>
 </section>
 <section id="id2">
-<h2>添加依赖<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<h2>协议分层<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>AgentScope 用不同协议覆盖不同信任边界 / 交互面：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>层级</p></th>
+<th class="head"><p>角色</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>AG-UI</strong></p></td>
+<td><p>面向用户的聊天 UI 事件流（浏览器 ↔ 应用）</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Agent Protocol</strong></p></td>
+<td><p>内部远程子 agent / 任务 HTTP API（父 harness ↔ 远程 agent 服务）</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>A2A</strong></p></td>
+<td><p>外部 agent 间互操作（独立扩展；不属于本次远程子 agent 流式 / HITL 改动）</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id3">
+<h2>添加依赖<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-agent-protocol<span class="nt">&lt;/artifactId&gt;</span>
@@ -948,8 +973,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id3">
-<h2>启用方式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h2>启用方式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p>模块以 Spring Boot 自动配置形式提供，所以仅需在 Spring Boot 应用里：</p>
 <ol class="arabic simple">
 <li><p>注入一个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> Bean 和一个 <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> Bean。</p></li>
@@ -960,10 +985,10 @@
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
-<p>随后会自动注册 <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> 系列 REST 接口（基于 Agent Protocol 规范）。</p>
+<p>随后会自动注册 <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> 系列 REST 接口。</p>
 </section>
-<section id="id4">
-<h2>并发执行<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>并发执行<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p>Agent 在调用之间是无状态的——单例即可服务多个并发任务。每个任务通过 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 携带独立的 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>，状态完全隔离：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="nf">harnessAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
@@ -976,8 +1001,116 @@
 </div>
 <p>同一 session 的并发请求会自动串行化；不同 session 完全并行。</p>
 </section>
-<section id="id5">
-<h2>配置项<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id6">
+<h2>端点<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id7">
+<h3>提交任务<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks</span></code></p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;task_123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;agent_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize the latest release notes&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;context&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u-1&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;parent_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess-parent&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;stream&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;full&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;deny_rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;tool_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bash&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>可选 <code class="docutils literal notranslate"><span class="pre">context</span></code> 字段：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>字段</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">user_id</span></code></p></td>
+<td><p>写入远程 agent 的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">parent_session_id</span></code></p></td>
+<td><p>父 session 标识（用于关联 / 追踪）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>调用方是否打算消费 SSE 事件</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code>（默认）或 <code class="docutils literal notranslate"><span class="pre">full</span></code>——<code class="docutils literal notranslate"><span class="pre">full</span></code> 会在事件流中包含文本 / 思考增量</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">deny_rules</span></code></p></td>
+<td><p>父侧 DENY 权限规则，供远程侧执行</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>成功响应：<code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;pending&quot;</span> <span class="pre">}</span></code>。</p>
+</section>
+<section id="id8">
+<h3>轮询 / 等待 / 取消<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>方法</p></th>
+<th class="head"><p>路径</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}</span></code></p></td>
+<td><p>快照（<code class="docutils literal notranslate"><span class="pre">status</span></code>、结果、错误、待确认项）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}/wait?timeout_seconds=7200</span></code></p></td>
+<td><p>阻塞直到终态（或 <code class="docutils literal notranslate"><span class="pre">awaiting_confirm</span></code>）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}/cancel</span></code></p></td>
+<td><p>请求取消</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>远程 agent 等待工具确认时，快照会报告 <code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">awaiting_confirm</span></code>，但存储的 <code class="docutils literal notranslate"><span class="pre">TaskStatus</span></code> 仍为 <code class="docutils literal notranslate"><span class="pre">RUNNING</span></code>，因此父侧 barrier 会继续等待。</p>
+</section>
+<section id="sse">
+<h3>事件流（SSE）<a class="headerlink" href="#sse" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/tasks/{taskId}/events</span></code></p>
+<p>以 Server-Sent Events 推送 agent 进度。需要 <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.streaming-enabled=true</span></code>（默认开启）。</p>
+<p>断线重连 / 续订：</p>
+<ul class="simple">
+<li><p>查询参数 <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> —— 从该序号之后开始</p></li>
+<li><p>请求头 <code class="docutils literal notranslate"><span class="pre">Last-Event-ID</span></code> —— 未传 <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> 时使用（含义相同）</p></li>
+</ul>
+<p>每条 SSE 消息以事件序号为 <code class="docutils literal notranslate"><span class="pre">id</span></code>、远程事件类型为 <code class="docutils literal notranslate"><span class="pre">event</span></code>、JSON 正文为 <code class="docutils literal notranslate"><span class="pre">data</span></code>。</p>
+</section>
+<section id="hitl">
+<h3>HITL 恢复<a class="headerlink" href="#hitl" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks/{taskId}/resume</span></code></p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;decisions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-2&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">tool_call_id</span></code> 也可作为 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code> 的别名。需要 <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.hitl-enabled=true</span></code>（默认开启）。成功响应：<code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;running&quot;</span> <span class="pre">}</span></code>。</p>
+<p>与调用方父 harness 的 HITL 交互见 <a class="reference internal" href="../../docs/harness/subagent.html#id15"><span class="std std-ref">远程授权</span></a>。</p>
+</section>
+</section>
+<section id="id9">
+<h2>配置项<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -993,11 +1126,41 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p>是否注册 <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST 端点</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.streaming-enabled</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p>是否暴露 SSE <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/tasks/{id}/events</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.hitl-enabled</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p>是否因工具确认暂停任务并接受 <code class="docutils literal notranslate"><span class="pre">/resume</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.sse-replay-buffer-size</span></code></p></td>
+<td><p>int</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">256</span></code></p></td>
+<td><p>每个任务的 SSE 回放缓冲区大小</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.sse-timeout-ms</span></code></p></td>
+<td><p>long</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">10800000</span></code></p></td>
+<td><p>SSE 订阅最长持续时间（毫秒）</p></td>
+</tr>
 </tbody>
 </table>
 </div>
+<p>示例：</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agent-protocol</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">streaming-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">hitl-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">sse-replay-buffer-size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<span class="w">    </span><span class="nt">sse-timeout-ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10800000</span>
+</pre></div>
+</div>
 <blockquote>
-<div><p>关闭时（默认）即使引入依赖也不会暴露任何 REST 接口，可放心打包。</p>
+<div><p>关闭 <code class="docutils literal notranslate"><span class="pre">enabled</span></code> 时（默认）即使引入依赖也不会暴露任何 REST 接口，可放心打包。</p>
 </div></blockquote>
 </section>
 <section id="workspace">
@@ -1059,7 +1222,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1096,10 +1259,18 @@
             <ul>
 <li><a class="reference internal" href="#">Agent Protocol</a><ul>
 <li><a class="reference internal" href="#id1">何时使用</a></li>
-<li><a class="reference internal" href="#id2">添加依赖</a></li>
-<li><a class="reference internal" href="#id3">启用方式</a></li>
-<li><a class="reference internal" href="#id4">并发执行</a></li>
-<li><a class="reference internal" href="#id5">配置项</a></li>
+<li><a class="reference internal" href="#id2">协议分层</a></li>
+<li><a class="reference internal" href="#id3">添加依赖</a></li>
+<li><a class="reference internal" href="#id4">启用方式</a></li>
+<li><a class="reference internal" href="#id5">并发执行</a></li>
+<li><a class="reference internal" href="#id6">端点</a><ul>
+<li><a class="reference internal" href="#id7">提交任务</a></li>
+<li><a class="reference internal" href="#id8">轮询 / 等待 / 取消</a></li>
+<li><a class="reference internal" href="#sse">事件流（SSE）</a></li>
+<li><a class="reference internal" href="#hitl">HITL 恢复</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id9">配置项</a></li>
 <li><a class="reference internal" href="#workspace">与 Workspace 配合</a></li>
 </ul>
 </li>

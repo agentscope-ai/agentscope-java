@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T16:13:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1028,6 +1028,46 @@
 </div>
 <p>Normal <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> and <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> events are driven by upstream <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> and <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>. If a normal stream completes without an upstream <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>, the adapter does not synthesize <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>. On errors, the adapter emits a <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> with a <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>, then emits a fallback <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>.</p>
 </section>
+<section id="subagent-events">
+<h2>Subagent events<a class="headerlink" href="#subagent-events" title="Link to this heading">¶</a></h2>
+<p>By default (<code class="docutils literal notranslate"><span class="pre">emitSubagentEventsAsNative=false</span></code>), AgentEvents with a non-null <code class="docutils literal notranslate"><span class="pre">source</span></code> (child / remote subagent events) are <strong>not</strong> mapped to native <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code> / <code class="docutils literal notranslate"><span class="pre">RUN_*</span></code> / tool-call events. They become AG-UI <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> events under the <code class="docutils literal notranslate"><span class="pre">subagent.*</span></code> namespace so they do not pollute the parent run lifecycle or text stream:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>CUSTOM <code class="docutils literal notranslate"><span class="pre">name</span></code></p></th>
+<th class="head"><p>Typical AgentEvent</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.lifecycle</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.text</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TextBlockDeltaEvent</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.thinking</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ThinkingBlockDeltaEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.tool_call</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ToolCallStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">ToolCallEndEvent</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.tool_result</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ToolResultEndEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">subagent.require_confirm</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each payload includes at least <code class="docutils literal notranslate"><span class="pre">source</span></code> and <code class="docutils literal notranslate"><span class="pre">type</span></code> (plus type-specific fields such as <code class="docutils literal notranslate"><span class="pre">delta</span></code> or <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>).</p>
+<p>To restore the previous behavior where child events used the same native converters as the parent:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AguiAdapterConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AguiAdapterConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">emitSubagentEventsAsNative</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 <section id="ag-ui-base-event-properties">
 <h2>AG-UI Base Event Properties<a class="headerlink" href="#ag-ui-base-event-properties" title="Link to this heading">¶</a></h2>
 <p>Every <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> supports the official base event properties: optional <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> and <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>.</p>
@@ -1309,7 +1349,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1350,6 +1390,7 @@ mvn<span class="w"> </span>spring-boot:run
 <li><a class="reference internal" href="#add-dependencies">Add Dependencies</a></li>
 <li><a class="reference internal" href="#quickstart">Quickstart</a></li>
 <li><a class="reference internal" href="#event-mapping">Event Mapping</a></li>
+<li><a class="reference internal" href="#subagent-events">Subagent events</a></li>
 <li><a class="reference internal" href="#ag-ui-base-event-properties">AG-UI Base Event Properties</a></li>
 <li><a class="reference internal" href="#custom-converters-and-enrichers">Custom Converters And Enrichers</a></li>
 <li><a class="reference internal" href="#token-usage">Token Usage</a></li>

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-29T09:28:21+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Release Notes" href="others/release-notes.html"><link rel="prev" title="Channel" href="harness/channel.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/change-log.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -1250,7 +1250,7 @@
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">io.agentscope.core.agent.Event</span></code>, <code class="docutils literal notranslate"><span class="pre">EventType</span></code>, <code class="docutils literal notranslate"><span class="pre">EventSource</span></code></p></li>
 <li><p>Still consumed internally by the harness (subagent event forwarding: <code class="docutils literal notranslate"><span class="pre">SubAgentTool</span></code> / <code class="docutils literal notranslate"><span class="pre">SubagentEventBus</span></code> / <code class="docutils literal notranslate"><span class="pre">DefaultAgentManager</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool</span></code>), AGUI, A2A, chat-completions-web, and Kotlin extension modules as the event-bus / adapter input. They will be flipped to <code class="docutils literal notranslate"><span class="pre">forRemoval</span> <span class="pre">=</span> <span class="pre">true</span></code> only after those modules migrate to <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code>, so the entire downstream is not warning-flooded in a single release.</p></li>
-<li><p><strong>Current gap:</strong> <code class="docutils literal notranslate"><span class="pre">HarnessAgent.streamEvents(...)</span></code> does <strong>not</strong> forward subagent events yet — the <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> hierarchy has no equivalent <code class="docutils literal notranslate"><span class="pre">EventSource</span></code> channel. Callers that need the child-agent stream must stay on the deprecated <code class="docutils literal notranslate"><span class="pre">stream(...)</span></code> path until that channel lands.</p></li>
+<li><p>Subagent events are forwarded on <code class="docutils literal notranslate"><span class="pre">HarnessAgent.streamEvents(...)</span></code> with a non-null <code class="docutils literal notranslate"><span class="pre">source</span></code> path (including remote Agent Protocol children when <code class="docutils literal notranslate"><span class="pre">remoteStreaming</span></code> is enabled).</p></li>
 </ul>
 </li>
 </ul>
@@ -1317,6 +1317,7 @@
 <li><p>New <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> and <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> extension points: converters handle semantic mapping, while enrichers handle cross-cutting properties such as <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> / <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>. The Spring Boot starter automatically collects both bean types.</p></li>
 <li><p>Every <code class="docutils literal notranslate"><span class="pre">AguiEvent</span></code> supports AG-UI base event properties. <code class="docutils literal notranslate"><span class="pre">BaseEventPropertiesEnricher</span></code> is disabled by default; when explicitly enabled, it only fills missing <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> values and does not default <code class="docutils literal notranslate"><span class="pre">rawEvent</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">AguiAdapterConfig.emitTokenUsage</span></code> can emit <code class="docutils literal notranslate"><span class="pre">CUSTOM</span> <span class="pre">token_usage</span></code> events with model-call delta and run-level cumulative token usage.</p></li>
+<li><p><strong>Behavior change:</strong> AgentEvents with <code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">!=</span> <span class="pre">null</span></code> (subagent events) are emitted as AG-UI <code class="docutils literal notranslate"><span class="pre">CUSTOM</span></code> events (<code class="docutils literal notranslate"><span class="pre">subagent.lifecycle</span></code>, <code class="docutils literal notranslate"><span class="pre">subagent.text</span></code>, <code class="docutils literal notranslate"><span class="pre">subagent.thinking</span></code>, <code class="docutils literal notranslate"><span class="pre">subagent.tool_call</span></code>, <code class="docutils literal notranslate"><span class="pre">subagent.tool_result</span></code>, <code class="docutils literal notranslate"><span class="pre">subagent.require_confirm</span></code>) instead of native <code class="docutils literal notranslate"><span class="pre">TEXT_MESSAGE_*</span></code> / <code class="docutils literal notranslate"><span class="pre">RUN_*</span></code>. Set <code class="docutils literal notranslate"><span class="pre">emitSubagentEventsAsNative(true)</span></code> to restore the legacy native mapping.</p></li>
 <li><p>The Spring Boot starter supports <code class="docutils literal notranslate"><span class="pre">AguiRuntimeContextResolver</span></code>, custom <code class="docutils literal notranslate"><span class="pre">AguiAgentAdapterFactory</span></code>, frontend tool injection / merge mode, and HITL interrupt output.</p></li>
 </ul>
 <p>Detail → <a class="reference internal" href="../integration/protocol/agui.html"><span class="std std-doc">AG-UI</span></a></p>
@@ -1441,7 +1442,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-29</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

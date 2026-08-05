@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="A2A（Agent-to-Agent）" href="a2a.html"><link rel="prev" title="智能体协议（Agent Protocol）" href="index.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="A2A（Agent-to-Agent）" href="a2a.html"><link rel="prev" title="智能体协议（Agent Protocol）" href="index.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/overview.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,9 +961,12 @@
 <h2>怎么选<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><strong>想被前端 UI 实时消费 Agent 事件流（含 ThinkingBlock）</strong> → AG-UI</p></li>
-<li><p><strong>想让其他业务系统通过 REST 调度 Agent</strong> → Agent Protocol</p></li>
+<li><p><strong>想让其他业务系统通过 REST 调度 Agent / 托管远程子 agent</strong> → Agent Protocol</p></li>
 <li><p><strong>想让多个 Agent / Agent 与外部 Agent 系统互相调用</strong> → A2A</p></li>
 </ul>
+<blockquote>
+<div><p>分层：AG-UI 面向用户；Agent Protocol 是内部远程子 agent / 任务 HTTP 面；A2A 用于外部互操作。</p>
+</div></blockquote>
 </section>
 </section>
 
@@ -1020,7 +1023,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

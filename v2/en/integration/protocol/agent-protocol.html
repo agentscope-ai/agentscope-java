@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Infrastructure / Middleware" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
+    <meta property="article:modified_time" content="2026-08-05T06:49:38+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Infrastructure / Middleware" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agent-protocol.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -936,7 +936,32 @@
 <li><p>You want the Agent to be remotely scheduled like a cloud function.</p></li>
 <li><p>An existing team uses an Agent Protocol client and you’d like to plug in directly.</p></li>
 <li><p>You’re embedding a Harness Agent in a Spring Boot service and want auto-exposed <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST endpoints.</p></li>
+<li><p>You’re hosting a <a class="reference internal" href="../../docs/harness/subagent.html#remote-subagent"><span class="std std-ref">remote subagent</span></a> that another Harness parent calls over HTTP.</p></li>
 </ul>
+</section>
+<section id="protocol-layering">
+<h2>Protocol layering<a class="headerlink" href="#protocol-layering" title="Link to this heading">¶</a></h2>
+<p>AgentScope uses different protocols for different trust / UX boundaries:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Layer</p></th>
+<th class="head"><p>Role</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>AG-UI</strong></p></td>
+<td><p>User-facing chat UI event stream (browser ↔ app)</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Agent Protocol</strong></p></td>
+<td><p>Internal remote-subagent / task HTTP API (parent harness ↔ remote agent service)</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>A2A</strong></p></td>
+<td><p>External agent-to-agent interop (separate extension; not part of this remote-subagent streaming/HITL work)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
 <section id="add-the-dependency">
 <h2>Add the dependency<a class="headerlink" href="#add-the-dependency" title="Link to this heading">¶</a></h2>
@@ -960,7 +985,7 @@
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST endpoints (per the Agent Protocol spec) are then registered automatically.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST endpoints are then registered automatically.</p>
 </section>
 <section id="concurrent-execution">
 <h2>Concurrent execution<a class="headerlink" href="#concurrent-execution" title="Link to this heading">¶</a></h2>
@@ -975,6 +1000,114 @@
 </pre></div>
 </div>
 <p>Concurrent requests for the same session are automatically serialized; different sessions run in parallel.</p>
+</section>
+<section id="endpoints">
+<h2>Endpoints<a class="headerlink" href="#endpoints" title="Link to this heading">¶</a></h2>
+<section id="submit-a-task">
+<h3>Submit a task<a class="headerlink" href="#submit-a-task" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks</span></code></p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;task_123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;agent_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize the latest release notes&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;context&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u-1&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;parent_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess-parent&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;stream&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;full&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;deny_rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;tool_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bash&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Optional <code class="docutils literal notranslate"><span class="pre">context</span></code> fields:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">user_id</span></code></p></td>
+<td><p>Forwarded into the remote agent’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">parent_session_id</span></code></p></td>
+<td><p>Parent session identity (for tracing / correlation)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>Whether the caller intends to consume SSE events</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code> (default) or <code class="docutils literal notranslate"><span class="pre">full</span></code> — <code class="docutils literal notranslate"><span class="pre">full</span></code> includes text/thinking deltas on the event stream</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">deny_rules</span></code></p></td>
+<td><p>Parent DENY permission rules to enforce on the remote side</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Response on success: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;pending&quot;</span> <span class="pre">}</span></code>.</p>
+</section>
+<section id="poll-wait-cancel">
+<h3>Poll / wait / cancel<a class="headerlink" href="#poll-wait-cancel" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Path</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}</span></code></p></td>
+<td><p>Snapshot (<code class="docutils literal notranslate"><span class="pre">status</span></code>, result, errors, pending confirms)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GET</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}/wait?timeout_seconds=7200</span></code></p></td>
+<td><p>Block until terminal (or <code class="docutils literal notranslate"><span class="pre">awaiting_confirm</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">POST</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/tasks/{taskId}/cancel</span></code></p></td>
+<td><p>Request cancellation</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>While the remote agent waits for tool confirmation, the snapshot reports <code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">awaiting_confirm</span></code> but the stored <code class="docutils literal notranslate"><span class="pre">TaskStatus</span></code> remains <code class="docutils literal notranslate"><span class="pre">RUNNING</span></code> so parent barriers keep waiting.</p>
+</section>
+<section id="stream-events-sse">
+<h3>Stream events (SSE)<a class="headerlink" href="#stream-events-sse" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/tasks/{taskId}/events</span></code></p>
+<p>Server-Sent Events of agent progress. Requires <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.streaming-enabled=true</span></code> (default).</p>
+<p>Reconnect / resume:</p>
+<ul class="simple">
+<li><p>Query param <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> — start after this sequence number</p></li>
+<li><p>Header <code class="docutils literal notranslate"><span class="pre">Last-Event-ID</span></code> — used when <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> is omitted (same meaning)</p></li>
+</ul>
+<p>Each SSE message uses the event seq as <code class="docutils literal notranslate"><span class="pre">id</span></code>, the remote event type as <code class="docutils literal notranslate"><span class="pre">event</span></code>, and a JSON body as <code class="docutils literal notranslate"><span class="pre">data</span></code>.</p>
+</section>
+<section id="resume-after-hitl">
+<h3>Resume after HITL<a class="headerlink" href="#resume-after-hitl" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks/{taskId}/resume</span></code></p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;decisions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-2&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">tool_call_id</span></code> is also accepted as an alias for <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>. Requires <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.hitl-enabled=true</span></code> (default). On success returns <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;running&quot;</span> <span class="pre">}</span></code>.</p>
+<p>How remote HITL interacts with a calling parent harness is documented under <a class="reference internal" href="../../docs/harness/subagent.html#remote-authorization"><span class="std std-ref">Remote authorization</span></a>.</p>
+</section>
 </section>
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
@@ -993,11 +1126,41 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p>Whether to register the <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST endpoints</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.streaming-enabled</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p>Expose SSE <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/tasks/{id}/events</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.hitl-enabled</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p>Pause tasks for tool confirmation and accept <code class="docutils literal notranslate"><span class="pre">/resume</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.sse-replay-buffer-size</span></code></p></td>
+<td><p>int</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">256</span></code></p></td>
+<td><p>Per-task replay buffer for late SSE subscribers</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.sse-timeout-ms</span></code></p></td>
+<td><p>long</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">10800000</span></code></p></td>
+<td><p>Max SSE subscription duration (ms)</p></td>
+</tr>
 </tbody>
 </table>
 </div>
+<p>Example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agent-protocol</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">streaming-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">hitl-enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">sse-replay-buffer-size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<span class="w">    </span><span class="nt">sse-timeout-ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10800000</span>
+</pre></div>
+</div>
 <blockquote>
-<div><p>When disabled (the default) the dependency stays inert — no REST endpoints are exposed, safe to ship.</p>
+<div><p>When <code class="docutils literal notranslate"><span class="pre">enabled</span></code> is <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default) the dependency stays inert — no REST endpoints are exposed, safe to ship.</p>
 </div></blockquote>
 </section>
 <section id="workspace-integration">
@@ -1059,7 +1222,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1096,9 +1259,17 @@
             <ul>
 <li><a class="reference internal" href="#">Agent Protocol</a><ul>
 <li><a class="reference internal" href="#when-to-use">When to use</a></li>
+<li><a class="reference internal" href="#protocol-layering">Protocol layering</a></li>
 <li><a class="reference internal" href="#add-the-dependency">Add the dependency</a></li>
 <li><a class="reference internal" href="#enable">Enable</a></li>
 <li><a class="reference internal" href="#concurrent-execution">Concurrent execution</a></li>
+<li><a class="reference internal" href="#endpoints">Endpoints</a><ul>
+<li><a class="reference internal" href="#submit-a-task">Submit a task</a></li>
+<li><a class="reference internal" href="#poll-wait-cancel">Poll / wait / cancel</a></li>
+<li><a class="reference internal" href="#stream-events-sse">Stream events (SSE)</a></li>
+<li><a class="reference internal" href="#resume-after-hitl">Resume after HITL</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#configuration">Configuration</a></li>
 <li><a class="reference internal" href="#workspace-integration">Workspace integration</a></li>
 </ul>
