@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-21T03:25:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context Compaction" href="compaction.html">
+    <meta property="article:modified_time" content="2026-08-05T08:36:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context Compaction" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1163,10 +1163,10 @@ You are an XX assistant. Follow these behavior guidelines.
 <td><p>system-prompt injection (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>)</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code></p></td>
-<td><p>memory flush + background maintenance</p></td>
+<td><p>memory flush + background maintenance; also drops the “automatically extracted” Persistence line from the system prompt. Combined with <code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code>, also skips <code class="docutils literal notranslate"><span class="pre">&lt;memory_context&gt;</span></code> (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>) injection</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> tools</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_save</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disableSubagents()</span></code></p></td>
 <td><p>the entire subagent subsystem</p></td>
@@ -1205,7 +1205,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <td><p>no</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Domain</span> <span class="pre">Knowledge</span></code> / <code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Memory</span> <span class="pre">Recall</span></code> / <code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Memory</span> <span class="pre">Persistence</span></code> guidance</p></td>
-<td><p>Built-in templates (teach the model how to use memory + navigate knowledge)</p></td>
+<td><p>Built-in templates (teach the model how to use memory + navigate knowledge). Memory sections are omitted / trimmed when <code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code> / <code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code> are set</p></td>
 <td><p>no</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Workspace</span></code> section</p></td>
@@ -1221,7 +1221,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <td><p>unlimited</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;memory_context&gt;</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, char-truncated when over the remaining budget with a “use memory_search for older entries” note</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, char-truncated when over the remaining budget with a “use memory_search for older entries” note (plain truncate note when tools are disabled; omitted entirely when both memory tools and hooks are disabled)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">maxContextTokens</span></code>, default 8000</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;domain_knowledge_context&gt;</span></code></p></td>
@@ -1689,7 +1689,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-21</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

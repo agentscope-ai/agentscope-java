@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-21T03:25:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
+    <meta property="article:modified_time" content="2026-08-05T08:36:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1160,10 +1160,10 @@
 <td><p>system prompt 注入（<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>）</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code></p></td>
-<td><p>记忆 flush + 后台维护</p></td>
+<td><p>记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 <code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code> 一起用时，也不再注入 <code class="docutils literal notranslate"><span class="pre">&lt;memory_context&gt;</span></code>（<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>）</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> 工具</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_save</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disableSubagents()</span></code></p></td>
 <td><p>整个子 agent 子系统</p></td>
@@ -1202,7 +1202,7 @@
 <td><p>否</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Domain</span> <span class="pre">Knowledge</span></code> / <code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Memory</span> <span class="pre">Recall</span></code> / <code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Memory</span> <span class="pre">Persistence</span></code> 引导段</p></td>
-<td><p>内置模板（教模型怎么用记忆 + 怎么查 knowledge）</p></td>
+<td><p>内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 <code class="docutils literal notranslate"><span class="pre">disableMemoryTools()</span></code> / <code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code> 裁剪或整段省略</p></td>
 <td><p>否</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">##</span> <span class="pre">Workspace</span></code> 段</p></td>
@@ -1218,7 +1218,7 @@
 <td><p>无限</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;memory_context&gt;</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入）</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">maxContextTokens</span></code> 默认 8000</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;domain_knowledge_context&gt;</span></code></p></td>
@@ -1686,7 +1686,7 @@ model: qwen3-max         # 可选；默认继承父
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-21</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">

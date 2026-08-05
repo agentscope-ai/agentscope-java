@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Filesystem" href="filesystem.html"><link rel="prev" title="Workspace" href="workspace.html">
+    <meta property="article:modified_time" content="2026-08-05T08:36:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Filesystem" href="filesystem.html"><link rel="prev" title="Workspace" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/memory.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1259,12 +1259,14 @@
 <p>If you want to handle memory yourself or wire your own tools:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">...</span>
-<span class="w">    </span><span class="p">.</span><span class="na">disableMemoryHooks</span><span class="p">()</span><span class="w">      </span><span class="c1">// disables flush + background maintenance</span>
-<span class="w">    </span><span class="p">.</span><span class="na">disableMemoryTools</span><span class="p">()</span><span class="w">      </span><span class="c1">// skips memory_search / memory_get / session_search registration</span>
+<span class="w">    </span><span class="p">.</span><span class="na">disableMemoryHooks</span><span class="p">()</span><span class="w">      </span><span class="c1">// disables flush + background maintenance (+ auto-extract prompt line)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">disableMemoryTools</span><span class="p">()</span><span class="w">      </span><span class="c1">// skips memory_search / memory_get / memory_save / session_search</span>
+<span class="w">                               </span><span class="c1">// and matching Memory Recall / tool Persistence guidance</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code> is the nuclear option; if you only want to throttle, use <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder().flushTrigger(...).build())</span></code> instead.</p>
+<p>Together these also skip <code class="docutils literal notranslate"><span class="pre">&lt;memory_context&gt;</span></code> (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>) injection while keeping Domain Knowledge / AGENTS / knowledge context.</p>
+<p><code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code> is the nuclear option for background memory work; if you only want to throttle, use <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder().flushTrigger(...).build())</span></code> instead.</p>
 </section>
 <section id="related-pages">
 <h2>Related Pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
@@ -1329,7 +1331,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
