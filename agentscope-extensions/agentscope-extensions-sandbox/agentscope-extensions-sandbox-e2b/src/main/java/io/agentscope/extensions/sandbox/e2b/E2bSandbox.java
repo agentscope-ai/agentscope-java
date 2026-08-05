@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,7 +96,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
                         SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
                         "E2B snapshot response missing snapshotID: " + snap);
             }
-            pruneSnapshotsBestEffort(e2bState.getSandboxId(), id);
+            pruneSnapshotsBestEffort(id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
@@ -223,9 +224,12 @@ public class E2bSandbox extends AbstractBaseSandbox {
         envd = null;
     }
 
-    private void pruneSnapshotsBestEffort(String sandboxId, String keepSnapshotId) {
+    private void pruneSnapshotsBestEffort(String keepSnapshotId) {
         try {
-            platform.pruneSnapshots(sandboxId, keepSnapshotId, opt.getSnapshotRetention());
+            List<String> kept =
+                    platform.pruneSnapshots(
+                            keepSnapshotId, e2bState.getSnapshotIds(), opt.getSnapshotRetention());
+            e2bState.setSnapshotIds(kept);
         } catch (Exception e) {
             log.warn("[sandbox-e2b] snapshot pruning best-effort skipped: {}", e.getMessage());
         }

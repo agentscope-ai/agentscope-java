@@ -130,153 +130,149 @@ class E2bPlatformHttpTest {
 
     @Test
     void pruneSnapshotsRetentionOneDeletesAllButNewest() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"team/agentscope-a1b2c3d4-1699999999999:latest\",\"names\":[\"a\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1700000000000:latest\",\"names\":[\"b\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1701000000000\",\"names\":[\"keep\"]}]"));
         server.enqueue(new MockResponse().setResponseCode(200));
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1701000000000", 1);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1701000000000",
+                        List.of(
+                                "team/agentscope-a1b2c3d4-1699999999999:latest",
+                                "team/agentscope-a1b2c3d4-1700000000000:latest"),
+                        1);
 
-        server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals("DELETE", server.takeRequest(5, TimeUnit.SECONDS).getMethod());
         assertEquals("DELETE", server.takeRequest(5, TimeUnit.SECONDS).getMethod());
+        assertEquals(List.of("agentscope-a1b2c3d4-1701000000000"), kept);
     }
 
     @Test
     void pruneSnapshotsRetentionKeepsConfiguredCount() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"agentscope-a1b2c3d4-1703000000000\",\"names\":[\"keep\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1699999999999:latest\",\"names\":[\"a\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1700000000000:latest\",\"names\":[\"b\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1702000000000:latest\",\"names\":[\"c\"]}]"));
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1703000000000", 3);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1703000000000",
+                        List.of(
+                                "team/agentscope-a1b2c3d4-1699999999999:latest",
+                                "team/agentscope-a1b2c3d4-1700000000000:latest",
+                                "team/agentscope-a1b2c3d4-1702000000000:latest"),
+                        3);
 
-        RecordedRequest list = server.takeRequest(5, TimeUnit.SECONDS);
-        assertEquals("GET", list.getMethod());
         assertEquals(
                 "/templates/team%2Fagentscope-a1b2c3d4-1699999999999:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(2, server.getRequestCount());
+        assertEquals(1, server.getRequestCount());
+        assertEquals(
+                List.of(
+                        "team/agentscope-a1b2c3d4-1700000000000:latest",
+                        "team/agentscope-a1b2c3d4-1702000000000:latest",
+                        "agentscope-a1b2c3d4-1703000000000"),
+                kept);
     }
 
     @Test
     void pruneSnapshotsKeepsNewestByTimestampWhenUnsorted() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"agentscope-a1b2c3d4-1702000000000\",\"names\":[\"newer\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1703000000000\",\"names\":[\"keep\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1699999999999:latest\",\"names\":[\"oldest\"]}]"));
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1703000000000", 2);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1703000000000",
+                        List.of(
+                                "agentscope-a1b2c3d4-1702000000000",
+                                "team/agentscope-a1b2c3d4-1699999999999:latest"),
+                        2);
 
-        server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals(
                 "/templates/team%2Fagentscope-a1b2c3d4-1699999999999:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(2, server.getRequestCount());
+        assertEquals(
+                List.of("agentscope-a1b2c3d4-1702000000000", "agentscope-a1b2c3d4-1703000000000"),
+                kept);
     }
 
     @Test
-    void pruneSnapshotsKeepsKeepSnapshotWhenReusedWithinSameMillis() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"agentscope-a1b2c3d4-1699999999999\",\"names\":[\"oldest\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1700000000000\",\"names\":[\"old\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1702000000000\",\"names\":[\"newer\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1703000000000\",\"names\":[\"same-millis\"]}]"));
-        server.enqueue(new MockResponse().setResponseCode(200));
+    void pruneSnapshotsSkipsKeepIdInOlder() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1703000000000", 2);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1703000000000",
+                        List.of(
+                                "agentscope-a1b2c3d4-1699999999999",
+                                "agentscope-a1b2c3d4-1700000000000",
+                                "agentscope-a1b2c3d4-1703000000000"),
+                        2);
 
-        server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals(
                 "/templates/agentscope-a1b2c3d4-1699999999999",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
+        assertEquals(1, server.getRequestCount());
         assertEquals(
-                "/templates/agentscope-a1b2c3d4-1700000000000",
-                server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(3, server.getRequestCount());
-    }
-
-    @Test
-    void pruneSnapshotsKeepsNewestWhenKeepNotListed() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"agentscope-a1b2c3d4-1699999999999\",\"names\":[\"oldest\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1700000000000\",\"names\":[\"old\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1702000000000\",\"names\":[\"newer\"]}]"));
-        server.enqueue(new MockResponse().setResponseCode(200));
-        server.enqueue(new MockResponse().setResponseCode(200));
-
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1703000000000", 2);
-
-        server.takeRequest(5, TimeUnit.SECONDS);
-        assertEquals(
-                "/templates/agentscope-a1b2c3d4-1699999999999",
-                server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(
-                "/templates/agentscope-a1b2c3d4-1700000000000",
-                server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(3, server.getRequestCount());
+                List.of("agentscope-a1b2c3d4-1700000000000", "agentscope-a1b2c3d4-1703000000000"),
+                kept);
     }
 
     @Test
     void pruneSnapshotsSkipsLegacyAndForeignSnapshots() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"agentscope-a1b2c3d4-1703000000000\",\"names\":[\"keep\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1700000000000:latest\",\"names\":[\"stale\"]},"
-                                    + "{\"snapshotID\":\"abc123:default\",\"names\":[\"legacy\"]},"
-                                    + "{\"snapshotID\":\"team/custom:latest\",\"names\":[\"foreign\"]},"
-                                    + "{\"snapshotID\":\"user-created-1700000000001\",\"names\":[\"timestamp-but-foreign\"]}]"));
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1703000000000", 1);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1703000000000",
+                        List.of(
+                                "team/agentscope-a1b2c3d4-1700000000000:latest",
+                                "abc123:default",
+                                "team/custom:latest",
+                                "user-created-1700000000001"),
+                        1);
 
-        server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals(
                 "/templates/team%2Fagentscope-a1b2c3d4-1700000000000:latest",
                 server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(2, server.getRequestCount());
+        assertEquals(1, server.getRequestCount());
+        assertEquals(
+                List.of(
+                        "abc123:default",
+                        "team/custom:latest",
+                        "user-created-1700000000001",
+                        "agentscope-a1b2c3d4-1703000000000"),
+                kept);
     }
 
     @Test
-    void pruneSnapshotsNonPositiveRetentionSkipsRequests() throws Exception {
-        platform.pruneSnapshots("sandbox-1", "new", 0);
-        platform.pruneSnapshots("sandbox-1", "new", -1);
+    void pruneSnapshotsNonPositiveRetentionKeepsAll() {
+        List<String> older = List.of("team/agentscope-a1b2c3d4-1699999999999:latest");
 
+        assertEquals(
+                List.of("team/agentscope-a1b2c3d4-1699999999999:latest", "keep"),
+                platform.pruneSnapshots("keep", older, 0));
+        assertEquals(
+                List.of("team/agentscope-a1b2c3d4-1699999999999:latest", "keep"),
+                platform.pruneSnapshots("keep", older, -1));
         assertEquals(0, server.getRequestCount());
     }
 
     @Test
     void pruneSnapshotsContinuesAfterSingleDeleteFailure() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "[{\"snapshotID\":\"team/agentscope-a1b2c3d4-1699999999999:latest\",\"names\":[\"a\"]},"
-                                    + "{\"snapshotID\":\"team/agentscope-a1b2c3d4-1700000000000:latest\",\"names\":[\"b\"]},"
-                                    + "{\"snapshotID\":\"agentscope-a1b2c3d4-1701000000000\",\"names\":[\"keep\"]}]"));
         server.enqueue(new MockResponse().setResponseCode(500).setBody("boom"));
         server.enqueue(new MockResponse().setResponseCode(200));
 
-        platform.pruneSnapshots("sandbox-1", "agentscope-a1b2c3d4-1701000000000", 1);
+        List<String> kept =
+                platform.pruneSnapshots(
+                        "agentscope-a1b2c3d4-1701000000000",
+                        List.of(
+                                "team/agentscope-a1b2c3d4-1699999999999:latest",
+                                "team/agentscope-a1b2c3d4-1700000000000:latest"),
+                        1);
 
         server.takeRequest(5, TimeUnit.SECONDS);
-        server.takeRequest(5, TimeUnit.SECONDS);
         assertEquals("DELETE", server.takeRequest(5, TimeUnit.SECONDS).getMethod());
+        // failed delete is kept so the record stays accurate and is retried next persist
+        assertEquals(
+                List.of(
+                        "team/agentscope-a1b2c3d4-1699999999999:latest",
+                        "agentscope-a1b2c3d4-1701000000000"),
+                kept);
     }
 }

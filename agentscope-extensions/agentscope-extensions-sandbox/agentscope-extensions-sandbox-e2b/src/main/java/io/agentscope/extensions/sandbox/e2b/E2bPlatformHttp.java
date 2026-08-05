@@ -143,46 +143,63 @@ final class E2bPlatformHttp {
     }
 
     /**
-     * Best-effort pruning: keeps at least {@code retention} AgentScope-native snapshots for the
-     * sandbox (including the just-created {@code keepSnapshotId}). {@code retention <= 0} disables
-     * pruning. Individual delete failures are logged and skipped so a hiccup never aborts the whole
-     * pass.
+     * Best-effort pruning of this session's own snapshots. Keeps at least {@code retention}
+     * snapshots (including the just-created {@code keepSnapshotId}): the keep snapshot plus the
+     * newest {@code retention - 1} from {@code olderSnapshotIds}, ordered by their embedded
+     * timestamp. Older ones are deleted ({@code 404} idempotent, individual failures logged and
+     * skipped). {@code retention <= 0} disables pruning and nothing is deleted.
      *
-     * <p>Only snapshots whose alias matches {@code agentscope-<shortId>-<epochMillis>}
-     * are candidates for pruning, ordered by their embedded timestamp (the most recent {@code
-     * retention - 1} are kept, the {@code keepSnapshotId} is always kept). Legacy or foreign
-     * snapshots are never touched and must be cleaned up manually. {@code GET /snapshots} pagination
-     * is not handled (the default limit is assumed sufficient). Any snapshot at or after the
-     * {@code keepSnapshotId}'s embedded timestamp is never pruned, which covers both a missing keep
-     * id (e.g. pagination cut-off) and two persists within the same millisecond that reuse the same
-     * E2B template, so nothing just-created is wrongly deleted.
+     * <p>The caller passes the snapshots it previously created for this session (from its own
+     * persisted state) rather than a {@code GET /snapshots} listing, so pruning never depends on
+     * the source sandbox id (which changes when a session is resumed from an earlier snapshot) or
+     * a team-wide listing. Snapshots whose alias does not match {@code
+     * agentscope-<shortId>-<epochMillis>} (timestamp unparseable) are conservatively kept.
+     *
+     * @return the snapshot ids to keep afterwards: {@code keepSnapshotId} plus the retained older
+     *     ones (older ids with an unparseable timestamp are always kept). Callers should replace
+     *     their persisted record with this list.
      */
-    void pruneSnapshots(String sandboxId, String keepSnapshotId, int retention) throws IOException {
+    List<String> pruneSnapshots(
+            String keepSnapshotId, List<String> olderSnapshotIds, int retention) {
         if (retention <= 0) {
-            return;
+            return append(keepSnapshotId, olderSnapshotIds);
         }
-        List<String> snapshots = listSnapshots(sandboxId);
-        long keepTs = snapshotTimestampMillis(keepSnapshotId);
         List<StaleSnapshot> stale = new ArrayList<>();
-        for (String id : snapshots) {
+        List<String> kept = new ArrayList<>();
+        for (String id : olderSnapshotIds) {
             if (id == null || id.isBlank() || id.equals(keepSnapshotId)) {
                 continue;
             }
             long ts = snapshotTimestampMillis(id);
-            if (ts > 0 && (keepTs <= 0 || ts < keepTs)) {
+            if (ts > 0) {
                 stale.add(new StaleSnapshot(id, ts));
+            } else {
+                kept.add(id);
             }
         }
         stale.sort(Comparator.comparingLong(s -> s.timestamp));
-        int toKeep = retention - 1;
-        for (int i = 0; i < stale.size() - toKeep; i++) {
+        int toKeep = Math.max(0, retention - 1);
+        int deleteCount = Math.max(0, stale.size() - toKeep);
+        for (int i = deleteCount; i < stale.size(); i++) {
+            kept.add(stale.get(i).id);
+        }
+        for (int i = 0; i < deleteCount; i++) {
             String old = stale.get(i).id;
             try {
                 deleteSnapshot(old);
             } catch (Exception e) {
                 log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                kept.add(old);
             }
         }
+        kept.add(keepSnapshotId);
+        return kept;
+    }
+
+    private static List<String> append(String keepSnapshotId, List<String> olderSnapshotIds) {
+        List<String> all = new ArrayList<>(olderSnapshotIds);
+        all.add(keepSnapshotId);
+        return all;
     }
 
     void killSandbox(String sandboxId) throws IOException {
