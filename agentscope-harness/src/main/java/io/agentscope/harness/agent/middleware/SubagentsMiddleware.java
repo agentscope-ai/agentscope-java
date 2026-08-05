@@ -119,8 +119,13 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
             **`task_output`** — Retrieve the result of a background task by task_id.
             - **You rarely need this.** Completed tasks are pushed back to you automatically as a `<system-reminder>` block before your next reasoning step.
-            - Use `task_output(block=false)` only when you need the full result and the pushed summary was truncated, or to inspect a specific task on demand.
-            - Avoid `block=true`; it serialises the conversation behind the task.
+            - Use `task_output(block=false)` when you need a specific task's latest status/result, the pushed summary was truncated, or you intentionally want to check progress while continuing other reasoning.
+            - Use `task_output(block=true)` only for one specific task you are ready to wait for; for multiple tasks use `wait_async_results`.
+
+            **`wait_async_results`** — Wait for background-task results when the next step depends on them.
+            - Prefer `wait_async_results(task_ids=...)`: waits until those tasks are terminal and **returns their results in the tool output**.
+            - Prefer `wait_async_results(wait_all=true)`: waits for the snapshot of currently non-terminal background tasks (tasks started later are not added) and **returns their results**.
+            - Without `task_ids` and without `wait_all`: legacy **inbox-any** mode — returns when ANY inbox message arrives. This is NOT wait-all; use `task_ids` / `wait_all=true` when every task in a group must finish.
 
             **`task_cancel`** — Cancel a running background task by task_id. No effect on already-completed tasks.
 
@@ -128,8 +133,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
             ### Background task flow
             1. Spawn with `timeout_seconds=0` to fire-and-forget; the response gives you a task_id.
-            2. **Do not poll.** Continue with other work; when the task finishes you'll see a `<system-reminder>` containing its result.
-            3. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
+            2. Continue with independent work. If you need fresh state, use `task_output(block=false)` for selected tasks.
+            3. If a later step must wait for a known group, call `wait_async_results(task_ids=...)`; if it must wait for every current background task, call `wait_async_results(wait_all=true)`.
+            4. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
 
             ### Timeout promotion
             When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
@@ -157,8 +163,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             4. **Reconcile** → Incorporate or synthesize the result into the main thread
 
             ### Usage patterns
-            - **Parallel execution**: Launch multiple subagents concurrently with timeout_seconds=0 when tasks are independent, then collect results with task_output(block=false) after a delay
-            - **Sync delegation**: Use default timeout for simple one-shot delegation
+            - **Parallel async execution**: Split work by independence/dependency. Launch independent, non-conflicting tasks with `timeout_seconds=0`; continue reasoning, then use `task_output(block=false)` for selective progress checks or `wait_async_results(task_ids=...)` / `wait_async_results(wait_all=true)` when a barrier is required
+            - **Parallel sync delegation**: Multiple sync `agent_spawn` / `agent_send` calls in one turn run concurrently by default (Toolkit parallel=true); the parent waits for that batch of tool results before continuing. Pass a Toolkit with parallel=false to opt out.
+            - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
+            - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
             - **Persistent session**: Spawn without a task, then use send for multi-turn interaction
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
             - Subagent results are NOT visible to the user — always summarize them in your response

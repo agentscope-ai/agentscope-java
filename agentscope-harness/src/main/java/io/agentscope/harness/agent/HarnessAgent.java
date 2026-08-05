@@ -1090,7 +1090,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String sysPrompt;
         boolean checkRunning = true;
         Model model;
-        Toolkit toolkit = new Toolkit();
+        Toolkit toolkit = newDefaultToolkit();
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -1378,10 +1378,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit != null ? toolkit : new Toolkit();
+            this.toolkit = toolkit != null ? toolkit : newDefaultToolkit();
             // Don't push to inner yet — orchestration will register harness tools on this toolkit
             // and then push the final result via inner.toolkit(...) at build() time.
             return this;
+        }
+
+        /**
+         * Default toolkit for Harness agents. Uses {@link Toolkit}'s default config (parallel
+         * tool execution enabled). Pass a custom {@link Toolkit} with
+         * {@code ToolkitConfig.parallel(false)} to opt out.
+         */
+        static Toolkit newDefaultToolkit() {
+            return new Toolkit();
         }
 
         public Builder maxIters(int maxIters) {
