@@ -489,6 +489,13 @@
                 <artifactId>agentscope-extensions-skill-postgresql-repository</artifactId>
                 <version>${project.version}</version>
             </dependency>
+
+            <!-- AgentScope Kotlin Coroutine Extensions (suspend / Flow APIs) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
