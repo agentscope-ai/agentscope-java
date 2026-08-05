@@ -257,10 +257,12 @@ class GeminiResponseParserTest {
 
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
-                        .promptTokenCount(100)
+                        // cachedContentTokenCount 是 promptTokenCount 的子集(Gemini SDK 文档:
+                        // promptTokenCount 包含 cachedContentTokenCount),故 prompt 必须 > cached
+                        .promptTokenCount(500)
                         .candidatesTokenCount(60)
                         .thoughtsTokenCount(10)
-                        .totalTokenCount(160)
+                        .totalTokenCount(560)
                         .cachedContentTokenCount(300)
                         .build();
 
