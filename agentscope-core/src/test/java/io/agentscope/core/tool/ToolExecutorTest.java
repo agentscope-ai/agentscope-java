@@ -102,6 +102,21 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should validate parsed input when raw content is absent")
+    void shouldValidateInputWhenRawContentIsAbsent() {
+        Map<String, Object> input = Map.of("a", 10, "b", 20);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder().id("call-input-only").name("add").input(input).build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals("30", extractFirstText(result));
+    }
+
+    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         Map<String, Object> errorInput = Map.of("message", "test failure");

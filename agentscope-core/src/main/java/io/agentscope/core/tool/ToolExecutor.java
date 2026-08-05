@@ -22,6 +22,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -208,7 +209,8 @@ class ToolExecutor {
 
         // Validate input against schema
         String validationError =
-                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+                ToolValidator.validateInput(
+                        JsonUtils.resolveToolCallArgsJson(toolCall), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(
