@@ -7,6 +7,113 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## 2.0.0 (GA)
+
+> Released: 2026-07-10
+
+AgentScope Java 2.0.0 is now Generally Available. This is the first production-ready release of the 2.0 line, marking a milestone in AgentScope Java's evolution from "transparent development" to "system engineering."
+
+**Quick links:** [Quickstart](../quickstart.md) | [V1 Migration Guide](../change-log.md) | [Going to Production](going-to-production.md)
+
+### 2.0 Core Design Overview
+
+AgentScope Java 2.0 is a systematic upgrade centered on one goal: **enabling agents to reliably complete tasks**. Here is an overview of its core design:
+
+**Dual-Layer Agent Architecture**
+
+- **ReActAgent**: A stateless reasoning core providing the "reason → tool call → respond" ReAct loop. In 2.0, agent instances are fully stateless — all per-call mutable state is propagated via Reactor Context, allowing a single instance to safely serve multiple `(userId, sessionId)` combinations concurrently
+- **HarnessAgent**: Extends ReActAgent through Middleware and Toolkit channels, adding workspace, memory, sandbox, subagents, skills, and plan mode as engineering infrastructure — the core reasoning loop is preserved, only augmented
+
+**Message & Event Stream**
+
+A unified ContentBlock message model (TextBlock / DataBlock / ToolUseBlock / ToolResultBlock / HintBlock, etc.) paired with `streamEvents()` emitting 28 typed AgentEvent types, making agent execution observable, interactive, and interruptible. Front-end UIs can follow text deltas, tool calls, user confirmations, and other lifecycle events in real time
+
+**Permission System**
+
+A new PermissionEngine establishes a three-state decision mechanism for tool calls: allow / require user approval / deny. Decisions are based on static rules, tool type, and input content analysis. Sensitive operations automatically enter a HITL approval flow
+
+**Middleware Extension Mechanism**
+
+A five-stage onion + pipeline hybrid model (`onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt`), providing flexible extension points for logging, tracing, security checks, business policies, and context injection while keeping the core framework stable
+
+**Context Engineering**
+
+Structured compaction preserves task objectives, current state, key findings, and next steps. Oversized tool results are automatically offloaded to disk with only placeholders in the context. File tools enforce a "read before edit" policy with built-in caching to reduce redundant IO
+
+**Workspace Abstraction**
+
+Decouples "what the agent does" from "where it executes." Local filesystem, Docker, Kubernetes, and E2B cloud sandbox backends are unified behind a single interface. A built-in warm-up pool supports parallel RL rollout scenarios
+
+**Model Fault Tolerance**
+
+A unified Credential + ModelRegistry abstraction covering Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama. Configurable max retries and fallback model — automatic failover when the primary model is unavailable
+
+**Enterprise Distributed Deployment**
+
+One-line `DistributedBackend` configuration (Redis / OSS / MySQL / PostgreSQL / COS). `AgentStateStore` auto-partitions by `(userId, sessionId)`. Cross-replica session recovery, sandbox state snapshots, and subagent cross-replica routing
+
+**Protocol Interoperability**
+
+Built-in A2A (Agent-to-Agent) and MCP (Model Context Protocol) support, plus AG-UI protocol adaptation, covering standardized inter-agent communication and front-end rendering needs
+
+**Multi-Agent Orchestration**
+
+Declarative subagent specs (YAML / Markdown), runtime `agent_spawn` / `agent_send` with synchronous blocking and background delegation modes. Subagent event streams can be forwarded to the parent's `streamEvents()` in real time
+
+**Skill System**
+
+Four-layer skill composition (Classpath / FileSystem / Nacos / Marketplace) + SkillFilter fine-grained filtering + self-learning closed loop (propose → curate → promote)
+
+---
+
+### Changes Since RC5
+
+The following are incremental changes between 2.0.0-RC5 (2026-07-07) and the GA release.
+
+#### Added
+
+- Fire `AllToolsDeniedEvent` hook when HITL denies all tool calls, enabling application-level handling of full-denial scenarios ([#2083](https://github.com/agentscope-ai/agentscope-java/pull/2083))
+- Add guardrails for `wait_async_results` to prevent repeated long blocking waits ([#2093](https://github.com/agentscope-ai/agentscope-java/pull/2093))
+- Add `PostgresDistributedStore` for PostgreSQL-backed distributed HarnessAgent state ([#2054](https://github.com/agentscope-ai/agentscope-java/pull/2054))
+- Add builder customizers for OpenAI, DashScope, and Anthropic models in Spring Boot starters ([#2045](https://github.com/agentscope-ai/agentscope-java/pull/2045))
+
+#### Fixed
+
+**Core / Agent**
+
+- Make `seedSystemMsg` reactive to avoid `block()` on NIO threads ([#2086](https://github.com/agentscope-ai/agentscope-java/pull/2086))
+- Include ASKING ToolUseBlocks in PERMISSION_ASKING result message ([#2082](https://github.com/agentscope-ai/agentscope-java/pull/2082))
+- Activate SkillToolGroup via `activateOnSkill` field ([#2057](https://github.com/agentscope-ai/agentscope-java/pull/2057))
+- Save agent state on user interrupt to prevent session loss ([#1970](https://github.com/agentscope-ai/agentscope-java/pull/1970))
+
+**Model Providers**
+
+- Anthropic: split parallel tool calls into alternating messages to comply with API requirements ([#2090](https://github.com/agentscope-ai/agentscope-java/pull/2090))
+- OpenAI: make `nativeStructuredOutput` configurable ([#2069](https://github.com/agentscope-ai/agentscope-java/pull/2069))
+
+**Harness / Tools / Sandbox**
+
+- External tool execution now correctly produces a suspended result ([#2071](https://github.com/agentscope-ai/agentscope-java/pull/2071))
+- Allow SkillLoadTool in Plan Mode by promoting `isReadOnly` to the AgentTool interface ([#2067](https://github.com/agentscope-ai/agentscope-java/pull/2067))
+- Interrupt orphan subagents when AgentSpawnTool parent subscription cancels ([#2064](https://github.com/agentscope-ai/agentscope-java/pull/2064))
+- Remove unnecessary ReActAgent type restriction in MemoryFlushMiddleware ([#2078](https://github.com/agentscope-ai/agentscope-java/pull/2078))
+- Resolve leading `/` paths relative to workspace in ROOTED mode ([#2049](https://github.com/agentscope-ai/agentscope-java/pull/2049))
+- Pre-stage marketplace skills before workspace projection ([#2059](https://github.com/agentscope-ai/agentscope-java/pull/2059))
+- Treat null exit code as success in Kubernetes `hydrateWithArchive` ([#1915](https://github.com/agentscope-ai/agentscope-java/pull/1915))
+- Use updated WorkspaceSpec when resuming from persisted state ([#1928](https://github.com/agentscope-ai/agentscope-java/pull/1928))
+- Support nested JSON and banner prefix in AgentRun MCP response ([#1930](https://github.com/agentscope-ai/agentscope-java/pull/1930))
+- Use resolved workingDir for Docker workspaceRoot ([#2033](https://github.com/agentscope-ai/agentscope-java/pull/2033))
+
+**Channel**
+
+- Include PeerKind in OutboundAddress to fix group message routing ([#2060](https://github.com/agentscope-ai/agentscope-java/pull/2060))
+
+**A2A**
+
+- Merge streaming text chunks to avoid fragmentation ([#2058](https://github.com/agentscope-ai/agentscope-java/pull/2058))
+
+---
+
 ## 2.0.0-RC5
 
 > Released: 2026-07-07

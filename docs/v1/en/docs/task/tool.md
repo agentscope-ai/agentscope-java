@@ -297,7 +297,7 @@ public class CustomTool implements AgentTool {
 
 ```java
 Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
-    .parallel(true)                    // Parallel execution of multiple tools
+    .parallel(false)                   // Serialize multiple tool calls (default is parallel)
     .allowToolDeletion(false)          // Prevent tool deletion
     .executionConfig(ExecutionConfig.builder()
         .timeout(Duration.ofSeconds(30))
@@ -307,7 +307,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `parallel` | Whether to execute multiple tools in parallel | `false` |
+| `parallel` | Whether to execute multiple tools in parallel | `true` |
 | `allowToolDeletion` | Whether to allow tool deletion | `true` |
 | `executionConfig.timeout` | Tool execution timeout | 5 minutes |
 

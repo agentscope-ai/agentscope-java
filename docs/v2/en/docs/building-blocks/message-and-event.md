@@ -296,7 +296,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **RequireExternalExecutionEvent** — agent pauses for external execution.
 
-    **UserConfirmResultEvent** — user provides confirmation results (input event); carries `List<ConfirmResult>`.
+    **UserConfirmResultEvent** — emitted when a later `call()` resumes a paused permission HITL request.
+    It carries one or more `ConfirmResult`s, and its `replyId` matches the earlier `RequireUserConfirmEvent`.
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply ID of the correlated `RequireUserConfirmEvent` |
+    | `getConfirmResults()` | `List<ConfirmResult>` | Confirmation results accepted for this resume |
 
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
 

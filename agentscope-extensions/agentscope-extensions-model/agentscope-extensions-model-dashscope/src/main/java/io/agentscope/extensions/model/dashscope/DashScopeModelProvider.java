@@ -15,6 +15,12 @@
  */
 package io.agentscope.extensions.model.dashscope;
 
+import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -85,7 +91,6 @@ public final class DashScopeModelProvider implements ModelProvider {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
     private static void applyAdvancedOptions(
             DashScopeChatModel.Builder builder, ModelCreationContext context) {
         GenerateOptions defaultOptions = context.component(GenerateOptions.class);
@@ -101,8 +106,7 @@ public final class DashScopeModelProvider implements ModelProvider {
             builder.proxy(proxyConfig);
         }
         Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter =
-                (Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest>)
-                        findAssignableComponent(context, Formatter.class);
+                findAssignableComponent(context, Formatter.class);
         if (formatter != null) {
             builder.formatter(formatter);
         }
@@ -131,53 +135,6 @@ public final class DashScopeModelProvider implements ModelProvider {
         if (nativeStructuredOutputWithTools != null) {
             builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
         }
-    }
-
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    private static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
     }
 
     private static EndpointType endpointTypeOption(ModelCreationContext context, String key) {

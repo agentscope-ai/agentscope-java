@@ -13,7 +13,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">Build <span class="hs-hero__accent">distributed, enterprise-grade</span> agents.</h1>
-    <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A protocol support — from local prototype to enterprise-scale deployment.</p>
+    <p class="hs-hero__desc">AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.</p>
     <div class="hs-hero__actions">
       <a href="docs/quickstart.html" class="hs-btn hs-btn--primary">Get started →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
@@ -52,23 +52,46 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </div>
 </div>
 
-<!-- Stats strip -->
-<div class="hs-stats">
-  <div class="hs-stat">
-    <span class="hs-stat__val">Agentic</span>
-    <span class="hs-stat__label">agent-first execution model</span>
+<!-- Stats strip: adoption showcase -->
+<div class="hs-adoption">
+  <div class="hs-adoption__eyebrow">
+    <span class="hs-adoption__eyebrow-dot"></span>Battle-tested in Production
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Harness</span>
-    <span class="hs-stat__label">engineering scaffolding for long runs</span>
+  <div class="hs-adoption__stats">
+    <div class="hs-stat">
+      <span class="hs-stat__val">Alibaba Group</span>
+      <span class="hs-stat__label">the most widely used agent framework in-house (Java &amp; Python), in production across 13+ business units</span>
+    </div>
+    <div class="hs-stat">
+      <span class="hs-stat__val">Open Source Community</span>
+      <span class="hs-stat__label">adopted by industry leaders across 10+ sectors via open source &amp; Alibaba Cloud</span>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Sandbox</span>
-    <span class="hs-stat__label">isolated exec + snapshot resume</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">Alibaba Group</span>
+    <div class="hs-marquee">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">Fliggy</span><span class="hs-tag">Taobao Instant Commerce</span><span class="hs-tag">Whale Entertainment</span><span class="hs-tag">AIDC</span><span class="hs-tag">Alibaba Holding</span><span class="hs-tag">Taotian Trade</span><span class="hs-tag">Taobao App</span><span class="hs-tag">1688</span><span class="hs-tag">Qwen App</span><span class="hs-tag">Amap</span><span class="hs-tag">Alibaba Cloud</span><span class="hs-tag">Ant International</span><span class="hs-tag">Ant Global Payments</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">Fliggy</span><span class="hs-tag">Taobao Instant Commerce</span><span class="hs-tag">Whale Entertainment</span><span class="hs-tag">AIDC</span><span class="hs-tag">Alibaba Holding</span><span class="hs-tag">Taotian Trade</span><span class="hs-tag">Taobao App</span><span class="hs-tag">1688</span><span class="hs-tag">Qwen App</span><span class="hs-tag">Amap</span><span class="hs-tag">Alibaba Cloud</span><span class="hs-tag">Ant International</span><span class="hs-tag">Ant Global Payments</span><span class="hs-tag hs-tag--more">…</span>
+        </span>
+      </div>
+    </div>
   </div>
-  <div class="hs-stat">
-    <span class="hs-stat__val">Distributed</span>
-    <span class="hs-stat__label">A2A / MCP / cross-process</span>
+  <div class="hs-adoption__row">
+    <span class="hs-adoption__row-label">Open Source · Cloud</span>
+    <div class="hs-marquee hs-marquee--reverse">
+      <div class="hs-marquee__track">
+        <span class="hs-marquee__group">
+          <span class="hs-tag">Finance</span><span class="hs-tag">Transportation &amp; Logistics</span><span class="hs-tag">Retail</span><span class="hs-tag">Manufacturing</span><span class="hs-tag">Energy</span><span class="hs-tag">Healthcare</span><span class="hs-tag">Education &amp; Gov Media</span><span class="hs-tag">Internet</span><span class="hs-tag">SaaS</span><span class="hs-tag">Consulting</span><span class="hs-tag hs-tag--more">and more industry leaders</span>
+        </span>
+        <span class="hs-marquee__group" aria-hidden="true">
+          <span class="hs-tag">Finance</span><span class="hs-tag">Transportation &amp; Logistics</span><span class="hs-tag">Retail</span><span class="hs-tag">Manufacturing</span><span class="hs-tag">Energy</span><span class="hs-tag">Healthcare</span><span class="hs-tag">Education &amp; Gov Media</span><span class="hs-tag">Internet</span><span class="hs-tag">SaaS</span><span class="hs-tag">Consulting</span><span class="hs-tag hs-tag--more">and more industry leaders</span>
+        </span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -144,7 +167,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
     <a class="hs-card" href="docs/building-blocks/model.html">
       <svg class="hs-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
       <h3>Model fault-tolerance</h3>
-      <p>Unified Credential + ChatModel abstraction across Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama. Configure max retries and a fallback model — the framework auto-switches when the primary is unavailable.</p>
+      <p>Unified Credential + ChatModel abstraction across Qwen / OpenAI / Anthropic / Gemini / DeepSeek / Ollama through model extension modules. Configure max retries and a fallback model — the framework auto-switches when the primary is unavailable.</p>
       <span class="hs-card__link">Learn about models →</span>
     </a>
     <a class="hs-card" href="docs/harness/memory.html">
@@ -199,7 +222,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>Which LLM providers are supported?</summary>
-    <p>Out of the box: OpenAI (and OpenAI-compatible endpoints including vLLM, DeepSeek, Kimi, Moonshot), Anthropic Claude, Alibaba Qwen via DashScope, Google Gemini, xAI Grok, and local Ollama. Each is a dedicated <code>ChatModel</code> implementation behind a unified builder. Retry and a fallback model can be configured at the model layer for graceful failover.</p>
+    <p>Supported through model extension modules: OpenAI (and OpenAI-compatible endpoints including vLLM, DeepSeek, Kimi, Moonshot), Anthropic Claude, Alibaba Qwen via DashScope, Google Gemini, xAI Grok, and local Ollama. Each is a dedicated <code>ChatModel</code> implementation behind a unified builder. Retry and a fallback model can be configured at the model layer for graceful failover.</p>
   </details>
   <details class="hs-faq-item">
     <summary>How does Harness differ from a plain ReActAgent?</summary>
