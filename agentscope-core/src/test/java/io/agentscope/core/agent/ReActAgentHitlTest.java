@@ -26,6 +26,7 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -108,6 +109,10 @@ class ReActAgentHitlTest {
                                         .input(input)
                                         .build()))
                 .build();
+    }
+
+    private static ChatResponse toolUseResponse(List<ToolUseBlock> toolUses) {
+        return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
     private static final class AskingTool extends ToolBase {
@@ -291,6 +296,77 @@ class ReActAgentHitlTest {
 
         RequestStopEvent stop = (RequestStopEvent) events.get(iStop);
         assertEquals(GenerateReason.PERMISSION_ASKING, stop.getGenerateReason());
+    }
+
+    @Test
+    void confirmedResumeEmitsUserConfirmResultEventCorrelatedToRequireEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> pauseEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(pauseEvents);
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        pauseEvents.get(indexOf(pauseEvents, RequireUserConfirmEvent.class));
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(true, req.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iConfirm = indexOf(resumeEvents, UserConfirmResultEvent.class);
+        int iToolEnd = indexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(iConfirm >= 0, "UserConfirmResultEvent must be emitted on confirmed resume");
+        assertTrue(iToolEnd > iConfirm, "tool execution must follow the confirm-result event");
+
+        UserConfirmResultEvent confirm = (UserConfirmResultEvent) resumeEvents.get(iConfirm);
+        assertEquals(req.getReplyId(), confirm.getReplyId());
+        assertEquals(1, confirm.getConfirmResults().size());
+        assertEquals("tc1", confirm.getConfirmResults().get(0).getToolCall().getId());
+    }
+
+    @Test
+    void confirmResultsMayCoverSomeAskingToolCalls() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("ask1")
+                                                                        .input(Map.of("query", "x"))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("ask2")
+                                                                        .input(Map.of("query", "y"))
+                                                                        .build())))));
+        ReActAgent agent =
+                buildAgent(model, toolkitWith(new AskingTool("ask1"), new AskingTool("ask2")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        List<ToolUseBlock> pending = first.getContentBlocks(ToolUseBlock.class);
+        assertEquals(2, pending.size());
+
+        Msg resumed = agent.call(List.of(confirmMsg(true, pending.get(0)))).block();
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.PERMISSION_ASKING, resumed.getGenerateReason());
+
+        List<ToolUseBlock> remaining =
+                resumed.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(t -> t.getState() == ToolCallState.ASKING)
+                        .toList();
+        assertEquals(1, remaining.size());
+        assertEquals("tc2", remaining.get(0).getId());
     }
 
     @Test

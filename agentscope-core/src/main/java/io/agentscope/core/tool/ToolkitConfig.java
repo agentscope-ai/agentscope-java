@@ -26,8 +26,9 @@ import java.util.concurrent.ExecutorService;
  * - Custom ExecutorService (optional)
  * - Execution configuration for timeout and retry
  *
- * <p>By default, all tool execution is asynchronous using Reactor's Schedulers.
+ * <p>By default, multiple tool calls in one turn run in parallel on Reactor's Schedulers.
  * The default execution config provides 5-minute timeout with no retry (1 attempt).
+ * Pass {@code parallel(false)} to serialize tool execution.
  */
 public class ToolkitConfig {
 
@@ -111,7 +112,7 @@ public class ToolkitConfig {
     }
 
     /**
-     * Get the default configuration (sequential execution using Reactor).
+     * Get the default configuration (parallel execution using Reactor).
      *
      * @return Default ToolkitConfig
      */
@@ -123,7 +124,7 @@ public class ToolkitConfig {
      * Builder for ToolkitConfig.
      */
     public static class Builder {
-        private boolean parallel = false;
+        private boolean parallel = true;
         private ExecutorService executorService;
         private ExecutionConfig executionConfig;
         private boolean allowToolDeletion = true;
