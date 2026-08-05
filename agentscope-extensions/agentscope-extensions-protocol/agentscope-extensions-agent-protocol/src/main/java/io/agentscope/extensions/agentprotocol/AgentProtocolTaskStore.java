@@ -269,6 +269,7 @@ public final class AgentProtocolTaskStore {
             update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
             publishStatus(taskId, agentId, "success", null);
             eventBus.complete(taskId);
+            clearSubmitContext(taskId);
             return text;
         } catch (Exception e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -281,6 +282,7 @@ public final class AgentProtocolTaskStore {
             error.setStatus("error");
             eventBus.publish(taskId, error);
             eventBus.complete(taskId);
+            clearSubmitContext(taskId);
             throw new RuntimeException(e);
         }
     }
@@ -540,6 +542,20 @@ public final class AgentProtocolTaskStore {
             persist(r);
         }
         eventBus.complete(taskId);
+        clearSubmitContext(taskId);
+    }
+
+    /**
+     * Drops in-memory submit metadata for {@code taskId}. Kept during {@code awaiting_confirm} so
+     * {@link #resume} can reuse detail/userId, and cleared only on terminal completion/cancel.
+     */
+    private void clearSubmitContext(String taskId) {
+        submitContexts.remove(taskId);
+    }
+
+    /** Visible for tests — whether a submit context is still retained for {@code taskId}. */
+    boolean hasSubmitContext(String taskId) {
+        return submitContexts.containsKey(taskId);
     }
 
     private static String mapStatus(TaskRecord r) {

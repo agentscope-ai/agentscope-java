@@ -16,8 +16,10 @@
 package io.agentscope.extensions.agentprotocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -102,6 +104,8 @@ class AgentProtocolTaskStoreHitlTest {
         assertEquals(1, pending.size());
         assertEquals("tc-ask", pending.get(0).getToolCallId());
         assertEquals("bash", pending.get(0).getToolName());
+        // Submit context must survive awaiting_confirm so resume can reuse detail/userId.
+        assertTrue(store.hasSubmitContext("hitl-1"));
 
         store.resume("hitl-1", List.of(new RemoteConfirmDecision("tc-ask", false)));
 
@@ -111,6 +115,21 @@ class AgentProtocolTaskStoreHitlTest {
         assertEquals("success", done.get("status"));
         assertEquals("denied and done", done.get("result"));
         assertEquals(2, streamCalls.get());
+        assertFalse(store.hasSubmitContext("hitl-1"));
+    }
+
+    @Test
+    void submitContextClearedOnDirectSuccess() throws Exception {
+        when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new AgentStartEvent("sess", null, "worker"),
+                                new AgentResultEvent(completedMsg()),
+                                new AgentEndEvent(null)));
+
+        store.submit("ok-1", "worker", "hello", Map.of("user_id", "u1", "detail", "status"));
+        awaitCondition(() -> "success".equals(store.snapshot("ok-1").get("status")), 5_000);
+        assertFalse(store.hasSubmitContext("ok-1"));
     }
 
     @Test
