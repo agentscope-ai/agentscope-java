@@ -63,6 +63,17 @@ class RemoteEventCodecTest {
     }
 
     @Test
+    void toAgentEvent_copiesWireTaskIdIntoMetadata() {
+        RemoteAgentEvent dto = new RemoteAgentEvent();
+        dto.setType(RemoteEventType.TEXT_DELTA);
+        dto.setText("hi");
+        dto.setTaskId("task_from_wire");
+
+        AgentEvent back = RemoteEventCodec.toAgentEvent(dto).orElseThrow();
+        assertEquals("task_from_wire", back.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+    }
+
+    @Test
     void requireConfirmRoundTripPreservesAskState() {
         ToolUseBlock ask =
                 ToolUseBlock.builder()
