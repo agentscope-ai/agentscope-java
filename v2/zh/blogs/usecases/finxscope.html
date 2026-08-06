@@ -1,0 +1,1409 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="article:modified_time" content="2026-08-06T16:26:49+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="从配置驱动到业务原生：基于 AgentScope 的企业级 Agent 开发实践" href="logistics.html"><link rel="prev" title="客户实践案例" href="index.html">
+        <link rel="canonical" href="https://java.agentscope.io/v2/zh/blogs/usecases/finxscope.html">
+        <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>基于 AgentScope 构建金融级智能体底座实战 - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/custom.css?v=6f24c6f4" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/homepage.css?v=f1c207f0" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+  
+
+  <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+
+<div class="docs-site-header" role="banner">
+  <div class="docs-site-header__inner">
+    <div class="docs-site-header__start">
+      <a class="docs-site-header__brand" href="../../../en/intro.html">
+        <img class="docs-site-header__logo" src="../../../../_static/logo.svg" alt="" width="44" height="44" />
+        <span class="docs-site-header__title"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+      </a>
+      <div class="docs-site-header__nav-shell">
+        
+  
+  
+  
+  <nav
+    class="docs-top-tabs"
+    aria-label="Documentation sections"
+    data-current-page="v2/zh/blogs/usecases/finxscope"
+    data-current-lang="zh"
+    data-current-version="v2"
+  >
+    <div class="docs-top-tabs__list">
+      
+        
+        
+          
+          
+          
+            
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../intro.html"
+              data-tab-id="home"
+              data-mirror-paths="true"
+              data-href-en="v1/en/intro"
+              data-href-zh="v1/zh/intro"
+              data-href-v2-en="v2/en/intro"
+              data-href-v2-zh="v2/zh/intro"
+              data-url-en="../../../../v1/en/intro.html"
+              data-url-zh="../../../../v1/zh/intro.html"
+              data-url-v2-en="../../../en/intro.html"
+              data-url-v2-zh="../../intro.html"
+              data-prefixes-en="v1/en/intro"
+              data-prefixes-zh="v1/zh/intro"
+              data-prefixes-v2-en="v2/en/intro"
+              data-prefixes-v2-zh="v2/zh/intro"
+              data-sections-en=""
+              data-sections-zh=""
+              data-sections-v2-en=""
+              data-sections-v2-zh=""
+            >
+              首页
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../docs/index.html"
+              data-tab-id="docs"
+              data-mirror-paths="true"
+              data-href-en="v1/en/docs/quickstart/installation"
+              data-href-zh="v1/zh/docs/quickstart/installation"
+              data-href-v2-en="v2/en/docs/index"
+              data-href-v2-zh="v2/zh/docs/index"
+              data-url-en="../../../../v1/en/docs/quickstart/installation.html"
+              data-url-zh="../../../../v1/zh/docs/quickstart/installation.html"
+              data-url-v2-en="../../../en/docs/index.html"
+              data-url-v2-zh="../../docs/index.html"
+              data-prefixes-en="v1/en/docs/"
+              data-prefixes-zh="v1/zh/docs/"
+              data-prefixes-v2-en="v2/en/docs/"
+              data-prefixes-v2-zh="v2/zh/docs/"
+              data-sections-en="Quick Start|Features|Multi Agent|Harness (English)"
+              data-sections-zh="快速开始|功能指南|多智能体|Harness"
+              data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
+              data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
+            >
+              文档
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../integration/overview.html"
+              data-tab-id="integration"
+              data-mirror-paths="true"
+              data-href-en="v1/en/integration/overview"
+              data-href-zh="v1/zh/integration/overview"
+              data-href-v2-en="v2/en/integration/overview"
+              data-href-v2-zh="v2/zh/integration/overview"
+              data-url-en="../../../../v1/en/integration/overview.html"
+              data-url-zh="../../../../v1/zh/integration/overview.html"
+              data-url-v2-en="../../../en/integration/overview.html"
+              data-url-v2-zh="../../integration/overview.html"
+              data-prefixes-en="v1/en/integration/"
+              data-prefixes-zh="v1/zh/integration/"
+              data-prefixes-v2-en="v2/en/integration/"
+              data-prefixes-v2-zh="v2/zh/integration/"
+              data-sections-en="Integration"
+              data-sections-zh="集成"
+              data-sections-v2-en="v2 · Integration"
+              data-sections-v2-zh="v2 · 集成"
+            >
+              集成
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../agentscope-v2-release.html"
+              data-tab-id="blogs"
+              data-mirror-paths="true"
+              data-href-en="v1/en/blogs/index"
+              data-href-zh="v1/zh/blogs/index"
+              data-href-v2-en="v2/en/blogs/agentscope-v2-release"
+              data-href-v2-zh="v2/zh/blogs/agentscope-v2-release"
+              data-url-en="../../../../v1/en/blogs/index.html"
+              data-url-zh="../../../../v1/zh/blogs/index.html"
+              data-url-v2-en="../../../en/blogs/agentscope-v2-release.html"
+              data-url-v2-zh="../agentscope-v2-release.html"
+              data-prefixes-en="v1/en/blogs/"
+              data-prefixes-zh="v1/zh/blogs/"
+              data-prefixes-v2-en="v2/en/blogs/"
+              data-prefixes-v2-zh="v2/zh/blogs/"
+              data-sections-en="Blogs"
+              data-sections-zh="博客"
+              data-sections-v2-en="v2 · Blogs"
+              data-sections-v2-zh="v2 · 博客"
+            >
+              博客
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../community/contributors.html"
+              data-tab-id="community"
+              data-mirror-paths="true"
+              data-href-en="v1/en/community/overview"
+              data-href-zh="v1/zh/community/overview"
+              data-href-v2-en="v2/en/community/contributors"
+              data-href-v2-zh="v2/zh/community/contributors"
+              data-url-en="../../../../v1/en/community/overview.html"
+              data-url-zh="../../../../v1/zh/community/overview.html"
+              data-url-v2-en="../../../en/community/contributors.html"
+              data-url-v2-zh="../../community/contributors.html"
+              data-prefixes-en="v1/en/community/"
+              data-prefixes-zh="v1/zh/community/"
+              data-prefixes-v2-en="v2/en/community/"
+              data-prefixes-v2-zh="v2/zh/community/"
+              data-sections-en="Community"
+              data-sections-zh="社区"
+              data-sections-v2-en="v2 · Community"
+              data-sections-v2-zh="v2 · 社区"
+            >
+              社区
+            </a>
+          
+        
+      
+    </div>
+  </nav>
+
+      </div>
+    </div>
+    <div class="docs-site-header__actions" aria-label="Site actions">
+      <form class="docs-header-search" method="get" action="../../../../search.html" role="search">
+        <input class="docs-header-search__input" type="search" name="q" placeholder="Search" aria-label="Search" autocomplete="off" />
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+        <button class="docs-header-search__submit" type="submit" aria-label="Search">
+          <svg class="docs-header-search__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </form>
+      <div id="searchbox" class="docs-header-searchbox"></div>
+      <div class="docs-site-header__theme theme-toggle-container">
+        <button class="theme-toggle" type="button" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+
+<div class="version-switcher">
+  <div class="version-selector" id="version-selector">
+    <button
+      class="version-button"
+      type="button"
+      onclick="return toggleVersionMenu()"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-label="Select documentation version"
+    >
+      <span id="current-version-label">v2</span>
+    </button>
+    <div class="version-menu" id="version-menu" role="listbox">
+      
+        <a
+          href="https://java.agentscope.io/v2/"
+          class="version-option active"
+          role="option"
+          aria-selected="true"
+        >v2</a>
+      
+        <a
+          href="https://java.agentscope.io/v1/"
+          class="version-option"
+          role="option"
+          aria-selected="false"
+        >v1</a>
+      
+    </div>
+  </div>
+</div>
+
+      <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" type="button" onclick="return toggleLanguageMenu()" aria-haspopup="true" aria-expanded="false">
+            <span id="current-lang">English</span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="return switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="return switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+    </div>
+  </div>
+</div>
+  
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/quickstart/agent.html">Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/streaming.html">Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/session.html">Session Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/observability.html">Observability &amp; Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/ai-coding.html">Coding with AI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/task/online-training.html">Online Training</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/workflow.html">Custom Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/session.html">Session</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/tool.html">Tooling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/subagent.html">Subagent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/streaming.html">Subagent Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/quickstart/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/sandbox/index.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/docs/harness/example/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/integration/overview.html">Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Blogs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/blogs/index.html">Article index</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Community</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/community/overview.html">Community</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/en/community/contributors.html">Contributors</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/quickstart/agent.html">智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/streaming.html">流式输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/memory.html">记忆管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/observability.html">可观测与调试</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/ai-coding.html">使用 AI 编程</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/task/online-training.html">在线训练</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/multi-agent/multiagent-debate.html">多智能体辩论</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">集成</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/integration/overview.html">概览</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">博客</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/blogs/index.html">全部文章</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/blogs/agentscope-v1-builder.html">AgentScope Builder 发布</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">社区</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/community/overview.html">社区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/community/contributors.html">核心贡献者</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/architecture.html">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/session.html">会话</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/skill.html">技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/streaming.html">子 Agent 流式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/quickstart/index.html">快速开始</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/sandbox/agentrun.html">AgentRun 后端</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../v1/zh/docs/harness/example/index.html">示例</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/agent.html">Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/message-and-event.html">Message &amp; Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/middleware.html">Middleware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/sandbox.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/model/index.html">Model Providers</a><input aria-label="Toggle navigation of Model Providers" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/openai.html">OpenAI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/deepseek.html">DeepSeek</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/glm.html">GLM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/kimi.html">Kimi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/minimax.html">MiniMax</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/dashscope.html">DashScope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/gemini.html">Gemini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/anthropic.html">Anthropic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/model/ollama.html">Ollama</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/haystack.html">HayStack</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/ragflow.html">RAGFlow</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Blogs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-v2-release.html">AgentScope 2.0 Release</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-v2-explained.html">AgentScope 2.0 Production-Ready - Enterprise Harness Explained</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-v1-builder.html">AgentScope Builder Release</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-v2-coding-agent.html">The Second Half of Coding Agents: From Personal Efficiency to Org-Level Engineering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/managed-agents-agentscope-rumtime.html">Managed Agents Background</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/managed-agents-agentscope-rumtime.html#why-agentscope-2-0-is-a-good-foundation-for-managed-agents">Why AgentScope 2.0 Is a Good Foundation for Managed Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/managed-agents-agentscope-rumtime.html#enterprise-managed-agents-platform-in-detail">Enterprise Managed Agents Platform in Detail</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/managed-agents-agentscope-rumtime.html#summary">Summary</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release.html">What Is AgentScope Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release.html#architecture-overview">Architecture Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release.html#how-agents-attach">How Agents Attach</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release.html#try-it-locally">Try It Locally</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release.html#roadmap-closing">Roadmap &amp; Closing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/blogs/agentscope-service-release-tech.html">AgentScope Service Explained: Control Plane, Data Plane &amp; Recoverable Runtime</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/blogs/usecases/index.html">Customer Use Cases</a><input aria-label="Toggle navigation of Customer Use Cases" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/blogs/usecases/finxscope.html">FinXScope: A Financial-Grade Agent Foundation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/blogs/usecases/logistics.html">From Config-Driven to Business-Native: Enterprise Agent Practice</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/blogs/usecases/aidc-logistics.html">AIDC Logistics: Enterprise Agent Development Practice</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Community</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/community/contributors.html">Contributors</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/index.html">什么是 AgentScope 2.0？</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/quickstart.html">快速上手</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 核心组件</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/agent.html">智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/message-and-event.html">消息与事件</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/middleware.html">Middleware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/model.html">模型</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/permission-system.html">权限系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/context.html">上下文与 AgentState</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/architecture.html">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/compaction.html">上下文压缩</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/sandbox.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/skill.html">技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/channel.html">Channel</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/others/release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/others/going-to-production.html">上生产</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/others/faq.html">常见问题</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 集成</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">概览</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/model/index.html">模型提供商</a><input aria-label="Toggle navigation of 模型提供商" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/openai.html">OpenAI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/deepseek.html">DeepSeek</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/glm.html">GLM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/kimi.html">Kimi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/minimax.html">MiniMax</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/dashscope.html">DashScope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/gemini.html">Gemini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/anthropic.html">Anthropic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/model/ollama.html">Ollama</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">百炼记忆</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS 状态存储</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">百炼知识库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/haystack.html">HayStack</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/ragflow.html">RAGFlow</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">在线训练</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 博客</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-v2-release.html">AgentScope 2.0 发布</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-v2-explained.html">AgentScope 2.0 生产可用，企业级 Harness 技术全解析</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-v1-builder.html">AgentScope Builder 发布</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-v2-coding-agent.html">Coding Agent 的下半场：从个人提效到组织级研发体系</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../managed-agents-agentscope-rumtime.html">Managed Agents 背景</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../managed-agents-agentscope-rumtime.html#agentscope-2-0-managed-agents">为什么 AgentScope 2.0 适合做 Managed Agents 底座</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../managed-agents-agentscope-rumtime.html#id1">企业级 Managed Agents 平台详解</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../managed-agents-agentscope-rumtime.html#id10">总结</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release.html">什么是 AgentScope Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release.html#id1">整体架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release.html#agent">Agent 如何接入</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release.html#id9">本地快速体验</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release.html#roadmap">Roadmap &amp; 总结</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../agentscope-service-release-tech.html">AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">客户实践案例</a><input aria-label="Toggle navigation of 客户实践案例" checked="" class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">FinXScope：基于 AgentScope 构建金融级智能体底座</a></li>
+<li class="toctree-l2"><a class="reference internal" href="logistics.html">从配置驱动到业务原生：企业级 Agent 开发实践</a></li>
+<li class="toctree-l2"><a class="reference internal" href="aidc-logistics.html">AIDC 物流：企业级 Agent 开发实践</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 社区</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../community/contributors.html">核心贡献者</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/v2/zh/blogs/usecases/finxscope.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="agentscope">
+<h1>基于 AgentScope 构建金融级智能体底座实战<a class="headerlink" href="#agentscope" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p>作者：孟辰(半堂)，文军(思越)，凌乐真(乐真)，徐磊(崇树)，林源(逆仞)</p>
+</div></blockquote>
+<section id="id1">
+<h2>01 产品定位与核心愿景<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<section id="finxscope">
+<h3>1.1 FinXScope 是什么<a class="headerlink" href="#finxscope" title="Link to this heading">¶</a></h3>
+<p>FinXScope 是阿里云新金融技术服务团队**基于 AgentScope Java 构建的金融级 AI 原生智能体底座。**作为整个 Agent Harness 体系的核心组成部分，FinXScope 充分复用 AgentScope Java 在智能体编排、工具集成、多模型接入及可扩展运行时等方面的成熟能力，并在此基础上针对金融行业的合规性、安全性与高可用要求进行了深度定制与增强。完整的 Agent Harness 体系由 FinXScope 运行底座、AI 服务资产平台、全链路评测平台和运营管理平台共同构成，FinXScope 在其中承担着最核心的智能体运行与管理职责。</p>
+<p><img alt="FinXScope 在 Agent Harness 体系中的定位" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j0kkybNzlZ4kkdLlAs3LtUY6vicvYk6pDnUKicDfxf2kmL3xc3pk4GHYNTAROGEpWrdAqibbEMW8vlU5udgHibJcP9DWMzFrQnc7Wk/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>理解 FinXScope 的核心定位，需要把握四个关键层面：</p>
+<p><img alt="FinXScope 核心定位的四个关键层面" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2NbU5bRwZayf7zvQfYQOwQb9FX3cqXDM14At9Q33B7LoRnAp8k2LkHFDFv0pBMYyDyOpL3qDV6R5DNzYspLv7wy1hIEBkoofk/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>一句话概括</strong>：FinXScope 是金融级 AI 原生智能体底座的核心引擎。专家服务团队与金融机构深度共创，围绕企业实际场景共同打造符合金融级要求的 AI 原生应用搭建、运行与运营体系。基于它构建的智能体应用，让用户只需一句话描述目标，系统即可自主规划路径、动态调度上百个技能完成任务，真正实现”对话即服务”的全新交互范式。</p>
+</section>
+<section id="id2">
+<h3>1.2 客户进展与市场验证<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>自推出以来，FinXScope 获得多家金融机构的高度关注和实质性合作进展，已经在 10 个金融头部客户投产上线，20 多个客户交付中，覆盖 60 个以上的金融客户群体，包括国有大行、股份制银行、保险公司及证券机构等多类金融业态。</p>
+<p>实际落地场景涵盖财富管理、客户经理赋能、智能核保、合规审查、投研分析等核心金融业务。在已投产的项目中，AI 原生 App 已触达千万级用户群体，验证了 FinXScope 在真实生产环境下的稳定性和业务价值。</p>
+<p>这些实践验证了一个核心判断：金融机构需要的不是又一个聊天机器人框架，而是一个能够真正支撑企业级智能体从概念验证到规模化投产的运行底座。</p>
+</section>
+</section>
+<section id="id3">
+<h2>02 行业背景与挑战<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h3>2.1 从”功能导航”到”对话即服务”的范式跃迁<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>金融 AI 正在经历一次根本性的范式变化。2024 年以来，以 Manus、Claude Code、Hermes Agent 等为代表的自主智能体产品引爆了全球市场的关注，OpenClaw 在 3 个月内获得超过 23 万 GitHub Stars 成为现象级项目。这些标志性事件证明：大模型已经从”聊天助手”进化为能够自主规划和执行复杂任务的”工作搭档”。</p>
+<p><img alt="智能体产品的标志性事件" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j31Nbiagg96SjGyRY33Lv0pO0hYAbuuCEVcQiccvH4HhESAULoxjRaKhCVUFKDicWt8v6rNAoJVxLicjaFDic5xeJXm4gMk02NfOb74/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>对金融行业而言，这个变化的影响是深远的。传统的智能服务研发路径是在已有系统上”叠加”AI 能力：AI 的定位更像是帮助传统工作流的辅助工具，它没有打破原有的服务路径。用户依然需要在层级菜单、按钮和表单间手动跳转，只不过多了一个”AI 问答”入口。这种方式导致了一个尴尬的局面：客户用了所谓的”智能服务”，但使用方式和体验与传统模式并无本质区别。</p>
+<p>但随着大模型能力跨越临界点，AI 已经具备参与甚至主导业务流程的能力。这意味着金融机构对 AI 的期待发生了根本性转变：不再是简单地自动化固定工作流，而是希望 AI 能够自主理解用户意图、动态调度企业级金融服务资产、解决客户的复杂问题。</p>
+<p><img alt="金融机构对 AI 期待的根本性转变" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2HL1oMgRlGCK7LY8xuE4IOHpxavn3FuOibq4DseicvvcSuNHbLTflbKKmRaIibXWxn13dpYMQiaAlU5CRuPiauDjrNKMibOY9wpXx28/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>这个跃迁的本质是：从”以企业功能为中心”转向”以用户问题为中心”——用户不再需要知道系统有哪些功能、该走哪个流程，而是直接描述自己的目标，AI 自主完成从理解到执行的全过程。这就是”对话即服务”的新范式。</p>
+</section>
+<section id="id5">
+<h3>2.2 金融机构构建智能体面临的结构性挑战<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<p>据安永《AI 银行白皮书》分析，AI 技术在银行业的规模化落地已具备战略紧迫性。普华永道 2026 年金融 AI 调研也指出，银行与保险机构在 AI 治理方面最关注的是可追溯性与可解释性。然而，金融机构在从 POC 验证走向规模化投产的过程中，面临着一系列深层次的结构性挑战，而这些挑战恰恰是 FinXScope 所针对性解决的：</p>
+<p><img alt="金融机构构建智能体面临的结构性挑战" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j38qaZ1xD0GDb7vPOm8WdyuiaQxeCmpqIMC54TLxyaQSqObiclrkLPNgS2kTBic4np1rjmibe0SUnx1plpnUrqHeUlWicMHukszb2wY/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>上述挑战的本质是一个系统性问题：金融机构需要的不是某个单点能力的增强，而是一套完整的智能体运行底座。</p>
+<p>一个容易被忽视的事实是：智能体的最终业务效果，并不完全取决于大模型本身的能力，同样取决于承载它运行的底座（Agent Harness）的质量。意图是否被精准理解、工具是否被正确调度、上下文是否被有效管理、执行过程是否可靠可控——这些”模型之外”的工程能力，才是决定智能体能否在真实场景中稳定交付价值的关键。同一个大模型，运行在不同质量的底座之上，呈现的业务效果可能天差地别。这正是金融机构需要一套专业级 Agent Harness 的根本原因。</p>
+</section>
+</section>
+<section id="ai">
+<h2>03 AI 原生六层架构<a class="headerlink" href="#ai" title="Link to this heading">¶</a></h2>
+<section id="id6">
+<h3>3.1 6 层架构设计<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>FinXScope 是整个 Agent Harness 体系的核心引擎，也是首个面向金融行业的企业级智能体运行底座。它提供的是系统性的完整能力组合，而非散点式的技术组件：基于已在阿里巴巴大规模验证的 AgentScope 框架，叠加完全自研的十大核心能力和金融级增强，形成了一个既有坚实技术根基、又能快速适配金融场景的智能体运行平台。围绕 FinXScope，Agent Harness 体系进一步延伸出 AI 服务资产平台（FinXSkillHub）、全链路评测平台（FinXVantage）和运营管理平台，共同覆盖智能体从开发、运行到持续优化的完整生命周期。而 FinXScope 的六层架构，不仅是这套体系的技术实现骨架，更是面向 AI 原生时代对企业应用架构的全新定义与规范。</p>
+<p><img alt="FinXScope 六层架构" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j2Oqs21qftQibzJXYkH4MTwxau2HRrTJYUZGGbor1ceehlhicr57K0UZoCfXBRQibkXWkUY4k3JjoWszKciah8nAXq9mia88wLRb478/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>为什么需要重新定义企业架构？传统企业架构（SOA、微服务）是围绕”人操作系统”的范式设计的：人通过界面发起操作，系统按照预设流程执行，返回确定结果。但在 AI 原生范式下，”AI 自主规划和执行任务”成为核心驱动力。这要求所有的服务能力、数据资产、功能组件都必须面向”如何更好地被 AI 理解和调用”而重新组织。这是一次底层设计范式的转变，而非在原有架构上的修补。</p>
+</section>
+<section id="id7">
+<h3>3.2 架构设计详解<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<p><img alt="FinXScope 架构设计详解" src="https://mmbiz.qpic.cn/sz_mmbiz_jpg/bvDbzNRia8j2JTueRDIcTYUyXKMN8zCxQ6rXcCuLstTQTp0ibYEARIGq21Ngjjjlo7kTstvzuZz7Aia6zJarIcmMHqVQOiarNpTD5FTwFm86Gww/640?wx_fmt=jpeg&amp;from=appmsg" /></p>
+</section>
+<section id="id8">
+<h3>3.3 AI 原生架构的战略意义<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<p>六层架构的意义远超技术实现层面，它回答了金融机构在智能化转型中面临的一个根本性问题：当 AI 从”辅助工具”升级为”核心驱动力”时，企业的技术架构应该如何重新组织？</p>
+<p><img alt="AI 原生架构的战略意义" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j3mticZER8oKeY6gOnV6U0RjtrqbmnRcvuK5JJUxiasWAABmOAPmVKP5Up3D3U18Hqs1Enyl2VfIsNvNiablJObnuK5o9TicrTUTqA/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+</section>
+<section id="id9">
+<h2>04 核心能力深度解析<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<p>以下十大核心能力是 FinXScope 的技术护城河，它们既包含完全自研的原创能力，也包含在 AgentScope 基础上进行深度增强。这些能力源自实际金融客户场景的刚性需求，经过了多个生产环境的打磨验证。</p>
+<section id="id10">
+<h3>4.1 意图引擎：金融语义的精准理解<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：在金融对话场景中，用户的表达往往是口语化、模糊的、带有强上下文依赖的。”茅台最近咋样”需要被理解为”贵州茅台（600519）近期股价走势”；”昨天说的那个产品帮我买 5 万”需要结合历史对话还原完整指令。传统的关键词匹配或浅层分类模型，在这种复杂金融对话中表现出明显的不适应性。</p>
+<p><img alt="金融对话场景的语义理解挑战" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1PBJxG0U8nZXIhPwwLQQagkMiarjKL8VzEAcGC7ILibGITGkF6xlWY4Niamfkn078nbDBWhD8cUo2r0c8Dw2MiaQmQlAibUPSuTicicE/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>解决方案</strong>：FinXScope 的意图引擎实现了完整的四阶段处理管道，每个阶段可独立开关、灵活配置，形成”模块化、可配置的金融意图引擎”：</p>
+<p><strong>第一阶段</strong>：NER 实体识别——基于金融领域词典与规则引擎，自动识别股票代码、企业名称、金额、时间、百分比等金融实体。采用异步处理和小模型推理保证高性能（毫秒级响应），同时通过可配置的词典机制支持企业自定义实体类型扩展。</p>
+<p><strong>第二阶段</strong>：问题改写——将口语化输入转化为结构化查询请求。改写管道串联四个处理器：上下文增强（从历史消息和用户画像中提取上下文实现指代消解）、术语标准化（”年涨”→”年度涨幅”）、语义纠错（修正歧义和错误）、LLM 重写（在必要时调用大模型生成更清晰的结构化表达）。改写规则支持管理端在线配置。</p>
+<p><strong>第三阶段</strong>：意图分类——基于动态意图树实现多级意图判定。支持 LLM 智能分类（高精度）与规则回退（高性能）两种模式自动切换。意图树支持管理端在线配置和版本管理，支持运行时动态覆盖。</p>
+<p><strong>第四阶段</strong>：Skill 映射——按识别出的意图精确路由到对应技能。支持多技能组合和优先级配置，映射关系支持管理端在线配置。</p>
+<p>在意图树路由之外，意图引擎还支持基于 Skill 文档的 LLM 自主规划模式。当用户问题无法被意图树精确匹配时，系统自动切换到 LLM 自主规划：大模型基于 SkillPool 中所有可用技能的文档描述（SKILL.md），自主判断需要调用哪些技能、以何种顺序执行。两种模式在同一智能体中共存，由引擎根据问题特征自动路由。</p>
+<p><strong>2.0 新增能力</strong>：支持调用方通过请求参数覆盖预设意图树，实现多租户场景下的差异化意图策略；支持意图切换追踪；意图树管理接口支持完整 CRUD 和版本回滚。</p>
+</section>
+<section id="id11">
+<h3>4.2 三层记忆系统：从提示词工程到上下文工程的进化<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：传统 AI 系统要么没有记忆（每次对话从零开始），要么只有原始消息堆砌（无法提取高价值信息），且记忆实现深度耦合于业务逻辑，缺乏统一的读写接口和生命周期管理。</p>
+<p><img alt="三层记忆系统" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2jUjCICaLeYspfgU4pOkxiaF02s39Pzb19TAWuMWJ4FV7XVHZs4iad6eiaUWSj7cQacq0hYiaZ2FDQmHLZiaiaUYNWoopFncD6Tk6nc/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>解决方案</strong>：提示词工程关注的是”如何写好一个提示词”，而上下文工程关注的是”如何系统性地管理 LLM 接收到的所有上下文信息”：上下文的质量和组织方式，直接决定了智能体的决策质量。三层记忆不是三个独立的”存储箱”，而是一套完整的”存储→压缩→召回→注入”运行循环：</p>
+<p><strong>短期记忆（STM）</strong>：对话级上下文的窗口管理与智能压缩。STM 采用滑动窗口机制管理当前会话的对话轮次。当对话持续进行、上下文逐步膨胀超过 Token 阈值时，STM 触发智能压缩：优先使用 LLM 摘要（让大模型提取对话中的关键信息和决策要点，压缩为简洁的摘要），规则摘要作为回退策略（按时间衰减丢弃较早的低重要性消息）。压缩后的摘要替代原始消息继续参与对话，确保每次注入模型的上下文既保留了关键语义，又不会因过长而影响推理质量。多维度容量控制（轮次限制、Token 限制、时间限制）协同工作。</p>
+<p><strong>2.0 升级</strong>：STM 支持 Redis 持久化，实现跨实例会话恢复。</p>
+<p><strong>长期记忆（LTM）</strong>：跨会话知识的结构化存储与语义召回。LTM 基于 PostgreSQL + pgvector 实现持久化向量存储。在每次对话结束后，系统自动评估本次交互中哪些信息具有长期价值（通过 LLM 驱动的重要性评分，过滤冗余和低价值内容），将有价值的信息向量化后存入 LTM。在新对话开始时，系统将当前用户输入向量化，通过语义相似度检索，召回与当前对话最相关的历史片段（如”用户上周咨询过的基金产品””用户表达过的投资偏好”）。同时支持关键词检索（带时间衰减评分）作为补充通道，向量检索失败时自动降级。召回的记忆片段被注入到当前对话的上下文中，让智能体”记住”跨会话的关键信息。</p>
+<p><strong>2.0 升级</strong>：LTM 完整迁移到 PostgreSQL，支持集群化部署。</p>
+<p><strong>用户画像（UserProfile）</strong>：构建在 LTM 之上的结构化金融属性层。UserProfile 不是第三类独立”记忆”，而是从长期交互中自动提取和更新的结构化用户认知。它将 LTM 中散落的交互信息提炼为标准化的金融属性：静态属性（年龄、职业、资产规模）、动态属性（风险等级变化、投资偏好演进）、行为偏好（交互风格、决策习惯）和标签体系（高净值、稳健型、关注科技板块等）。每次交互自动更新，整体画像注入系统提示词指导对话策略。UserProfile 的运行时注入让不同用户获得完全不同的服务策略——同样问”推荐基金”，保守型和激进型用户获得的产品组合和话术完全不同。</p>
+<p><strong>异步零感知</strong>：三层记忆的读写操作完全异步化，不影响主流程的响应速度。用户感知到的是即时响应，系统在后台默默完成记忆的评估、压缩、存储和画像更新。</p>
+</section>
+<section id="id12">
+<h3>4.3 双模智能执行架构：灵活性与可控性的统一<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
+<p>场景痛点：金融业务场景的复杂度跨度极大：从简单的余额查询到复杂的投资组合分析。单一执行模式无法覆盖所有场景：纯自主规划模式在简单场景中效率低且不可预测，纯工作流模式在开放性问题中过于僵化。</p>
+<p><img alt="双模智能执行架构" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j3KDYmZys4TiaJn3Vq3GkFzUcHKfG6q1vQzUz7zicly0xycxiazE458jWUpepIFS91Xet4EBbVfuwy21n9qpQq7nKLISeEaLomCDQ/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>解决方案</strong>：首先支持两种执行模式，然后通过共享执行底座实现两者的融合。</p>
+<p><strong>OneAgent 模式</strong>：自主智能执行。基于 ReAct（Reasoning-Acting）循环，让单个智能体自主规划并闭环执行任务。AI 在每一步都进行”思考→行动→观察”的循环，充分释放大模型的创造力和推理能力，适合开放性、探索性任务。</p>
+<p><strong>Multi-Agent 模式</strong>：协作编排执行。2.0 全新构建的统一工作流执行引擎，支持八种编排策略：并行执行（Parallel）、顺序执行（Sequential）、循环执行（Loop）、消息中心（MsgHub）、辩论模式（Debate）、图编排（Graph，基于 DAG）、动态路由（Routing）、监督者模式（Supervisor）。每种策略都实现标准化接口，支持流式输出。</p>
+<p><strong>核心创新</strong>：共享执行底座使两种模式深度融合。实现两种执行模式本身并不是最难的部分。真正的技术亮点在于：OneAgent 和 Multi-Agent 共享同一套统一执行引擎（AgentProcessEngine）作为底座。这意味着两种模式在权限校验、审计留痕、执行管理等横切关注点上保持一致，不会因为切换执行模式而丧失金融级保障能力。</p>
+<p>正是因为共享执行底座，FinXScope 才能实现更进一步的创新——工作流挂载到 OneAgent。通过 MountableResource 机制，将 Multi-Agent 工作流封装为 Tool，供 OneAgent 在自主推理过程中按需调用。AI 自主决策何时需要启动一段确定性工作流（如合规审查子流程），工作流执行完毕后结果返回给 OneAgent 继续推理。这种”自主智能 + 确定流程”的融合之所以能够实现，正是因为两种模式运行在同一套执行引擎之上——上下文可以无缝传递、事件可以跨模式透传、审计可以统一记录。支持工作流挂起/恢复和子流程事件透传（避免主 Agent 复述导致的信息衰减和时延增加）。</p>
+</section>
+<section id="id13">
+<h3>4.4 统一执行引擎：智能体的”操作系统内核”<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：每个智能体各自实现执行逻辑，导致代码重复、行为不一致、审计不完整，在金融级场景中这是不可接受的合规风险。不同 Agent 的上下文装配方式参差不齐，记忆读写时机不统一，异常处理链路各行其是，使得全链路日志无法穿透、工具调用缺乏统一拦截，既无法满足”每一步决策可回溯”的审计要求，也极大增加了多编排模式下的维护与演进成本。</p>
+<p><strong>解决方案</strong>：AgentProcessEngine 作为统一执行入口，整个引擎包含前置通用层、策略路由层、后置通用层，形成”统一入口 → 统一调度 → 统一收官”的闭环架构：</p>
+<p><strong>前置通用层</strong>：</p>
+<ul class="simple">
+<li><p>权限校验：用户-Agent-Skill 三级权限验证。</p></li>
+<li><p>输入预处理：文件 ID、运行标识统一补齐，保证后续任何一层都能拿到完整可追踪的输入。</p></li>
+<li><p>上下文加载：从历史消息装配短期记忆（STM），从 MemoryManager 召回相关长期记忆（LTM），从用户画像读出风险偏好等静态属性，统一注入执行上下文。</p></li>
+<li><p>审计启动：打开全链路结构化日志、记录意图决策链与耗时度量，为后续拦截点提供统一的上下文锚。</p></li>
+</ul>
+<p><strong>策略路由层</strong>：</p>
+<ul class="simple">
+<li><p>灵活策略选择：根据 patternType 自动选择执行策略（OneAgent ReAct / Multi-Agent 八种编排）处理。</p></li>
+<li><p>MountableResource 生命周期：记忆管理器、Toolkit、Skill 包、预编译图等”可挂载资源”按需在策略启动时接入、结束时释放，由执行上下文统一托管。</p></li>
+</ul>
+<p><strong>后置通用层</strong>：</p>
+<ul class="simple">
+<li><p>结果格式化：所有策略的输出统一收敛为标准的 AG-UI 事件流，对前端是一套协议。</p></li>
+<li><p>记忆写入：用户原文 + 助手完整回复 + 元数据（session、改写文本、意图类型、命中 Skill、工具调用明细）异步回写 STM / LTM / UserProfile，用户画像随每次交互持续打磨。</p></li>
+<li><p>审计关闭：闭合未结束的流式消息段、发送终态事件、打印结构化日志（实例、模式、耗时、文本长度），与前置层的 traceId 完成闭环。</p></li>
+<li><p>指标采集：Prometheus 指标端点已打通，采集引擎总耗时、各阶段耗时、LLM 调用量等指标。</p></li>
+</ul>
+<p>全面支持同步、流式、AG-UI 三种执行模式。完整拦截器链（12 个拦截点）支持自定义逻辑注入。执行全程自动记录决策链、工具调用、Skill 日志，满足金融审计合规要求。</p>
+<p><strong>2.0 新增</strong>：模型运行时覆盖、Skill 级超时配置和重试策略、执行上下文跨实例透明迁移。</p>
+<ul class="simple">
+<li><p>模型运行时覆盖：系统提示词、模型类型、skills 等支持热更新，同一个 Agent 配置可按用户/场景动态变身。</p></li>
+<li><p>Skill 级超时与重试：按 Skill 粒度配置独立超时阈值与重试策略，避免长尾工具拖垮整条对话链。</p></li>
+<li><p>执行上下文跨实例透明迁移：支持多副本部署下请求路由到任意实例都能恢复状态，为灰度发布与故障切换提供底座。</p></li>
+</ul>
+</section>
+<section id="ag-ui">
+<h3>4.5 AG-UI 全链路流式交互：跨渠道一致的实时服务体验<a class="headerlink" href="#ag-ui" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：传统 AI 应用”问一句等半天”的交互模式让用户无法感知 AI 正在做什么。多渠道各自定制交互协议导致体验不一致和管理成本高。同时有些金融数据是结构化的，纯文本输出无法有效传达趋势、对比、占比等信息。</p>
+<p><strong>解决方案</strong>：FinXScope 全面适配 AG-UI 标准协议，基于 Spring WebFlux 响应式流式架构，通过 SSE（text/event-stream）实现全链路异步流式传输。AG-UI 协议定义了 15 种细粒度事件类型，覆盖推理过程、工具调用、中间结果、最终输出等完整交互链路。AG-UI 标准化交互带来四重核心价值：</p>
+<p><strong>跨渠道复用</strong>：新渠道接入时，前端只需按统一标准消费 AG-UI 事件流，无需为每个渠道单独定制交互协议。同一套事件流在各渠道前端直接复用，显著降低管理成本和开发成本，确保跨终端一致的智能服务体验。</p>
+<p><strong>前后端解耦</strong>：前端只消费标准事件流，后端切换模型、增减工具、调整策略时前端无需任何改动。这让后端可以独立快速迭代，前端只需维护对标准事件类型的渲染能力。</p>
+<p><strong>统一可观测</strong>：所有 Agent 基于同一套事件类型做监控、告警和性能分析。事件流天然提供了全链路的执行追踪能力。</p>
+<p><strong>工具生态可扩展</strong>：新增工具只需按协议输出标准事件，即可被前端自动识别和消费，无需跨团队联动改造。</p>
+<p>渲染层面内置多种标准渲染工具（折线图、柱状图、饼图、指标卡片、数据表格、成交量图、可选列表、确认操作卡片等），支持占位符式增量渲染和个性化组件扩展。</p>
+<p><strong>2.0 新增</strong>：workflow_command_agent 自然语言到控件操作指令转化；WorkflowToolRegistry 前端动态声明控件、运行时注册为智能体可调用工具。</p>
+</section>
+<section id="id14">
+<h3>4.6 三层技能定义体系：从配置到代码的渐进式复杂度适配<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：金融业务技能复杂度跨度大，从简单的汇率查询到复杂的信贷审批，单一定义方式无法兼顾简洁性和表达力。</p>
+<p><strong>解决方案</strong>：三层技能定义体系按复杂度递进：</p>
+<p><strong>YAML 配置文件（轻量查询类）</strong>：在配置文件中声明技能名称、描述、关联工具和内容。框架启动时自动读取并批量注册，无需编写任何代码。适合汇率查询、余额查询等内容固定、逻辑简单的技能。</p>
+<p><strong>SKILL.md + 脚本（中等复杂度，”文档即契约”）</strong>：在 skills 目录下为每个技能建立独立文件夹，核心是一份 SKILL.md 文档，可配套 Python/Shell 脚本使用。OneAgent 完全依赖这份 Markdown 文档决定何时调用该技能、如何传参，让行为可预测、可审计。适合客户洞察、产品推荐、风险评估等中等复杂场景。</p>
+<p><strong>Java &#64;Bean 注册（复杂业务逻辑）</strong>：标准 Spring Bean 方式，具备完整类型检查和 IDE 支持，同时作为底层工具的注册方式（如多步事务封装、强一致性保障的业务工具）。适合多步事务封装、合规审查、信贷审批等强一致性业务场景。</p>
+<p><strong>2.0 新增</strong>：</p>
+<ul class="simple">
+<li><p>SkillsHub 远程加载：由管理平台统一管控版本。服务启动时全量拉取上线技能，运行期间管理平台发布变更，整个过程无停机时间，支持版本管理和灰度发布。</p></li>
+<li><p>技能自动权限过滤：支持 NONE、FILTER、REJECT 三种模式管控用户对于技能的使用权限。</p></li>
+</ul>
+</section>
+<section id="id15">
+<h3>4.7 工具与知识对接：标准化连接企业存量资产<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：金融机构经过多年信息化建设，积累了大量业务系统和知识资产，但它们接口标准各异、分散在不同平台中，逐个编写适配代码工作量大。与此同时，大量非结构化知识难以被智能体有效利用。</p>
+<p><strong>解决方案</strong>：通过标准化协议和配置化接入机制，将工具对接、知识检索和权限透传统一为平台级基础能力，最大限度减少适配改造工作量：</p>
+<p><strong>工具接入</strong>：提供 MCP（Model Context Protocol）和 API Schema 两种标准配置方式，企业只需声明服务地址和认证信息即可完成工具注册。McpClientRegistry 统一管理所有 MCP 连接的配置、健康检查和生命周期，确保工具可用性；同时支持配置化接入任意符合 MCP 协议的客户自定义 Bean，无缝对接客户存量系统能力，无需额外开发。</p>
+<p><strong>知识接入</strong>：统一的 Knowledge 接口支持多知识源的配置化路由——百炼通用 RAG、点金金融专业知识库、客户自建知识库均可通过配置接入。智能体通过统一的 Knowledge 工具调用知识检索，底层自动屏蔽不同知识库的实现差异，并对标签检索、召回重排、查询改写等核心能力提出统一的质量标准。</p>
+<p><strong>权限透传</strong>：无缝对接企业安全体系。为工具调用和知识召回接口提供标准化的数据透传通道，支持身份信息、渠道标识等上下文的端到端传递，让智能体的每一次外部调用都自动继承用户的权限边界，无需重复建设鉴权逻辑。</p>
+<p><strong>2.0 新增</strong>：McpClientRegistry 支持动态管理：工具连接的增删改在运行时即可完成，秒级生效，无需重启服务；新注册的工具自动注入到 Agent 可用列表，运营团队可以独立完成工具的上下线操作。</p>
+</section>
+<section id="id16">
+<h3>4.8 接入网关引擎：多渠道统一入口与安全管控<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：多渠道输入格式各异需要统一处理，AI 系统面临的 Prompt 注入等安全威胁需要在入口层统一防护。</p>
+<ul class="simple">
+<li><p><strong>协议碎片化</strong>：不同客户端（Web/移动端/第三方系统）提交的请求格式不同后端需逐一适配。</p></li>
+<li><p><strong>安全威胁</strong>：Prompt 注入、敏感内容输入、违规操作等安全威胁如不在入口层统一拦截，将扩散至意图引擎和执行引擎，造成不可控风险。</p></li>
+<li><p><strong>多模态预处理缺失</strong>：图片/视频/音频/文档等非结构化内容如果直接透传给 LLM，无法获得有效理解；需在网关层完成内容提取并增强 Prompt。</p></li>
+<li><p><strong>流式输出不一致</strong>：不同处理分支（纯文本/多模态/TodoList）的 SSE 事件格式和生命周期管理各自为政，前端对接成本高。</p></li>
+<li><p><strong>会话状态管理松散</strong>：消息持久化、会话标题生成、上下文恢复等散落在各模块，缺少统一编排点。</p></li>
+</ul>
+<p><strong>解决方案</strong>：实现六重核心职责：协议适配、多模态处理、安全管控、请求路由、流式输出编排、会话持久化。集成完整拦截器链和权限检查。安全策略支持后台动态配置，变更秒级生效。</p>
+<ul class="simple">
+<li><p><strong>协议适配</strong>：兼容 4 种输入格式，统一解析为标准内部表示。</p></li>
+<li><p><strong>多模态处理</strong>：图片理解、视频理解、音频 ASR、文档解析，并行提取并增强 Prompt。</p></li>
+<li><p><strong>安全管控</strong>：策略匹配 + 风险评分 + 行动执行（pass/warn/block），支持白名单、5 分钟策略缓存。</p></li>
+<li><p><strong>请求路由</strong>：三路分发：纯文本 → OneAgent / 多模态 → 提取+OneAgent / TodoList → 直接执行。</p></li>
+<li><p><strong>流式输出编排</strong>：统一 AG-UI Protocol 事件格式，过滤重复控制事件，网关层统一发送生命周期事件。</p></li>
+<li><p><strong>会话持久化</strong>：用户消息/助手回复自动保存，会话标题自动生成，多模态内容兜底保存。</p></li>
+</ul>
+<p><strong>2.0 新增</strong>：DocumentParserService 多格式文档解析（PDF/DOCX/DOC/MD/TXT），支持大文件分块、格式保真、元数据提取，让用户可以直接基于上传文档与智能体对话，权限控制体系、TodoList 智能路由、可观测埋点。</p>
+</section>
+<section id="todolist-2-0">
+<h3>4.9 TodoList 任务管理（2.0 全新构建）：长流程任务的可视化进度追踪<a class="headerlink" href="#todolist-2-0" title="Link to this heading">¶</a></h3>
+<p><strong>场景痛点</strong>：针对跨境汇款、贷款审批等长流程金融任务（耗时 30s 至数分钟），解决用户对 Agent 执行过程”完全不可见”的问题——不知道进展到哪、不知道拆解得对不对、中断后无法继续。</p>
+<ul class="simple">
+<li><p><strong>进度可见性</strong>：实时同步执行状态（如”2/4 完成，正在执行第 3 步”），消除等待焦虑，减少无效追问。</p></li>
+<li><p><strong>规划可校验</strong>：透明化 Agent 的任务拆解逻辑，允许用户在执行前/中识别遗漏或偏差并介入纠偏，变被动等待为主动审视。</p></li>
+<li><p><strong>中断可恢复</strong>：持久化存储任务状态，支持跨会话/跨天自动断点续传，保障复杂业务流程连续性。</p></li>
+</ul>
+<p><strong>解决方案</strong>：基于两级步骤模型 + Hook 自动注入 + Pipeline 状态同步，构建从规划到恢复的执行闭环。</p>
+<p><strong>两级步骤管理</strong>：Level-1 由 LLM 自主拆解顶层步骤序列（如”查询 → 校验 → 确认 → 转账”），通过 TodoListToolkit 提供的 7 个标准工具全生命周期管理 5 种状态；Level-2 由执行引擎在 Pipeline 层面自动填充，将并行调度的子 Agent 名称、任务及状态写入对应 Level-1 步骤的 subSteps，实现多智能体协作细节的可视化。框架内置一致性约束：强制通过 finish_todo_step 标记完成、同一时刻仅允许一个步骤处于 IN_PROGRESS 以防止并发混乱，步骤完成后引擎自动激活下一个 TODO 步骤，实现状态的自然流转，显著降低 Agent 的编排复杂度。</p>
+<p><strong>Hook 自动状态注入（无感记忆）</strong>：通过 TodoListHintHook 拦截 PreReasoningEvent，在每轮 LLM 推理前动态追加包含固定工具说明与实时任务状态（如进度统计、当前/下一步骤详情）的系统提示，使 Agent 在无需独立记忆模块的情况下实现全局进度的”无感”感知，并在任务完成后自动引导进入总结阶段。</p>
+<p><strong>Pipeline 策略的 Multi-Agent 状态同步</strong>：基于 ParallelAgentStrategy 引擎监听子 Agent 的分配与完成事件，自动调用 updateTodoSubStepStatus 将状态同步至 TodoList 存储，使主 Agent 能通过 Hint Hook 即时感知子任务进展，从而实现零通信成本的高效 Multi-Agent 编排状态同步。</p>
+</section>
+<section id="id17">
+<h3>4.10 全链路配置热更新与运营管理平台（2.0 全新构建）：运行时秒级生效的持续优化<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
+<p>场景痛点：配置变更需要走完整发布流程导致效率低下；缺乏统一管理界面让运营人员难以调整智能体行为。</p>
+<p><img alt="配置热更新与运营管理平台" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2NSNJ2VVtueLXy1libKxbPYbjK9syRZghsBVWnA5qQ9ufWwghsQ2Pmu29R2ibJvcdOIlbp46JKkVnV3Q6XxwwuRElzuMWjfdXZg/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>解决方案</strong>：</p>
+<ul class="simple">
+<li><p>配置热更新：覆盖 Agent/Skill/Tool/意图树/模型/网关全部核心配置。Redis Pub/Sub 多实例同步，秒级生效。ConfigVersionRegistry 版本管理支持精确回滚。</p></li>
+<li><p>运营管理平台：对智能体、技能、意图、工具及网关实现全生命周期管理：可视化编辑意图树、配置映射关系、注册/启停技能、管理 MCP 连接、配置安全策略。支持搭建镜像运行环境进行配置试跑验证，多版本对比评测后择优发布。未来与全链路评测体系打通，实现”配置→试跑→评测→择优发布”的自动化运营闭环。</p></li>
+</ul>
+</section>
+</section>
+<section id="id18">
+<h2>05 为什么基于 AgentScope 构建<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
+<section id="id19">
+<h3>5.1 AgentScope：为智能体而生的开发框架<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<p>AgentScope 是阿里巴巴开源的 AI 原生应用开发框架，专为构建自主规划智能体而设计。选择它作为底座框架，基于三个关键维度：技能动态治理（Tool Group 按需激活，避免上下文过载）、高并发架构（AgentPool 工厂模式天然无状态）、执行可靠性（指数退避重试、完整 Hook 系统实现熔断限流）。</p>
+</section>
+<section id="id20">
+<h3>5.2 与传统框架的全面对比<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
+<p><img alt="AgentScope 与传统框架的全面对比" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2Xmp0PT9HKian68GGSoMNvUPblQG4cdJEBzsPjiaN4ZtPzaqIbIwU7VCHJZnAlFPib1sADSv4pInsCvQc0IJXyfrZ1SjAeMLgh2g/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+<section id="id21">
+<h3>5.3 AgentScope 之上的核心扩展<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
+<p>AgentScope 提供了坚实的基础框架能力，但通用框架到金融级产品之间仍有显著的能力鸿沟。FinXScope 在 AgentScope 之上构建了六大扩展：</p>
+<p><img alt="FinXScope 在 AgentScope 之上的六大扩展" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1rEZgobbPyTIszNDMWRCU95IAhBlEia6pwLd7ZPXFjKadQLA82p0GO2MAqOxwZUgkDsRuKtuoPg5PbMib9LLFGsDicCVOmUXzTDc/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>2.0 新增扩展</strong>：多智能体工作流引擎（八种编排策略）、工作流挂载机制（MountableResource）、配置热更新引擎（Redis Pub/Sub + ConfigVersionRegistry）、三级权限体系、可观测性框架（BizLogger + Prometheus + ObservabilityHook）、远端存储改造（完全无状态化）。</p>
+</section>
+</section>
+<section id="id22">
+<h2>06 高码与低码的协同关系<a class="headerlink" href="#id22" title="Link to this heading">¶</a></h2>
+<section id="id23">
+<h3>6.1 正确理解高码与低码的定位<a class="headerlink" href="#id23" title="Link to this heading">¶</a></h3>
+<p>在金融行业，”高码还是低码”不是一个二选一的问题，而是”在什么阶段、什么场景用什么工具”的问题。两者本质上是同一个技术体系中的不同角色，服务于智能体从”想法”到”投产”的不同阶段。</p>
+<p><strong>低代码平台的核心优势与适用场景</strong>：可视化编排让业务人员直观参与设计；快速原型验证让想法可以很快的变为 Demo；所见即所得的调试体验让问题定位直观。低码平台是业务验证阶段的最佳选择，也适合变化频次较低、流程节点不长（5-10 步以内）、对可靠性容错率比较宽容的场景。</p>
+<p><strong>低代码面临的挑战</strong>：当场景涉及复杂工作流编排、多轮交互和跨会话状态管理、AI 自主规划、以及金融级生产保障时，低码平台的维护成本和构建复杂度急剧飙升。</p>
+</section>
+<section id="id24">
+<h3>6.2 FinXScope 的高码价值<a class="headerlink" href="#id24" title="Link to this heading">¶</a></h3>
+<p>FinXScope 选择高码路线解决低码难以覆盖的场景，同时极力降低使用门槛：</p>
+<p><img alt="FinXScope 的高码价值" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j0m7CdWayNibCPO6bea9InVOAVHJLDwQR557ic6d4Cicv6FB3NAFib1dLYlsws8420SSw79FtKFtpibw2RbQ8O3RufcLibdKxL8iaUiciac/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+<section id="id25">
+<h3>6.3 “低码孵化、高码投产”的完整闭环<a class="headerlink" href="#id25" title="Link to this heading">¶</a></h3>
+<p><img alt="低码孵化、高码投产的完整闭环" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1ve3xXlc5w3HAMgHibcc0evRQ0elc8mK5UhpEP2PyLpKSibRqXib0hibyaHiaOP9ad0JTib8Ty2EeDJF4O2GHXohykqBKiaLknMich3uQ/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+</section>
+<section id="id26">
+<h2>07 金融级能力保障<a class="headerlink" href="#id26" title="Link to this heading">¶</a></h2>
+<section id="id27">
+<h3>7.1 面向高可用的架构设计<a class="headerlink" href="#id27" title="Link to this heading">¶</a></h3>
+<p>FinXScope 从设计之初将高可用内化为基础架构特性。最终的高可用保障依赖客户基础设施能力，但 FinXScope 确保自身不会成为高可用瓶颈。</p>
+<p><img alt="面向高可用的架构设计" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j3lZ5e3le3d4SGpzFBTO1Fft7Fca3V8bdpwzHz6CRrxPZwGWiakKeDkION9vC8xMLicQic54EDBJUCcfy8MxzMGiaLSsddn1oyclLk/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+<section id="id28">
+<h3>7.2 安全合规体系<a class="headerlink" href="#id28" title="Link to this heading">¶</a></h3>
+<p><strong>三级权限管控</strong>：用户-Agent-Skill 三级权限，FILTER/REJECT 双模式，缓存优化，fail-open/fail-close 容错策略可配置。</p>
+<p><strong>输入安全</strong>：Prompt 注入防护、敏感词过滤、内容审核，策略支持后台动态配置。</p>
+<p><strong>全链路审计</strong>：决策过程、工具调用、Skill 日志完整留痕。MDC 上下文自动注入 traceId/spanId，全链路可追踪。</p>
+</section>
+<section id="id29">
+<h3>7.3 可观测性体系<a class="headerlink" href="#id29" title="Link to this heading">¶</a></h3>
+<p>FinXScope 提供了一套覆盖接入、意图、以及智能体执行的全链路可观测体系，核心功能包括：</p>
+<p><strong>分布式链路追踪</strong>：基于 Micrometer Tracing 实现全链路追踪，自动为每个请求生成唯一 traceId，贯穿从网关接入到 Agent 执行的全生命周期。traceId 自动注入到所有日志输出中，支持跨异步线程的上下文传播，便于在分布式环境下快速定位请求链路和排查问题。</p>
+<p><strong>业务指标监控</strong>：通过 BizLogger 统一 API 实现业务埋点，自动生成 Prometheus 标准指标。指标体系按系统架构划分为六个层级（接入层、表现层、意图层、执行层、工具层、知识层），每层独立定义指标枚举，覆盖事件计数、耗时统计、活跃请求数、错误分类等维度。通过独立管理端口暴露 <code class="docutils literal notranslate"><span class="pre">/actuator/prometheus</span></code> 端点，供 Prometheus Server 拉取。</p>
+<p><strong>Agent 生命周期可观测</strong>：深度集成 AgentScope Hook 机制，通过 ObservabilityHook 追踪 Agent 执行的 5 个生命周期阶段：调用入口、LLM 推理、工具执行、摘要生成、异常处理。每个阶段自动采集耗时和 Token 用量，支持三级开关精细控制（全局开关 → 事件类型开关 → Agent 级覆盖），可在生产环境按需开启或关闭特定 Agent 或特定阶段的观测数据采集。</p>
+<p><strong>结构化日志</strong>：BizLogger 提供双模日志输出：每条业务日志同时以人类可读格式输出到控制台，以结构化 JSON 格式写入独立文件。日志自动携带 traceId、sessionId、userId 等上下文信息，支持机器解析和日志平台对接。</p>
+<p><strong>SPI 扩展机制</strong>：框架提供三层 SPI 扩展点，支持用户自定义可观测行为而无需修改框架代码。</p>
+<ul class="simple">
+<li><p>日志输出扩展：通过注册自定义 BizLoggerProvider 替换或增补默认的日志处理逻辑。</p></li>
+<li><p>Hook 注册扩展：通过实现 AgentHookProvider 为 Agent 注入自定义生命周期钩子。</p></li>
+<li><p>数据提取扩展：通过实现 HookLogFormatter 自定义 Hook 事件的数据提取和格式化逻辑。</p></li>
+</ul>
+</section>
+</section>
+<section id="id30">
+<h2>08 落地实践指南<a class="headerlink" href="#id30" title="Link to this heading">¶</a></h2>
+<section id="id31">
+<h3>8.1 四步集成路径<a class="headerlink" href="#id31" title="Link to this heading">¶</a></h3>
+<p><img alt="四步集成路径" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j2z9A1HOykLlpEqwK7VQlB9wJQ2LTJnIzsVw8ibhibf6J8XDz23Taich1MmyINrO13KznKll7diaofcDBhulROGeZBLCFJkMaSZVicg/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+<section id="id32">
+<h3>8.2 部署方式与资源预估<a class="headerlink" href="#id32" title="Link to this heading">¶</a></h3>
+<p><strong>1. FinXScope 支持两种使用方式：</strong></p>
+<ul class="simple">
+<li><p><strong>独立应用</strong>：打包为可执行 Fat JAR / Docker 镜像，独立运行并对外提供 API。</p></li>
+<li><p><strong>依赖引入</strong>：作为 Spring Boot Starter 被其他应用通过 Maven 引入，自动装配 Agent 能力。</p></li>
+</ul>
+<p><strong>2. FinXScope 的运行态始终依附于具体的场景应用：</strong></p>
+<p><strong>作为独立应用时</strong>，FinXScope 本身即是场景应用，直接容器化部署后对外提供服务。</p>
+<p><strong>作为依赖引入时</strong>，FinXScope 随宿主场景应用一并打包、一并部署，不需要独立的运行实例，其资源消耗包含在宿主应用中。</p>
+<p><strong>在没有具体场景应用的情况下：</strong></p>
+<ul class="simple">
+<li><p>代码仓库中的一份参考实现/源码。</p></li>
+<li><p>Maven 仓库中的一个依赖包（JAR）。</p></li>
+</ul>
+<p>换言之，FinXScope 不存在脱离场景的独立”常驻运行”状态。部署规划应围绕实际的场景应用来制定。</p>
+<p><strong>3. 部署架构参考</strong></p>
+<p><img alt="部署架构参考" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j36lNGguDx3MiajAFQye0Y4iajrlR2dXE4eZVtMS5ULo8C2fQf6VdoZk0dKMj3mDEFwvb2J24Huj99kEAKubgfXXYCehnVCR7j5g/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>4. 所需数据资源</strong></p>
+<p>项目运行依赖以下数据型资源。所有数据型资源优先复用客户现有的基础设施，仅在客户环境中无对应产品时才考虑单独部署。</p>
+<p><img alt="所需数据资源" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j3bNlxYKI5AgfP0Ds2v9aLAP9ll502I1F4IICodnQVsj9mdejicrTibZMBIKibomibImLFt4H6ib9gANfspaykp1VwRtbDPicRYtPCMA/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p><strong>核心原则</strong>：客户有什么用什么，不重复建设。数据型资源（PostgreSQL、Redis、向量库、OSS）全部优先对接客户既有基础设施，项目本身通过配置文件适配即可。仅在客户确实缺少某类资源时，才为其单独部署对应组件。</p>
+<p><strong>5. 资源预估参考</strong></p>
+<p><img alt="资源预估参考" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j11oYh5kWSsljpFzjzNDO6XrfWpopC5LNNfvOvwNaA7kutFudJfFicicjbicGnkheKghQd4tPTVxqVIia20OtPmkRoRic9aNhVZjzPU/640?wx_fmt=png&amp;from=appmsg" /></p>
+<p>表中标注 (复用) 的资源，可考虑对接客户现有实例，无需单独部署。</p>
+</section>
+<section id="id33">
+<h3>8.3 快速启动建议<a class="headerlink" href="#id33" title="Link to this heading">¶</a></h3>
+<p><img alt="快速启动建议" src="https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1k6VBIePqJ4nWibrqg1w4vdwMPRicUckzQGzIOzRHdwEN6jJrEfxXbGDUyHqKKTvMy1pNA9IAZVd3TGkCSf4o59aIibGK4v6exe0/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+</section>
+<section id="finxscope-2-0">
+<h2>09 FinXScope 2.0 版本演进<a class="headerlink" href="#finxscope-2-0" title="Link to this heading">¶</a></h2>
+<p>FinXScope 2.0 完成了从”单智能体运行框架”到”企业级智能体运行与管理平台”的跨越：</p>
+<ul class="simple">
+<li><p><strong>多智能体协作体系（全新构建）</strong>：统一工作流执行引擎支持八种编排策略；工作流挂载到 OneAgent（MountableResource 机制）；子流程事件透传（GraphNodeEmitter）；DAG 图执行器（拓扑排序，层内并行层间串行）。</p></li>
+<li><p><strong>权限与安全体系（全新构建）</strong>：用户-Agent-Skill 三级权限，FILTER/REJECT 双模式，权限缓存优化，fail-open/fail-close 容错。JWT 认证集成。</p></li>
+<li><p><strong>可观测性体系（全新构建）</strong>：BizLogger 双模输出，ObservabilityHook 自动观测，BizLoggerProvider SPI 扩展。</p></li>
+<li><p><strong>高可用与无状态化（重大升级）</strong>：STM → Redis，LTM → PostgreSQL，配置热更新引擎（Redis Pub/Sub + ConfigVersionRegistry），完全无状态。</p></li>
+<li><p><strong>意图层增强</strong>：意图树运行时覆盖，模型运行时覆盖，意图树管理接口（CRUD + 版本回滚 + 意图切换追踪）。</p></li>
+<li><p><strong>接入层与表现层增强</strong>：网关引擎重构，DocumentParserService 多格式文档解析，workflow_command_agent，WorkflowToolRegistry 动态工具注入。</p></li>
+<li><p><strong>TodoList 任务管理（全新构建）</strong>：两级步骤管理，7 个 Tool，Hook 自动注入，Pipeline 集成。</p></li>
+<li><p><strong>MCP 配置管理增强</strong>：McpClientRegistry 动态管理，CustomMcpToolsInjector 自动注入，配置同步。</p></li>
+<li><p><strong>HITL 人工介入体系</strong>：工具级敏感操作拦截与人工确认；Agent 记忆快照与断点续传；分布式挂起状态持久化；用户确认/拒绝意图自动判定。</p></li>
+<li><p><strong>A2A 多智能体协作协议</strong>：标准 Agent-to-Agent 协议服务端与消费端；AgentCard 自动生成与多模式服务发现；同步/流式双通道跨 Agent 调用；AG-UI 与 A2A 事件双向翻译；Nacos 注册中心集成与动态刷新。</p></li>
+<li><p><strong>沙箱安全执行体系</strong>：支持多种主流沙箱后端；沙箱异步创建与会话级实例复用；文件上传/下载与工作区同步；命令执行隔离与超时管控；技能资源自动部署与保活管理。</p></li>
+</ul>
+</section>
+<section id="id34">
+<h2>10 典型应用场景<a class="headerlink" href="#id34" title="Link to this heading">¶</a></h2>
+<p><img alt="典型应用场景" src="https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j1Mhicibw5CgqWBiaSrodVTcVEOxibvl5SdoH5WbSv9oCHuib8Yq1Su2Nm38giawbKiaYGW0a6CCkIuhz5oxVicKTwodE3Yx4DK7xp9GxA/640?wx_fmt=png&amp;from=appmsg" /></p>
+</section>
+<section id="id35">
+<h2>11 总结与展望<a class="headerlink" href="#id35" title="Link to this heading">¶</a></h2>
+<p>FinXScope 代表了金融级智能体底座的一种全新范式。它不试图成为一个”万能的 AI 应用”，而是专注于做好一件事：为金融机构提供一个可靠的、高性能的、易扩展的智能体运行与管理底座，让任何金融应用都能以极低的成本获得 AI 原生能力。</p>
+<p>FinXScope 的底层完全构建于 AgentScope Java 2.0 之上，深度复用了其面向企业级生产环境的核心能力——包括 ReAct 推理-行动循环、五阶段中间件链、统一消息模型与类型化事件流、工具与技能框架、分层记忆与状态持久化、三态权限引擎以及优雅停机与中断机制等。在此基础上，FinXScope 针对金融行业的合规审计、数据安全与高可用要求进行了系统性的行业化增强。</p>
+<p>回顾 FinXScope 的核心价值：六层标准化架构为企业 AI 建设提供了清晰的架构蓝图和规划路径；双模执行架构在灵活性与可控性之间找到了最佳平衡；配置驱动的设计将高码的能力上限与低使用门槛结合；高可用、安全合规、可观测的企业级保障让金融级投产不再是难题。</p>
+<p>从 1.0 到 2.0，FinXScope 完成了从”单智能体框架”到”企业级智能体运行与管理平台”的跨越。多智能体协作体系、权限安全体系、可观测性体系、配置管理平台等核心能力的加入，标志着它已具备支撑金融机构规模化智能体落地的完整能力，为金融企业的智能化转型提供坚实的底座。</p>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./v2/zh/blogs/usecases"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="logistics.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">从配置驱动到业务原生：基于 AgentScope 的企业级 Agent 开发实践</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">客户实践案例</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2026-08-06</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div>
+<script src="../../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../../../_static/tabs.js?v=fe9d53fa"></script>
+    <script src="../../../../_static/language.js?v=26e4e812"></script>
+    <script src="../../../../_static/notice-bar.js?v=6a544133"></script>
+    <script src="../../../../_static/mermaid-zoom.js?v=b287901b"></script>
+    <script src="../../../../_static/version.js?v=b09c2e6c"></script>
+    <script src="../../../../_static/ai-context-menu.js?v=915d0de6"></script>
+    </body>
+</html>

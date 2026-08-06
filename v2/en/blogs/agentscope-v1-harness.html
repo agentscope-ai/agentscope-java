@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Core contributors" href="../community/contributors.html"><link rel="prev" title="AgentScope 2.0: From Transparent Development to System Engineering" href="agentscope-v2-release.html">
+    <meta property="article:modified_time" content="2026-08-06T16:26:49+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="AgentScope Builder — Turning OpenClaw’s “Self-Evolution” into a Team-Wide Platform" href="agentscope-v1-builder.html"><link rel="prev" title="AgentScope 2.0 Is Production-Ready: A Deep Dive into Enterprise-Grade Harness Technology!" href="agentscope-v2-explained.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/blogs/agentscope-v1-harness.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>AgentScope Java 1.1 · Harness - AgentScope Java</title>
+        <title>First Harness Framework Release — Bringing OpenClaw’s “Continuous Evolution” Experience Inside Enterprise-Grade Security Boundaries - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
@@ -774,7 +774,26 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Blogs</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="agentscope-v2-release.html">AgentScope 2.0 Release</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-v2-explained.html">AgentScope 2.0 Production-Ready - Enterprise Harness Explained</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-v1-builder.html">AgentScope Builder Release</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-v2-coding-agent.html">The Second Half of Coding Agents: From Personal Efficiency to Org-Level Engineering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="managed-agents-agentscope-rumtime.html">Managed Agents Background</a></li>
+<li class="toctree-l1"><a class="reference internal" href="managed-agents-agentscope-rumtime.html#why-agentscope-2-0-is-a-good-foundation-for-managed-agents">Why AgentScope 2.0 Is a Good Foundation for Managed Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="managed-agents-agentscope-rumtime.html#enterprise-managed-agents-platform-in-detail">Enterprise Managed Agents Platform in Detail</a></li>
+<li class="toctree-l1"><a class="reference internal" href="managed-agents-agentscope-rumtime.html#summary">Summary</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release.html">What Is AgentScope Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release.html#architecture-overview">Architecture Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release.html#how-agents-attach">How Agents Attach</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release.html#try-it-locally">Try It Locally</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release.html#roadmap-closing">Roadmap &amp; Closing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-service-release-tech.html">AgentScope Service Explained: Control Plane, Data Plane &amp; Recoverable Runtime</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="usecases/index.html">Customer Use Cases</a><input aria-label="Toggle navigation of Customer Use Cases" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="usecases/finxscope.html">FinXScope: A Financial-Grade Agent Foundation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usecases/logistics.html">From Config-Driven to Business-Native: Enterprise Agent Practice</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usecases/aidc-logistics.html">AIDC Logistics: Enterprise Agent Development Practice</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Community</span></p>
 <ul>
@@ -818,7 +837,7 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · 集成</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/integration/overview.html">概览</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/model/index.html">模型提供商</a><input aria-label="Toggle navigation of 模型提供商" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/model/index.html">模型提供商</a><input aria-label="Toggle navigation of 模型提供商" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/model/openai.html">OpenAI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/model/deepseek.html">DeepSeek</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/model/glm.html">GLM</a></li>
@@ -830,21 +849,21 @@
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/model/ollama.html">Ollama</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/session/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/session/redis.html">Redis 状态存储</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/rag/bailian.html">百炼知识库</a></li>
@@ -853,28 +872,28 @@
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/rag/ragflow.html">RAGFlow</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../zh/integration/ecosystem/studio.html">Studio</a></li>
@@ -885,8 +904,26 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · 博客</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-v2-release.html">AgentScope 2.0 发布</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-v2-explained.html">AgentScope 2.0 生产可用，企业级 Harness 技术全解析</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-v1-builder.html">AgentScope Builder 发布</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-v2-coding-agent.html">Coding Agent 的下半场：从个人提效到组织级研发体系</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/managed-agents-agentscope-rumtime.html">Managed Agents 背景</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/managed-agents-agentscope-rumtime.html#agentscope-2-0-managed-agents">为什么 AgentScope 2.0 适合做 Managed Agents 底座</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/managed-agents-agentscope-rumtime.html#id1">企业级 Managed Agents 平台详解</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/managed-agents-agentscope-rumtime.html#id10">总结</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release.html">什么是 AgentScope Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release.html#id1">整体架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release.html#agent">Agent 如何接入</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release.html#id9">本地快速体验</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release.html#roadmap">Roadmap &amp; 总结</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/blogs/agentscope-service-release-tech.html">AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../zh/blogs/usecases/index.html">客户实践案例</a><input aria-label="Toggle navigation of 客户实践案例" class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../zh/blogs/usecases/finxscope.html">FinXScope：基于 AgentScope 构建金融级智能体底座</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../zh/blogs/usecases/logistics.html">从配置驱动到业务原生：企业级 Agent 开发实践</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../zh/blogs/usecases/aidc-logistics.html">AIDC 物流：企业级 Agent 开发实践</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 社区</span></p>
 <ul>
@@ -927,128 +964,359 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="agentscope-java-1-1-harness">
-<h1>AgentScope Java 1.1 · Harness<a class="headerlink" href="#agentscope-java-1-1-harness" title="Link to this heading">¶</a></h1>
-<p>AgentScope Java 1.1 introduces the first public release of the <strong>Harness Framework</strong>: a production runtime layer for long-running, distributed agents.</p>
-<p>Harness is designed to preserve the practical “continuous evolution” experience seen in products like OpenClaw/Hermes, while adding the safety and operational boundaries required in enterprise environments.</p>
-<hr class="docutils" />
-<section id="why-harness">
-<h2>Why Harness<a class="headerlink" href="#why-harness" title="Link to this heading">¶</a></h2>
-<p>Many agent stacks work well for personal assistants, but hit real limits in production:</p>
+          <section id="first-harness-framework-release-bringing-openclaw-s-continuous-evolution-experience-inside-enterprise-grade-security-boundaries">
+<h1>First Harness Framework Release — Bringing OpenClaw’s “Continuous Evolution” Experience Inside Enterprise-Grade Security Boundaries<a class="headerlink" href="#first-harness-framework-release-bringing-openclaw-s-continuous-evolution-experience-inside-enterprise-grade-security-boundaries" title="Link to this heading">¶</a></h1>
+<p>Picking up from where I left off, in a previous article I took a deep dive into OpenClaw and the Harness Engineering practices behind it, and sketched out a “Harness Framework” to explain how that philosophy could be applied to enterprise agent development.</p>
+<p>The good news is that AgentScope Java 1.1.0 has officially shipped. In this milestone release, we have fully implemented the “Harness Framework” plan. Developers can use 1.1 to quickly practice Harness, building local productivity apps such as XxxClaw and Coding Agents, as well as enterprise apps for distributed scenarios such as DataAgent and SRE Agent.</p>
+<p>AgentScope Java 1.1.0 delivers four core capabilities in this release:</p>
+<ul class="simple">
+<li><p><strong>Workspace-driven agent runtime</strong>: An agent’s persona, knowledge, skills, memory, and subagent specs are all persisted in a structured workspace. On every run, context is loaded automatically from the workspace; after the run, memory is written back automatically, so the agent’s capabilities evolve continuously over time.</p></li>
+<li><p><strong>Pluggable abstract filesystem</strong>: The physical storage of a workspace can be swapped freely — local disk, remote shared storage, or isolated sandbox — all operated through the same interface. The same agent logic can be adapted to personal development environments and enterprise distributed deployments without modification.</p></li>
+<li><p><strong>Out-of-the-box context management</strong>: Built-in dialogue compaction, layered memory persistence, and full-text retrieval solve the stubborn problems of long-dialogue context bloat and cross-session memory loss. Background maintenance keeps the memory store from growing uncontrollably over time.</p></li>
+<li><p><strong>Subagent orchestration and isolated execution</strong>: Supports declarative definition of subagents and synchronous or asynchronous delegation of subtasks. Tool execution can be configured to run inside an isolated sandbox, with sandbox state recoverable across multi-turn dialogues, while supporting both session-level and user-level isolation for multi-tenant scenarios.</p></li>
+</ul>
+<section id="openclaw-hermes-are-great-but-why-don-t-they-work-in-enterprise-agent-scenarios">
+<h2>OpenClaw/Hermes Are Great, but Why Don’t They Work in Enterprise Agent Scenarios?<a class="headerlink" href="#openclaw-hermes-are-great-but-why-don-t-they-work-in-enterprise-agent-scenarios" title="Link to this heading">¶</a></h2>
+<p>Over the past year, agent products such as OpenClaw, Hermes, and Claude Code sparked a wave of enthusiasm, and also popularized the Harness Engineering philosophy behind them: using a structured workspace, context management, and tool conventions to replace the primitive “every conversation starts from scratch” usage pattern. More and more teams are bringing this mindset into their own agent development.</p>
+<p>However, those who actually try to land it often find that the road gets stuck at “enterprise-grade.” We have sorted out the five obstacles most often mentioned by frontline developers:</p>
 <ol class="arabic simple">
-<li><p><strong>Distributed workspace state</strong>: local directory assumptions break in multi-replica deployments.</p></li>
-<li><p><strong>Execution safety</strong>: user-driven shell/code execution must be isolated from host processes.</p></li>
-<li><p><strong>Storage abstraction</strong>: agent logic should not be coupled to one storage store.</p></li>
-<li><p><strong>Subagent orchestration</strong>: task delegation and lifecycle management become complex quickly.</p></li>
-<li><p><strong>Memory governance</strong>: context growth and cross-session fact retention need first-class support.</p></li>
+<li><p><strong>Multiple users, multiple replicas — what about the workspace?</strong> OpenClaw uses a local directory as the workspace, which is perfectly fine for a single machine and single user. But when the service is exposed externally, multiple users’ workspaces need to be isolated, and when the agent scales horizontally across multiple machines, the same user’s workspace must be shared across replicas — the local-directory assumption breaks immediately.</p></li>
+<li><p><strong>Tools and Skill scripts cannot run on the host; how to execute them in isolation?</strong> An agent invoking Shell or running user-provided code is fine on a trusted local development machine. But once in service, executing arbitrary user input directly on the host is a security vulnerability. A sandbox is essential, but “having a sandbox” is only the first step: tools inside the sandbox also need to see the full context, and the same sandbox instance must be recoverable across multi-turn dialogues, rather than starting from zero every time.</p></li>
+<li><p><strong>How can the “workspace + filesystem” combination be moved to a distributed environment?</strong> The filesystem-driven workspace is the most intuitive and effective pattern in Harness Engineering, but it relies on a “filesystem.” In distributed scenarios there is no unified local disk; remote storage, KV services, and object storage each have their own interfaces. Rewriting for each one couples agent logic to infrastructure.</p></li>
+<li><p><strong>How to do Multi-Agent right?</strong> Subtask distribution, context isolation, asynchronous execution, result collection, timeout cancellation — each item is not hard on its own, but assembling them into a manageable orchestration layer causes code complexity to rise quickly. Moreover, most frameworks only provide primitives; the engineering questions of “how to declare subagents, when to spawn them, and how to manage state” are left for you to figure out.</p></li>
+<li><p><strong>Is there an out-of-the-box implementation of context compaction and layered memory?</strong> Harness Engineering makes these two things very clear, but the details are numerous in practice: compaction timing, compaction strategy, fact extraction before compaction, historical retrievability, recovery after cross-process restart… Most frameworks only provide short/long memory abstract interfaces, leaving the concrete implementation to you.</p></li>
 </ol>
-<p>Harness addresses these with one integrated runtime model.</p>
+<p>The root cause of these five problems is the same thing: <strong>personal-assistant agents and enterprise agents are two different engineering shapes</strong>, and applying the same assumptions to both scenarios will inevitably hit a wall.</p>
+<p>From the <strong>deployment shape</strong> perspective: a personal assistant is single-user and single-process; all state can live on one machine. An enterprise agent must scale horizontally, serve multiple tenants, and keep service uninterrupted, so state must be storable and recoverable in a distributed way. From the <strong>security boundary</strong> perspective: local tool execution carries no risk, but arbitrary Shell execution in production is a serious attack surface; sandbox and permission boundaries are not “optional optimizations” but “prerequisites for going live.” From the <strong>operational observability</strong> perspective: when a personal tool breaks you can just read the logs; an enterprise service requires memory persistence, session auditability, and traceable state changes. From the <strong>token economics</strong> perspective: individual users are not sensitive to latency and cost, but in enterprise scenarios every invalid context re-push is real cost.</p>
+<p>So, is there a framework that lets you “write one set of logic and switch shape on demand”? The Harness module of AgentScope Java 1.1.0 (entry class <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>) is designed around this goal: it does not replace the <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> reasoning loop, but inserts hooks at key moments in the loop, adds a set of tool and workspace conventions, and packages the engineering answers to the five problems above, letting you focus on the agent’s business logic rather than infrastructure.</p>
 </section>
-<hr class="docutils" />
-<section id="core-design">
-<h2>Core Design<a class="headerlink" href="#core-design" title="Link to this heading">¶</a></h2>
-<section id="workspace-as-source-of-truth">
-<h3>Workspace as source of truth<a class="headerlink" href="#workspace-as-source-of-truth" title="Link to this heading">¶</a></h3>
-<p>Harness organizes long-lived agent state under a structured workspace:</p>
+<section id="agentscope-harness-design-philosophy-why-can-it-solve-the-above-problems">
+<h2>AgentScope Harness Design Philosophy: Why Can It Solve the Above Problems?<a class="headerlink" href="#agentscope-harness-design-philosophy-why-can-it-solve-the-above-problems" title="Link to this heading">¶</a></h2>
+<p>The design philosophy of AgentScope Harness can be summarized in one sentence: <strong>package the engineering answers to “what about the next turn, what about the next day, what if context explodes, what if state is lost,” rather than making every agent project reinvent them.</strong></p>
+<p>At the implementation level, two core pillars support the entire framework.</p>
+<section id="core-pillar-1-workspace-as-the-single-source-of-truth">
+<h3>Core Pillar 1: Workspace as the Single Source of Truth<a class="headerlink" href="#core-pillar-1-workspace-as-the-single-source-of-truth" title="Link to this heading">¶</a></h3>
+<p>Harness introduces the concept of a <strong>workspace</strong> for every agent — a structured directory that carries all persistent content required for the agent to run: persona definition (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>), long-term memory (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>), domain knowledge (<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>), reusable skills (<code class="docutils literal notranslate"><span class="pre">skills/</span></code>), subagent specs (<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>), and session history (<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code>).</p>
+<p>This is not a new idea — OpenClaw and Hermes both discovered in practice that giving an agent a stable “workbench” is far more effective than reinitializing it every time. Harness systematizes this intuition: the workspace is the agent’s single source of truth, and all state reads and writes revolve around the workspace rather than being scattered across code, databases, and memory.</p>
+<p>In actual operation, before each reasoning turn, <code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code> automatically injects key files such as <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, and <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> into the system prompt, ensuring the agent’s persona and knowledge are fully presented in every turn. After the agent run ends, <code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code> extracts new facts from the conversation and writes them to the memory file; then the background <code class="docutils literal notranslate"><span class="pre">MemoryConsolidator</span></code> periodically merges the running log into refined long-term memory. The workspace evolves continuously through conversations, and every run “knows more” about the user and task than the last.</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img alt="" src="https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1777338565508-2d485103-d3b6-4c8f-830b-7ee6e783cda3.png" /></p>
+</section>
+<section id="core-pillar-2-abstractfilesystem-lets-the-workspace-run-in-any-environment">
+<h3>Core Pillar 2: AbstractFilesystem Lets the Workspace Run in Any Environment<a class="headerlink" href="#core-pillar-2-abstractfilesystem-lets-the-workspace-run-in-any-environment" title="Link to this heading">¶</a></h3>
+<p>The workspace idea is appealing, but it has a practical constraint: local disk directories do not work in distributed scenarios. Multiple pods each have their own local disk — where is <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> written? Which replica’s version is the “true” one?</p>
+<p>AgentScope Harness solves this problem with the <strong>AbstractFilesystem</strong> abstraction layer. For the upper layer, the agent only needs to call unified interfaces such as <code class="docutils literal notranslate"><span class="pre">read/write/ls/grep</span></code>, without caring where the “files” actually land. For the lower layer, it can be adapted to local disk, remote object storage (OSS), KV databases (Redis), sandbox filesystems, or any other medium, and can even route different paths to different backends through <code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code>.</p>
+<!-- 这是一张图片，ocr 内容为：ABSTRACTFILESYTEM 继承 继承 继承 继承 继承 SANDBOXFILESYSTEM REMOTEFILESYSTEM LOCALFILESYSTEM LOCALFILESYSTEMWITHSHELL COMPOSITEFILESYSTEM -->
+<p><img alt="" src="https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218615934-eec5c4c7-4a9c-44c2-84cb-56688f64d7f0.png" /></p>
+<p>As shown in the figure, based on the AbstractFilesystem interface, AgentScope provides three built-in extension implementations, corresponding to three usage modes.</p>
+<blockquote>
+<div><p>To be expanded in detail: the three implementations and modes.</p>
+</div></blockquote>
+<p>In AgentScope 1.1, workspace is the core abstraction of the agent, and AbstractFilesystem is the physical implementation carrier of the workspace. All file operations, command execution, and memory management tools use AbstractFilesystem as the standard operation entry.</p>
+<!-- 这是一张图片，ocr 内容为：FILESYSTEMTOOL SHELLEXECUTETOOL MEMORY 命令 记忆 读写 搜索 执行 管理 WORKSPACE BASED ON ABSTRACTFILESYSTEM -->
+<p><img alt="" src="https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218989236-658ff65d-94ae-42e6-a004-4fe7b223a52a.png" /></p>
+<p>Based on this filesystem abstraction, the AgentScope framework directly brings three major engineering capabilities to agent development:</p>
+<p><strong>Security and Isolation</strong></p>
 <ul class="simple">
-<li><p>persona and rules (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>)</p></li>
-<li><p>long-term memory (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>)</p></li>
-<li><p>domain knowledge</p></li>
-<li><p>skills</p></li>
-<li><p>subagent definitions</p></li>
-<li><p>session artifacts</p></li>
+<li><p>Shell/Code/Skill execution is isolated through a sandbox backend; user-input-driven commands no longer run directly on the host.</p></li>
+<li><p>The workspace itself can also run inside a sandbox, achieving isolation at the file-read/write level.</p></li>
+<li><p>Tool registration and exposure are managed uniformly by the framework; the <code class="docutils literal notranslate"><span class="pre">execute</span></code> tool only appears when the backend implements the sandbox interface.</p></li>
 </ul>
-<p>Before each call, key workspace artifacts are injected into context.<br />
-After each call, new facts and state are persisted back.</p>
-</section>
-<section id="abstractfilesystem-as-portability-layer">
-<h3><code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> as portability layer<a class="headerlink" href="#abstractfilesystem-as-portability-layer" title="Link to this heading">¶</a></h3>
-<p>Harness decouples logical file operations (<code class="docutils literal notranslate"><span class="pre">read</span></code>, <code class="docutils literal notranslate"><span class="pre">write</span></code>, <code class="docutils literal notranslate"><span class="pre">ls</span></code>, <code class="docutils literal notranslate"><span class="pre">grep</span></code>) from physical storage/execution:</p>
+<p><strong>Distributed Deployment</strong></p>
 <ul class="simple">
-<li><p>local disk</p></li>
-<li><p>remote storage</p></li>
-<li><p>sandbox filesystem</p></li>
-<li><p>composite routing across stores</p></li>
+<li><p>Agents can be deployed as equal replicas; key files such as <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> and session logs are routed to shared storage through the Remote backend, naturally achieving cross-node synchronization.</p></li>
+<li><p>Through the combination of <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> (SESSION / USER / AGENT / GLOBAL) and <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>, multiple tenant strategies such as session-level isolation and user-level sharing can be achieved without code changes.</p></li>
 </ul>
-<p>This lets teams move from local prototypes to distributed production without rewriting business-agent logic.</p>
-</section>
-</section>
-<hr class="docutils" />
-<section id="what-1-1-delivers">
-<h2>What 1.1 Delivers<a class="headerlink" href="#what-1-1-delivers" title="Link to this heading">¶</a></h2>
+<p><strong>Subagent and Asynchronous Tasks</strong></p>
 <ul class="simple">
-<li><p><strong>Workspace-driven runtime</strong> for durable identity and evolving behavior</p></li>
-<li><p><strong>Pluggable filesystem abstraction</strong> for local/remote/sandbox execution</p></li>
-<li><p><strong>Built-in context governance</strong> (compaction + layered memory)</p></li>
-<li><p><strong>Subagent orchestration</strong> with sync/async delegation and task lifecycle</p></li>
-</ul>
-</section>
-<hr class="docutils" />
-<section id="typical-deployment-scenarios">
-<h2>Typical Deployment Scenarios<a class="headerlink" href="#typical-deployment-scenarios" title="Link to this heading">¶</a></h2>
-<section id="personal-productivity-agents">
-<h3>Personal productivity agents<a class="headerlink" href="#personal-productivity-agents" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>local execution</p></li>
-<li><p>durable memory and persona</p></li>
-<li><p>workspace-driven skill iteration</p></li>
-</ul>
-</section>
-<section id="enterprise-data-service-agents">
-<h3>Enterprise data/service agents<a class="headerlink" href="#enterprise-data-service-agents" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>sandboxed execution for untrusted input</p></li>
-<li><p>distributed memory/session continuity across replicas</p></li>
-<li><p>async subagent orchestration for long-running tasks</p></li>
-</ul>
-</section>
-<section id="api-first-online-agents">
-<h3>API-first online agents<a class="headerlink" href="#api-first-online-agents" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>strict tool boundaries (no implicit shell exposure)</p></li>
-<li><p>shared remote state for cross-instance continuity</p></li>
-<li><p>stable multi-turn behavior under production traffic</p></li>
+<li><p>Subagent workspace, filesystem, and session state are inherited from or independently configured from the parent agent; orchestration strategies are declared by specs, without manual assembly.</p></li>
+<li><p>The asynchronous task state machine (PENDING/RUNNING/COMPLETED/FAILED/CANCELLED) and result-collection mechanism are ready to use, and support replacement with a cross-process implementation.</p></li>
 </ul>
 </section>
 </section>
-<hr class="docutils" />
-<section id="quick-start-harness">
-<h2>Quick Start (Harness)<a class="headerlink" href="#quick-start-harness" title="Link to this heading">¶</a></h2>
+<section id="agentscope-harness-typical-use-cases-map-quickly-to-your-scenario">
+<h2>AgentScope Harness Typical Use Cases: Map Quickly to Your Scenario<a class="headerlink" href="#agentscope-harness-typical-use-cases-map-quickly-to-your-scenario" title="Link to this heading">¶</a></h2>
+<p>The three scenarios below cover typical development shapes from personal to enterprise. They are not mutually exclusive options, but represent three different complexity paths — you can start with the simplest and migrate gradually as requirements evolve.</p>
+<section id="personal-agent-typical-openclaw-style-apps">
+<h3>Personal Agent — Typical OpenClaw-Style Apps<a class="headerlink" href="#personal-agent-typical-openclaw-style-apps" title="Link to this heading">¶</a></h3>
+<p><strong>Characteristics of this scenario</strong>: single user, local machine execution, needs to operate local files or run scripts. Typical products are personal assistants, note-taking bots, and local Coding Agents.</p>
+<p>The core need in this scenario is “make the agent truly know and remember me,” rather than being a stateless Q&amp;A machine. The value of Harness here is: the <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> in the workspace defines the agent’s persona and behavior preferences; after the conversation, new facts are automatically extracted and written to memory; the next time it opens, the agent still recognizes you and remembers the previous progress. Skills and domain knowledge also live in the workspace and can be edited and adjusted at any time without touching code.</p>
+<p>Under local deployment, Shell execution can also be enabled, letting the agent run scripts and operate the filesystem directly — this is the most attractive part of OpenClaw-style products. Harness adds the “continuous evolution” layer on top: the workspace is like the agent’s brain, becoming more experienced with every conversation.</p>
+<p><strong>Core capabilities provided by AgentScope Harness in this scenario:</strong></p>
+<ul class="simple">
+<li><p><strong>Continuous memory</strong>: After the conversation, new facts are automatically extracted and written to the workspace. The next time it starts, there is no need to re-“inform” the agent of the background; long-term memory accumulates with use.</p></li>
+<li><p><strong>Local Shell execution</strong>: In a trusted local environment, the agent can directly run scripts and operate files, reproducing the core experience of OpenClaw-style products.</p></li>
+<li><p><strong>Workspace as configuration</strong>: Modify <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> to adjust persona, add skills in the <code class="docutils literal notranslate"><span class="pre">skills/</span></code> directory — changing one file is equivalent to upgrading the agent once, without recompiling or redeploying.</p></li>
+<li><p><strong>Cross-process session recovery</strong>: Close and reopen; as long as the sessionId is unchanged, the previous conversation state is fully restored, not started from zero.</p></li>
+</ul>
+</section>
+<section id="enterprise-data-service-typical-dataagent">
+<h3>Enterprise Data Service — Typical DataAgent<a class="headerlink" href="#enterprise-data-service-typical-dataagent" title="Link to this heading">¶</a></h3>
+<p><strong>Characteristics of this scenario</strong>: serving multiple users, needs to execute SQL / Python / Shell, tasks take a long time, input comes from untrusted external users, and requires multi-turn conversation state recovery and consistent user experience across replicas.</p>
+<p>The biggest risk in this scenario is <strong>execution safety</strong> — user-driven code cannot run unrestricted on the server. Harness’s sandbox mechanism confines the agent’s file operations and command execution to an isolated environment; the server process itself is unaffected. More importantly, the sandbox is not “destroyed after use”: after each turn, the sandbox state is persisted and brought back for the next turn, so users do not lose work progress because of service restart or node switching.</p>
+<p>During multi-replica deployment, a user’s long-term memory (the agent’s accumulated knowledge about this user) can be stored in shared storage, so no matter which node the request lands on, the agent sees the same memory. Long analysis tasks can be split into multiple subagents running in parallel, with the main agent only responsible for coordination and aggregation, without blocking and waiting the whole time.</p>
+<p><strong>Core capabilities provided by AgentScope Harness in this scenario:</strong></p>
+<ul class="simple">
+<li><p><strong>Isolated sandbox execution</strong>: All code and commands run in an isolated environment; the host service process is not affected by user input, and the security boundary is clear.</p></li>
+<li><p><strong>Multi-turn sandbox state recovery</strong>: After each turn, the sandbox state is automatically saved and restored in place for the next turn or service restart, so the user’s work scene is not lost.</p></li>
+<li><p><strong>Distributed memory sharing</strong>: User long-term memory is stored in shared storage, so under multi-node deployment all replicas read the same “knowledge about this user,” delivering a consistent experience.</p></li>
+<li><p><strong>Subagent parallel orchestration</strong>: Long tasks can be broken down into multiple subagents executing concurrently; the main agent only coordinates, improving overall efficiency and making timeout and failure management easier.</p></li>
+<li><p><strong>Multi-tenant isolation</strong>: Workspaces and execution environments are isolated by session or user dimension, so multiple users online at the same time do not interfere with each other.</p></li>
+</ul>
+</section>
+<section id="enterprise-online-service-typical-taobao-tmall-transaction-agent">
+<h3>Enterprise Online Service — Typical Taobao-Tmall Transaction Agent<a class="headerlink" href="#enterprise-online-service-typical-taobao-tmall-transaction-agent" title="Link to this heading">¶</a></h3>
+<p><strong>Characteristics of this scenario</strong>: tasks are mainly completed by calling business APIs (placing orders, querying, approving, etc.), no Shell execution on the server is needed, but multi-instance operation, persistent session state, and cross-user knowledge sharing are required.</p>
+<p>The core need in this scenario is <strong>stability and safety</strong> — an online service cannot fail because the agent invokes a Shell command it should not. The value of Harness here is: when sandbox execution capability is not configured, the framework will not expose Shell tools by default. The agent can only interact externally through clearly defined business tools, and the security boundary is determined by configuration rather than developer self-discipline.</p>
+<p>Session state and memory can be persisted to remote storage, and multiple service instances share the same set of user memories. If a user switches to another entry and starts a new conversation, the agent can still continue the previous context. When parallel processing of multiple subtasks is needed (such as checking inventory, calculating discounts, and generating summaries simultaneously), the subagent mechanism is also applicable and can be integrated with external task queues for cross-process task management.</p>
+<p><strong>Core capabilities provided by AgentScope Harness in this scenario:</strong></p>
+<ul class="simple">
+<li><p><strong>Default security boundary</strong>: When sandbox execution is not enabled, the framework does not expose Shell tools. The agent can only interact externally through business tools you explicitly register, and security policy is determined by configuration.</p></li>
+<li><p><strong>Multi-instance shared memory</strong>: Session state and user memory are persisted to remote storage, so any service instance can read the same context, allowing users to switch among instances transparently.</p></li>
+<li><p><strong>Cross-request session continuity</strong>: Each request carries the same user identifier, and the agent automatically restores the previous conversation state, enabling true multi-turn continuous dialogue.</p></li>
+<li><p><strong>Parallel subtask support</strong>: When multiple business steps need to be processed at the same time, subtasks can be delegated to subagents for parallel execution, with results aggregated before a unified reply, without affecting the main flow response speed.</p></li>
+</ul>
+</section>
+</section>
+<section id="agentscope-harness-in-detail-take-a-moment-to-learn-more-about-the-framework">
+<h2>AgentScope Harness in Detail — Take a Moment to Learn More About the Framework<a class="headerlink" href="#agentscope-harness-in-detail-take-a-moment-to-learn-more-about-the-framework" title="Link to this heading">¶</a></h2>
+<p>This section explains the core capabilities of AgentScope Harness from the <strong>user perspective</strong>: what it is, how it works, and how to think about configuration.</p>
+<section id="quick-start">
+<h3>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h3>
+<p>Getting started with Harness takes only three steps: add the dependency, prepare the workspace, and build and call the agent.</p>
+<p><strong>1. Add the dependency</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">  </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">  </span><span class="nt">&lt;artifactId&gt;</span>agentscope-harness<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">  </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-harness<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
+<p><strong>2. Prepare the workspace</strong></p>
+<p>Choose a directory on disk as the <code class="docutils literal notranslate"><span class="pre">workspace</span></code>, and create <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> in it. This is not an “optional initialization step,” but Harness’s core entry point — the agent’s persona, memory, skills, and subagent specs all revolve around this directory. A few lines of convention in <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> are enough at first; it evolves with use.</p>
+<p><strong>3. Build <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> and call it</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span><span class="w">     </span><span class="c1">// recommended to configure from the start to avoid context overflow in production</span>
 <span class="w">        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user-session-001&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user-session-001&quot;</span><span class="p">)</span><span class="w">   </span><span class="c1">// multiple calls with the same sessionId automatically continue context</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// required in multi-user scenarios for namespace isolation</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Msg</span><span class="w"> </span><span class="n">reply</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMessage</span><span class="p">,</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
+<p>After running, check the workspace directory: the three paths <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">memory/</span></code>, and <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code> should all exist, indicating that the agent is already writing memory and persisting session state normally.</p>
+<p>For a complete runnable example, see <code class="docutils literal notranslate"><span class="pre">QuickstartExample</span></code> in <code class="docutils literal notranslate"><span class="pre">agentscope-examples/agents/harness-examples/harness-quickstart</span></code>.</p>
 </section>
 <hr class="docutils" />
-<section id="recommended-reading">
-<h2>Recommended Reading<a class="headerlink" href="#recommended-reading" title="Link to this heading">¶</a></h2>
+<section id="core-concepts">
+<h3>Core Concepts<a class="headerlink" href="#core-concepts" title="Link to this heading">¶</a></h3>
+<p>Understanding the following six concepts basically means you have mastered Harness’s operating logic.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Concept</p></th>
+<th class="head"><p>Definition</p></th>
+<th class="head"><p>Problem Solved</p></th>
+<th class="head"><p>Usage Suggestion</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code></p></td>
+<td><p>An engineering wrapper entry point based on <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>. At <code class="docutils literal notranslate"><span class="pre">build()</span></code> time it assembles hooks, built-in tools, skills, and session persistence.</p></td>
+<td><p>“I don’t want to assemble compaction, memory, sessions, subtasks, and filesystem from scratch.”</p></td>
+<td><p>Business code only deals with <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder()</span></code> and <code class="docutils literal notranslate"><span class="pre">agent.call(msg,</span> <span class="pre">ctx)</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">workspace</span></code></p></td>
+<td><p>The agent’s working directory, carrying all persistent content such as <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>, and session history.</p></td>
+<td><p>“Where do persona, knowledge, memory, and state go, and how do they evolve continuously?”</p></td>
+<td><p>Plan the workspace structure before writing prompts; treat the workspace as versionable assets.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">filesystem</span></code></p></td>
+<td><p>A unified interface for file reads and writes, the abstraction layer between the agent tool layer and physical storage. Supports local disk, remote storage, sandbox, and other backends.</p></td>
+<td><p>“How can the same agent logic switch among local, shared storage, and sandbox?”</p></td>
+<td><p>Prefer selecting from the three declarative modes (Local / Remote / Sandbox).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></td>
+<td><p>The identity context of a single <code class="docutils literal notranslate"><span class="pre">call()</span></code>, containing <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>, <code class="docutils literal notranslate"><span class="pre">userId</span></code>, etc. Passed freshly on each call, not persisted.</p></td>
+<td><p>“Who is this turn, where is state read/written, and how are multiple tenants isolated?”</p></td>
+<td><p>Always pass a stable <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>; in multi-tenant scenarios, <code class="docutils literal notranslate"><span class="pre">userId</span></code> is required.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sandbox</span></code></p></td>
+<td><p>An isolated execution environment where file operations and commands run on the sandbox side. After each turn, state is persisted and restored on the next turn.</p></td>
+<td><p>“How to safely execute tools and scripts under untrusted input while maintaining multi-turn state continuity?”</p></td>
+<td><p>Enable it first when there is code execution demand; choose isolation granularity according to business.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+<td><p>A two-layer memory system: after each conversation, new facts are automatically extracted and appended to a running log; a background process periodically merges them into injectable long-term memory, with full-text retrieval.</p></td>
+<td><p>“Long conversations don’t lose facts, context doesn’t explode, and history is retrievable.”</p></td>
+<td><p>Enable dialogue compaction and watch the memory file change; use the search tool to recover old facts.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Summary</strong>: <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> handles orchestration, <code class="docutils literal notranslate"><span class="pre">workspace</span></code> handles persistence, <code class="docutils literal notranslate"><span class="pre">filesystem</span></code> handles landing points, <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> handles identity, <code class="docutils literal notranslate"><span class="pre">sandbox</span></code> handles boundaries, and <code class="docutils literal notranslate"><span class="pre">memory</span></code> handles long-term evolution.</p>
+</section>
+<hr class="docutils" />
+<section id="features">
+<h3>Features<a class="headerlink" href="#features" title="Link to this heading">¶</a></h3>
+<section id="workspace-the-single-source-of-truth-for-the-agent">
+<h4>Workspace: The Single Source of Truth for the Agent<a class="headerlink" href="#workspace-the-single-source-of-truth-for-the-agent" title="Link to this heading">¶</a></h4>
+<p>The workspace is the most important design that distinguishes Harness from ordinary agent frameworks. It is not a temporary storage directory, but the agent’s “externalized brain” — everything that needs to be retained across sessions lives here.</p>
+<p>The standard directory structure of the workspace is as follows:</p>
+<div class="highlight-plain notranslate"><div class="highlight"><pre><span></span>workspace/
+├── AGENTS.md              ← Agent persona and behavior conventions, automatically injected into system prompt before each reasoning turn
+├── MEMORY.md              ← Refined long-term memory, maintained automatically by the background process and accumulated with use
+├── knowledge/             ← Domain knowledge, injected together with AGENTS.md
+├── skills/                ← Reusable skills, automatically assembled into the agent&#39;s tool set
+├── subagents/             ← Subagent spec declarations, automatically discovered and loaded
+└── agents/&lt;agentId&gt;/
+    ├── context/           ← Session state snapshot (used for recovery after process restart)
+    ├── sessions/          ← Dialogue JSONL and compacted context, for audit and retrieval
+    └── memory/            ← Daily memory running log
+</pre></div>
+</div>
+<p><strong>How the workspace works in each reasoning turn</strong>: before reasoning begins, Harness assembles key files such as <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, and <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> into the system prompt; after reasoning ends, it extracts new facts from the conversation and appends them to the daily memory running log. The workspace evolves continuously with each conversation, and the agent becomes “more familiar” with the business and user over time.</p>
+<p><strong>Why the workspace is better than hard-coding prompts in code</strong>: persona, knowledge, skills, and subagent specs are all in workspace files. Adjusting behavior only requires changing files, not recompiling and redeploying. For agents with complex business knowledge, this is especially critical — business rules change frequently, and updates should be lightweight.</p>
+</section>
+<hr class="docutils" />
+<section id="session-persistence-continuous-state-across-requests-and-processes">
+<h4>Session Persistence: Continuous State Across Requests and Processes<a class="headerlink" href="#session-persistence-continuous-state-across-requests-and-processes" title="Link to this heading">¶</a></h4>
+<p>Harness splits session state persistence into <strong>two parallel paths</strong>, each solving different problems:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="#../harness/architecture.md"><span class="xref myst">Harness Architecture</span></a></p></li>
-<li><p><a class="reference internal" href="#../harness/filesystem.md"><span class="xref myst">Filesystem</span></a></p></li>
-<li><p><a class="reference internal" href="#../harness/sandbox.md"><span class="xref myst">Sandbox</span></a></p></li>
-<li><p><a class="reference internal" href="../../zh/blogs/agentscope-v1-harness.html"><span class="std std-doc">Chinese full article</span></a></p></li>
+<li><p><strong>State snapshot (<code class="docutils literal notranslate"><span class="pre">context/</span></code>)</strong>: After each <code class="docutils literal notranslate"><span class="pre">call()</span></code> ends, the agent’s running state (current dialogue memory, tool execution context, etc.) is serialized into JSON files and stored under <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/</span></code> in the workspace. The next time a call is made with the same <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>, the framework automatically loads this snapshot before reasoning and restores it to where it ended last time. This is the technical guarantee that “close and reopen, still remember last time.”</p></li>
+<li><p><strong>Dialogue log (<code class="docutils literal notranslate"><span class="pre">sessions/</span></code>)</strong>: The complete dialogue history is appended in JSONL format to <code class="docutils literal notranslate"><span class="pre">&lt;sessionId&gt;.log.jsonl</span></code>; this file is never compacted and is used for audit and the <code class="docutils literal notranslate"><span class="pre">session_search</span></code> tool. Another file, <code class="docutils literal notranslate"><span class="pre">&lt;sessionId&gt;.jsonl</span></code>, stores the compacted LLM context, which is the version the model actually “sees.”</p></li>
 </ul>
+<p>Both paths are maintained automatically by the framework. The only thing the developer needs to do is <strong>pass the same <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> stably on every call</strong>.</p>
+</section>
+<hr class="docutils" />
+<section id="memory-management-automatic-precipitation-from-dialogue-to-long-term-knowledge">
+<h4>Memory Management: Automatic Precipitation from Dialogue to Long-Term Knowledge<a class="headerlink" href="#memory-management-automatic-precipitation-from-dialogue-to-long-term-knowledge" title="Link to this heading">¶</a></h4>
+<p>This is one of Harness’s most valuable engineering capabilities. Many agent frameworks’ “memory” is essentially stacking historical messages into context until it eventually bursts; AgentScope’s current approach is <strong>two-layer separation</strong>:</p>
+<p><strong>Layer 1 — Daily running log</strong>: After each conversation, the framework uses an LLM to extract “new facts” from the conversation and appends them in bullet-point form to the daily memory file (<code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code>). This layer only appends and does not modify, ensuring no new facts are lost.</p>
+<p><strong>Layer 2 — Long-term memory</strong>: A background scheduler periodically reads recent daily running-log files, uses an LLM to merge, deduplicate, and refine them with the existing <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, and writes back an “injectable version” within the token budget to <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>. This layer is the “fact summary” injected into each reasoning turn, with high quality and controlled size.</p>
+<p>The relationship between the two layers: Layer 1 guarantees <strong>no loss</strong>, Layer 2 guarantees <strong>usability</strong>. New facts first land in the running log; when enough accumulate, the background process moves them into long-term memory. During reasoning, the model looks at long-term memory first; if it cannot find something, it uses the <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> tool for full-text retrieval (based on SQLite FTS5).</p>
+<p><strong>Context compaction</strong> is the other side of memory management: when the number of messages or tokens exceeds the threshold, Harness uses an LLM to compress the previous dialogue into a summary, keeps the most recent messages, and offloads the rest to a JSONL file. Compaction occurs after long-term memory extraction, ensuring valuable information is precipitated before being compressed. If the model returns a context overflow error, the framework catches the exception, forces compaction, and retries automatically; the whole process is transparent to the caller.</p>
+<p>Configuration suggestion:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span><span class="w">    </span><span class="c1">// trigger compaction when messages exceed 50</span>
+<span class="w">    </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w">       </span><span class="c1">// keep the most recent 20 messages</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flushBeforeCompact</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// extract memory before compaction (enabled by default)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="subagent-orchestration-decomposition-and-delegation-of-complex-tasks">
+<h4>Subagent Orchestration: Decomposition and Delegation of Complex Tasks<a class="headerlink" href="#subagent-orchestration-decomposition-and-delegation-of-complex-tasks" title="Link to this heading">¶</a></h4>
+<p>When the main agent encounters a subtask that is time-consuming, context-heavy, or parallelizable, it can delegate it to a subagent for execution. A subagent is an independent agent instance with its own system prompt and memory; it does not share the main agent’s dialogue history, and its execution result is returned to the main agent as a tool result.</p>
+<p><strong>There are four ways to declare subagents</strong>, from low to high flexibility:</p>
+<ol class="arabic simple">
+<li><p><strong>Built-in <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code> agent</strong>: mirrors the main agent’s configuration, suitable for temporarily delegating arbitrary subtasks;</p></li>
+<li><p><strong>Workspace file-driven</strong>: place Markdown files under <code class="docutils literal notranslate"><span class="pre">workspace/subagents/</span></code> (YAML front matter defines name, description, and tools; body is the system prompt), and the framework automatically discovers and loads them;</p></li>
+<li><p><strong>Code declaration</strong>: programmatically specify with <code class="docutils literal notranslate"><span class="pre">builder.subagent(spec)</span></code>;</p></li>
+<li><p><strong>Custom factory</strong>: fully control the subagent’s build logic.</p></li>
+</ol>
+<p>The workspace-driven approach is the most recommended — subagent definitions are versioned with the workspace and can be adjusted without touching code.</p>
+<p><strong>Invocation methods</strong> are divided into synchronous and asynchronous:</p>
+<ul class="simple">
+<li><p><strong>Synchronous call</strong>: the main agent blocks and waits for the subagent to complete before continuing, suitable for scenarios where the next step cannot proceed without the result;</p></li>
+<li><p><strong>Asynchronous call</strong>: the main agent submits the task and immediately gets a task ID, can continue doing other things, and later polls the result with the <code class="docutils literal notranslate"><span class="pre">task_output</span></code> tool. For tasks taking more than a few seconds, asynchronous is strongly recommended to avoid the main agent blocking and wasting time and tokens.</p></li>
+</ul>
+<p><strong>Anti-infinite-recursion</strong>: subagents default to “leaf” form and cannot spawn subagents themselves; the framework also has a maximum depth limit as a safeguard.</p>
+</section>
+<hr class="docutils" />
+<section id="built-in-tools">
+<h4>Built-in Tools<a class="headerlink" href="#built-in-tools" title="Link to this heading">¶</a></h4>
+<p>When <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> is built, it automatically registers a set of tools covering “closed-loop needs,” without manual configuration:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool Category</p></th>
+<th class="head"><p>Tool List</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>File operations</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">read_file</span></code>, <code class="docutils literal notranslate"><span class="pre">write_file</span></code>, <code class="docutils literal notranslate"><span class="pre">edit_file</span></code>, <code class="docutils literal notranslate"><span class="pre">grep_files</span></code>, <code class="docutils literal notranslate"><span class="pre">glob_files</span></code>, <code class="docutils literal notranslate"><span class="pre">list_files</span></code></p></td>
+<td><p>Operate workspace files; paths are within the filesystem backend scope</p></td>
+</tr>
+<tr class="row-odd"><td><p>Memory retrieval</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code>, <code class="docutils literal notranslate"><span class="pre">memory_get</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory_search</span></code> uses SQLite full-text retrieval; <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> reads memory files by line number</p></td>
+</tr>
+<tr class="row-even"><td><p>Session query</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">session_search</span></code>, <code class="docutils literal notranslate"><span class="pre">session_list</span></code>, <code class="docutils literal notranslate"><span class="pre">session_history</span></code></p></td>
+<td><p>Retrieve historical dialogue content for the agent to actively review</p></td>
+</tr>
+<tr class="row-odd"><td><p>Subtask management</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code>, <code class="docutils literal notranslate"><span class="pre">agent_send</span></code>, <code class="docutils literal notranslate"><span class="pre">agent_list</span></code>, <code class="docutils literal notranslate"><span class="pre">task_output</span></code>, <code class="docutils literal notranslate"><span class="pre">task_list</span></code>, <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code></p></td>
+<td><p>Delegate, query, and manage subagent tasks</p></td>
+</tr>
+<tr class="row-even"><td><p>Shell execution</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">execute</span></code></p></td>
+<td><p><strong>Conditionally registered</strong>: only appears when the filesystem backend supports isolated execution (local Shell mode or sandbox mode)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Notably: in “remote shared storage” mode, the framework <strong>does not register Shell tools by default</strong> — this is an intentional security design, not an omission. If your business agent does not need to execute commands, this mode eliminates a whole category of execution security risks.</p>
+</section>
+<hr class="docutils" />
+<section id="filesystem-three-modes-choose-as-needed">
+<h4>Filesystem: Three Modes, Choose as Needed<a class="headerlink" href="#filesystem-three-modes-choose-as-needed" title="Link to this heading">¶</a></h4>
+<p>The filesystem is the key layer that connects “agent logic” with “infrastructure” in Harness. The framework provides three declarative modes; choose based on business constraints:</p>
+<p><strong>Mode 1: Local + Shell (default)</strong></p>
+<p>Without configuring <code class="docutils literal notranslate"><span class="pre">filesystem</span></code>, or explicitly writing <code class="docutils literal notranslate"><span class="pre">filesystem(new</span> <span class="pre">LocalFilesystemSpec())</span></code>, the workspace is a directory on the local machine and Shell commands can be executed. Suitable for personal local apps and development/test environments; simplest, with no extra dependencies.</p>
+<p><strong>Mode 2: Remote shared storage</strong></p>
+<p>Configure <code class="docutils literal notranslate"><span class="pre">filesystem(new</span> <span class="pre">RemoteFilesystemSpec(store))</span></code>; critical data such as memory and session logs are routed to remote KV (e.g., Redis), while the local filesystem only stores content that does not need to be shared. <strong>Shell tools are not registered by default</strong>, suitable for multi-replica online services and scenarios that require cross-node sharing of user memory but do not need code execution.</p>
+<p><strong>Mode 3: Sandbox execution</strong></p>
+<p>Configure <code class="docutils literal notranslate"><span class="pre">filesystem(sandboxSpec)</span></code>; file reads/writes and command execution are all completed inside an isolated sandbox environment, and the host process is unaffected. Suitable for scenarios requiring execution of untrusted code, such as DataAgent and Coding Agent.</p>
+<p>The core difference among the three modes is: <strong>who executes commands, where data lands, and what the isolation granularity is</strong>. The same agent code logic can migrate among the three modes by switching the <code class="docutils literal notranslate"><span class="pre">filesystem</span></code> configuration.</p>
+</section>
+<hr class="docutils" />
+<section id="sandbox-isolated-execution-recoverable-state">
+<h4>Sandbox: Isolated Execution + Recoverable State<a class="headerlink" href="#sandbox-isolated-execution-recoverable-state" title="Link to this heading">¶</a></h4>
+<p>The sandbox mode solves not only “isolated execution,” but also “continuity of the isolated environment across multi-turn dialogues” — together these are what really matter.</p>
+<p><strong>Execution boundary</strong>: in sandbox mode, Shell commands and file reads/writes invoked by the agent happen on the sandbox side; the host process only coordinates. Arbitrary commands from user input do not directly affect the server.</p>
+<p><strong>State recovery</strong>: after each <code class="docutils literal notranslate"><span class="pre">call()</span></code> ends, the sandbox’s current filesystem state is persisted (snapshot mechanism). At the beginning of the next call, the framework finds the corresponding snapshot by <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> or <code class="docutils literal notranslate"><span class="pre">userId</span></code> and restores the sandbox to where it ended last time. Users do not lose work progress because of service restart or request drift to another node.</p>
+<p><strong>Workspace projection</strong>: host workspace content such as <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>, and <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> is synchronized into the sandbox at the beginning of each <code class="docutils literal notranslate"><span class="pre">call()</span></code>, ensuring the agent inside the sandbox sees complete configuration and skill definitions.</p>
+<p><strong>Isolation granularity</strong> (choose as needed):</p>
+<ul class="simple">
+<li><p><strong>Session-level</strong>: each session has an independent sandbox state, with no interference between sessions, suitable for multi-user SaaS;</p></li>
+<li><p><strong>User-level</strong>: multiple sessions of the same user share the same sandbox state, suitable for “user long-term workbench” scenarios;</p></li>
+<li><p><strong>Global shared</strong>: the entire agent shares one sandbox, suitable for tool-type or read-only agents.</p></li>
+</ul>
+<p>Applying a sandbox in a real production environment involves more considerations. Refer to the official documentation for more details:</p>
+<ul class="simple">
+<li><p>How to manage the sandbox lifecycle: agent built-in management or user-managed</p></li>
+<li><p>Which processes need to run in the sandbox: Tool In Sandbox, Subagent in Sandbox</p></li>
+<li><p>How to manage internal sandbox state: state, snapshot recovery</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="skills-workspace-driven-reusable-skills">
+<h4>Skills: Workspace-Driven Reusable Skills<a class="headerlink" href="#skills-workspace-driven-reusable-skills" title="Link to this heading">¶</a></h4>
+<p>Skills are the way to structure “reusable operation workflows.” In the workspace’s <code class="docutils literal notranslate"><span class="pre">skills/&lt;skill-name&gt;/</span></code> directory, place a <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>; the framework automatically discovers and assembles it into the agent’s capability library at startup. The agent can invoke these skills during reasoning; a skill itself describes the steps and conventions for “how to do this thing.”</p>
+<p>The engineering value of this design is: skills are files, can be version-controlled in Git together with code, can be code-reviewed, and can be updated without redeployment. When a team has a large number of SOPs and operation norms to inject into the agent, this is much clearer than piling everything into the system prompt.</p>
+<p>In sandbox mode, skill files are synchronized into the sandbox along with workspace projection, and commands involved in skills are executed in the isolated environment without affecting the host.</p>
+</section>
+</section>
+</section>
+<section id="summary">
+<h2>Summary<a class="headerlink" href="#summary" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java 1.1 converges the set of capabilities everyone wants from Harness Engineering but is hardest to assemble on your own into <strong><code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> + workspace conventions + pluggable filesystem + hook pipeline</strong>: in personal scenarios, it is a memory-enabled, compaction-enabled, subtask-enabled enhanced ReAct Agent; in enterprise scenarios, it is infrastructure that turns <strong>isolation, multi-tenancy, distributed memory, and subagent orchestration</strong> into configuration items.</p>
+<p>If you are evaluating the evolution from a personal-assistant prototype to a production-ready enterprise agent, we recommend starting with the quick start in the <a class="reference internal" href="#../overview.md"><span class="xref myst">Harness Overview</span></a>, then choosing a declarative mode from <a class="reference internal" href="#../filesystem.md"><span class="xref myst">Filesystem</span></a>, and then enabling compaction, sandbox, and subagents as needed — every step has corresponding documentation and example modules to follow, without having to invent a “workspace-as-truth” runtime from scratch.</p>
+<p><img alt="Canvas" src="https://intranetproxy.alipay.com/skylark/lark/0/2026/jpeg/54037/1778221664765-d534ffa1-1649-4444-ad8c-046c936e40e7.jpeg" /></p>
 </section>
 </section>
 
@@ -1076,23 +1344,23 @@ After each call, new facts and state are persisted back.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../community/contributors.html">
+          <a class="next-page" href="agentscope-v1-builder.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Core contributors</div>
+                <div class="title">AgentScope Builder — Turning OpenClaw’s “Self-Evolution” into a Team-Wide Platform</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="agentscope-v2-release.html">
+          <a class="prev-page" href="agentscope-v2-explained.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">AgentScope 2.0: From Transparent Development to System Engineering</div>
+                <div class="title">AgentScope 2.0 Is Production-Ready: A Deep Dive into Enterprise-Grade Harness Technology!</div>
                 
               </div>
             </a>
@@ -1105,7 +1373,7 @@ After each call, new facts and state are persisted back.</p>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-08-06</div>
           </div>
           <div class="right-details">
             <div class="icons">
