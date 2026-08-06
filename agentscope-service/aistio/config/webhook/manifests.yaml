@@ -1,0 +1,112 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-agentscope-io-v1alpha1-agent
+  failurePolicy: Fail
+  name: magent.agentscope.io
+  rules:
+  - apiGroups:
+    - agentscope.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - agents
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-agentscope-io-v1alpha1-agent
+  failurePolicy: Fail
+  name: vagent.agentscope.io
+  rules:
+  - apiGroups:
+    - agentscope.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - agents
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-agentscope-io-v1alpha1-agentteam
+  failurePolicy: Fail
+  name: vagentteam.agentscope.io
+  rules:
+  - apiGroups:
+    - agentscope.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - agentteams
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-agentscope-io-v1alpha1-mcpserver
+  failurePolicy: Fail
+  name: vmcpserver.agentscope.io
+  rules:
+  - apiGroups:
+    - agentscope.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - mcpservers
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-agentscope-io-v1alpha1-modelconfig
+  failurePolicy: Fail
+  name: vmodelconfig.agentscope.io
+  rules:
+  - apiGroups:
+    - agentscope.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - modelconfigs
+  sideEffects: None

@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,6 +60,7 @@ public class WaitAsyncResultsTool {
     private final TaskRepository taskRepository;
     private final ConcurrentHashMap<String, AtomicInteger> consecutiveEmptyWaitsBySession =
             new ConcurrentHashMap<>();
+    private volatile BooleanSupplier externalWorkProbe;
 
     public WaitAsyncResultsTool(MessageBus messageBus) {
         this(messageBus, null);
@@ -69,10 +71,33 @@ public class WaitAsyncResultsTool {
         this.taskRepository = taskRepository;
     }
 
+    /**
+     * Registers a probe for outstanding work owned outside the subagent task repository (currently
+     * AgentTeams teammates). Without it a lead with no subagent tasks would be told to stop waiting
+     * while its teammates are still running.
+     */
+    public WaitAsyncResultsTool setExternalWorkProbe(BooleanSupplier probe) {
+        this.externalWorkProbe = probe;
+        return this;
+    }
+
+    private boolean hasExternalWork() {
+        BooleanSupplier probe = this.externalWorkProbe;
+        if (probe == null) {
+            return false;
+        }
+        try {
+            return probe.getAsBoolean();
+        } catch (RuntimeException e) {
+            log.debug("external work probe failed: {}", e.toString());
+            return false;
+        }
+    }
+
     @Tool(
             name = "wait_async_results",
             description =
-                    "Wait for background async tool or subagent results. "
+                    "Wait for background async tool, subagent, or teammate results. "
                             + "Prefer barrier mode: task_ids waits until those specific tasks are "
                             + "all terminal and returns their results in this tool output; "
                             + "wait_all=true waits for the snapshot of currently running tasks "
@@ -81,6 +106,7 @@ public class WaitAsyncResultsTool {
                             + "Without task_ids and without wait_all, this is legacy inbox-any "
                             + "mode: returns when ANY inbox message arrives — not wait-all. For "
                             + "must-collect-all groups use task_ids or wait_all=true. "
+                            + "Also covers AgentTeams teammate work via the external-work probe. "
                             + "Max timeout is 120 seconds. "
                             + "If you have already waited without results, use task_list or "
                             + "task_output(block=false) to check status instead of waiting again.",
@@ -154,7 +180,8 @@ public class WaitAsyncResultsTool {
         }
 
         if (taskRepository != null) {
-            boolean hasNonTerminal = hasNonTerminalTasks(runtimeContext, sessionId);
+            boolean hasNonTerminal =
+                    hasNonTerminalTasks(runtimeContext, sessionId) || hasExternalWork();
             if (!hasNonTerminal) {
                 Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
                 if (!Boolean.TRUE.equals(hasMessages)) {

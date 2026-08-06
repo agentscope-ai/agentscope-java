@@ -16,12 +16,14 @@
 package io.agentscope.extensions.redis.state.redisson;
 
 import io.agentscope.extensions.redis.state.RedisClientAdapter;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.redisson.api.RBucket;
 import org.redisson.api.RKeys;
 import org.redisson.api.RList;
+import org.redisson.api.RScript;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.options.KeysScanOptions;
@@ -212,6 +214,24 @@ public class RedissonClientAdapter implements RedisClientAdapter {
             result.add(key);
         }
         return result;
+    }
+
+    @Override
+    public long evalScript(String script, List<String> keys, List<String> args) {
+        List<Object> keyObjects = new ArrayList<>(keys);
+        Object result =
+                redissonClient
+                        .getScript(StringCodec.INSTANCE)
+                        .eval(
+                                RScript.Mode.READ_WRITE,
+                                script,
+                                RScript.ReturnType.LONG,
+                                keyObjects,
+                                args.toArray());
+        if (result instanceof Number number) {
+            return number.longValue();
+        }
+        throw new IllegalStateException("Unexpected Lua script result: " + result);
     }
 
     @Override

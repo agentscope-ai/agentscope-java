@@ -34,7 +34,6 @@ import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentGenerateTool;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -281,9 +280,8 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * {@link io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions
      * when subagent work finishes.
      *
-     * <p>Registers a {@link WorkspaceTaskRepository.TaskCompletionCallback} on the underlying
-     * repository (if it is a {@link WorkspaceTaskRepository}). Safe to call multiple times — each
-     * call replaces the previous callback.
+     * <p>Registers a {@link TaskRepository.TaskCompletionCallback} on the underlying repository.
+     * Safe to call multiple times — each call replaces the previous callback.
      *
      * @param messageBus the application message bus
      * @param agentId the parent agent id (for wakeup routing)
@@ -294,50 +292,46 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (messageBus == null) {
             return this;
         }
-        if (taskRepository instanceof WorkspaceTaskRepository wtr) {
-            wtr.setCompletionCallback(
-                    (rc, taskId, subAgentId, sessionId, result) -> {
-                        String userId = rc != null ? rc.getUserId() : null;
-                        String hintContent =
-                                String.format(
-                                        "<system-notification>Background subagent task '%s'"
-                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                                + "</system-notification>",
-                                        taskId,
-                                        subAgentId,
-                                        result != null ? result : "(no output)");
-                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
-                        java.util.Map<String, Object> hintPayload =
-                                java.util.Map.of(
-                                        "type",
-                                        "hint",
-                                        "id",
-                                        hintId,
-                                        "hint",
-                                        hintContent,
-                                        "source",
-                                        "subagent_task");
-                        messageBus.inboxPush(sessionId, hintPayload).subscribe();
-                        messageBus
-                                .enqueueWakeup(
-                                        userId != null ? userId : "",
-                                        sessionId,
-                                        agentId != null ? agentId : "")
-                                .subscribe(
-                                        unused -> {},
-                                        err ->
-                                                log.warn(
-                                                        "Failed to enqueue wakeup after task {}"
-                                                                + " completion: {}",
-                                                        taskId,
-                                                        err.getMessage()));
-                        log.info(
-                                "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
-                                        + " session={}",
-                                taskId,
-                                sessionId);
-                    });
-        }
+        taskRepository.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> {
+                    String userId = rc != null ? rc.getUserId() : null;
+                    String hintContent =
+                            String.format(
+                                    "<system-notification>Background subagent task '%s'"
+                                            + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                            + "</system-notification>",
+                                    taskId, subAgentId, result != null ? result : "(no output)");
+                    String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
+                    java.util.Map<String, Object> hintPayload =
+                            java.util.Map.of(
+                                    "type",
+                                    "hint",
+                                    "id",
+                                    hintId,
+                                    "hint",
+                                    hintContent,
+                                    "source",
+                                    "subagent_task");
+                    messageBus.inboxPush(sessionId, hintPayload).subscribe();
+                    messageBus
+                            .enqueueWakeup(
+                                    userId != null ? userId : "",
+                                    sessionId,
+                                    agentId != null ? agentId : "")
+                            .subscribe(
+                                    unused -> {},
+                                    err ->
+                                            log.warn(
+                                                    "Failed to enqueue wakeup after task {}"
+                                                            + " completion: {}",
+                                                    taskId,
+                                                    err.getMessage()));
+                    log.info(
+                            "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
+                                    + " session={}",
+                            taskId,
+                            sessionId);
+                });
         return this;
     }
 
