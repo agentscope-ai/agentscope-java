@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aistio-sdk"
+version = "0.1.0"
+description = "aistio data-plane SDK: bypass-observe heterogeneous agent frameworks and report to the aistio control plane"
+readme = { text = "aistio Python SDK — see docs/zh/controlplane/sdk-design.md", content-type = "text/plain" }
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "grpcio>=1.60",
+    "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+# OpenClaw Gateway WebSocket RPC 客户端（openclaw 适配器路径 B）。
+openclaw = ["websockets>=12"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+include = ["aistio*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -57,7 +57,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`middleware(...)` (singular) appends one; `middlewares(...)` accepts `List<? extends MiddlewareBase>`. Hooks not implemented by a middleware are skipped at zero cost.
+`middleware(...)` (singular) adds one; `middlewares(...)` accepts `List<? extends MiddlewareBase>`. Hooks not implemented by a middleware are skipped at zero cost.
 
 ## Built-in middlewares
 
@@ -218,12 +218,23 @@ Things to keep in mind:
 
 ### Execution order
 
-Onion hooks (`onAgent`, `onReasoning`, `onActing`, `onModelCall`) — **the first middleware in the list is outermost**:
+Onion hooks (`onAgent`, `onReasoning`, `onActing`, `onModelCall`) are ordered by `MiddlewareBase.order()` — **higher values are outermost**. The default order is `1`; middlewares with the same order retain their builder registration order:
 
 ```
-middlewares = [mw1, mw2]
+middlewares = [mw1(order=2), mw2(order=1)]
 // Order:
 // mw1 pre → mw2 pre → inner → mw2 post → mw1 post
+```
+
+Override `order()` to move a custom middleware relative to the default order. For example, an order of `0` runs inside middleware that keeps the default order of `1`:
+
+```java
+MiddlewareBase lowerPriority = new MiddlewareBase() {
+    @Override
+    public int order() {
+        return 0;
+    }
+};
 ```
 
 For streaming / event-emitting hooks, the inner middleware sees each emitted event first:

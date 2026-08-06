@@ -270,33 +270,36 @@ public class DashScopeHttpClient {
                             .build();
 
             return transport.stream(httpRequest)
-                    .map(
-                            data -> {
+                    .<ParsedStreamResponse>handle(
+                            (data, sink) -> {
                                 try {
                                     // Decrypt response if encryption is enabled
                                     if (finalEncryptionContext != null) {
                                         data = decryptResponse(data, finalEncryptionContext);
                                     }
-                                    return JsonUtils.getJsonCodec()
-                                            .fromJson(data, DashScopeResponse.class);
+                                    sink.next(
+                                            new ParsedStreamResponse(
+                                                    data,
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(
+                                                                    data,
+                                                                    DashScopeResponse.class)));
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",
                                             data,
                                             e.getMessage());
-                                    // Return null and filter out later
-                                    return null;
                                 }
                             })
-                    .filter(response -> response != null)
                     .handle(
-                            (response, sink) -> {
+                            (streamResponse, sink) -> {
+                                DashScopeResponse response = streamResponse.response();
                                 if (response.isError()) {
                                     sink.error(
                                             new DashScopeHttpException(
                                                     "DashScope API error: " + response.getMessage(),
                                                     response.getCode(),
-                                                    null));
+                                                    streamResponse.responseBody()));
                                 } else {
                                     sink.next(response);
                                 }
@@ -327,11 +330,7 @@ public class DashScopeHttpClient {
      *   <li>If endpointType is {@link EndpointType#MULTIMODAL} → multimodal API</li>
      *   <li>If endpointType is {@link EndpointType#AUTO}:
      *     <ul>
-     *       <li>Models starting with "qvq" → multimodal API</li>
-     *       <li>Models containing "-vl" → multimodal API</li>
-     *       <li>Models containing "-asr" → multimodal API</li>
-     *       <li>Models starting with "qwen3.5" → multimodal API</li>
-     *       <li>Models starting with "qwen3.6" → multimodal API</li>
+     *       <li>Models recognized by {@link #isMultimodalModel(String)} → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -373,6 +372,7 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
      *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
      *   <li>Models starting with "qwen3.7" where not "qwen3.7-max" (e.g., qwen3.7-plus)</li>
+     *   <li>Models starting with "qwen3.8-max" (e.g., qwen3.8-max)</li>
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
@@ -402,6 +402,7 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.5")
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
+                || lowerModelName.startsWith("qwen3.8-max")
                 || lowerModelName.contains("kimi-k2.5")
                 || lowerModelName.contains("kimi-k2.6");
     }
@@ -833,6 +834,8 @@ public class DashScopeHttpClient {
             return new DashScopeHttpClient(transport, apiKey, baseUrl, publicKeyId, publicKey);
         }
     }
+
+    private record ParsedStreamResponse(String responseBody, DashScopeResponse response) {}
 
     /**
      * Exception thrown when DashScope HTTP operations fail.

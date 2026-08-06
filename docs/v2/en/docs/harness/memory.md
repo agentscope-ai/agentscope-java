@@ -251,12 +251,15 @@ If you want to handle memory yourself or wire your own tools:
 ```java
 HarnessAgent.builder()
     ...
-    .disableMemoryHooks()      // disables flush + background maintenance
-    .disableMemoryTools()      // skips memory_search / memory_get / session_search registration
+    .disableMemoryHooks()      // disables flush + background maintenance (+ auto-extract prompt line)
+    .disableMemoryTools()      // skips memory_search / memory_get / memory_save / session_search
+                               // and matching Memory Recall / tool Persistence guidance
     .build();
 ```
 
-`disableMemoryHooks()` is the nuclear option; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
+Together these also skip `<memory_context>` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
+
+`disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
 
 ## Related Pages
 

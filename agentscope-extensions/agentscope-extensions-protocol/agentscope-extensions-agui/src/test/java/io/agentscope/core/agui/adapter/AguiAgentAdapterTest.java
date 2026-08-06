@@ -202,7 +202,10 @@ class AguiAgentAdapterTest {
         AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals("RuntimeException", runError.message());
         assertEquals("INTERNAL_ERROR", runError.code());
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
+        assertNotNull(runError.timestamp());
+        AguiEvent.RunFinished finished =
+                assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
+        assertNull(finished.timestamp());
     }
 
     @Test

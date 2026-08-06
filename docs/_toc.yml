@@ -343,6 +343,12 @@ parts:
       title: OpenAI
     - file: v2/en/integration/model/deepseek
       title: DeepSeek
+    - file: v2/en/integration/model/glm
+      title: GLM
+    - file: v2/en/integration/model/kimi
+      title: Kimi
+    - file: v2/en/integration/model/minimax
+      title: MiniMax
     - file: v2/en/integration/model/dashscope
       title: DashScope
     - file: v2/en/integration/model/gemini
@@ -516,6 +522,12 @@ parts:
       title: OpenAI
     - file: v2/zh/integration/model/deepseek
       title: DeepSeek
+    - file: v2/zh/integration/model/glm
+      title: GLM
+    - file: v2/zh/integration/model/kimi
+      title: Kimi
+    - file: v2/zh/integration/model/minimax
+      title: MiniMax
     - file: v2/zh/integration/model/dashscope
       title: DashScope
     - file: v2/zh/integration/model/gemini
