@@ -55,6 +55,7 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -146,6 +147,37 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
         assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void disableMemoryToolsAndHooks_omitMemoryGuidanceFromSystemPrompt() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("MEMORY.md"), "secret memory marker xyz");
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryTools()
+                        .disableMemoryHooks()
+                        .build();
+
+        WorkspaceContextMiddleware mw =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        assertNotNull(prompt);
+        assertFalse(prompt.contains("## Memory Recall"));
+        assertFalse(prompt.contains("## Memory Persistence"));
+        assertFalse(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("secret memory marker xyz"));
+        assertTrue(mw.isDisableMemoryTools());
+        assertTrue(mw.isDisableMemoryHooks());
     }
 
     @Test
