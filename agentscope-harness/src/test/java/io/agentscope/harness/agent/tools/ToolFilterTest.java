@@ -106,6 +106,36 @@ class ToolFilterTest {
         assertTrue(names.contains("list_files"));
     }
 
+    @Test
+    void allowList_keepsPlatformToolsOutsideAllow() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new TestTools());
+        toolkit.registerTool(new PlatformStubTools());
+        ToolsConfig cfg = new ToolsConfig();
+        cfg.setAllow(List.of("read_file"));
+        ToolFilter.apply(toolkit, cfg);
+        Set<String> names = toolkit.getToolNames();
+        assertTrue(names.contains("read_file"));
+        assertTrue(names.contains("team"));
+        assertTrue(names.contains("agent_spawn"));
+        assertTrue(names.contains("task_output"));
+        assertFalse(names.contains("list_files"));
+        assertFalse(names.contains("execute"));
+    }
+
+    @Test
+    void deny_stillRemovesPlatformTools() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new PlatformStubTools());
+        ToolsConfig cfg = new ToolsConfig();
+        cfg.setDeny(List.of("team"));
+        ToolFilter.apply(toolkit, cfg);
+        Set<String> names = toolkit.getToolNames();
+        assertFalse(names.contains("team"));
+        assertTrue(names.contains("agent_spawn"));
+        assertTrue(names.contains("task_output"));
+    }
+
     private static Toolkit makeToolkit() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new TestTools());
@@ -132,6 +162,25 @@ class ToolFilterTest {
         @Tool(name = "execute", description = "stub")
         public String execute(@ToolParam(name = "cmd", description = "c") String cmd) {
             return cmd;
+        }
+    }
+
+    /** Subset of {@link HarnessPlatformTools} for filter tests. */
+    public static class PlatformStubTools {
+
+        @Tool(name = "team", description = "stub")
+        public String team(@ToolParam(name = "action", description = "a") String action) {
+            return action;
+        }
+
+        @Tool(name = "agent_spawn", description = "stub")
+        public String agentSpawn(@ToolParam(name = "agent_id", description = "a") String agentId) {
+            return agentId;
+        }
+
+        @Tool(name = "task_output", description = "stub")
+        public String taskOutput(@ToolParam(name = "task_id", description = "t") String taskId) {
+            return taskId;
         }
     }
 }

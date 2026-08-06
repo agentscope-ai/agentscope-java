@@ -107,6 +107,16 @@ public class RemoteFilesystemSpec {
     }
 
     /**
+     * Returns the configured {@link BaseStore}, or {@code null} if not yet set.
+     *
+     * <p>Used by coordination wiring (e.g. {@code PeriodicGate}) when a remote filesystem is
+     * present without a full {@code DistributedStore}.
+     */
+    public BaseStore store() {
+        return store;
+    }
+
+    /**
      * Injects the store if not already set. Called by the builder during auto-wiring.
      */
     public void injectStoreIfAbsent(BaseStore store) {
