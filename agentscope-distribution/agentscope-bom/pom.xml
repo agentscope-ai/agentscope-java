@@ -289,6 +289,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope aistio BYO data-plane SDK -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-aistio</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Channel Extensions -->
             <dependency>
                 <groupId>io.agentscope</groupId>

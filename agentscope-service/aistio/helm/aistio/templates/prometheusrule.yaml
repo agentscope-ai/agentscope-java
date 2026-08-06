@@ -1,0 +1,79 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  groups:
+    - name: aistio.rules
+      rules:
+        - alert: AgentNotReady
+          expr: agentscope_agent_replicas{kind="ready"} < agentscope_agent_replicas{kind="desired"}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Agent {{ "{{" }} $labels.name {{ "}}" }} has unhealthy replicas"
+        - alert: DataPlaneDisconnected
+          expr: agentscope_dataplane_connected == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Agent {{ "{{" }} $labels.name {{ "}}" }} data plane disconnected"
+        - alert: HighReconcileErrors
+          expr: rate(agentscope_reconcile_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High reconcile error rate for controller {{ "{{" }} $labels.controller {{ "}}" }}"
+        - alert: ProbeLatencyHigh
+          expr: histogram_quantile(0.99, rate(agentscope_probe_duration_seconds_bucket[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "P99 probe latency exceeds 5s for {{ "{{" }} $labels.agent {{ "}}" }}"
+        - alert: TeamFailed
+          expr: |
+            count(agentscope_team_members_by_phase{phase="failed"} > 0) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Team has failed members"
+            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has failed members."
+        - alert: TeamMemberLost
+          expr: |
+            count(agentscope_team_members_by_phase{phase="lost"} > 0) > 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Team member lost"
+            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has lost members for more than 2 minutes."
+        - alert: TeamMessageBacklog
+          expr: |
+            rate(agentscope_team_messages_total{status="enqueued"}[5m]) > 0
+              and rate(agentscope_team_messages_total{status="delivered"}[5m]) == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Team message delivery stalled"
+            description: "Messages are being enqueued for team {{ "{{" }} $labels.team {{ "}}" }} but none are being delivered."
+        - alert: TeamRecoveryExhausted
+          expr: |
+            increase(agentscope_team_recovery_total{result="exhausted"}[10m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Team member recovery exhausted"
+            description: "Team {{ "{{" }} $labels.team {{ "}}" }} in namespace {{ "{{" }} $labels.namespace {{ "}}" }} has exhausted member recovery attempts."
+{{- end }}

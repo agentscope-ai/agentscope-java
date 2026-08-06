@@ -17,8 +17,10 @@ package io.agentscope.harness.agent.subagent.task;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -63,6 +65,17 @@ public class TaskRecord {
     private String remoteBaseUrl;
 
     private Map<String, String> remoteHeaders;
+
+    /**
+     * When {@code true}, the remote (or local) agent is paused waiting for user tool confirmation.
+     * Status remains {@link TaskStatus#RUNNING} so barriers keep waiting.
+     */
+    private boolean awaitingConfirm;
+
+    private List<RemotePendingConfirm> pendingConfirms;
+
+    /** Last remote event sequence observed by the parent (for SSE resume). */
+    private long lastEventSeq;
 
     public TaskRecord() {}
 
@@ -234,5 +247,32 @@ public class TaskRecord {
     /** Whether this task is executed via the HTTP task protocol. */
     public boolean isAgentProtocolTransport() {
         return transportType != null && "agent-protocol".equalsIgnoreCase(transportType);
+    }
+
+    public boolean isAwaitingConfirm() {
+        return awaitingConfirm;
+    }
+
+    public void setAwaitingConfirm(boolean awaitingConfirm) {
+        this.awaitingConfirm = awaitingConfirm;
+    }
+
+    public List<RemotePendingConfirm> getPendingConfirms() {
+        return pendingConfirms;
+    }
+
+    public void setPendingConfirms(List<RemotePendingConfirm> pendingConfirms) {
+        this.pendingConfirms =
+                pendingConfirms == null || pendingConfirms.isEmpty()
+                        ? null
+                        : List.copyOf(pendingConfirms);
+    }
+
+    public long getLastEventSeq() {
+        return lastEventSeq;
+    }
+
+    public void setLastEventSeq(long lastEventSeq) {
+        this.lastEventSeq = lastEventSeq;
     }
 }

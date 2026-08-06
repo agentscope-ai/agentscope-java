@@ -33,15 +33,17 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.LocalSessionTurnGate;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.SessionTurnGate;
+import io.agentscope.harness.agent.gateway.TurnBusyException;
+import io.agentscope.harness.agent.gateway.TurnLease;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -124,7 +126,7 @@ public final class HarnessGateway implements Gateway {
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
-    private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
+    private final SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private HarnessGateway(
             SessionAgentManager sessionAgentManager,
@@ -527,22 +529,24 @@ public final class HarnessGateway implements Gateway {
     }
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicBoolean acquired = new AtomicBoolean(false);
-        return Mono.defer(turn::get)
-                .doOnSubscribe(
-                        s -> {
+        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+        return Mono.defer(
+                        () -> {
                             try {
-                                sessionTurnGate.acquire(gateKey);
-                                acquired.set(true);
+                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                            } catch (TurnBusyException e) {
+                                return Mono.empty();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                throw new IllegalStateException(e);
+                                return Mono.error(new IllegalStateException(e));
                             }
+                            return turn.get();
                         })
                 .doFinally(
                         sig -> {
-                            if (acquired.get()) {
-                                sessionTurnGate.release(gateKey);
+                            TurnLease lease = leaseRef.get();
+                            if (lease != null) {
+                                lease.close();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());

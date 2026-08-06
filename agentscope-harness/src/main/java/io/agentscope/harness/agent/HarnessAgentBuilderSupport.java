@@ -28,7 +28,11 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
@@ -736,6 +740,12 @@ final class HarnessAgentBuilderSupport {
         if (b.taskRepository != null) {
             return b.taskRepository;
         }
+        if (b.distributedStore != null) {
+            TaskRepository distributed = b.distributedStore.taskRepository();
+            if (distributed != null) {
+                return distributed;
+            }
+        }
         Objects.requireNonNull(
                 wsManager,
                 "WorkspaceManager must be non-null when resolving the default TaskRepository;"
@@ -745,7 +755,28 @@ final class HarnessAgentBuilderSupport {
                 b.agentId != null && !b.agentId.isBlank()
                         ? b.agentId
                         : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
-        return new WorkspaceTaskRepository(wsManager, taskAgentId);
+        return new WorkspaceTaskRepository(wsManager, taskAgentId, resolvePeriodicGate(b));
+    }
+
+    /**
+     * Resolves a {@link PeriodicGate} for workspace-backed orphan sweeping: prefer the
+     * {@link DistributedStore}'s {@link BaseStore}, then a store attached to
+     * {@code RemoteFilesystemSpec}, otherwise a process-local gate.
+     */
+    private static PeriodicGate resolvePeriodicGate(HarnessAgent.Builder b) {
+        if (b.distributedStore != null) {
+            BaseStore store = b.distributedStore.baseStore();
+            if (store != null) {
+                return new StoreBackedPeriodicGate(store);
+            }
+        }
+        if (b.remoteFilesystemSpec != null) {
+            BaseStore store = b.remoteFilesystemSpec.store();
+            if (store != null) {
+                return new StoreBackedPeriodicGate(store);
+            }
+        }
+        return new LocalPeriodicGate();
     }
 
     // -----------------------------------------------------------------
