@@ -248,7 +248,6 @@ HarnessAgent.builder()
 ```java
 .enableSkillCurator(SkillCuratorConfig.builder()
     .intervalHours(7 * 24)        // 一周跑一次
-    .minIdleHours(2)              // 距上次 call 至少过 2 小时才允许跑
     .staleAfterDays(30)
     .archiveAfterDays(90)
     .build())
