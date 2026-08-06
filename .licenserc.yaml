@@ -77,8 +77,31 @@ header:
     - '**/.prettierrc'
     - 'agentscope-examples/**/frontend/**'
     - '**/Dockerfile'
+    - '**/Dockerfile.*'
+    - '**/docker-compose.yml'
     - '**/src/main/resources/**'
     - '**/src/test/resources/**'
+    # IDE / tooling config
+    - '.cursor/**'
+    - '**/.editorconfig'
+    - '**/.pre-commit-config.yaml'
+    - '**/Makefile'
+    # Go / Python build files
+    - '**/go.mod'
+    - '**/go.sum'
+    - '**/pyproject.toml'
+    # Generated sources (controller-gen / protoc output)
+    - '**/zz_generated.*.go'
+    - '**/*.pb.go'
+    - 'agentscope-service/aistio/sdk/python/aistio/proto/**'
+    # Kubernetes manifests / Helm chart / built frontend assets
+    - 'agentscope-service/aistio/config/**'
+    - 'agentscope-service/aistio/helm/**'
+    - 'agentscope-service/aistio/ui/**'
+    # Frontend styling / entry / build config files
+    - 'agentscope-service/frontend/**/*.css'
+    - 'agentscope-service/frontend/**/*.html'
+    - 'agentscope-service/frontend/vite.config.ts'
   comment: on-failure
 
   license-location-threshold: 130

@@ -1,0 +1,19 @@
+apiVersion: agentscope.io/v1alpha1
+kind: MCPServer
+metadata:
+  name: knowledge-base
+  namespace: production
+spec:
+  description: "企业知识库MCP服务"
+  type: Remote
+  remote:
+    protocol: STREAMABLE_HTTP
+    url: "https://mcp.internal.com/knowledge"
+    headersFrom:
+      - kind: Secret
+        name: mcp-auth
+        key: token
+        header: Authorization
+    timeout: "30s"
+  allowedNamespaces:
+    from: All
