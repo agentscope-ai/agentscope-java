@@ -6,7 +6,7 @@
 
 AgentScope Service is not meant to replace your existing Agent frameworks. It adds a unified control plane so you can govern and coordinate Agents built with different frameworks and stacks — Claude, OpenClaw, QwenPaw, and more — in one place.
 
-![AgentScope Service](/docs/imgs/agentservice/agentscope-service-dashboard.png)
+![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
 
 - **AgentScope Service is a control plane.** It provides agent registration, discovery, and distributed coordination for every Agent in the enterprise, and works with mainstream Agent runtimes including AgentScope, LangChain, ADK, and Claude / Qoder. Enterprises get a single place to inspect Agent metrics and operate on live Sessions — for example, compressing session context.
 - **AgentScope Service provides low-code Agent creation and deployment.** Built on the AgentScope Harness runtime, it lets you run multiple Agents on one Managed Agents platform under unified operations. The platform hosts Harness capabilities, while tool execution can be delegated to a Sandbox that you control.
@@ -20,32 +20,19 @@ These paths are not mutually exclusive. Inside one company, R&D may use Coding A
 
 The Control Plane (component name: Aistio) is the core of AgentScope Service. Every Agent application registers through it. Via SDK or Sidecar, it supports mainstream Agent Frameworks (AgentScope, LangChain, ADK) as well as Claude, Qoder, and similar runtimes.
 
-
-
 The Dashboard is the Control Plane's visual console. It gives the whole fleet a live view of online agents, deployment instances, active sessions, token usage, and other global signals so operators can see how the cluster is doing.
 
-
-
-<!-- 这是一张图片，ocr 内容为：AISTIO AS FLEET OVERVIEW CONTROL PLANE CONSOLE CROSS-FRAMEWORK AGENT INSTANCES AND RUNTIME SESSIONS REPORTED INTO AISTIOD. 品 DASHBOARD TOKENS (24H. HEALTHY IDLE SESSIONS STALE ERRORS (24H) AGENTS ACTIVE OVERVIEW 4) INSTANCES INSTANCES SESSIONS 1 R R AGENTS O 1 6,319 3 SESSIONS GOVERNANCE AGENTS COUNTS LIVE INSTANCES ONLY.3 HISTORICAL MANAGED AGENTS TOKEN USAGE(24H) 8 TEAMS HOURLY SUM OF USAGE DELTAS (NOT CUMULATIVE SNAPSHOTS) 14:00:6,319 TOKENS TOP 10 AGENTS BY TOKENS TOP 10 SESSIONS BY TOKENS RANKED BY TOKEN USAGE DELTAS `LAST 24H RANKED BY TOKEN USAGE DELTAS `LAST 24H SESSION TOKENS ACTIVE ERRORS # PHASE AGENT TOKENS ADMIN MAIN-ED0098A8-E94E-42A9-9578 DEFAULT 1 6,319 6,319 B5FAD881F839 DEFAULT ACTIVE PROFILE USERS DEFAULT -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785934371848-7b1b934e-11ed-4625-97cc-820f2fe5d214.png)
-
+![dashboard](/docs/imgs/agentservice/agentscope-service-dashboard.png)
 
 From the Dashboard you can also inspect session details, view the live context state of an active session (including how different parts of the context contribute), dynamically adjust or compress session context, and intervene in a running conversation.
-
-<!-- 这是一张图片，ocr 内容为：AISTIO S SESSIONS CONTROL PLANE CONSOLE 7818AE8D-D486-4B41-BD2A ABORT TUM RESTORE EXIT PLAN ENTER PLAN COMPRESS TERMINATE CF8B7EB67224 品 DASHBOARD AGENTSCOPE-PAW - DEFAULT - AGENTSCOPE-JAVA - TURN #7 OVERVIEW AGENTS LIFETIME USAGE PHASE LAST ACTIVE INSTANCE MODEL PRESSURE SESSIONS 31% 46,777 2026/7/30 HEALTHY 22:55:01 GOVERNANCE ZPROMPT+COMPLETION U-FF406114-1819... HTTP://LOCALHOS MANAGED AGENTS WINDOW-IN 45,260/ OUT 1.517 TEAMS CONTEXT VIEW COMPACTED. 6 CFFECTIVE MSGS -7 TOOLS - WINDOW 125/ 32,768 -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785946414310-ff29cee8-2b2b-40df-9ec8-0211ee03fe8c.png)
 
 ### Managed Agents
 
 Managed Agents evolve from the `agentscope-builder` platform. They remain a low-code Agent platform that gives developers SaaS-style Agent definition and hosted execution. The upgrade further emphasizes the split between reasoning and tool execution: Harness capabilities are hosted more thoroughly, while tool execution stays under greater user control.
 
-
-<!-- 这是一张图片，ocr 内容为：AISTIO AGENTS NEW AGENT CONTROL PLANE CONSOLE LOW-CODE MANAGED AGENTS. EACH AGENT IS SHAPED BY ITS WORKSPACE - AGENTS.MD, TOOLS, SKILLS AND SUBAGENTS. 品 DASHBOARD CLONE-ONLY O ALL 4 SHARED WITH ME O MINE 4 GLOBAL MANAGED AGENTS AGENTS SESSIONS BBB PPP OWNER OWNER OWNER CCC 调用专用AGENT 擅长做微服务相关搜索 WORKSPACES BBB TEST AG_4ECD3838B3CD AG_1426C299ADF8 AG_5AF01156E61F ENVIRONMENTS WORKSPACE LINKED WORKSPACE LINKED WORKSPACE LINKED MEMORY VAULTS DEPLOYMENTS OWNER AAA CHANNELS XXXXX AG_CECC0395E056 8 TEAMS WORKSPACE LINKED ADMIN PROFILE USERS -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948183107-014a5cb1-6fcf-4b04-93cb-f01341b35350.png)
-
+![managed agents](/docs/imgs/agentservice/agentscope-service-managedagents-arc.png)
 
 Agent definition follows the core design of AgentScope Harness. You first define foundational concepts such as Workspace and Memory, then associate a workspace and memory with an agent to create it.
-
 
 The recommended path is: create Agent → create Environment → create Session → send the first message → watch the event stream in the Dashboard. Creating a Session alone does not start the Agent. For long-running work, Managed Agents especially emphasize **recoverability**: events are persisted, state can be rebuilt, and HITL can pause and resume. A front-end refresh or a service replica change should not mean starting over.
 
@@ -55,8 +42,7 @@ Runtime design is closely aligned with Claude Managed Agents. Harness infrastruc
 
 Every agent registered with the AgentScope Service Control Plane — whether self-deployed and registered through a framework (LangChain, AgentScope, ADK, Claude SDK, and so on), or created as a Managed Agent through the low-code path — can be orchestrated into Agent Teams to collaborate on complex work.
 
-<!-- 这是一张图片，ocr 内容为：AISTIO IS TEAM1 BACK COMPLETE TEAM FORCE DELETE LEAD CLOSE CONTROL PLANE CONSOLE CCC SOSS_025CA811A27B 帮我分析E2B沙箱和DAYTONA沙箱 SESS_E25CA811A27B FULL PAGE TEAM CHAT DASHBOARD IDLE NS-DEFAULT TASKS 1/2COMPLETE 1 IN PROGRESS 0 PENDING TASK-1.I ALSO LET THEM KNOW THAT THEY CAN REACH OUT IF THEY NEED ANY MANAGED AGENTS SPECIFIC RESOURCES OR HAVE ANY TOPOLOGY AGENTS QUESTIONS. SESSIONS WORKER1 LEAD IS THERE ANYTHING ELSE YOU WOULD LIKE TO ADDRESS AT THIS MOMENT? WORKS PACES ENVIRONMENTS OPEN CHAT CHAT OPEN [TEAM:TEAM1 FROM WORKER1]I HAVE MEMORY CLAIMED TASK-1 AND WILL START THE VAULTS ANALYSIS OF THE E2B SANDBOX.I WILL REACH OUT IF I NEED ANY SPECIFIC DEPLOYMENTS TASK BOARD MEMBERS MESSAGES RESOURCES OR HAVE ANY QUESTIONS. CHANNELS NEW TASK SUBJECT ADD TASK TEAMS TOOL:CLAIMTASK CA11_78816 UNASSIGNED(0) BLOCKED((() COMPLETED(1) IN PROGRESS(1) ASSIGNED(0) TOOL: CA11_5B2 TEAMS 分析E2B治理沙箱 分析DAYTONA 治理沙 箱 TEMPLATES TOOL:TEAM COMPLETE UNCLAIM SEND MESSAGE AG_4ECD3838B3CD... FAILED(0) ADMIN PROFILE USERS -->
-![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948895276-d0221173-9683-4a94-b281-55f9372cee65.png)
+![agent-service-teams.png](/docs/imgs/agentservice/agent-service-teams.png)
 
 In AgentScope Service, a Team is not a chat room. It is an operable collaboration unit: tasks can be claimed, plans can be approved, members can be woken, and state does not vanish just because a Session ends. A common pattern is a Lead that decomposes and accepts work, with Members claiming research, coding, verification, and other subtasks by capability. The platform owns message routing, the task board, and lifecycle — business code should not have to hand-roll temporary multi-process communication.
 
@@ -74,7 +60,6 @@ Humans reach the Control Plane through the Dashboard (browser) or the REST API (
 - QwenPaw via Sidecar
 
 ![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
-
 
 ### Production deployment architecture
 
