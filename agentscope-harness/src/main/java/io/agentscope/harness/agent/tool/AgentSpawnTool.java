@@ -29,6 +29,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
@@ -38,11 +39,24 @@ import io.agentscope.harness.agent.gateway.SessionIdUtils;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
+import io.agentscope.harness.agent.subagent.RemoteAskPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
+import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
+import io.agentscope.harness.agent.subagent.task.AgentProtocolTransport;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
+import io.agentscope.harness.agent.subagent.task.RemoteSubmitContext;
+import io.agentscope.harness.agent.subagent.task.RemoteTarget;
+import io.agentscope.harness.agent.subagent.task.RemoteTaskStatus;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,9 +67,12 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * Simple subagent tool for agent-internal use. Much lighter than {@code SessionsTool}:
@@ -111,19 +128,33 @@ public class AgentSpawnTool {
      */
     public static final String CTX_EXPOSE_TO_USER = "agentscope.subagent.expose_to_user";
 
+    /**
+     * {@link RuntimeContext} string key for the immutable subagent registry selected by the
+     * current parent-agent invocation. {@link
+     * io.agentscope.harness.agent.middleware.SubagentsMiddleware} installs a namespace-scoped
+     * manager here so concurrent callers never overwrite each other's declarations.
+     */
+    public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
+
     private static final String BG_RESULT_TEMPLATE =
             """
             status: accepted
             task_id: %s
             Use task_output(task_id='%s', block=false) to check status, \
+            wait_async_results(task_ids=...) to wait for a chosen group, \
+            wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
             Do NOT call task_output immediately — the task has just started.\
             """;
+
+    /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
+    private static final long REMOTE_CONFIRM_POLL_MS = 1_000L;
 
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
     private volatile SubagentGatewayBridge gatewayBridge;
+    private volatile RemoteSubagentTransport remoteTransport = new AgentProtocolTransport();
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -180,6 +211,11 @@ public class AgentSpawnTool {
         this.gatewayBridge = gatewayBridge;
     }
 
+    /** Test-only hook to inject a fake {@link RemoteSubagentTransport} for remote streaming/HITL tests. */
+    void setRemoteTransport(RemoteSubagentTransport remoteTransport) {
+        this.remoteTransport = Objects.requireNonNull(remoteTransport, "remoteTransport");
+    }
+
     @Tool(
             name = "agent_spawn",
             stateInjected = true,
@@ -189,7 +225,10 @@ public class AgentSpawnTool {
                     Every response starts with three lines: agent_key (pass this verbatim to \
                     agent_send as agent_key), agent_id (the subagent type name), and session_id \
                     (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output — task_id is NOT agent_key.\
+                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
+                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
+                    by default; pass a Toolkit with parallel=false to serialize, \
+                    or use async tasks for fire-and-forget parallelism.\
                     """)
     public Mono<String> agentSpawn(
             RuntimeContext runtimeContext,
@@ -238,23 +277,24 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
+        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
-            if (agentManager.isPrimaryOnly(agentId)) {
+            if (manager.isPrimaryOnly(agentId)) {
                 return Mono.just(
                         "Error: agent_id '"
                                 + agentId
                                 + "' is PRIMARY-only and cannot be spawned as a subagent.");
             }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
             return Mono.just("Error: Unknown agent_id: " + agentId);
         }
         log.debug("agent_spawn resolved: agentId={}", agentId);
         Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(agentId);
+        var declOpt = manager.getDeclaration(agentId);
         boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
 
         String key;
@@ -266,13 +306,27 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
+                propagatePlanMode(
+                        parentState, currentUserId, existing.sessionId(), existing.agent());
+                propagateParentDenyRules(
+                        parentState,
+                        currentUserId,
+                        existing.sessionId(),
+                        existing.agent(),
+                        declOpt);
                 String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
                     return Mono.just(spawnInfo + "\nstatus: accepted (reused)");
                 }
                 return execSpawnTask(
-                        existing, runtimeContext, spawnInfo, task, timeoutSeconds, declOpt);
+                        existing,
+                        runtimeContext,
+                        parentState,
+                        spawnInfo,
+                        task,
+                        timeoutSeconds,
+                        declOpt);
             }
         } else {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
@@ -293,17 +347,10 @@ public class AgentSpawnTool {
         persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
-        if (parentState != null
-                && parentState.getPlanModeContext().isPlanActive()
-                && agent instanceof HarnessAgent ha) {
-            ha.enterPlanMode(currentUserId, sessionId);
-        }
+        propagatePlanMode(parentState, currentUserId, sessionId, agent);
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).
-        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
-        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
-            propagateDenyRules(parentState, ra);
-        }
+        propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
 
         // Expose subagent to user via gateway bridge if requested. The effective decision combines
         // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
@@ -344,15 +391,18 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), agentId, capturedTask);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                agentId,
+                                capturedTask,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 agent,
                                                                 sessionId,
                                                                 currentUserId,
@@ -383,16 +433,15 @@ public class AgentSpawnTool {
         if (remote) {
             final String finalTask = task;
             return withSubagentExposedEvent(
-                    Mono.fromCallable(
-                            () ->
-                                    runRemoteSync(
-                                            runtimeContext,
-                                            spawnInfo,
-                                            agentId,
-                                            parentSessionId,
-                                            declOpt.get(),
-                                            finalTask.trim(),
-                                            timeoutMs)),
+                    runRemoteSyncReactive(
+                            runtimeContext,
+                            parentState,
+                            spawnInfo,
+                            agentId,
+                            parentSessionId,
+                            declOpt.get(),
+                            finalTask.trim(),
+                            timeoutMs),
                     subagentId,
                     agentId,
                     sessionId,
@@ -430,7 +479,7 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
                     """)
     public Mono<String> agentSend(
             RuntimeContext runtimeContext,
@@ -499,7 +548,11 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(spawned.agentId());
+        DefaultAgentManager manager = managerFor(runtimeContext);
+        propagatePlanMode(parentState, currentUserId, spawned.sessionId(), spawned.agent());
+        var declOpt = manager.getDeclaration(spawned.agentId());
+        propagateParentDenyRules(
+                parentState, currentUserId, spawned.sessionId(), spawned.agent(), declOpt);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -510,15 +563,18 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), spawned.agentId(), capturedMessage);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                spawned.agentId(),
+                                capturedMessage,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -542,16 +598,15 @@ public class AgentSpawnTool {
         if (remote) {
             final String finalMessage = message;
             final String finalKey = key;
-            return Mono.fromCallable(
-                    () ->
-                            runRemoteSync(
-                                    runtimeContext,
-                                    "agent_key: " + finalKey,
-                                    spawned.agentId(),
-                                    parentSessionId,
-                                    declOpt.get(),
-                                    finalMessage.trim(),
-                                    timeoutMs));
+            return runRemoteSyncReactive(
+                    runtimeContext,
+                    parentState,
+                    "agent_key: " + finalKey,
+                    spawned.agentId(),
+                    parentSessionId,
+                    declOpt.get(),
+                    finalMessage.trim(),
+                    timeoutMs);
         }
 
         final String finalKey = key;
@@ -590,6 +645,30 @@ public class AgentSpawnTool {
     //  Helpers
     // -----------------------------------------------------------------
 
+    private DefaultAgentManager managerFor(RuntimeContext runtimeContext) {
+        DefaultAgentManager scoped =
+                runtimeContext != null
+                        ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
+                        : null;
+        return scoped != null ? scoped : agentManager;
+    }
+
+    /**
+     * Activates plan mode on a local child immediately before it can be invoked.
+     *
+     * <p>This must run for both newly-created and reused children. In particular, a persistent
+     * child may have been created while its parent was in build mode and then reused after the
+     * parent entered plan mode.
+     */
+    private static void propagatePlanMode(
+            AgentState parentState, String userId, String sessionId, Agent child) {
+        if (parentState != null
+                && parentState.getPlanModeContext().isPlanActive()
+                && child instanceof HarnessAgent harnessChild) {
+            harnessChild.enterPlanMode(userId, sessionId);
+        }
+    }
+
     /**
      * Returns a {@link Mono} that invokes the local subagent.
      *
@@ -619,6 +698,7 @@ public class AgentSpawnTool {
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
                 ctxView -> {
+                    DefaultAgentManager manager = managerFor(parentCtx);
                     // ── Path 1: streamEvents() — AgentEvent forwarding ──
                     Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
                     if (emitterOpt.isPresent()) {
@@ -631,18 +711,33 @@ public class AgentSpawnTool {
                                 new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
                                         .withSource(sourcePath));
 
-                        return agentManager
-                                .invokeAgent(agent, sessionId, userId, prompt, parentCtx)
+                        AtomicBoolean endEmitted = new AtomicBoolean();
+                        Runnable emitEnd =
+                                () -> {
+                                    if (endEmitted.compareAndSet(false, true)) {
+                                        parentEmitter.emit(
+                                                new AgentEndEvent(null).withSource(sourcePath));
+                                    }
+                                };
+
+                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
                                 .contextWrite(
                                         c ->
                                                 c.put(
                                                         AgentEventEmitter.FORWARDING_CONTEXT_KEY,
                                                         taggedEmitter))
-                                .doOnTerminate(
-                                        () ->
-                                                parentEmitter.emit(
-                                                        new AgentEndEvent(null)
-                                                                .withSource(sourcePath)));
+                                // Emit before success or error reaches the parent, which may
+                                // otherwise complete its event sink before doFinally runs.
+                                .doOnSuccess(ignored -> emitEnd.run())
+                                .doOnError(ignored -> emitEnd.run())
+                                // Preserve best-effort cancellation signaling without emitting a
+                                // duplicate if cancellation races with normal termination.
+                                .doFinally(
+                                        signal -> {
+                                            if (signal == SignalType.CANCEL) {
+                                                emitEnd.run();
+                                            }
+                                        });
                     }
 
                     // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
@@ -650,8 +745,7 @@ public class AgentSpawnTool {
                         SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
                         EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                        return agentManager
-                                .invokeAgentStream(
+                        return manager.invokeAgentStream(
                                         agent,
                                         sessionId,
                                         userId,
@@ -675,13 +769,13 @@ public class AgentSpawnTool {
                                 .switchIfEmpty(
                                         Mono.defer(
                                                 () ->
-                                                        agentManager.invokeAgent(
+                                                        manager.invokeAgent(
                                                                 agent, sessionId, userId, prompt,
                                                                 parentCtx)));
                     }
 
                     // ── Path 3: non-streaming ──
-                    return agentManager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
                 });
     }
 
@@ -720,16 +814,40 @@ public class AgentSpawnTool {
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
 
-                                    execLocalSync(
-                                                    agent,
-                                                    sessionId,
-                                                    userId,
-                                                    task,
-                                                    spawned,
-                                                    runtimeContext)
-                                            .contextWrite(
-                                                    c -> reactor.util.context.Context.of(parentCtx))
-                                            .subscribe(
+                                    Mono<Msg> inner =
+                                            execLocalSync(
+                                                            agent,
+                                                            sessionId,
+                                                            userId,
+                                                            task,
+                                                            spawned,
+                                                            runtimeContext)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    reactor.util.context.Context.of(
+                                                                            parentCtx))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                // Parent subscription was
+                                                                // cancelled (outer Mono.timeout,
+                                                                // user stop, or upstream Reactor
+                                                                // cancel). The fire-and-forget
+                                                                // subscribe below detaches the
+                                                                // inner execution from the parent
+                                                                // lifecycle, so without this
+                                                                // doFinally the sub-agent would
+                                                                // keep running as an orphan and
+                                                                // the eventual sink.success(...)
+                                                                // would be a no-op on the
+                                                                // already-cancelled sink.
+                                                                if (signal == SignalType.CANCEL) {
+                                                                    interruptAgent(
+                                                                            agent, runtimeContext);
+                                                                }
+                                                            });
+
+                                    Disposable innerSub =
+                                            inner.subscribe(
                                                     bridge::complete,
                                                     bridge::completeExceptionally,
                                                     () -> {
@@ -762,7 +880,33 @@ public class AgentSpawnTool {
                                                                     + textOf(msg));
                                                 }
                                             });
+
+                                    // Propagate parent cancellation to the inner fire-and-forget
+                                    // subscription. Without this, doFinally(CANCEL) above never
+                                    // fires because the inner is subscribed independently of the
+                                    // parent Mono.create sink.
+                                    sink.onCancel(innerSub);
                                 }));
+    }
+
+    /**
+     * Interrupts the sub-agent's reasoning loop when its parent tool-call subscription is
+     * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
+     * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
+     *
+     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
+     * implementations are no-ops here; their inner execution will still be disposed by the caller's
+     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     */
+    private void interruptAgent(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent ra) {
+            ra.interrupt(ctx);
+            log.warn(
+                    "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
+                            + " subscription was cancelled.",
+                    ra.getName(),
+                    ra.getAgentId());
+        }
     }
 
     /**
@@ -849,7 +993,7 @@ public class AgentSpawnTool {
             return null;
         }
         Optional<Agent> agentOpt =
-                agentManager.createAgentIfPresent(entry.agentId(), runtimeContext);
+                managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
         if (agentOpt.isEmpty()) {
             log.warn(
                     "Failed to restore subagent from state: agentId={} not found in registry",
@@ -884,6 +1028,7 @@ public class AgentSpawnTool {
                 task_id: %s
                 The task exceeded the %ds sync timeout but is still running in the background. \
                 Use task_output(task_id='%s', block=false) to check status, \
+                wait_async_results(task_ids=...) when this task is part of a required barrier, \
                 or wait — completed tasks are pushed back to you automatically. \
                 Do NOT retry the same task.\
                 """,
@@ -923,30 +1068,209 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Submits a remote task through {@link TaskRepository} (for durable state) and blocks until
-     * it completes or the timeout elapses.
-     *
-     * <p>Using the repository ensures the task is visible to {@code task_list} and survives
-     * conversation compaction, just like async remote tasks do.
+     * Builds a {@code parentSession/agentId} source path for remote events forwarded into the
+     * parent's stream.
      */
-    private String runRemoteSync(
+    static String buildRemoteSourcePath(String parentSessionId, String agentId) {
+        String parent =
+                parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
+        String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
+        return parent + "/" + child;
+    }
+
+    /**
+     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path and
+     * the harness {@link AgentEvent#METADATA_TASK_ID} so concurrent calls to the same remote agent
+     * stay correlatable to distinct {@code TaskRecord}s.
+     */
+    static AgentEvent tagRemoteForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+        if (event == null) {
+            return null;
+        }
+        event.withSource(sourcePath);
+        if (taskId != null && !taskId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+        }
+        return event;
+    }
+
+    /**
+     * Builds submission metadata for a remote task (streaming preference, parent identity, denied
+     * permission rules).
+     */
+    private RemoteSubmitContext buildRemoteSubmitContext(
+            RuntimeContext runtimeContext, AgentState parentState, SubagentDeclaration decl) {
+        String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        boolean stream = decl != null && decl.isRemoteStreaming();
+        return RemoteSubmitContext.builder().userId(userId).parentSessionId(parentSessionId).stream(
+                        stream)
+                .detail(stream ? "full" : "status")
+                .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
+                .build();
+    }
+
+    /**
+     * Flattens parent DENY rules into wire maps for {@link RemoteSubmitContext}. Returns an empty
+     * list when inheritance is disabled or the parent has no DENY rules.
+     */
+    static List<Map<String, String>> collectParentDenyRules(
+            AgentState parentState, Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return List.of();
+        }
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, String>> out = new ArrayList<>();
+        parentPermissions
+                .getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            for (PermissionRule rule : rules) {
+                                Map<String, String> m = new LinkedHashMap<>();
+                                m.put("tool_name", rule.toolName());
+                                if (rule.ruleContent() != null) {
+                                    m.put("rule_content", rule.ruleContent());
+                                }
+                                m.put("behavior", rule.behavior().name());
+                                m.put("source", rule.source());
+                                out.add(m);
+                            }
+                        });
+        return out;
+    }
+
+    /**
+     * Reactive entry for remote sync execution. Captures {@link AgentEventEmitter} from Reactor
+     * Context before blocking on the remote task.
+     */
+    private Mono<String> runRemoteSyncReactive(
             RuntimeContext runtimeContext,
+            AgentState parentState,
             String header,
             String agentId,
             String parentSessionId,
             SubagentDeclaration decl,
             String input,
             long timeoutMs) {
+        return Mono.deferContextual(
+                ctxView -> {
+                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
+                    return Mono.fromCallable(
+                            () ->
+                                    runRemoteSync(
+                                            runtimeContext,
+                                            parentState,
+                                            header,
+                                            agentId,
+                                            parentSessionId,
+                                            decl,
+                                            input,
+                                            timeoutMs,
+                                            emitterOpt.orElse(null)));
+                });
+    }
+
+    /**
+     * Submits a remote task through {@link TaskRepository} (for durable state) and blocks until
+     * it completes or the timeout elapses.
+     *
+     * <p>When an {@link AgentEventEmitter} is present and {@link SubagentDeclaration#isRemoteStreaming()}
+     * is true, remote events are forwarded into the parent stream. Without an emitter, or when
+     * {@link RemoteAskPolicy#DENY} applies, pending remote confirmations are auto-denied via
+     * {@link RemoteSubagentTransport#resume}.
+     */
+    private String runRemoteSync(
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            String header,
+            String agentId,
+            String parentSessionId,
+            SubagentDeclaration decl,
+            String input,
+            long timeoutMs,
+            AgentEventEmitter emitter) {
         String taskId = "task_" + UUID.randomUUID();
+        RemoteSubmitContext submitContext =
+                buildRemoteSubmitContext(runtimeContext, parentState, decl);
         TaskRunSpec spec =
-                new TaskRunSpec.RemoteTaskRunSpec(decl.getUrl(), decl.getHeaders(), agentId, input);
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        decl.getUrl(), decl.getHeaders(), agentId, input, submitContext);
         BackgroundTask bgTask =
                 taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
+
+        RemoteTarget target = new RemoteTarget(decl.getUrl(), decl.getHeaders());
+        RemoteSubagentTransport transport = this.remoteTransport;
+        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId);
+        boolean wantStream = emitter != null && decl.isRemoteStreaming();
+        AtomicBoolean autoDenied = new AtomicBoolean(false);
+        AtomicBoolean resumedEpisode = new AtomicBoolean(false);
+
+        Closeable streamHandle = () -> {};
         try {
-            boolean done = bgTask.waitForCompletion(timeoutMs);
-            if (!done) {
-                return header + "\nstatus: timeout\ntask_id: " + taskId;
+            if (wantStream) {
+                streamHandle =
+                        transport.streamEvents(
+                                target,
+                                taskId,
+                                0L,
+                                remoteEvent ->
+                                        RemoteEventCodec.toAgentEvent(remoteEvent)
+                                                .ifPresent(
+                                                        ae ->
+                                                                emitter.emit(
+                                                                        tagRemoteForwardedEvent(
+                                                                                ae,
+                                                                                sourcePath,
+                                                                                taskId))));
             }
+
+            long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0L);
+            while (true) {
+                long remaining = deadlineMs - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    return header + "\nstatus: timeout\ntask_id: " + taskId;
+                }
+                long slice = Math.min(REMOTE_CONFIRM_POLL_MS, remaining);
+                boolean done = bgTask.waitForCompletion(slice);
+
+                try {
+                    RemoteTaskStatus st = transport.getStatus(target, taskId);
+                    if (st.isAwaitingConfirm()) {
+                        boolean shouldAutoDeny =
+                                emitter == null
+                                        || decl.getRemoteAskPolicy() == RemoteAskPolicy.DENY;
+                        if (shouldAutoDeny && resumedEpisode.compareAndSet(false, true)) {
+                            List<RemotePendingConfirm> pending =
+                                    st.pendingConfirms() != null ? st.pendingConfirms() : List.of();
+                            List<RemoteConfirmDecision> decisions = new ArrayList<>(pending.size());
+                            for (RemotePendingConfirm p : pending) {
+                                decisions.add(new RemoteConfirmDecision(p.getToolCallId(), false));
+                            }
+                            if (!decisions.isEmpty()) {
+                                transport.resume(target, taskId, decisions);
+                                autoDenied.set(true);
+                            }
+                        }
+                    } else {
+                        resumedEpisode.set(false);
+                    }
+                } catch (Exception e) {
+                    log.debug(
+                            "Remote status poll during sync wait failed for {}: {}",
+                            taskId,
+                            e.getMessage());
+                }
+
+                if (done) {
+                    break;
+                }
+            }
+
             TaskStatus ts = bgTask.getTaskStatus();
             if (ts == TaskStatus.FAILED) {
                 Exception err = bgTask.getError();
@@ -957,11 +1281,22 @@ public class AgentSpawnTool {
                 return header + "\nstatus: cancelled\ntask_id: " + taskId;
             }
             String result = bgTask.getResult();
-            return header + "\nstatus: ok\nreply:\n" + (result != null ? result : "");
+            StringBuilder sb = new StringBuilder(header).append("\nstatus: ok");
+            if (autoDenied.get()) {
+                sb.append("\nnote: remote tool confirmation(s) were auto-denied");
+            }
+            sb.append("\nreply:\n").append(result != null ? result : "");
+            return sb.toString();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("agent remote sync interrupted: agentId={}", agentId);
             return header + "\nstatus: error\nerror: interrupted";
+        } finally {
+            try {
+                streamHandle.close();
+            } catch (IOException e) {
+                log.debug("Closing remote event stream failed: {}", e.getMessage());
+            }
         }
     }
 
@@ -1065,6 +1400,7 @@ public class AgentSpawnTool {
     private Mono<String> execSpawnTask(
             SpawnedAgent spawned,
             RuntimeContext runtimeContext,
+            AgentState parentState,
             String spawnInfo,
             String task,
             Integer timeoutSeconds,
@@ -1072,6 +1408,7 @@ public class AgentSpawnTool {
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        DefaultAgentManager manager = managerFor(runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -1082,15 +1419,18 @@ public class AgentSpawnTool {
                 SubagentDeclaration d = declOpt.get();
                 spec =
                         new TaskRunSpec.RemoteTaskRunSpec(
-                                d.getUrl(), d.getHeaders(), spawned.agentId(), capturedTask);
+                                d.getUrl(),
+                                d.getHeaders(),
+                                spawned.agentId(),
+                                capturedTask,
+                                buildRemoteSubmitContext(runtimeContext, parentState, d));
             } else {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
                                     try {
                                         Msg reply =
-                                                agentManager
-                                                        .invokeAgent(
+                                                manager.invokeAgent(
                                                                 spawned.agent(),
                                                                 spawned.sessionId(),
                                                                 currentUserId,
@@ -1114,16 +1454,15 @@ public class AgentSpawnTool {
 
         if (remote) {
             final String finalTask = task;
-            return Mono.fromCallable(
-                    () ->
-                            runRemoteSync(
-                                    runtimeContext,
-                                    spawnInfo,
-                                    spawned.agentId(),
-                                    parentSessionId,
-                                    declOpt.get(),
-                                    finalTask.trim(),
-                                    timeoutMs));
+            return runRemoteSyncReactive(
+                    runtimeContext,
+                    parentState,
+                    spawnInfo,
+                    spawned.agentId(),
+                    parentSessionId,
+                    declOpt.get(),
+                    finalTask.trim(),
+                    timeoutMs);
         }
 
         final String finalTask = task.trim();
@@ -1151,25 +1490,86 @@ public class AgentSpawnTool {
                 : SessionIdUtils.deterministicHash(parent, agentId);
     }
 
+    private static void propagateParentDenyRules(
+            AgentState parentState,
+            String userId,
+            String childSessionId,
+            Agent childAgent,
+            Optional<SubagentDeclaration> declaration) {
+        boolean inherit =
+                declaration.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (!inherit || parentState == null) {
+            return;
+        }
+
+        PermissionContextState parentPermissions = parentState.getPermissionContext();
+        if (parentPermissions == null || parentPermissions.getDenyRules().isEmpty()) {
+            return;
+        }
+
+        if (childAgent instanceof HarnessAgent harnessAgent) {
+            mergeParentDenyRulesIntoSlot(
+                    userId, childSessionId, harnessAgent.getDelegate(), parentPermissions);
+        } else if (childAgent instanceof ReActAgent reactAgent) {
+            mergeParentDenyRulesIntoSlot(userId, childSessionId, reactAgent, parentPermissions);
+        }
+    }
+
+    private static void mergeParentDenyRulesIntoSlot(
+            String userId,
+            String childSessionId,
+            ReActAgent child,
+            PermissionContextState parentPermissions) {
+        PermissionContextState childPermissions =
+                child.getAgentState(userId, childSessionId).getPermissionContext();
+        PermissionContextState merged = mergeParentDenyRules(childPermissions, parentPermissions);
+        if (!merged.equals(childPermissions)) {
+            child.replacePermissionContext(userId, childSessionId, merged);
+        }
+    }
+
     /**
-     * Copies all DENY rules from the parent's permission context into the child's permission
-     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
-     * child is also denied.
+     * Adds parent DENY rules without widening the child's configured permissions.
+     *
+     * <p>A trivial child uses the legacy lightweight permission path, where a tool-level
+     * {@code PASSTHROUGH} is allowed. Adding the first DENY rule makes the context non-trivial and
+     * activates the full engine; {@link PermissionMode#BYPASS} preserves that prior fallback while
+     * explicit DENY rules still take precedence.
      */
-    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
-        PermissionContextState parentPerms = parentState.getPermissionContext();
-        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
-            return;
-        }
-        var childEngine = child.getPermissionEngine();
-        if (childEngine == null) {
-            return;
-        }
-        for (Map.Entry<String, List<PermissionRule>> entry :
-                parentPerms.getDenyRules().entrySet()) {
-            for (PermissionRule rule : entry.getValue()) {
-                childEngine.addRule(rule);
-            }
-        }
+    private static PermissionContextState mergeParentDenyRules(
+            PermissionContextState child, PermissionContextState parent) {
+        PermissionContextState.Builder merged =
+                PermissionContextState.builder()
+                        .mode(child.isTrivial() ? PermissionMode.BYPASS : child.getMode());
+
+        child.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+        child.getAllowRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAllowRule(toolName, rule)));
+
+        Map<String, List<PermissionRule>> denyRules = new LinkedHashMap<>();
+        child.getDenyRules()
+                .forEach((toolName, rules) -> denyRules.put(toolName, new ArrayList<>(rules)));
+        parent.getDenyRules()
+                .forEach(
+                        (toolName, rules) -> {
+                            List<PermissionRule> targetRules =
+                                    denyRules.computeIfAbsent(
+                                            toolName, ignored -> new ArrayList<>());
+                            for (PermissionRule rule : rules) {
+                                if (!targetRules.contains(rule)) {
+                                    targetRules.add(rule);
+                                }
+                            }
+                        });
+        denyRules.forEach(
+                (toolName, rules) -> rules.forEach(rule -> merged.addDenyRule(toolName, rule)));
+
+        child.getAskRules()
+                .forEach(
+                        (toolName, rules) ->
+                                rules.forEach(rule -> merged.addAskRule(toolName, rule)));
+        return merged.build();
     }
 }

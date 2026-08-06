@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.dashscope.formatter;
 
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -126,6 +127,15 @@ public class DashScopeMessageConverter {
                     contents.add(
                             DashScopeContentPart.text(
                                     "[Audio - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof DataBlock dataBlock) {
+                try {
+                    contents.add(mediaConverter.convertDataBlockToContentPart(dataBlock));
+                } catch (Exception e) {
+                    log.warn("Failed to process DataBlock: {}", e.getMessage());
+                    contents.add(
+                            DashScopeContentPart.text(
+                                    "[Media - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof HintBlock hb) {
                 contents.add(DashScopeContentPart.text(hb.getHint()));
@@ -286,7 +296,8 @@ public class DashScopeMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
@@ -330,6 +341,15 @@ public class DashScopeMessageConverter {
                     content.add(
                             DashScopeContentPart.text(
                                     "[Video - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof DataBlock db) {
+                try {
+                    content.add(mediaConverter.convertDataBlockToContentPart(db));
+                } catch (Exception e) {
+                    log.warn("Failed to process DataBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Media - processing failed: " + e.getMessage() + "]"));
                 }
             }
         }

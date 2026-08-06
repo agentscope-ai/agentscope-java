@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.middleware;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -24,14 +23,12 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,8 +53,9 @@ import reactor.core.scheduler.Schedulers;
  *       {@link MemoryConfig.FlushTrigger#minGap()}.</li>
  * </ul>
  *
- * <p>Message <b>offload</b> is independent of the flush trigger and runs on every call so the
- * session JSONL stays complete (needed for {@code SessionSearchTool} and resumption).
+ * <p>Session transcript append is <b>not</b> handled here — see {@link TranscriptMiddleware},
+ * which runs independently of memory flush so history stays complete even when flush is
+ * disabled.
  *
  * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
  * isolation in use:
@@ -77,15 +75,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
-
-    /**
-     * Per-isolation-key flush timestamps. The key is derived from {@link #isolationScope} and the
-     * per-call {@link RuntimeContext} so the throttle window matches the memory data namespace:
-     * one window per user (USER scope), per session (SESSION scope), or a single shared window
-     * (AGENT / GLOBAL scope).
-     */
-    private final ConcurrentHashMap<String, AtomicReference<Instant>> lastFlushAtByKey =
-            new ConcurrentHashMap<>();
+    private final PeriodicGate periodicGate;
 
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
@@ -93,7 +83,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 model,
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
-                IsolationScope.USER);
+                IsolationScope.USER,
+                new LocalPeriodicGate());
     }
 
     public MemoryFlushMiddleware(
@@ -101,7 +92,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger) {
-        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER);
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                IsolationScope.USER,
+                new LocalPeriodicGate());
     }
 
     public MemoryFlushMiddleware(
@@ -110,6 +107,22 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                new LocalPeriodicGate());
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -117,6 +130,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
     @Override
@@ -139,10 +153,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
-        if (!(agent instanceof ReActAgent reActAgent)) {
-            return Mono.empty();
-        }
-        AgentState state = RuntimeContext.resolveAgentState(rc, reActAgent);
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
             return Mono.empty();
         }
@@ -171,23 +182,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             flushMono = Mono.empty();
         }
 
-        String agentId = agent.getName();
-        String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
-
-        Mono<Void> offloadMono =
-                Mono.fromRunnable(
-                                () ->
-                                        flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId))
-                        .then()
-                        .doOnSuccess(v -> log.debug("Message offload completed"))
-                        .onErrorResume(
-                                e -> {
-                                    log.warn("Message offload failed: {}", e.getMessage());
-                                    return Mono.empty();
-                                });
-
-        return flushMono.then(offloadMono);
+        // Message offload is owned by TranscriptMiddleware (independent of memory flush).
+        return flushMono;
     }
 
     /**
@@ -199,7 +195,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
      * namespace (see {@link #timerKeyFor(RuntimeContext)}).
      *
      * <p>Package-private for unit testing of the trigger gate without standing up a full
-     * {@code ReActAgent}.
+     * {@code Agent}.
      */
     boolean shouldFlushNow(RuntimeContext rc) {
         switch (flushTrigger.mode()) {
@@ -208,27 +204,26 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             case NEVER:
                 return false;
             case THROTTLED:
-                Instant now = Instant.now();
-                AtomicReference<Instant> ref = lastFlushAtFor(rc);
-                Instant last = ref.get();
-                Duration minGap = flushTrigger.minGap();
-                if (Duration.between(last, now).compareTo(minGap) < 0) {
-                    return false;
-                }
-                return ref.compareAndSet(last, now);
+                return periodicGate.tryClaim(compositeTimerKey(rc), flushTrigger.minGap());
             default:
                 return true;
         }
     }
 
-    private AtomicReference<Instant> lastFlushAtFor(RuntimeContext rc) {
-        return lastFlushAtByKey.computeIfAbsent(
-                timerKeyFor(rc), k -> new AtomicReference<>(Instant.EPOCH));
+    /**
+     * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that throttle windows
+     * from different isolation dimensions are never conflated — e.g. a {@code userId} that
+     * happens to equal a {@code sessionId} must not share a slot.
+     */
+    private String compositeTimerKey(RuntimeContext rc) {
+        return isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
     /**
-     * Derives the timer map key from the configured {@link IsolationScope} and the per-call
-     * {@link RuntimeContext}, mirroring the memory data namespace:
+     * Derives the per-call identity portion of the composite timer key from the configured
+     * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
+     * namespace:
      * <ul>
      *   <li>{@link IsolationScope#USER} — {@code userId} (empty string for anonymous)</li>
      *   <li>{@link IsolationScope#SESSION} — {@code sessionId} (empty string when absent)</li>

@@ -359,7 +359,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content = Files.readString(resolved, StandardCharsets.UTF_8);
+            String content =
+                    Files.readString(resolved, StandardCharsets.UTF_8)
+                            .replace("\r\n", "\n")
+                            .replace("\r", "\n");
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
@@ -486,7 +489,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 responses.add(FileUploadResponse.success(filePath));
             } catch (IOException e) {
                 responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
-            } catch (SecurityException e) {
+            } catch (SecurityException | IllegalArgumentException e) {
                 responses.add(FileUploadResponse.fail(filePath, "permission_denied"));
             }
         }
@@ -625,21 +628,51 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private Path resolveRooted(String effectiveKey) {
+        AbstractFilesystem.validatePath(effectiveKey);
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             Path normalized = target.normalize();
             if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
                 return normalized;
             }
-            throw new SecurityException(
-                    "Absolute path "
-                            + normalized
-                            + " is not within an allowed root. Filesystem root: "
-                            + cwd
-                            + "; additional roots: "
-                            + pathPolicy.roots());
+            if (Files.exists(normalized)) {
+                throw rootAccessDenied(normalized);
+            }
+            if (!effectiveKey.startsWith("/")) {
+                throw rootAccessDenied(normalized);
+            }
         }
-        return cwd.resolve(target).normalize();
+
+        if (effectiveKey.startsWith("/")) {
+            String stripped = effectiveKey.substring(1);
+            if (stripped.isEmpty()) {
+                return cwd;
+            }
+            if (stripped.startsWith("~")) {
+                throw new SecurityException("Path traversal not allowed: " + effectiveKey);
+            }
+            Path full = cwd.resolve(stripped).normalize();
+            if (!full.startsWith(cwd)) {
+                throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+            }
+            return full;
+        }
+
+        Path full = cwd.resolve(target).normalize();
+        if (!full.startsWith(cwd)) {
+            throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+        }
+        return full;
+    }
+
+    private SecurityException rootAccessDenied(Path normalized) {
+        return new SecurityException(
+                "Absolute path "
+                        + normalized
+                        + " is not within an allowed root. Filesystem root: "
+                        + cwd
+                        + "; additional roots: "
+                        + pathPolicy.roots());
     }
 
     private Path resolveUnrestricted(String effectiveKey) {

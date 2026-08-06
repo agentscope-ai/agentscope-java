@@ -18,13 +18,20 @@ package io.agentscope.harness.agent.sandbox.json;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -78,5 +85,121 @@ class HarnessSandboxJacksonModuleTest {
         assertEquals(sessionId, snapshot.getId());
         assertEquals("local", snapshot.getType());
         assertTrue(snapshot.isRestorable());
+    }
+
+    @Test
+    void serializesRemoteSnapshotWithoutDerivedProperties() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        DockerSandboxState original = new DockerSandboxState();
+        original.setSessionId("remote-session-1");
+        original.setSnapshot(new RemoteSandboxSnapshot(new FakeRemoteSnapshotClient(), "snap-1"));
+
+        JsonNode snapshotNode =
+                mapper.readTree(mapper.writeValueAsString(original)).get("snapshot");
+
+        assertNotNull(snapshotNode);
+        assertEquals("remote", snapshotNode.get("type").asText());
+        assertEquals("snap-1", snapshotNode.get("id").asText());
+        assertNull(snapshotNode.get("restorable"));
+        assertNull(snapshotNode.get("persistenceEnabled"));
+    }
+
+    @Test
+    void deserializesDockerSandboxStateWithRemoteSnapshotViaMapper() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        DockerSandboxState original = new DockerSandboxState();
+        original.setSessionId("remote-session-2");
+        original.setSnapshot(new RemoteSandboxSnapshot(new FakeRemoteSnapshotClient(), "snap-2"));
+
+        SandboxState parsed =
+                mapper.readValue(mapper.writeValueAsString(original), SandboxState.class);
+
+        assertInstanceOf(DockerSandboxState.class, parsed);
+        SandboxSnapshot snapshot = parsed.getSnapshot();
+        assertNotNull(snapshot);
+        assertInstanceOf(RemoteSandboxSnapshot.class, snapshot);
+        assertEquals("snap-2", snapshot.getId());
+        assertEquals("remote", snapshot.getType());
+    }
+
+    @Test
+    void deserializesLegacyRemoteSnapshotJsonWithUnknownDerivedProperties() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        String json =
+                """
+                {
+                  "type":"docker",
+                  "sessionId":"remote-session-legacy",
+                  "snapshot":{
+                    "type":"remote",
+                    "id":"snap-legacy",
+                    "restorable":true,
+                    "persistenceEnabled":true
+                  }
+                }
+                """;
+
+        SandboxState parsed = mapper.readValue(json, SandboxState.class);
+
+        assertInstanceOf(DockerSandboxState.class, parsed);
+        SandboxSnapshot snapshot = parsed.getSnapshot();
+        assertNotNull(snapshot);
+        assertInstanceOf(RemoteSandboxSnapshot.class, snapshot);
+        assertEquals("snap-legacy", snapshot.getId());
+        assertEquals("remote", snapshot.getType());
+    }
+
+    @Test
+    void roundTripsDockerSandboxStateWithRemoteSnapshotViaDockerClient() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+        DockerSandboxClient client = new DockerSandboxClient(mapper);
+
+        DockerSandboxState original = new DockerSandboxState();
+        original.setSessionId("remote-session-3");
+        original.setSnapshot(new RemoteSandboxSnapshot(new FakeRemoteSnapshotClient(), "snap-3"));
+
+        String json = mapper.writeValueAsString(original);
+        SandboxState parsed =
+                client.deserializeState(
+                        json, new RemoteSnapshotSpec(new FakeRemoteSnapshotClient()));
+
+        assertInstanceOf(DockerSandboxState.class, parsed);
+        SandboxSnapshot snapshot = parsed.getSnapshot();
+        assertNotNull(snapshot);
+        assertInstanceOf(RemoteSandboxSnapshot.class, snapshot);
+        assertEquals("snap-3", snapshot.getId());
+        assertEquals("remote", snapshot.getType());
+        assertTrue(snapshot.isRestorable());
+    }
+
+    private static final class FakeRemoteSnapshotClient implements RemoteSnapshotClient {
+
+        @Override
+        public void upload(String id, InputStream in) {}
+
+        @Override
+        public InputStream download(String id) {
+            return InputStream.nullInputStream();
+        }
+
+        @Override
+        public boolean exists(String id) {
+            return true;
+        }
     }
 }

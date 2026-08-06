@@ -42,7 +42,44 @@ Detail → [Context](building-blocks/context.md)
 | `io.agentscope.core.hook.PendingToolRecoveryHook` | Use `Builder.enablePendingToolRecovery(boolean)` |
 | `io.agentscope.core.hook.TTSHook` | Removed alongside the TTS module |
 
-#### A.3 `state` package restructure (compile error)
+#### A.3 Model providers moved out of core
+
+OpenAI, Gemini, Anthropic, DashScope, and Ollama chat model implementations are no longer packaged in `agentscope-core`. Core now keeps only shared model contracts such as `Model`, `ChatModelBase`, `Formatter`, `ModelRegistry`, and the `ModelProvider` SPI.
+
+If your v1 code imported provider classes from core, replace them with the matching model extension module:
+
+| v1 import / dependency | v2 replacement |
+|---|---|
+| `io.agentscope.core.model.OpenAIChatModel` | Add `agentscope-extensions-model-openai`; import `io.agentscope.extensions.model.openai.OpenAIChatModel` |
+| `io.agentscope.core.model.GeminiChatModel` | Add `agentscope-extensions-model-gemini`; import `io.agentscope.extensions.model.gemini.GeminiChatModel` |
+| `io.agentscope.core.model.AnthropicChatModel` | Add `agentscope-extensions-model-anthropic`; import `io.agentscope.extensions.model.anthropic.AnthropicChatModel` |
+| `io.agentscope.core.model.DashScopeChatModel` | Add `agentscope-extensions-model-dashscope`; import `io.agentscope.extensions.model.dashscope.DashScopeChatModel` |
+| `io.agentscope.core.model.OllamaChatModel` | Add `agentscope-extensions-model-ollama`; import `io.agentscope.extensions.model.ollama.OllamaChatModel` |
+| `io.agentscope.core.formatter.<provider>.*` | `io.agentscope.extensions.model.<provider>.formatter.*` |
+| `io.agentscope.core.credential.<Provider>Credential` | `io.agentscope.extensions.model.<provider>.credential.<Provider>Credential` |
+
+`ModelRegistry` string ids still work, but only when the matching extension module is on the classpath:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("dashscope:qwen-plus")
+    .build();
+```
+
+Spring Boot applications should use the provider-specific starters instead of relying on a generic core model path:
+
+| Provider | Spring Boot starter |
+|---|---|
+| OpenAI | `agentscope-openai-spring-boot-starter` |
+| DashScope | `agentscope-dashscope-spring-boot-starter` |
+| Gemini | `agentscope-gemini-spring-boot-starter` |
+| Anthropic | `agentscope-anthropic-spring-boot-starter` |
+| Ollama | `agentscope-ollama-spring-boot-starter` |
+
+Detail → [Model](building-blocks/model.md), [Model Providers](../integration/overview.md)
+
+#### A.4 `state` package restructure (compile error)
 
 | v1 | v2 |
 |---|---|
@@ -54,7 +91,7 @@ Detail → [Context](building-blocks/context.md)
 
 Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](building-blocks/context.md)
 
-#### A.4 `PlanNotebook` removed — use `HarnessAgent.enablePlanMode()`
+#### A.5 `PlanNotebook` removed — use `HarnessAgent.enablePlanMode()`
 
 The entire `io.agentscope.core.plan` package (`PlanNotebook`, `Plan`, `SubTask`, `PlanStorage`, `PlanToHint`, and related classes) has been removed with no deprecated bridge.
 
@@ -71,7 +108,7 @@ The entire `io.agentscope.core.plan` package (`PlanNotebook`, `Plan`, `SubTask`,
 
 **Subtask tracking**: if your v1 code relied on `PlanNotebook`'s subtask state tracking (breaking work into subtasks and checking them off during execution), the v2 equivalent is the **task list** — enable it with `.enableTaskList(true)` on the builder, which registers `TodoTools` and `TaskReminderMiddleware`.
 
-#### A.5 `Msg` content validation is stricter (runtime exception)
+#### A.6 `Msg` content validation is stricter (runtime exception)
 
 `Msg` now validates `content` against `role` at construction time:
 
@@ -81,7 +118,7 @@ The entire `io.agentscope.core.plan` package (`PlanNotebook`, `Plan`, `SubTask`,
 
 Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](building-blocks/message-and-event.md)
 
-#### A.6 Agent is fully stateless (architecture change)
+#### A.7 Agent is fully stateless (architecture change)
 
 `ReActAgent` is now **fully stateless** — the instance itself holds no mutable "current session" state. All per-call mutable state (`AgentState`, `PermissionEngine`, event sink) is encapsulated in an internal `CallExecution` object and propagated through the call chain via Reactor Context. A single Agent instance can safely serve multiple `(userId, sessionId)` combinations concurrently without cross-session interference.
 
@@ -106,7 +143,7 @@ Items in this section compile and run on 2.0, but each has been marked for remov
 
 - `SkillBox` (the class) and `Builder.skillBox(SkillBox)` are both `@Deprecated(forRemoval = true, since = "2.0.0")`.
 - Recommended path: register one or more `AgentSkillRepository` implementations (built-ins: `ClasspathSkillRepository`, `FileSystemSkillRepository`) via `Builder.skillRepository(...)` / `.skillRepositories(...)`. When at least one repository is registered, `DynamicSkillMiddleware` is auto-installed and rebuilds the skill prompt on every `call()`.
-- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`. To disable the auto-installed middleware (so an external orchestrator like `HarnessAgent` can attach its own), use `Builder.dynamicSkillsEnabled(false)`.
+- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`.
 
 Detail → [Skill](harness/skill.md)
 
@@ -157,7 +194,7 @@ Python 2.0's `agent.reply_stream()` exposes a single streaming signature (`Async
 - **Types (soft deprecation, no `forRemoval` yet)**
   - `io.agentscope.core.agent.Event`, `EventType`, `EventSource`
   - Still consumed internally by the harness (subagent event forwarding: `SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`), AGUI, A2A, chat-completions-web, and Kotlin extension modules as the event-bus / adapter input. They will be flipped to `forRemoval = true` only after those modules migrate to `AgentEvent`, so the entire downstream is not warning-flooded in a single release.
-  - **Current gap:** `HarnessAgent.streamEvents(...)` does **not** forward subagent events yet — the `AgentEvent` hierarchy has no equivalent `EventSource` channel. Callers that need the child-agent stream must stay on the deprecated `stream(...)` path until that channel lands.
+  - Subagent events are forwarded on `HarnessAgent.streamEvents(...)` with a non-null `source` path (including remote Agent Protocol children when `remoteStreaming` is enabled).
 
 New code should use:
 
@@ -210,6 +247,17 @@ Detail → [Harness filesystem](harness/filesystem.md)
 
 The capabilities below are additive in 2.0 — none of them break 1.x code. The Migration Guide above already covers the event system, message refactor, and middleware mechanism, so they are not repeated here.
 
+### AG-UI v2
+
+- The AG-UI adapter now uses the v2 `streamEvents()` path. Normal `RUN_STARTED` / `RUN_FINISHED` events are converted from `AgentStartEvent` / `AgentEndEvent`; error paths emit `RUN_ERROR` and a fallback `RUN_FINISHED`.
+- New `AgentEventConverter` and `AguiEventEnricher` extension points: converters handle semantic mapping, while enrichers handle cross-cutting properties such as `timestamp` / `rawEvent`. The Spring Boot starter automatically collects both bean types.
+- Every `AguiEvent` supports AG-UI base event properties. `BaseEventPropertiesEnricher` is disabled by default; when explicitly enabled, it only fills missing `timestamp` values and does not default `rawEvent`.
+- `AguiAdapterConfig.emitTokenUsage` can emit `CUSTOM token_usage` events with model-call delta and run-level cumulative token usage.
+- **Behavior change:** AgentEvents with `source != null` (subagent events) are emitted as AG-UI `CUSTOM` events (`subagent.lifecycle`, `subagent.text`, `subagent.thinking`, `subagent.tool_call`, `subagent.tool_result`, `subagent.require_confirm`) instead of native `TEXT_MESSAGE_*` / `RUN_*`. Set `emitSubagentEventsAsNative(true)` to restore the legacy native mapping.
+- The Spring Boot starter supports `AguiRuntimeContextResolver`, custom `AguiAgentAdapterFactory`, frontend tool injection / merge mode, and HITL interrupt output.
+
+Detail → [AG-UI](../integration/protocol/agui.md)
+
 ### Toolkit & Permission
 
 Tool execution is the main extension surface in 2.0, and the permission system sits directly on its execution path — so we present them together.
@@ -227,8 +275,8 @@ Detail → [Tool](building-blocks/tool.md), [Permission System](building-blocks/
 
 ### Model fault tolerance and credentials
 
-- New package `io.agentscope.core.credential` — 8 provider credential classes + `ModelCard`
-- `ModelRegistry` resolves models from `"provider:model"` strings (e.g. `dashscope:qwen-max`, `openai:gpt-5`)
+- New package `io.agentscope.core.credential` — shared credential contracts and `ModelCard`; provider-specific credentials live with the model extension modules
+- `ModelRegistry` resolves models from `"provider:model"` strings when the matching model extension module is on the classpath (e.g. `dashscope:qwen-max`, `openai:gpt-5`)
 - Builder additions: `.model(String)`, `.maxRetries(int)`, `.fallbackModel(Model)` / `.fallbackModel(String)`, `.stopOnReject(boolean)` — primary-model failure auto-retries and falls back
 
 Detail → [Model](building-blocks/model.md)

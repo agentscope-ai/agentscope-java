@@ -15,11 +15,16 @@
  */
 package io.agentscope.extensions.model.dashscope;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.transport.ProxyConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +53,30 @@ class DashScopeModelProviderTest {
         assertThrows(IllegalArgumentException.class, () -> provider.create("qwen"));
         assertThrows(IllegalArgumentException.class, () -> provider.create("dashscope:"));
         assertThrows(IllegalArgumentException.class, () -> provider.create(null));
+    }
+
+    @Test
+    void createUsesModelCreationContext() {
+        DashScopeModelProvider provider = new DashScopeModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-dashscope-key")
+                        .baseUrl("https://dashscope.example.com")
+                        .stream(false)
+                        .enableThinking(true)
+                        .component(GenerateOptions.class, GenerateOptions.builder().build())
+                        .component(ProxyConfig.class, ProxyConfig.http("localhost", 8080))
+                        .option("contextWindowSize", 128000)
+                        .option("enableSearch", true)
+                        .option("endpointType", EndpointType.TEXT)
+                        .option("nativeStructuredOutputWithTools", true)
+                        .build();
+
+        Model model = provider.create("dashscope:qwen-max", context);
+
+        assertTrue(model instanceof DashScopeChatModel);
+        assertTrue(model.getModelName().equals("qwen-max"));
+        assertEquals(128000, model.getContextWindowSize());
     }
 
     @Test

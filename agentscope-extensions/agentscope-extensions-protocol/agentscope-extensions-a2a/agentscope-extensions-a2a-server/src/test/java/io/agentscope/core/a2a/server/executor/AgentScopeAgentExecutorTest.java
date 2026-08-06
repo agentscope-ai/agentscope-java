@@ -177,7 +177,7 @@ class AgentScopeAgentExecutorTest {
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
                     messageRef.get(),
-                    List.of("streaming result 1", " 2"),
+                    List.of("streaming result 1 2"),
                     mockContext.getTaskId(),
                     mockContext.getContextId());
         }
@@ -208,8 +208,10 @@ class AgentScopeAgentExecutorTest {
             Message message = messageRef.get();
             assertEquals(mockContext.getTaskId(), message.getTaskId());
             assertEquals(mockContext.getContextId(), message.getContextId());
-            assertEquals(3, message.getParts().size());
+            assertEquals(2, message.getParts().size());
             assertInstanceOf(DataPart.class, message.getParts().get(0));
+            assertInstanceOf(TextPart.class, message.getParts().get(1));
+            assertEquals("streaming result 1 2", ((TextPart) message.getParts().get(1)).getText());
         }
 
         @Test
@@ -235,7 +237,7 @@ class AgentScopeAgentExecutorTest {
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
                     messageRef.get(),
-                    List.of("streaming result 1", " 2"),
+                    List.of("streaming result 1 2"),
                     mockContext.getTaskId(),
                     mockContext.getContextId());
         }

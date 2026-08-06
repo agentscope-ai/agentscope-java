@@ -15,8 +15,15 @@
  */
 package io.agentscope.extensions.model.openai;
 
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.applyAdvancedOptions;
+
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelContextWindows;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
+import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.util.regex.Pattern;
 
 /** OpenAI provider registered through {@link java.util.ServiceLoader}. */
@@ -24,6 +31,7 @@ public final class OpenAIModelProvider implements ModelProvider {
 
     private static final String PREFIX = "openai:";
     private static final Pattern MODEL_ID = Pattern.compile("openai:.+");
+    private static final String DEFAULT_BASE_URL = OpenAIClient.DEFAULT_BASE_URL_WITH_VERSION;
 
     @Override
     public String providerId() {
@@ -37,16 +45,35 @@ public final class OpenAIModelProvider implements ModelProvider {
 
     @Override
     public Model create(String modelId) {
+        return create(modelId, ModelCreationContext.empty());
+    }
+
+    @Override
+    public Model create(String modelId, ModelCreationContext context) {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported OpenAI model id: " + modelId);
         }
-        String modelName = modelId.substring(PREFIX.length());
-        String apiKey = System.getenv("OPENAI_API_KEY");
-        if (apiKey == null || apiKey.isBlank()) {
+
+        String apiKey = firstNonBlank(context.getApiKey(), System.getenv("OPENAI_API_KEY"));
+        if (apiKey == null) {
             throw new IllegalStateException(
                     "Environment variable OPENAI_API_KEY is required to auto-create model: "
                             + modelId);
         }
-        return OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true).build();
+        String modelName = modelId.substring(PREFIX.length());
+        String baseUrl = firstNonBlank(context.getBaseUrl(), DEFAULT_BASE_URL);
+        String endpointPath = trimToNull(context.getEndpointPath());
+        boolean stream = context.getStream() != null ? context.getStream() : true;
+
+        OpenAIChatModel.Builder builder =
+                OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
+                        .baseUrl(baseUrl)
+                        .endpointPath(endpointPath)
+                        .formatter(new OpenAIChatFormatter())
+                        .nativeStructuredOutput(true)
+                        .contextWindowSize(
+                                ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
+        applyAdvancedOptions(builder, context);
+        return builder.build();
     }
 }

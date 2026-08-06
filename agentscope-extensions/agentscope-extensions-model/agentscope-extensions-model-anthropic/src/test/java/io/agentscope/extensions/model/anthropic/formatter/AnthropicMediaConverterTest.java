@@ -24,6 +24,7 @@ import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.UrlImageSource;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
@@ -173,4 +174,86 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
 
     // Custom source type for testing unsupported sources
     private static class CustomSource extends Source {}
+
+    @Test
+    void testConvertDataBlockWithBase64Source() throws Exception {
+        Base64Source source =
+                Base64Source.builder()
+                        .data("ZmFrZSBpbWFnZSBjb250ZW50")
+                        .mediaType("image/png")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertDataBlock(block);
+
+        assertNotNull(result);
+        assertTrue(result.source().isBase64());
+        Base64ImageSource base64Source = result.source().asBase64();
+        assertEquals("ZmFrZSBpbWFnZSBjb250ZW50", base64Source.data());
+        assertEquals("image/png", base64Source.mediaType().toString());
+    }
+
+    @Test
+    void testConvertDataBlockWithRemoteURLAndExtension() throws Exception {
+        String remoteUrl = "https://example.com/photo.jpg";
+        URLSource source = URLSource.builder().url(remoteUrl).build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertDataBlock(block);
+
+        assertNotNull(result);
+        assertTrue(result.source().isUrl());
+        assertEquals(remoteUrl, result.source().asUrl().url());
+    }
+
+    @Test
+    void testConvertDataBlockWithMimeTypeHintExtensionlessUrl() throws Exception {
+        // Extension-less CDN URL with explicit mimeType hint — the primary use case
+        String cdnUrl = "https://cdn.example.com/media/abc123";
+        URLSource source = URLSource.builder().url(cdnUrl).mimeType("image/png").build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertDataBlock(block);
+
+        assertNotNull(result);
+        assertTrue(result.source().isUrl());
+        assertEquals(cdnUrl, result.source().asUrl().url());
+    }
+
+    @Test
+    void testConvertDataBlockWithLocalFile() throws Exception {
+        URLSource source = URLSource.builder().url(tempImageFile.toString()).build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertDataBlock(block);
+
+        assertNotNull(result);
+        assertTrue(result.source().isBase64());
+        byte[] decoded = Base64.getDecoder().decode(result.source().asBase64().data());
+        assertEquals("fake image content", new String(decoded));
+    }
+
+    @Test
+    void testConvertDataBlockNonImageMimeTypeThrows() {
+        // Anthropic only supports image — audio/video DataBlocks must throw
+        Base64Source source =
+                Base64Source.builder()
+                        .data("ZmFrZSBhdWRpbyBjb250ZW50")
+                        .mediaType("audio/mp3")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class, () -> converter.convertDataBlock(block));
+        assertTrue(ex.getMessage().contains("image"));
+    }
+
+    @Test
+    void testConvertDataBlockNoExtensionNoHintThrows() {
+        URLSource source = URLSource.builder().url("https://cdn.example.com/media/abc123").build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        assertThrows(Exception.class, () -> converter.convertDataBlock(block));
+    }
 }

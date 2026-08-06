@@ -324,20 +324,6 @@ class GeminiChatModelTest {
     }
 
     @Test
-    @DisplayName("Should configure custom base URL through factory")
-    void testFactoryBaseUrlConfiguration() throws Exception {
-        String baseUrl = "https://factory-gemini-endpoint.example";
-
-        GeminiChatModel model =
-                (GeminiChatModel)
-                        GeminiChatModelFactory.create(
-                                mockApiKey, "gemini-2.0-flash", true, baseUrl, null, null, null);
-
-        assertNotNull(model);
-        assertEquals(baseUrl, getHttpOptions(model).baseUrl().orElseThrow());
-    }
-
-    @Test
     @DisplayName("Should override HTTP options base URL while preserving other settings")
     void testBaseUrlOverridesHttpOptionsBaseUrl() throws Exception {
         HttpOptions httpOptions =

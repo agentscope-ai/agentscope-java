@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.formatter;
 
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.Source;
+import io.agentscope.core.message.URLSource;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -275,6 +278,41 @@ public class MediaUtils {
 
             default -> "application/octet-stream";
         };
+    }
+
+    /**
+     * Resolve the MIME type from a {@link Source}.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>{@link Base64Source#getMediaType()} — always explicit</li>
+     *   <li>{@link URLSource#getMimeType()} — caller-supplied hint for extension-less URLs</li>
+     *   <li>{@link #determineMediaType(String)} — extension-based inference</li>
+     * </ol>
+     *
+     * @param source the source to resolve MIME type from
+     * @return MIME type string (e.g. "image/jpeg")
+     * @throws IllegalArgumentException if the type cannot be determined or source type is unknown
+     */
+    public static String resolveMimeType(Source source) {
+        if (source instanceof Base64Source b64) {
+            return b64.getMediaType();
+        }
+        if (source instanceof URLSource urlSource) {
+            String hint = urlSource.getMimeType();
+            if (hint != null && !hint.isBlank()) {
+                return hint;
+            }
+            String inferred = determineMediaType(urlSource.getUrl());
+            if (!"application/octet-stream".equals(inferred)) {
+                return inferred;
+            }
+            throw new IllegalArgumentException(
+                    "Cannot determine MIME type for URL '"
+                            + urlSource.getUrl()
+                            + "'; set URLSource.mimeType explicitly");
+        }
+        throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
     }
 
     /**

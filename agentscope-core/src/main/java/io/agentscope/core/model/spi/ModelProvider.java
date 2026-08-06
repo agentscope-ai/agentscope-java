@@ -16,6 +16,7 @@
 package io.agentscope.core.model.spi;
 
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
 
 /** Service Provider Interface for model adapters discovered from extension modules. */
 public interface ModelProvider {
@@ -23,9 +24,22 @@ public interface ModelProvider {
     /** Provider identifier, for example {@code openai}. */
     String providerId();
 
-    /** Returns whether this provider can create a model for the full model id. */
+    /**
+     * Returns whether this provider can create a model for the full model id,
+     * for example {@code openai:gpt-4o}.
+     */
     boolean supports(String modelId);
+
+    /** Returns whether this provider can create a model for the full model id and context. */
+    default boolean supports(String modelId, ModelCreationContext context) {
+        return supports(modelId);
+    }
 
     /** Creates a model for the full model id. */
     Model create(String modelId);
+
+    /** Creates a model for the full model id using a provider-neutral context. */
+    default Model create(String modelId, ModelCreationContext context) {
+        return create(modelId);
+    }
 }

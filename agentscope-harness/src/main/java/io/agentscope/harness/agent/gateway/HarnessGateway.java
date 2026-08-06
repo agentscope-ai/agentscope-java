@@ -23,15 +23,17 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -58,16 +60,16 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
 
     private static final Logger log = LoggerFactory.getLogger(HarnessGateway.class);
 
+    private static final List<String> SESSION_NAMESPACE = List.of("gateway", "sessions");
+    private static final List<String> ROUTE_NAMESPACE = List.of("gateway", "routes");
+
     private final ChannelManager channelManager;
     private final MessageBus messageBus;
-    private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
+    private volatile SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private final AtomicReference<HarnessAgent> mainAgent = new AtomicReference<>();
     private final ConcurrentHashMap<String, HarnessAgent> agentRegistry = new ConcurrentHashMap<>();
     private volatile String defaultAgentId = null;
-
-    /** canonicalKey → stable session id */
-    private final ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
 
     /** Reverse mapping: session id → canonicalKey (for wakeup-driven runs). */
     private final ConcurrentHashMap<String, String> sessionToGateKey = new ConcurrentHashMap<>();
@@ -93,6 +95,12 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     /** session id → last outbound address (for proactive push delivery) */
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySession =
             new ConcurrentHashMap<>();
+
+    /**
+     * Optional durable store for session→gateKey and session→route mappings. When set, local
+     * caches are written through on update and consulted on cache miss (cross-node recovery).
+     */
+    private volatile BaseStore baseStore;
 
     private HarnessGateway(ChannelManager channelManager, MessageBus messageBus) {
         this.channelManager = channelManager;
@@ -171,7 +179,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         String sessionId = resolveSessionId(gateKey);
 
         if (outboundAddress != null) {
-            lastRouteBySession.put(sessionId, outboundAddress);
+            persistRoute(sessionId, outboundAddress);
         }
 
         RuntimeContext.Builder rtcBuilder =
@@ -205,7 +213,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         String sessionId = resolveSessionId(gateKey);
 
         if (outboundAddress != null) {
-            lastRouteBySession.put(sessionId, outboundAddress);
+            persistRoute(sessionId, outboundAddress);
         }
 
         RuntimeContext.Builder rtcBuilder =
@@ -230,7 +238,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (channelManager == null || sessionId == null || messages == null || messages.isEmpty()) {
             return false;
         }
-        OutboundAddress target = lastRouteBySession.get(sessionId);
+        OutboundAddress target = resolveRoute(sessionId);
         if (target == null) {
             log.debug("Cannot deliver to session {}: no outbound address recorded", sessionId);
             return false;
@@ -310,6 +318,26 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     public void setSubagentMaterializer(SubagentMaterializer materializer) {
         this.subagentMaterializer = materializer;
+    }
+
+    /**
+     * Installs the {@link BaseStore} used to persist session routing metadata across nodes.
+     * Called during gateway wiring when a distributed store is configured.
+     */
+    public void setBaseStore(BaseStore store) {
+        this.baseStore = store;
+    }
+
+    /**
+     * Installs the {@link SessionTurnGate} used to serialize concurrent turns per session. Defaults
+     * to {@link LocalSessionTurnGate} when not set.
+     *
+     * @param gate turn gate implementation; ignored when {@code null}
+     */
+    public void setSessionTurnGate(SessionTurnGate gate) {
+        if (gate != null) {
+            this.sessionTurnGate = gate;
+        }
     }
 
     /**
@@ -443,9 +471,31 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     // ------------------------------------------------------------------
 
     private String resolveSessionId(String gateKey) {
-        String sessionId = sessionMap.computeIfAbsent(gateKey, HarnessGateway::generateSessionId);
-        sessionToGateKey.put(sessionId, gateKey);
+        String sessionId = generateSessionId(gateKey);
+        String previous = sessionToGateKey.put(sessionId, gateKey);
+        if (previous == null || !previous.equals(gateKey)) {
+            persistSessionGateKey(sessionId, gateKey);
+        }
         return sessionId;
+    }
+
+    /**
+     * Adopts a control-plane-allocated session id so {@link #runWakeup(String, String)} can resolve
+     * it. Used by BYO {@code team_join}; Managed sessions already use product ids that the managed
+     * turn path accepts without this mapping.
+     *
+     * @param sessionId external session id assigned by the control plane
+     * @param gateKey stable gate key (e.g. {@code team:{teamName}:{role}})
+     */
+    public void registerExternalSession(String sessionId, String gateKey) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId required");
+        }
+        if (gateKey == null || gateKey.isBlank()) {
+            throw new IllegalArgumentException("gateKey required");
+        }
+        sessionToGateKey.put(sessionId, gateKey);
+        persistSessionGateKey(sessionId, gateKey);
     }
 
     /**
@@ -454,21 +504,44 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      * inbox on the current reasoning step.
      */
     public boolean isSessionRunning(String sessionId) {
-        String gateKey = sessionToGateKey.get(sessionId);
+        String gateKey = resolveSessionGateKey(sessionId);
         return gateKey != null && sessionTurnGate.isRunning(gateKey);
     }
 
     /**
-     * Triggers a wakeup-driven run for an idle session. Called by {@link WakeupDispatcher} when a
-     * background task completes or a team message arrives. The agent starts a reasoning round with
-     * no user input; {@link io.agentscope.harness.agent.middleware.InboxMiddleware} drains the
-     * inbox and injects the pending results as context.
+     * {@inheritDoc}
      *
+     * <p>Delegates to {@link #runWakeup(String, String)} with a {@code null} user id.
+     *
+     * @deprecated use {@link #runWakeup(String, String)} so the wakeup-driven round loads agent
+     *     state from the correct {@code (userId, sessionId)} slot. This overload preserves legacy
+     *     anonymous-wakeup behavior.
+     */
+    @Deprecated
+    @Override
+    public Mono<Msg> runWakeup(String sessionId) {
+        return runWakeup(null, sessionId);
+    }
+
+    /**
+     * Triggers a wakeup-driven run for an idle session, propagating the owning user id when
+     * present. Called by {@link WakeupDispatcher} when a background task completes or a team
+     * message arrives. The agent starts a reasoning round with no user input; {@link
+     * io.agentscope.harness.agent.middleware.InboxMiddleware} drains the inbox and injects the
+     * pending results as context.
+     *
+     * <p>When {@code userId} is non-blank it is set on the {@link RuntimeContext}, so the agent
+     * loads state from the same {@code (userId, sessionId)} slot as the original user-driven run
+     * — matching {@code runStream}. A blank or null user id preserves the legacy anonymous
+     * behavior.
+     *
+     * @param userId the owning user id carried by the wakeup entry; may be {@code null} or blank
      * @param sessionId the session to wake up
      * @return the agent's response, or {@link Mono#empty()} if the session is unknown
      */
-    public Mono<Msg> runWakeup(String sessionId) {
-        String gateKey = sessionToGateKey.get(sessionId);
+    @Override
+    public Mono<Msg> runWakeup(String userId, String sessionId) {
+        String gateKey = resolveSessionGateKey(sessionId);
         if (gateKey == null) {
             log.debug("runWakeup: unknown sessionId={}, skipping", sessionId);
             return Mono.empty();
@@ -477,12 +550,15 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         if (ha == null) {
             return Mono.empty();
         }
-        RuntimeContext rtc =
+        RuntimeContext.Builder rtcBuilder =
                 RuntimeContext.builder()
                         .sessionId(sessionId)
                         .put("gateKey", gateKey)
-                        .put("outboundAddress", lastRouteBySession.get(sessionId))
-                        .build();
+                        .put("outboundAddress", resolveRoute(sessionId));
+        if (userId != null && !userId.isBlank()) {
+            rtcBuilder.userId(userId);
+        }
+        RuntimeContext rtc = rtcBuilder.build();
 
         if (messageBus == null) {
             return withGatedTurn(gateKey, () -> ha.call(List.of(), rtc));
@@ -518,46 +594,156 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     // ------------------------------------------------------------------
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicBoolean acquired = new AtomicBoolean(false);
-        return Mono.defer(turn::get)
-                .doOnSubscribe(
-                        s -> {
+        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+        return Mono.defer(
+                        () -> {
                             try {
-                                sessionTurnGate.acquire(gateKey);
-                                acquired.set(true);
+                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                            } catch (TurnBusyException e) {
+                                log.debug(
+                                        "Skipping turn for {}: gate busy ({})",
+                                        gateKey,
+                                        e.getMessage());
+                                return Mono.empty();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                throw new IllegalStateException(e);
+                                return Mono.error(new IllegalStateException(e));
                             }
+                            return turn.get();
                         })
                 .doFinally(
                         sig -> {
-                            if (acquired.get()) {
-                                sessionTurnGate.release(gateKey);
+                            TurnLease lease = leaseRef.get();
+                            if (lease != null) {
+                                lease.close();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<AgentEvent> withGatedStream(String gateKey, Supplier<Flux<AgentEvent>> stream) {
-        AtomicBoolean acquired = new AtomicBoolean(false);
-        return Flux.defer(stream::get)
-                .doOnSubscribe(
-                        s -> {
+        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+        return Flux.defer(
+                        () -> {
                             try {
-                                sessionTurnGate.acquire(gateKey);
-                                acquired.set(true);
+                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                            } catch (TurnBusyException e) {
+                                log.debug(
+                                        "Skipping stream for {}: gate busy ({})",
+                                        gateKey,
+                                        e.getMessage());
+                                return Flux.empty();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                throw new IllegalStateException(e);
+                                return Flux.error(new IllegalStateException(e));
                             }
+                            return stream.get();
                         })
                 .doFinally(
                         sig -> {
-                            if (acquired.get()) {
-                                sessionTurnGate.release(gateKey);
+                            TurnLease lease = leaseRef.get();
+                            if (lease != null) {
+                                lease.close();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    // ------------------------------------------------------------------
+    //  Route persistence (local cache + optional BaseStore)
+    // ------------------------------------------------------------------
+
+    private String resolveSessionGateKey(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        String gateKey = sessionToGateKey.get(sessionId);
+        if (gateKey != null) {
+            return gateKey;
+        }
+        BaseStore store = this.baseStore;
+        if (store == null) {
+            return null;
+        }
+        try {
+            StoreItem item = store.get(SESSION_NAMESPACE, sessionId);
+            if (item == null || item.value() == null) {
+                return null;
+            }
+            Object value = item.value().get("gateKey");
+            if (value == null) {
+                return null;
+            }
+            gateKey = String.valueOf(value);
+            sessionToGateKey.put(sessionId, gateKey);
+            return gateKey;
+        } catch (RuntimeException e) {
+            log.debug(
+                    "Failed to load session gate key for {} from store: {}",
+                    sessionId,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    private OutboundAddress resolveRoute(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        OutboundAddress route = lastRouteBySession.get(sessionId);
+        if (route != null) {
+            return route;
+        }
+        BaseStore store = this.baseStore;
+        if (store == null) {
+            return null;
+        }
+        try {
+            StoreItem item = store.get(ROUTE_NAMESPACE, sessionId);
+            if (item == null || item.value() == null) {
+                return null;
+            }
+            route = OutboundAddress.fromMap(item.value());
+            if (route != null) {
+                lastRouteBySession.put(sessionId, route);
+            }
+            return route;
+        } catch (RuntimeException e) {
+            log.debug(
+                    "Failed to load outbound route for {} from store: {}",
+                    sessionId,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    private void persistSessionGateKey(String sessionId, String gateKey) {
+        if (sessionId == null || gateKey == null) {
+            return;
+        }
+        BaseStore store = this.baseStore;
+        if (store == null) {
+            return;
+        }
+        try {
+            Map<String, Object> value = new HashMap<>();
+            value.put("gateKey", gateKey);
+            store.put(SESSION_NAMESPACE, sessionId, value);
+        } catch (RuntimeException e) {
+            log.warn("Failed to persist session gate key for {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private void persistRoute(String sessionId, OutboundAddress outboundAddress) {
+        lastRouteBySession.put(sessionId, outboundAddress);
+        BaseStore store = this.baseStore;
+        if (store == null || outboundAddress == null) {
+            return;
+        }
+        try {
+            store.put(ROUTE_NAMESPACE, sessionId, outboundAddress.toMap());
+        } catch (RuntimeException e) {
+            log.warn("Failed to persist outbound route for {}: {}", sessionId, e.getMessage());
+        }
     }
 }

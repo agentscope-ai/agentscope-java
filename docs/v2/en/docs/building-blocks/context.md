@@ -152,7 +152,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem.md).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -184,6 +184,26 @@ AgentState restored = AgentState.fromJsonString(json);
 | `contextMutable()` | Writable view, use with care |
 | `setSummary(...)` / `getSummary()` | Custom compaction summary (for your own compaction middleware) |
 | `toJson()` / `fromJsonString(String)` | Serialize / deserialize |
+
+### Clearing a session's conversation context
+
+To let a user start a fresh topic without creating a new session, call `clearContext`. It keeps the
+same `(userId, sessionId)` and preserves non-conversation state such as permissions, tools, tasks,
+and Plan Mode. It clears the model-visible message buffer and compaction summary, then immediately
+persists the result when the agent has an `AgentStateStore`.
+
+```java
+agent.clearContext("alice", "session-001");
+
+// Or use the same RuntimeContext used by calls.
+agent.clearContext(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build());
+```
+
+Call it after the session's current request has completed. It does not cancel an in-flight call;
+the next call starts with the cleared conversation context.
 
 :::{note}
 The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + an `AgentStateStore`; `Memory` remains only as a source-compat shim.
@@ -291,7 +311,7 @@ Available accessors:
 
 ## Related pages
 
-- [Agent](./agent) — full `ReActAgent` API and builder fields
-- [Context Compaction](../harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
-- [Memory](../harness/memory) — long-term memory, background maintenance
-- [Permissions](./permission-system) — persistence of permission rules
+- [Agent](./agent.md) — full `ReActAgent` API and builder fields
+- [Context Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](../harness/memory.md) — long-term memory, background maintenance
+- [Permissions](./permission-system.md) — persistence of permission rules

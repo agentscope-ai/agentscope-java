@@ -111,6 +111,57 @@ class ReActAgentNewLoopBuilderTest {
     }
 
     @Test
+    void builderMiddlewaresAreSortedDescendingAndStableForTies() {
+        MiddlewareBase firstDefault = new OrderedMiddleware(1);
+        MiddlewareBase lowerPriority = new OrderedMiddleware(-1);
+        MiddlewareBase higherPriority = new OrderedMiddleware(2);
+        MiddlewareBase secondDefault = new OrderedMiddleware(1);
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("ordered")
+                        .model(newFakeModel())
+                        .toolkit(new Toolkit())
+                        .middleware(firstDefault)
+                        .middleware(lowerPriority)
+                        .middleware(higherPriority)
+                        .middleware(secondDefault)
+                        .build();
+
+        List<MiddlewareBase> middlewares = agent.getMiddlewares();
+        assertTrue(middlewares.get(0) instanceof GracefulShutdownMiddleware);
+        assertSame(higherPriority, middlewares.get(1));
+        assertSame(firstDefault, middlewares.get(2));
+        assertSame(secondDefault, middlewares.get(3));
+        assertSame(lowerPriority, middlewares.get(4));
+    }
+
+    private record OrderedMiddleware(int order) implements MiddlewareBase {}
+
+    @Test
+    void fromAgentCopiesModelResilienceConfig() {
+        ChatModelBase model = newFakeModel();
+        ChatModelBase fallback = newFakeModel();
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .sysPrompt("sys")
+                        .model(model)
+                        .fallbackModel(fallback)
+                        .maxRetries(7)
+                        .toolkit(new Toolkit())
+                        .build();
+
+        ReActAgent copy = ReActAgent.Builder.fromAgent(source).build();
+
+        assertNotNull(copy.getModelConfig());
+        assertEquals(7, copy.getModelConfig().maxRetries());
+        assertSame(fallback, copy.getModelConfig().fallbackModel());
+        assertSame(model, copy.getModel());
+    }
+
+    @Test
     void observeAddsMessagesToState() {
         ReActAgent agent =
                 ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();

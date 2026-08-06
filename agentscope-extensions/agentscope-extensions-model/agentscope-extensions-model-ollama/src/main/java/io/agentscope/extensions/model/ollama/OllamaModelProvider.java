@@ -15,8 +15,20 @@
  */
 package io.agentscope.extensions.model.ollama;
 
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+
+import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
+import io.agentscope.extensions.model.ollama.dto.OllamaRequest;
+import io.agentscope.extensions.model.ollama.dto.OllamaResponse;
+import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import java.util.regex.Pattern;
 
 /** Ollama provider registered through {@link java.util.ServiceLoader}. */
@@ -24,6 +36,7 @@ public final class OllamaModelProvider implements ModelProvider {
 
     private static final String PREFIX = "ollama:";
     private static final Pattern MODEL_ID = Pattern.compile("ollama:.+");
+    private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
 
     @Override
     public String providerId() {
@@ -37,14 +50,50 @@ public final class OllamaModelProvider implements ModelProvider {
 
     @Override
     public Model create(String modelId) {
+        return create(modelId, ModelCreationContext.empty());
+    }
+
+    @Override
+    public Model create(String modelId, ModelCreationContext context) {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported Ollama model id: " + modelId);
         }
         String modelName = modelId.substring(PREFIX.length());
-        String baseUrl = System.getenv("OLLAMA_BASE_URL");
-        if (baseUrl == null || baseUrl.isBlank()) {
+        String baseUrl = firstNonBlank(context.getBaseUrl(), System.getenv("OLLAMA_BASE_URL"));
+        if (baseUrl == null) {
             baseUrl = OllamaHttpClient.DEFAULT_BASE_URL;
         }
-        return OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl).build();
+        OllamaChatModel.Builder builder =
+                OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl);
+        if (context.getStream() != null) {
+            builder.stream(context.getStream());
+        }
+        applyAdvancedOptions(builder, context);
+        return builder.build();
+    }
+
+    private static void applyAdvancedOptions(
+            OllamaChatModel.Builder builder, ModelCreationContext context) {
+        OllamaOptions defaultOptions = context.component(OllamaOptions.class);
+        if (defaultOptions != null) {
+            builder.defaultOptions(defaultOptions);
+        }
+        HttpTransport httpTransport = context.component(HttpTransport.class);
+        if (httpTransport != null) {
+            builder.httpTransport(httpTransport);
+        }
+        ProxyConfig proxyConfig = context.component(ProxyConfig.class);
+        if (proxyConfig != null) {
+            builder.proxy(proxyConfig);
+        }
+        Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter =
+                findAssignableComponent(context, Formatter.class);
+        if (formatter != null) {
+            builder.formatter(formatter);
+        }
+        Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
+        if (contextWindowSize != null) {
+            builder.contextWindowSize(contextWindowSize);
+        }
     }
 }

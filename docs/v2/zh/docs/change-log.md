@@ -42,7 +42,44 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 | `io.agentscope.core.hook.PendingToolRecoveryHook` | `Builder.enablePendingToolRecovery(boolean)` |
 | `io.agentscope.core.hook.TTSHook` | 随 TTS 模块删除 |
 
-#### A.3 `state` 包重构（编译错误）
+#### A.3 模型提供商迁出 core
+
+OpenAI、Gemini、Anthropic、DashScope、Ollama 的 Chat Model 实现不再打包在 `agentscope-core` 中。core 现在只保留共享模型契约，例如 `Model`、`ChatModelBase`、`Formatter`、`ModelRegistry` 和 `ModelProvider` SPI。
+
+如果 v1 代码从 core import 具体模型提供商类，需要改为引入对应模型扩展模块：
+
+| v1 import / 依赖 | v2 替代方案 |
+|---|---|
+| `io.agentscope.core.model.OpenAIChatModel` | 引入 `agentscope-extensions-model-openai`；import `io.agentscope.extensions.model.openai.OpenAIChatModel` |
+| `io.agentscope.core.model.GeminiChatModel` | 引入 `agentscope-extensions-model-gemini`；import `io.agentscope.extensions.model.gemini.GeminiChatModel` |
+| `io.agentscope.core.model.AnthropicChatModel` | 引入 `agentscope-extensions-model-anthropic`；import `io.agentscope.extensions.model.anthropic.AnthropicChatModel` |
+| `io.agentscope.core.model.DashScopeChatModel` | 引入 `agentscope-extensions-model-dashscope`；import `io.agentscope.extensions.model.dashscope.DashScopeChatModel` |
+| `io.agentscope.core.model.OllamaChatModel` | 引入 `agentscope-extensions-model-ollama`；import `io.agentscope.extensions.model.ollama.OllamaChatModel` |
+| `io.agentscope.core.formatter.<provider>.*` | `io.agentscope.extensions.model.<provider>.formatter.*` |
+| `io.agentscope.core.credential.<Provider>Credential` | `io.agentscope.extensions.model.<provider>.credential.<Provider>Credential` |
+
+`ModelRegistry` 字符串 id 仍然可用，但前提是对应模型扩展模块已经在 classpath 中：
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model("dashscope:qwen-plus")
+    .build();
+```
+
+Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 core 中的通用模型创建路径：
+
+| 模型提供商 | Spring Boot starter |
+|---|---|
+| OpenAI | `agentscope-openai-spring-boot-starter` |
+| DashScope | `agentscope-dashscope-spring-boot-starter` |
+| Gemini | `agentscope-gemini-spring-boot-starter` |
+| Anthropic | `agentscope-anthropic-spring-boot-starter` |
+| Ollama | `agentscope-ollama-spring-boot-starter` |
+
+详见 → [模型](building-blocks/model.md)、[模型提供商](../integration/overview.md)
+
+#### A.4 `state` 包重构（编译错误）
 
 | v1 | v2 |
 |---|---|
@@ -54,7 +91,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 
 凡是从 `io.agentscope.core.state` import `AgentMetaState`、`StateModule`、`StatePersistence`、`ToolkitState` 的代码都会编译失败。详见 → [上下文](building-blocks/context.md)
 
-#### A.4 `PlanNotebook` 已删除 —— 改用 `HarnessAgent.enablePlanMode()`
+#### A.5 `PlanNotebook` 已删除 —— 改用 `HarnessAgent.enablePlanMode()`
 
 整个 `io.agentscope.core.plan` 包（`PlanNotebook`、`Plan`、`SubTask`、`PlanStorage`、`PlanToHint` 及相关类）已完整删除，无 deprecated 桥接。
 
@@ -71,7 +108,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 
 **子任务跟踪**：如果你的 v1 代码依赖 `PlanNotebook` 的子任务状态跟踪（把工作拆成子任务并在执行过程中逐个勾选），v2 的等价能力是**任务列表** —— 在 builder 上调用 `.enableTaskList(true)` 启用，会注册 `TodoTools` 和 `TaskReminderMiddleware`。
 
-#### A.5 `Msg` 构造按 role 严格校验（运行抛异常）
+#### A.6 `Msg` 构造按 role 严格校验（运行抛异常）
 
 `Msg` 现在在构造时按 `role` 对 `content` 做校验：
 
@@ -81,7 +118,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 
 v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在构造时直接抛异常。推荐改用 role 子类 `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`，在调用处就显式表达 role 与 content 的对应关系。详见 → [消息与事件](building-blocks/message-and-event.md)
 
-#### A.6 Agent 完全无状态（架构变更）
+#### A.7 Agent 完全无状态（架构变更）
 
 `ReActAgent` 现在是 **完全无状态** 的——实例本身不持有任何可变的"当前会话"状态。所有 per-call 可变状态（`AgentState`、`PermissionEngine`、事件 sink）封装在内部 `CallExecution` 对象中，通过 Reactor Context 在调用链上透传。同一个 Agent 实例可以安全地并发服务多个 `(userId, sessionId)` 组合，不同 session 的调用互不干扰。
 
@@ -106,7 +143,7 @@ v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在
 
 - `SkillBox` 类与 `Builder.skillBox(SkillBox)` 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`
 - 新方式：通过 `AgentSkillRepository`（内置 `ClasspathSkillRepository`、`FileSystemSkillRepository`）注入技能，使用 `Builder.skillRepository(...)` / `.skillRepositories(...)`。只要注册了至少一个 repository，`DynamicSkillMiddleware` 会自动安装，在每次 `call()` 前重建 skill prompt
-- 细粒度过滤：`Builder.skillFilter(SkillFilter)`。若需要关闭自动中间件（例如让 `HarnessAgent` 接管），用 `Builder.dynamicSkillsEnabled(false)`
+- 细粒度过滤：`Builder.skillFilter(SkillFilter)`
 
 详见 → [技能](harness/skill.md)
 
@@ -157,7 +194,7 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
 - **类型（软弃用，暂不 `forRemoval`）**
   - `io.agentscope.core.agent.Event`、`EventType`、`EventSource`
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
-  - **当前 gap**：`HarnessAgent.streamEvents(...)` 暂时**不转发子 agent 事件** —— `AgentEvent` 体系还没有等价的 `EventSource` 通道；需要子 agent 事件流的场景仍需用 `stream(...)`（已弃用），等通道落地后再统一切换
+  - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
 
 新代码统一改用：
 
@@ -210,6 +247,17 @@ ReActAgent agent = ReActAgent.builder()
 
 下面列出的能力都是 2.0 的增量新增，对 1.x 代码 0 影响。事件系统、消息重构、middleware 机制已在上方迁移指南完整覆盖，此处不再重复。
 
+### AG-UI v2
+
+- AG-UI 适配器迁移到 v2 `streamEvents()` 链路，正常 `RUN_STARTED` / `RUN_FINISHED` 由 `AgentStartEvent` / `AgentEndEvent` 转换生成，异常路径输出 `RUN_ERROR` 并补 `RUN_FINISHED`
+- 新增 `AgentEventConverter` 与 `AguiEventEnricher` 扩展点：converter 负责语义映射，enricher 负责 `timestamp` / `rawEvent` 等横切属性；Spring Boot starter 会自动收集对应 bean
+- 所有 `AguiEvent` 支持 AG-UI base event properties；默认不启用 `BaseEventPropertiesEnricher`，显式开启后只补缺失 `timestamp`，不默认填 `rawEvent`
+- `AguiAdapterConfig.emitTokenUsage` 可选输出 `CUSTOM token_usage` 事件，包含当前模型调用 delta 与本次 run cumulative token usage
+- **行为变更：** `source != null` 的 AgentEvent（子 agent 事件）默认映射为 AG-UI `CUSTOM`（`subagent.lifecycle` / `subagent.text` / `subagent.thinking` / `subagent.tool_call` / `subagent.tool_result` / `subagent.require_confirm`），不再走原生 `TEXT_MESSAGE_*` / `RUN_*`。设 `emitSubagentEventsAsNative(true)` 可恢复旧的原生映射
+- Spring Boot starter 支持 `AguiRuntimeContextResolver` 和自定义 `AguiAgentAdapterFactory`，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出
+
+详见 → [AG-UI](../integration/protocol/agui.md)
+
 ### Toolkit & Permission
 
 工具执行是 2.0 主要的扩展面，而权限系统直接挂在工具执行路径上，因此合并讲。
@@ -227,8 +275,8 @@ ReActAgent agent = ReActAgent.builder()
 
 ### 模型容错与凭据
 
-- 新包：`io.agentscope.core.credential` —— 8 个 provider credential 类 + `ModelCard`
-- `ModelRegistry`：按 `"provider:model"` 字符串解析（如 `dashscope:qwen-max`、`openai:gpt-5`）
+- 新包：`io.agentscope.core.credential` —— 共享 credential 契约与 `ModelCard`；特定模型提供商的 credential 随对应模型扩展模块提供
+- `ModelRegistry`：在对应模型扩展模块位于 classpath 时，按 `"provider:model"` 字符串解析（如 `dashscope:qwen-max`、`openai:gpt-5`）
 - Builder 新增：`.model(String)`、`.maxRetries(int)`、`.fallbackModel(Model)` / `.fallbackModel(String)`、`.stopOnReject(boolean)` —— 主模型失败自动重试 / 切换备用模型
 
 详见 → [模型](building-blocks/model.md)

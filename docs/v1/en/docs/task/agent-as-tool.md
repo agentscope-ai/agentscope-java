@@ -37,7 +37,7 @@ Parent Agent ──call──→ SubAgentTool ──create──→ Sub-agent
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // Create model
 DashScopeChatModel model = DashScopeChatModel.builder()

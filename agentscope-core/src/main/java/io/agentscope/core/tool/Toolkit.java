@@ -78,7 +78,7 @@ public class Toolkit {
     private final ToolExecutor executor;
 
     /**
-     * Create a Toolkit with default configuration (sequential execution using Reactor).
+     * Create a Toolkit with default configuration (parallel execution using Reactor).
      */
     public Toolkit() {
         this(ToolkitConfig.defaultConfig());
@@ -605,6 +605,17 @@ public class Toolkit {
     public void createSkillToolGroup(
             String groupName, String description, boolean active, String activateOnSkill) {
         groupManager.createSkillToolGroup(groupName, description, active, activateOnSkill);
+    }
+
+    /**
+     * Find all {@link SkillToolGroup} instances whose {@code activateOnSkill} matches the given
+     * skill name.
+     *
+     * @param skillName The skill name to match against
+     * @return List of matching group names (never null, may be empty)
+     */
+    public List<String> findSkillToolGroupsByActivateOnSkill(String skillName) {
+        return groupManager.findSkillToolGroupsByActivateOnSkill(skillName);
     }
 
     /**

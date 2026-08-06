@@ -91,7 +91,7 @@ class SandboxManagerIsolationTest {
     @Test
     void priority3_stateStoreHit_resumesSession() throws Exception {
         when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
-        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.deserializeState(STATE_JSON, null)).thenReturn(resumedState);
         when(client.resume(resumedState)).thenReturn(resumedSandbox);
 
         RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1").build();
@@ -145,7 +145,7 @@ class SandboxManagerIsolationTest {
     @Test
     void userScope_withUserId_loadsFromStore() throws Exception {
         when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
-        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.deserializeState(STATE_JSON, null)).thenReturn(resumedState);
         when(client.resume(resumedState)).thenReturn(resumedSandbox);
 
         RuntimeContext rtx = RuntimeContext.builder().userId("user-42").build();
@@ -154,6 +154,25 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(sCtx, rtx);
 
         assertSame(resumedSandbox, result.getSandbox());
+    }
+
+    @Test
+    void priority3_stateStoreHit_passesSnapshotSpecToDeserialize() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
+        when(client.deserializeState(STATE_JSON, snapshotSpec)).thenReturn(resumedState);
+        when(client.resume(resumedState)).thenReturn(resumedSandbox);
+
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1").build();
+        SandboxContext sCtx =
+                SandboxContext.builder()
+                        .isolationScope(IsolationScope.SESSION)
+                        .snapshotSpec(snapshotSpec)
+                        .build();
+
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+
+        assertSame(resumedSandbox, result.getSandbox());
+        verify(client).deserializeState(STATE_JSON, snapshotSpec);
     }
 
     @Test

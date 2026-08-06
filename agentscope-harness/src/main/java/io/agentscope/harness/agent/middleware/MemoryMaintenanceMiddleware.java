@@ -20,6 +20,8 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -29,8 +31,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,14 +76,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final int sessionRetentionDays;
     private final Duration minGap;
     private final IsolationScope isolationScope;
-
-    /**
-     * Per-isolation-key maintenance timestamps. The key is derived from {@link #isolationScope}
-     * and the per-call {@link RuntimeContext} so the throttle window matches the memory data
-     * namespace (see {@link MemoryFlushMiddleware} for the identical pattern).
-     */
-    private final ConcurrentHashMap<String, AtomicReference<Instant>> lastRunAtByKey =
-            new ConcurrentHashMap<>();
+    private final PeriodicGate periodicGate;
 
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
@@ -97,7 +90,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 dailyFileRetentionDays,
                 sessionRetentionDays,
                 minGap,
-                IsolationScope.USER);
+                IsolationScope.USER,
+                new LocalPeriodicGate());
     }
 
     public MemoryMaintenanceMiddleware(
@@ -107,12 +101,31 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             int sessionRetentionDays,
             Duration minGap,
             IsolationScope isolationScope) {
+        this(
+                workspaceManager,
+                consolidator,
+                dailyFileRetentionDays,
+                sessionRetentionDays,
+                minGap,
+                isolationScope,
+                new LocalPeriodicGate());
+    }
+
+    public MemoryMaintenanceMiddleware(
+            WorkspaceManager workspaceManager,
+            MemoryConsolidator consolidator,
+            int dailyFileRetentionDays,
+            int sessionRetentionDays,
+            Duration minGap,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate) {
         this.workspaceManager = workspaceManager;
         this.consolidator = consolidator;
         this.dailyFileRetentionDays = dailyFileRetentionDays;
         this.sessionRetentionDays = sessionRetentionDays;
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
     public MemoryMaintenanceMiddleware(
@@ -141,13 +154,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {
-        Instant now = Instant.now();
-        AtomicReference<Instant> ref = lastRunAtFor(rc);
-        Instant last = ref.get();
-        if (Duration.between(last, now).compareTo(minGap) < 0) {
-            return;
-        }
-        if (!ref.compareAndSet(last, now)) {
+        if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
             return;
         }
         try {
@@ -157,15 +164,20 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private AtomicReference<Instant> lastRunAtFor(RuntimeContext rc) {
-        return lastRunAtByKey.computeIfAbsent(
-                timerKeyFor(rc), k -> new AtomicReference<>(Instant.EPOCH));
+    /**
+     * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that throttle windows
+     * from different isolation dimensions are never conflated.
+     */
+    private String compositeTimerKey(RuntimeContext rc) {
+        return isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
     /**
-     * Derives the timer map key from the configured {@link IsolationScope} and the per-call
-     * {@link RuntimeContext}, mirroring the memory data namespace. See
-     * {@link MemoryFlushMiddleware#timerKeyFor(RuntimeContext)} for the same logic.
+     * Derives the per-call identity portion of the composite timer key from the configured
+     * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
+     * namespace. See {@link MemoryFlushMiddleware#timerKeyFor(RuntimeContext)} for the
+     * identical logic.
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {
