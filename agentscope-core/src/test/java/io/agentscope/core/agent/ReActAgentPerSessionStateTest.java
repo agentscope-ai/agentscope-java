@@ -41,8 +41,11 @@ import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;
@@ -54,6 +57,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -117,6 +121,55 @@ class ReActAgentPerSessionStateTest {
                         subscribed.countDown();
                         return Flux.never();
                     });
+        }
+    }
+
+    private static final class BlockingModel extends ChatModelBase {
+        private final CountDownLatch subscribed;
+        private final CountDownLatch release;
+
+        private BlockingModel(CountDownLatch subscribed, CountDownLatch release) {
+            this.subscribed = subscribed;
+            this.release = release;
+        }
+
+        @Override
+        public String getModelName() {
+            return "blocking";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Mono.fromCallable(
+                            () -> {
+                                subscribed.countDown();
+                                if (!release.await(5, TimeUnit.SECONDS)) {
+                                    throw new IllegalStateException("model release timed out");
+                                }
+                                return ChatResponse.builder()
+                                        .content(
+                                                List.<ContentBlock>of(
+                                                        TextBlock.builder().text("ok").build()))
+                                        .build();
+                            })
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flux();
+        }
+    }
+
+    private static final class CountingStateStore extends InMemoryAgentStateStore {
+        private final AtomicInteger versionedLoads = new AtomicInteger();
+
+        @Override
+        public <T extends State> VersionedState<T> getVersioned(
+                String userId, String sessionId, String key, Class<T> type) {
+            versionedLoads.incrementAndGet();
+            return super.getVersioned(userId, sessionId, key, type);
+        }
+
+        int versionedLoadCount() {
+            return versionedLoads.get();
         }
     }
 
@@ -296,6 +349,41 @@ class ReActAgentPerSessionStateTest {
         assertEquals(initialStateCacheSize, cacheSize(agent, "stateCache"));
         assertEquals(initialVersionCacheSize, cacheSize(agent, "slotVersions"));
         assertEquals(initialPermissionCacheSize, cacheSize(agent, "permissionEngineCache"));
+    }
+
+    @Test
+    @DisplayName("call cleanup preserves state installed by append-merge conflict resolution")
+    void callCleanupPreservesAppendMergedState() throws Exception {
+        CountingStateStore store = new CountingStateStore();
+        CountDownLatch firstSubscribed = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("shared").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("first")
+                        .sysPrompt("hi")
+                        .model(new BlockingModel(firstSubscribed, releaseFirst))
+                        .stateStore(store)
+                        .conflictPolicy(ConflictPolicy.APPEND_MERGE)
+                        .build();
+        ReActAgent second = agent(store);
+
+        CompletableFuture<Msg> firstCall =
+                first.call(List.of(userMsg("first")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(firstSubscribed.await(5, TimeUnit.SECONDS), "first model stream should start");
+        second.call(List.of(userMsg("second")), ctx).block(Duration.ofSeconds(5));
+        releaseFirst.countDown();
+        firstCall.get(5, TimeUnit.SECONDS);
+
+        assertEquals(1, first.getStateConflictCount());
+        int loadsAfterMerge = store.versionedLoadCount();
+        first.getAgentState(ctx);
+        assertEquals(
+                loadsAfterMerge,
+                store.versionedLoadCount(),
+                "the append-merged state should remain cached after call cleanup");
     }
 
     @Test
