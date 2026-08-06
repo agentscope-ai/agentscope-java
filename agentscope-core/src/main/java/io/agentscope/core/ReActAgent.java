@@ -50,6 +50,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.hook.Hook;
@@ -112,7 +113,11 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConcurrentSessionModificationException;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.LegacyStateLoader;
+import io.agentscope.core.state.ToolContextState;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
@@ -126,6 +131,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -136,6 +142,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -236,6 +243,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final Toolkit toolkit;
 
+    /** Default active groups captured after builder-time toolkit configuration is complete. */
+    private final List<String> initialActiveToolGroups;
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -244,6 +254,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== Persistence ====================
 
     private final AgentStateStore stateStore;
+
+    /**
+     * Policy applied when an optimistic-concurrency save of {@code agent_state} conflicts.
+     * Defaults to {@link ConflictPolicy#OVERWRITE} (legacy last-writer-wins).
+     */
+    private final ConflictPolicy conflictPolicy;
 
     /**
      * Builder-time fallback {@code sessionId}, used only when a call does not supply a
@@ -265,6 +281,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
+
+    /**
+     * Optimistic-concurrency version observed for each slot (parallel to {@link #stateCache}).
+     * Updated on load and on successful CAS save. Absent entries mean {@link
+     * AgentStateStore#UNVERSIONED}.
+     */
+    private final ConcurrentHashMap<String, Long> slotVersions = new ConcurrentHashMap<>();
+
+    /** Count of CAS conflicts observed during agent_state saves (metric / diagnostics). */
+    private final AtomicLong stateConflictCount = new AtomicLong();
 
     /**
      * Per-slot permission engine cache: runtime-added ASK rules accumulate within the owning
@@ -294,6 +320,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         super(builder.name, builder.description, new ArrayList<>(builder.hooks));
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
+        this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -308,6 +335,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
+        this.conflictPolicy =
+                builder.conflictPolicy != null ? builder.conflictPolicy : ConflictPolicy.OVERWRITE;
         this.defaultSessionId =
                 builder.defaultSessionId != null && !builder.defaultSessionId.isBlank()
                         ? builder.defaultSessionId
@@ -322,15 +351,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             shutdownManager.bindStateSaver(
                     this,
                     // The saver receives the precise per-(userId, sessionId) AgentState bound to
-                    // the
-                    // interrupted request, so persist that session directly rather than the
+                    // the interrupted request, so persist that session directly rather than the
                     // instance "last-active" CallExecution (which is wrong under concurrency).
-                    agentState ->
-                            stateStore.save(
-                                    agentState.getUserId(),
-                                    agentState.getSessionId(),
-                                    "agent_state",
-                                    agentState));
+                    // On CAS conflict the session was taken over elsewhere — log and skip
+                    // overwrite.
+                    agentState -> {
+                        String uid = agentState.getUserId();
+                        String sid = agentState.getSessionId();
+                        String slot = slotKey(uid, sid);
+                        long expected =
+                                slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
+                        long newVersion =
+                                stateStore.saveIfVersion(
+                                        uid, sid, "agent_state", agentState, expected);
+                        if (newVersion == AgentStateStore.UNVERSIONED
+                                && stateStore.supportsVersioning()
+                                && expected != AgentStateStore.UNVERSIONED) {
+                            stateConflictCount.incrementAndGet();
+                            log.warn(
+                                    "Shutdown state save skipped due to concurrent modification"
+                                            + " (userId={}, sessionId={}, expectedVersion={})",
+                                    uid,
+                                    sid,
+                                    expected);
+                        } else if (newVersion != AgentStateStore.UNVERSIONED) {
+                            slotVersions.put(slot, newVersion);
+                        }
+                    });
         }
     }
 
@@ -358,46 +405,54 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * the configured {@link AgentStateStore} for an {@code agent_state} entry, the v1 legacy
      * session keys ({@code memory_messages} + {@code toolkit_activeGroups}) via
      * {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
+     *
+     * @return state paired with the store version ({@code 0} when absent on a versioning backend,
+     *     {@link AgentStateStore#UNVERSIONED} when the backend does not version)
      */
-    private static AgentState loadOrCreateAgentStateForSlot(
+    private static VersionedState<AgentState> loadOrCreateAgentStateForSlot(
             AgentStateStore stateStore,
             String userId,
             String sessionId,
             PermissionContextState permCtx,
-            String agentId) {
-        AgentState fresh = freshState(permCtx, agentId, userId, sessionId);
+            String agentId,
+            List<String> initialActiveToolGroups) {
+        AgentState fresh = freshState(permCtx, agentId, userId, sessionId, initialActiveToolGroups);
         if (stateStore == null) {
-            return fresh;
+            return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
         }
         try {
-            return stateStore
-                    .get(userId, sessionId, "agent_state", AgentState.class)
-                    .orElseGet(
-                            () -> {
-                                AgentState legacy =
-                                        LegacyStateLoader.loadFromLegacySession(
-                                                stateStore, userId, sessionId);
-                                if (legacy != null
-                                        && (!legacy.getContext().isEmpty()
-                                                || !legacy.getToolContext()
-                                                        .getActivatedGroups()
-                                                        .isEmpty())) {
-                                    return legacy;
-                                }
-                                return fresh;
-                            });
+            VersionedState<AgentState> versioned =
+                    stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+            if (versioned.isPresent()) {
+                return versioned;
+            }
+            LegacyStateLoader.LegacyLoadResult legacy =
+                    LegacyStateLoader.loadFromLegacySessionWithPresence(
+                            stateStore, userId, sessionId);
+            if (legacy.found()) {
+                // Legacy keys have no version; treat as create-if-absent baseline.
+                long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+                return new VersionedState<>(legacy.state(), version);
+            }
+            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+            return new VersionedState<>(fresh, version);
         } catch (Exception e) {
             log.warn(
                     "Failed to load AgentState for slot (userId={}, sessionId={}): {}",
                     userId,
                     sessionId,
                     e.getMessage());
-            return fresh;
+            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+            return new VersionedState<>(fresh, version);
         }
     }
 
     private static AgentState freshState(
-            PermissionContextState permCtx, String agentId, String userId, String sessionId) {
+            PermissionContextState permCtx,
+            String agentId,
+            String userId,
+            String sessionId,
+            List<String> initialActiveToolGroups) {
         AgentState.Builder asb =
                 AgentState.builder().sessionId(sessionId != null ? sessionId : agentId);
         if (userId != null) {
@@ -406,13 +461,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (permCtx != null) {
             asb.permissionContext(permCtx);
         }
+        ToolContextState.Builder toolContext = ToolContextState.builder();
+        if (initialActiveToolGroups != null) {
+            initialActiveToolGroups.forEach(toolContext::addActivatedGroup);
+        }
+        asb.toolContext(toolContext.build());
         return asb.build();
     }
 
     /**
      * Persist the current {@link AgentState} via the configured {@link AgentStateStore}, or {@code
      * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
-     * before writing.
+     * before writing. Uses optimistic concurrency when the store supports versioning.
      */
     private Mono<Void> saveStateToSession(CallExecution scope) {
         if (stateStore == null) {
@@ -422,8 +482,124 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
-                        () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave))
+                        () -> {
+                            long newVersion =
+                                    persistAgentStateCas(
+                                            ref.userId,
+                                            ref.sessionId,
+                                            scope.slotKey,
+                                            toSave,
+                                            scope.loadedVersion,
+                                            scope.loadedContextSize);
+                            if (newVersion != AgentStateStore.UNVERSIONED) {
+                                scope.loadedVersion = newVersion;
+                            }
+                        })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * CAS-aware persist of {@code agent_state}. Applies {@link #conflictPolicy} on conflict.
+     *
+     * @return the new store version, or {@link AgentStateStore#UNVERSIONED} when the backend does
+     *     not version / the write used unconditional overwrite without a version return
+     */
+    private long persistAgentStateCas(
+            String userId,
+            String sessionId,
+            String slot,
+            AgentState toSave,
+            long expectedVersion,
+            int loadedContextSize) {
+        if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
+            stateStore.save(userId, sessionId, "agent_state", toSave);
+            if (stateStore.supportsVersioning()) {
+                VersionedState<AgentState> after =
+                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+                if (after.version() != AgentStateStore.UNVERSIONED) {
+                    slotVersions.put(slot, after.version());
+                    return after.version();
+                }
+            }
+            return AgentStateStore.UNVERSIONED;
+        }
+
+        long newVersion =
+                stateStore.saveIfVersion(userId, sessionId, "agent_state", toSave, expectedVersion);
+        if (newVersion != AgentStateStore.UNVERSIONED) {
+            slotVersions.put(slot, newVersion);
+            return newVersion;
+        }
+
+        stateConflictCount.incrementAndGet();
+        switch (conflictPolicy) {
+            case OVERWRITE -> {
+                long overwritten =
+                        stateStore.saveIfVersion(
+                                userId,
+                                sessionId,
+                                "agent_state",
+                                toSave,
+                                AgentStateStore.UNVERSIONED);
+                if (overwritten != AgentStateStore.UNVERSIONED) {
+                    slotVersions.put(slot, overwritten);
+                    log.warn(
+                            "agent_state CAS conflict — OVERWRITE applied"
+                                    + " (userId={}, sessionId={}, expectedVersion={})",
+                            userId,
+                            sessionId,
+                            expectedVersion);
+                    return overwritten;
+                }
+                stateStore.save(userId, sessionId, "agent_state", toSave);
+                log.warn(
+                        "agent_state CAS conflict — OVERWRITE applied"
+                                + " (userId={}, sessionId={}, expectedVersion={})",
+                        userId,
+                        sessionId,
+                        expectedVersion);
+                return AgentStateStore.UNVERSIONED;
+            }
+            case FAIL ->
+                    throw new ConcurrentSessionModificationException(
+                            userId, sessionId, "agent_state", expectedVersion);
+            case APPEND_MERGE -> {
+                VersionedState<AgentState> latest =
+                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+                AgentState baseline =
+                        latest.isPresent()
+                                ? latest.value()
+                                : freshState(
+                                        initialPermissionContext,
+                                        getAgentId(),
+                                        userId,
+                                        sessionId,
+                                        initialActiveToolGroups);
+                List<Msg> local = toSave.getContext();
+                if (loadedContextSize >= 0 && loadedContextSize < local.size()) {
+                    List<Msg> appended = local.subList(loadedContextSize, local.size());
+                    baseline.contextMutable().addAll(appended);
+                }
+                baseline.setPermissionContext(toSave.getPermissionContext());
+                long merged =
+                        stateStore.saveIfVersion(
+                                userId, sessionId, "agent_state", baseline, latest.version());
+                if (merged == AgentStateStore.UNVERSIONED) {
+                    throw new ConcurrentSessionModificationException(
+                            userId, sessionId, "agent_state", latest.version());
+                }
+                slotVersions.put(slot, merged);
+                stateCache.put(slot, baseline);
+                log.info(
+                        "agent_state CAS conflict — APPEND_MERGE succeeded"
+                                + " (userId={}, sessionId={})",
+                        userId,
+                        sessionId);
+                return merged;
+            }
+            default ->
+                    throw new IllegalStateException("Unknown conflict policy: " + conflictPolicy);
+        }
     }
 
     /**
@@ -449,22 +625,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         final String finalUid = uid;
         final String finalSid = sid;
         AgentState loaded;
+        long loadedVersion = AgentStateStore.UNVERSIONED;
         if (stateStore != null) {
-            loaded =
+            VersionedState<AgentState> versioned =
                     loadOrCreateAgentStateForSlot(
-                            stateStore, finalUid, finalSid, initialPermissionContext, getAgentId());
+                            stateStore,
+                            finalUid,
+                            finalSid,
+                            initialPermissionContext,
+                            getAgentId(),
+                            initialActiveToolGroups);
+            loaded = versioned.value();
+            loadedVersion = versioned.version();
             stateCache.put(slot, loaded);
+            slotVersions.put(slot, loadedVersion);
         } else {
             loaded =
                     stateCache.computeIfAbsent(
                             slot,
                             k ->
                                     loadOrCreateAgentStateForSlot(
-                                            null,
-                                            finalUid,
-                                            finalSid,
-                                            initialPermissionContext,
-                                            getAgentId()));
+                                                    null,
+                                                    finalUid,
+                                                    finalSid,
+                                                    initialPermissionContext,
+                                                    getAgentId(),
+                                                    initialActiveToolGroups)
+                                            .value());
         }
         PermissionEngine loadedEngine;
         if (stateStore != null) {
@@ -475,7 +662,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
-        CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
+        CallExecution scope = new CallExecution(loaded, loadedEngine, slot, loadedVersion);
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
@@ -1421,6 +1608,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slotKey;
 
         /**
+         * Store version observed when this call loaded {@link #state}. Used for CAS on save.
+         * {@link AgentStateStore#UNVERSIONED} when the backend does not version.
+         */
+        long loadedVersion;
+
+        /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
+        int loadedContextSize;
+
+        /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
          * PreSummaryEvent. Owned by a single logical execution: seeded to {@code null} at call
          * entry ({@code #beforeAgentExecution(List)}) and set by
@@ -1469,9 +1665,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ResponseFormat nativeResponseFormat;
 
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
+            this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
+        }
+
+        CallExecution(
+                AgentState state,
+                PermissionEngine permissionEngine,
+                String slotKey,
+                long loadedVersion) {
             this.state = state;
             this.permissionEngine = permissionEngine;
             this.slotKey = slotKey;
+            this.loadedVersion = loadedVersion;
+            this.loadedContextSize = state != null ? state.getContext().size() : 0;
         }
 
         /**
@@ -1501,12 +1707,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 msgs = List.of();
             }
 
-            // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
-            // error results so the agent can continue instead of crashing.
-            if (enablePendingToolRecovery) {
-                maybePatchPendingToolCalls(msgs);
-            }
-
             Set<String> pendingIds = getPendingToolUseIds();
 
             // No pending tools -> normal processing
@@ -1519,37 +1719,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
-                if (confirmResults.isEmpty()) {
-                    String pendingSummary =
-                            asking.stream()
-                                    .map(t -> t.getName() + " (id=" + t.getId() + ")")
-                                    .collect(Collectors.joining(", "));
-                    throw new IllegalStateException(
-                            "Agent is paused for human-in-the-loop confirmation: the following"
-                                    + " tool call(s) are in ASKING state and need your approval"
-                                    + " before the agent can continue: ["
-                                    + pendingSummary
-                                    + "]. This call supplied no confirmation, so it cannot"
-                                    + " proceed.\n"
-                                    + "To resume, send a follow-up message that carries a"
-                                    + " List<ConfirmResult> under the metadata key \""
-                                    + Msg.METADATA_CONFIRM_RESULTS
-                                    + "\", e.g.:\n"
-                                    + "    UserMessage.builder()\n"
-                                    + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
-                                    + "            List.of(new ConfirmResult(true, toolCall))))\n"
-                                    + "        .build();\n"
-                                    + "Tip: capture the ToolUseBlocks from the"
-                                    + " RequireUserConfirmEvent emitted when the agent paused.\n"
-                                    + "If you did NOT expect a pending confirmation here, a"
-                                    + " previous run most likely paused on one of these tool calls"
-                                    + " and persisted that state under the same (agentId,"
-                                    + " sessionId); start a fresh session, clear the persisted"
-                                    + " state, or use an in-memory state store to begin clean.");
-                }
+                List<ConfirmResult> confirmResults = extractAndValidateConfirmResults(msgs, asking);
+                publishEvent(
+                        new UserConfirmResultEvent(
+                                resolvePendingConfirmRequestReplyId(), confirmResults));
                 applyConfirmResults(confirmResults);
+                clearPendingConfirmRequest();
                 return resumeAgent();
+            }
+
+            // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
+            // error results so the agent can continue instead of crashing. This must happen after
+            // the permission HITL flow so ASKING tool calls are handled by confirmation first.
+            if (enablePendingToolRecovery) {
+                maybePatchPendingToolCalls(msgs, pendingIds);
+                pendingIds = getPendingToolUseIds();
+                if (pendingIds.isEmpty()) {
+                    addToContext(msgs);
+                    return coreAgent();
+                }
             }
 
             // Has pending tools but no input -> resume (execute pending tools directly)
@@ -1601,6 +1789,142 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
             return collected;
+        }
+
+        /**
+         * Validate the user-provided confirmation payload against the currently ASKING tool calls.
+         *
+         * <p>Permission HITL resumes with one or more confirmations for currently ASKING tool
+         * calls. Confirmations may cover a subset of ASKING calls, but no result may reference a
+         * stale or unrelated tool call. Returning a copied list gives downstream event emission and
+         * state mutation the same trusted payload.
+         */
+        private List<ConfirmResult> extractAndValidateConfirmResults(
+                List<Msg> msgs, List<ToolUseBlock> asking) {
+            List<ConfirmResult> results = extractConfirmResults(msgs);
+            if (results.isEmpty()) {
+                String pendingSummary =
+                        asking.stream()
+                                .map(t -> t.getName() + " (id=" + t.getId() + ")")
+                                .collect(Collectors.joining(", "));
+                throw new IllegalStateException(
+                        "Agent is paused for human-in-the-loop confirmation: the following"
+                                + " tool call(s) are in ASKING state and need your approval"
+                                + " before the agent can continue: ["
+                                + pendingSummary
+                                + "]. This call supplied no confirmation, so it cannot"
+                                + " proceed.\n"
+                                + "To resume, send a follow-up message that carries a"
+                                + " List<ConfirmResult> under the metadata key \""
+                                + Msg.METADATA_CONFIRM_RESULTS
+                                + "\", e.g.:\n"
+                                + "    UserMessage.builder()\n"
+                                + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
+                                + "            List.of(new ConfirmResult(true, toolCall))))\n"
+                                + "        .build();\n"
+                                + "Tip: capture the ToolUseBlocks from the"
+                                + " RequireUserConfirmEvent emitted when the agent paused.\n"
+                                + "If you did NOT expect a pending confirmation here, a"
+                                + " previous run most likely paused on one of these tool calls"
+                                + " and persisted that state under the same (agentId,"
+                                + " sessionId); start a fresh session, clear the persisted"
+                                + " state, or use an in-memory state store to begin clean.");
+            }
+
+            Set<String> expectedIds =
+                    asking.stream()
+                            .map(ToolUseBlock::getId)
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            Set<String> providedIds = new LinkedHashSet<>();
+            List<ConfirmResult> normalized = new ArrayList<>();
+
+            for (ConfirmResult result : results) {
+                if (result == null || result.getToolCall() == null) {
+                    throw new IllegalStateException(
+                            "ConfirmResult and ConfirmResult.toolCall must not be null.");
+                }
+                ToolUseBlock toolCall = result.getToolCall();
+                String toolCallId = toolCall.getId();
+                if (toolCallId == null || toolCallId.isEmpty()) {
+                    throw new IllegalStateException("ConfirmResult.toolCall.id must not be empty.");
+                }
+                if (!providedIds.add(toolCallId)) {
+                    throw new IllegalStateException(
+                            "Duplicate ConfirmResult for tool call ID: " + toolCallId);
+                }
+                if (!expectedIds.contains(toolCallId)) {
+                    throw new IllegalStateException(
+                            "ConfirmResult references non-ASKING tool call ID: "
+                                    + toolCallId
+                                    + ". Expected: "
+                                    + expectedIds);
+                }
+                normalized.add(result);
+            }
+            return normalized;
+        }
+
+        /**
+         * Resolve the reply id from the assistant message that originally paused for confirmation.
+         *
+         * <p>This keeps {@link UserConfirmResultEvent} correlated with the prior
+         * {@link RequireUserConfirmEvent}, even though the confirmation arrives in a later
+         * {@code agent.call(...)} invocation.
+         */
+        private String resolvePendingConfirmRequestReplyId() {
+            Msg confirmRequestMsg = findLastAssistantMsg();
+            if (confirmRequestMsg == null || confirmRequestMsg.getMetadata() == null) {
+                return "";
+            }
+            Object raw = confirmRequestMsg.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            return raw instanceof String s ? s : "";
+        }
+
+        /**
+         * Persist the reply id for the pending confirmation request on the live assistant message.
+         *
+         * <p>The assistant message already owns the ASKING {@link ToolUseBlock}s, so storing the
+         * correlation metadata there lets the next call recover it from session state.
+         */
+        private void persistPendingConfirmRequest(String replyId) {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        /**
+         * Remove confirmation-request correlation metadata after the resume payload is accepted.
+         *
+         * <p>Leaving it behind would make later agent turns appear to belong to an already-closed
+         * HITL request.
+         */
+        private void clearPendingConfirmRequest() {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null || lastAssistant.getMetadata() == null) {
+                return;
+            }
+            if (!lastAssistant.getMetadata().containsKey(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID)) {
+                return;
+            }
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            metadata.remove(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+        }
+
+        private void replaceLastAssistantMsg(Msg replacement) {
+            List<Msg> ctx = state.contextMutable();
+            for (int i = ctx.size() - 1; i >= 0; i--) {
+                if (ctx.get(i).getRole() == MsgRole.ASSISTANT) {
+                    ctx.set(i, replacement);
+                    return;
+                }
+            }
         }
 
         /**
@@ -1689,8 +2013,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
-        private void maybePatchPendingToolCalls(List<Msg> msgs) {
-            Set<String> pendingIds = getPendingToolUseIds();
+        private void maybePatchPendingToolCalls(List<Msg> msgs, Set<String> pendingIds) {
             if (pendingIds.isEmpty()) {
                 return;
             }
@@ -1702,10 +2025,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (userProvidedResults) {
                 return;
             }
-            log.warn(
-                    "Pending tool calls detected without results, auto-generating error results."
-                            + " Pending IDs: {}",
-                    pendingIds);
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null) {
                 return;
@@ -1713,7 +2032,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> pendingToolCalls =
                     lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
                             .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                            .filter(toolUse -> toolUse.getState() != ToolCallState.ASKING)
                             .toList();
+            if (pendingToolCalls.isEmpty()) {
+                return;
+            }
+            log.warn(
+                    "Pending tool calls detected without results, auto-generating error results."
+                            + " Pending IDs: {}",
+                    pendingToolCalls.stream().map(ToolUseBlock::getId).toList());
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
                         buildErrorToolResult(
@@ -2115,13 +2442,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
                     mci -> modelCallStream(context, mci, true);
 
+            StringBuilder transformedText = new StringBuilder();
+            AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
                             middlewares,
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()));
+                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent textDelta) {
+                                    sawTransformedTextDelta.set(true);
+                                    if (textDelta.getDelta() != null) {
+                                        transformedText.append(textDelta.getDelta());
+                                    }
+                                }
+                            })
+                    .doOnTerminate(
+                            () -> {
+                                if (sawTransformedTextDelta.get()
+                                        || !context.getAccumulatedText().isEmpty()) {
+                                    context.replaceAccumulatedText(transformedText.toString());
+                                }
+                            });
         }
 
         private Flux<AgentEvent> modelCallStream(
@@ -2471,6 +2816,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // completion;
                                 // initialise it to empty since no successful execution happened.
                                 resultHolder.set(List.of());
+                                persistPendingConfirmRequest(replyId);
                                 return Flux.<AgentEvent>just(
                                         new RequireUserConfirmEvent(replyId, pending),
                                         new RequestStopEvent(
@@ -2516,7 +2862,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             for (ToolUseBlock tc : toolCalls) {
                 if (deniedIds.contains(tc.getId())) {
                     ToolResultBlock denied =
-                            ToolResultBlock.text("Permission denied by user")
+                            ToolResultBlock.text("Permission denied by rules")
                                     .withIdAndName(tc.getId(), tc.getName())
                                     .withState(ToolResultState.DENIED);
                     deniedEntries.add(Map.entry(tc, denied));
@@ -2537,7 +2883,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
-                                                        "Permission denied by user"),
+                                                        "Permission denied by rules"),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
@@ -3550,6 +3896,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             AssistantMessage.builder()
                                     .name(getName())
                                     .content(TextBlock.builder().text(recoveryText).build())
+                                    .generateReason(GenerateReason.INTERRUPTED)
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);
                     return saveStateToSession(scope)
@@ -3644,13 +3991,94 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sessionId);
         return stateCache.computeIfAbsent(
                 slot,
-                k ->
+                k -> {
+                    VersionedState<AgentState> versioned =
+                            loadOrCreateAgentStateForSlot(
+                                    stateStore,
+                                    userId,
+                                    sessionId,
+                                    initialPermissionContext,
+                                    getAgentId(),
+                                    initialActiveToolGroups);
+                    slotVersions.put(slot, versioned.version());
+                    return versioned.value();
+                });
+    }
+
+    /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
+     * are preserved. When an {@link AgentStateStore} is configured and the session has already
+     * been persisted, the latest persisted state is reloaded before clearing so only the
+     * conversation messages and any compaction summary are removed. The updated state is persisted
+     * immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearContext(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearContext(uid, sid);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session keeps the same identity. Unlike creating a new session, this only removes
+     * the conversation messages and compaction summary, so permission configuration, tool state,
+     * tasks, and plan-mode state remain available. When an {@link AgentStateStore} is configured
+     * and the session has already been persisted, the latest persisted state is reloaded before
+     * clearing. The updated state is persisted immediately.
+     *
+     * <p>If the target session has neither cached state nor persisted state, this method is a
+     * no-op.
+     *
+     * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
+     * has completed so that the next call reliably starts with an empty conversation context.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        AgentState state;
+        if (stateStore != null) {
+            if (stateStore.exists(userId, sid)) {
+                VersionedState<AgentState> versioned =
                         loadOrCreateAgentStateForSlot(
                                 stateStore,
                                 userId,
-                                sessionId,
+                                sid,
                                 initialPermissionContext,
-                                getAgentId()));
+                                getAgentId(),
+                                initialActiveToolGroups);
+                state = versioned.value();
+                stateCache.put(slot, state);
+                slotVersions.put(slot, versioned.version());
+            } else {
+                state = stateCache.get(slot);
+                if (state == null) {
+                    return;
+                }
+            }
+        } else {
+            state = stateCache.get(slot);
+            if (state == null) {
+                return;
+            }
+        }
+        state.contextMutable().clear();
+        state.setSummary("");
+        saveAgentState(userId, sid);
     }
 
     /**
@@ -3675,11 +4103,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        String slot = slotKey(userId, sid);
-        AgentState s = getAgentState(userId, sid);
-        s.setPermissionContext(s.getPermissionContext().withMode(mode));
-        permissionEngineCache.put(slot, new PermissionEngine(s.getPermissionContext()));
-        saveAgentState(userId, sid);
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, state.getPermissionContext().withMode(mode));
+    }
+
+    /**
+     * Replaces the permission context for one {@code (userId, sessionId)} slot, rebuilds that
+     * slot's permission engine, and persists the updated state.
+     *
+     * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
+     * to subsequent calls on this slot and does not affect any other user or session.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param permissionContext complete replacement context
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        Objects.requireNonNull(permissionContext, "permissionContext must not be null");
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = getAgentState(userId, sid);
+        installPermissionContext(userId, sid, state, permissionContext);
+    }
+
+    private void installPermissionContext(
+            String userId,
+            String sessionId,
+            AgentState state,
+            PermissionContextState permissionContext) {
+        state.setPermissionContext(permissionContext);
+        permissionEngineCache.put(
+                slotKey(userId, sessionId), new PermissionEngine(permissionContext));
+        saveAgentState(userId, sessionId);
     }
 
     /**
@@ -3735,8 +4190,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sessionId);
         AgentState s = stateCache.get(slot);
         if (s != null) {
-            stateStore.save(userId, sessionId, "agent_state", s);
+            long expected = slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
+            persistAgentStateCas(userId, sessionId, slot, s, expected, s.getContext().size());
         }
+    }
+
+    /** Returns how many optimistic-concurrency conflicts have been observed on this agent. */
+    public long getStateConflictCount() {
+        return stateConflictCount.get();
+    }
+
+    /** Returns the configured {@link ConflictPolicy} for agent_state saves. */
+    public ConflictPolicy getConflictPolicy() {
+        return conflictPolicy;
     }
 
     /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
@@ -3822,8 +4288,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     public void close() {
-        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
-        // additional resources here.
+        // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
+        // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
+        shutdownManager.unbindStateSaver(this);
     }
 
     // ==================== Builder ====================
@@ -3855,6 +4322,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Model flatFallbackModel;
         private Boolean flatStopOnReject;
         private AgentStateStore stateStore;
+        private ConflictPolicy conflictPolicy;
         private String defaultSessionId;
 
         // ==================== 1.x legacy compatibility fields ====================
@@ -4193,6 +4661,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStore = stateStore;
+            return this;
+        }
+
+        /**
+         * Sets the policy applied when an optimistic-concurrency save of {@code agent_state}
+         * conflicts with another writer's update. Defaults to {@link ConflictPolicy#OVERWRITE}.
+         * Prefer {@link ConflictPolicy#FAIL} when a distributed session turn gate is enabled.
+         */
+        public Builder conflictPolicy(ConflictPolicy conflictPolicy) {
+            this.conflictPolicy = conflictPolicy;
             return this;
         }
 
@@ -4631,6 +5109,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 skillCodeExecutionEnabled,
                                 skillWorkDir));
             }
+
+            // List.sort is stable: middlewares with equal order retain their registration order.
+            middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);
             selfRef.set(agent);

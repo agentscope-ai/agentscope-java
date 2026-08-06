@@ -15,6 +15,13 @@
  */
 package io.agentscope.extensions.model.gemini;
 
+import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+import static io.agentscope.core.model.ModelProviderSupport.stringOption;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.Content;
@@ -105,7 +112,6 @@ public final class GeminiModelProvider implements ModelProvider {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
     private static void applyAdvancedOptions(
             GeminiChatModel.Builder builder, ModelCreationContext context) {
         HttpOptions httpOptions = context.component(HttpOptions.class);
@@ -125,8 +131,7 @@ public final class GeminiModelProvider implements ModelProvider {
             builder.proxy(proxyConfig);
         }
         Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter =
-                (Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>)
-                        findAssignableComponent(context, Formatter.class);
+                findAssignableComponent(context, Formatter.class);
         if (formatter != null) {
             builder.formatter(formatter);
         }
@@ -134,64 +139,5 @@ public final class GeminiModelProvider implements ModelProvider {
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
         }
-    }
-
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    private static String stringOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String text) {
-            return trimToNull(text);
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a string");
-    }
-
-    private static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
     }
 }

@@ -36,7 +36,7 @@ import java.util.Set;
  * <ul>
  *   <li>Trigger at 80,000 characters (~20 K tokens at 4 chars/token)</li>
  *   <li>Preview: first + last 2,000 characters of the original output</li>
- *   <li>Eviction path prefix: {@code /large_tool_results}</li>
+ *   <li>Eviction path prefix: {@code large_tool_results} (relative to the workspace)</li>
  *   <li>Excluded tools: filesystem read/write/edit/list + memory tools (small or self-paginating)</li>
  * </ul>
  */
@@ -48,8 +48,8 @@ public class ToolResultEvictionConfig {
     /** Characters to show at head and tail in the eviction placeholder preview. */
     public static final int DEFAULT_PREVIEW_CHARS = 2_000;
 
-    /** Root path prefix under which evicted results are stored. */
-    public static final String DEFAULT_EVICTION_PATH = "/large_tool_results";
+    /** Workspace-relative path prefix under which evicted results are stored. */
+    public static final String DEFAULT_EVICTION_PATH = "large_tool_results";
 
     /**
      * Tools excluded from eviction by default.
@@ -102,7 +102,7 @@ public class ToolResultEvictionConfig {
         return previewChars;
     }
 
-    /** Root path under which evicted files are written (e.g. {@code /large_tool_results}). */
+    /** Root path under which evicted files are written (e.g. {@code large_tool_results}). */
     public String getEvictionPath() {
         return evictionPath;
     }

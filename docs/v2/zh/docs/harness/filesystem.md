@@ -147,7 +147,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `workspaceProjectionEnabled(boolean)` | 是否启用宿主→沙箱的静态资产投影 | `true` |
 | `workspaceProjectionRoots(List)` | 投影包含的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
-#### Kubernetes 沙箱
+#### Kubernetes 沙箱（agent-sandbox）
+
+Kubernetes 后端完全基于 [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)：沙箱 pod 由集群里的 agent-sandbox 控制器管理，镜像、资源、PVC 都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里（不在 Java 侧配置），Java 侧通过 `SandboxClaim` 从预热池领取实例。使用前需要先安装 agent-sandbox 控制器并创建好模板和预热池。
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -155,16 +157,27 @@ HarnessAgent agent = HarnessAgent.builder()
     .model(model)
     .workspace(workspace)
     .filesystem(new KubernetesFilesystemSpec()
-        .image("node:20-slim")
         .namespace("agents")
-        .serviceAccount("agent-runner")
-        .cpuRequest("500m")
-        .memoryRequest("256Mi")
-        .nodeSelector(Map.of("pool", "agent"))
-        .podLabels(Map.of("app", "agentscope"))
+        .warmPoolName("agent-pool")        // SandboxWarmPool 名称
         .isolationScope(IsolationScope.USER))
     .build();
 ```
+
+`KubernetesFilesystemSpec` 主要配置项：
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `namespace(String)` | SandboxClaim 所在 namespace | `default` |
+| `warmPoolName(String)` | `SandboxWarmPool` 名称 | 必填 |
+| `workspaceRoot(String)` | 沙箱内工作区根目录，**必须落在模板声明的 PVC 挂载点上** | `/workspace` |
+| `fileApiBaseDir(String)` | 运行时文件 API 根目录，须与 `workspaceRoot` 一致；置空则退回 base64-over-exec 传输 | `/workspace` |
+| `apiUrl(String)` | 直连运行时 API 的 URL（配置后优先生效） | 无 |
+| `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | 经 Gateway API 访问沙箱 | 无 |
+| `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
+| `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
+| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
+
+`apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](./sandbox.md#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](./sandbox.md#kubernetes-后端的状态保存pvc-是第一层)。
 
 #### E2B 沙箱
 
@@ -510,9 +523,9 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [沙箱](./sandbox) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
-- [工作区](./workspace) — 目录布局、加载机制、两层读取的"下层"来源
-- [Context](./context) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
-- [技能](./skill) — 四层合成、自学习闭环、`<available_skills>` 块
-- [工具](../building-blocks/tool) — `read_file` / `write_file` / `execute` 等参数
-- [架构](./architecture) — 文件系统与运行时上下文如何协作
+- [沙箱](./sandbox.md) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
+- [工作区](./workspace.md) — 目录布局、加载机制、两层读取的"下层"来源
+- [Context](../building-blocks/context.md) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
+- [技能](./skill.md) — 四层合成、自学习闭环、`<available_skills>` 块
+- [工具](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` 等参数
+- [架构](./architecture.md) — 文件系统与运行时上下文如何协作

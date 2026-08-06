@@ -152,7 +152,7 @@ agentB.call(nextMsg, RuntimeContext.builder()
 `sessionId` 和 `userId` 解决的不是同一件事:
 
 - **`sessionId`** —— 决定哪段对话是哪段,独立的 `AgentState` 快照。
-- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](../harness/filesystem)。
+- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](../harness/filesystem.md)。
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -184,6 +184,24 @@ AgentState restored = AgentState.fromJsonString(json);
 | `contextMutable()` | 可写入视图,谨慎使用 |
 | `setSummary(...)` / `getSummary()` | 自定义压缩摘要(自行实现压缩 middleware 时用) |
 | `toJson()` / `fromJsonString(String)` | 序列化与反序列化 |
+
+### 清空会话对话上下文
+
+若要让用户在不创建新会话的情况下开始新话题，可调用 `clearContext`。该方法保留相同的
+`(userId, sessionId)`，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
+消息缓冲和压缩摘要，并在 agent 配置了 `AgentStateStore` 时立即持久化结果。
+
+```java
+agent.clearContext("alice", "session-001");
+
+// 也可以传入与调用时相同的 RuntimeContext。
+agent.clearContext(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build());
+```
+
+请在该会话当前请求完成后调用。它不会取消正在执行的调用；下一次调用会使用已清空的对话上下文。
 
 :::{note}
 1.0 中的 `Memory` 接口(`InMemoryMemory` / `LongTermMemory` 等)在 2.0 已 `@Deprecated(forRemoval = true)`。新代码请使用 `AgentState.getContext()` + `AgentStateStore` —— `Memory` 仅作为源代码兼容层保留。
@@ -291,7 +309,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 
 ## 相关文档
 
-- [智能体（Agent）](./agent) —— `ReActAgent` 完整接口与 Builder 参数
-- [上下文压缩](../harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
-- [记忆](../harness/memory) —— 长期记忆与后台维护
-- [权限系统](./permission-system) —— 权限规则的持久化
+- [智能体（Agent）](./agent.md) —— `ReActAgent` 完整接口与 Builder 参数
+- [上下文压缩](../harness/compaction.md) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
+- [记忆](../harness/memory.md) —— 长期记忆与后台维护
+- [权限系统](./permission-system.md) —— 权限规则的持久化
