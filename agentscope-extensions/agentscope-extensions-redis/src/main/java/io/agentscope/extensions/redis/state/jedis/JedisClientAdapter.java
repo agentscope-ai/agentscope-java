@@ -23,8 +23,6 @@ import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.RedisClusterClient;
 import redis.clients.jedis.RedisSentinelClient;
 import redis.clients.jedis.UnifiedJedis;
-import redis.clients.jedis.params.ScanParams;
-import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Adapter for Jedis Redis client.
@@ -153,20 +151,16 @@ public class JedisClientAdapter implements RedisClientAdapter {
 
     @Override
     public Set<String> findKeysByPattern(String pattern) {
-        Set<String> matchingKeys = new HashSet<>();
-        String cursor = ScanParams.SCAN_POINTER_START;
-        ScanParams scanParams = new ScanParams().match(pattern);
-        do {
-            ScanResult<String> scanResult = unifiedJedis.scan(cursor, scanParams);
-            if (scanResult != null) {
-                matchingKeys.addAll(scanResult.getResult());
-                cursor = scanResult.getCursor();
-            } else {
-                break;
-            }
-        } while (!cursor.equals(ScanParams.SCAN_POINTER_START));
-        return matchingKeys;
+        // scanIteration transparently walks every master node in cluster mode (and the single
+        // node in standalone mode), so keys living on other shards are not silently missed
+        // (affects RedisAgentStateStore.listSessionIds / clearAllSessions).
+        Set<String> keys = new HashSet<>();
+        unifiedJedis.scanIteration(SCAN_BATCH_SIZE, pattern).collect(keys);
+        return keys;
     }
+
+    /** COUNT hint passed to each SCAN call inside {@link #findKeysByPattern}. */
+    private static final int SCAN_BATCH_SIZE = 100;
 
     @Override
     public long evalScript(String script, List<String> keys, List<String> args) {

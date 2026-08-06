@@ -47,14 +47,20 @@ import redis.clients.jedis.UnifiedJedis;
  *   <li>Redisson - Standalone, Cluster, Sentinel, Master/Slave</li>
  * </ul>
  *
- * <p>The session state is stored in Redis with following key structure:
+ * <p>The session state is stored in Redis with following key structure (where
+ * {@code {<user>/<session>}} is a Redis Cluster hash tag so all keys of a session share one slot):
  *
  * <ul>
- *   <li>Single state: {@code {prefix}{sessionId}:{stateKey}} - Redis String containing JSON
- *   <li>List state: {@code {prefix}{sessionId}:{stateKey}:list} - Redis List containing JSON items
- *   <li>List hash: {@code {prefix}{sessionId}:{stateKey}:list:_hash} - Hash for change detection
- *   <li>AgentStateStore marker: {@code {prefix}{sessionId}:_keys} - Redis Set tracking all state keys
+ *   <li>Single state: {@code <prefix>{<user>/<session>}:<stateKey>} - Redis String containing JSON
+ *   <li>List state: {@code <prefix>{<user>/<session>}:<stateKey>:list} - Redis List containing JSON items
+ *   <li>List hash: {@code <prefix>{<user>/<session>}:<stateKey>:list:_hash} - Hash for change detection
+ *   <li>AgentStateStore marker: {@code <prefix>{<user>/<session>}:_keys} - Redis Set tracking all state keys
  * </ul>
+ *
+ * <p><strong>Breaking change:</strong> the slot id is wrapped in a Redis Cluster hash tag
+ * ({@code {...}}) so all keys of one session share one Cluster slot (required by the multi-key
+ * Lua {@code EVAL}). Data written with the previous, un-tagged key layout is not readable and
+ * must be migrated.
  *
  * <p><strong>Jedis Usage Examples:</strong></p>
  *
@@ -416,15 +422,19 @@ public class RedisAgentStateStore implements AgentStateStore {
     public Set<String> listSessionIds(String userId) {
         String userSegment = normalizeUser(userId);
         try {
-            // Pattern: {prefix}{userSegment}/{sessionId}:_keys
-            String pattern = keyPrefix + userSegment + "/*" + KEYS_SUFFIX;
+            // Keys have the form: {prefix}{{userSegment}/{sessionId}}:_keys.
+            // Escape glob metacharacters in userSegment so a userId containing
+            // '*', '?', '[', ']' or '\' cannot widen or skew the SCAN MATCH pattern.
+            String pattern = keyPrefix + "{" + escapeGlob(userSegment) + "/*}" + KEYS_SUFFIX;
             Set<String> keysKeys = client.findKeysByPattern(pattern);
             Set<String> sessionIds = new HashSet<>();
-            String userPrefix = keyPrefix + userSegment + "/";
+            String openTag = keyPrefix + "{" + userSegment + "/";
+            String closeTag = "}" + KEYS_SUFFIX;
             for (String keysKey : keysKeys) {
-                String withoutPrefix = keysKey.substring(userPrefix.length());
+                // Strip the prefix and the closing tag to recover the sessionId.
+                String afterPrefix = keysKey.substring(openTag.length());
                 String sessionId =
-                        withoutPrefix.substring(0, withoutPrefix.length() - KEYS_SUFFIX.length());
+                        afterPrefix.substring(0, afterPrefix.length() - closeTag.length());
                 sessionIds.add(sessionId);
             }
             return sessionIds;
@@ -440,12 +450,43 @@ public class RedisAgentStateStore implements AgentStateStore {
         return userId == null || userId.isBlank() ? ANON_USER : userId;
     }
 
-    /** Combine {@code (userId, sessionId)} into a single Redis slot identifier. */
+    /** Escape Redis glob metacharacters so {@code userSegment} matches literally in SCAN MATCH. */
+    private static String escapeGlob(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '*' || c == '?' || c == '[' || c == ']' || c == '\\') {
+                sb.append('\\');
+            }
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /** Reject characters that would prematurely terminate a Redis Cluster hash tag. */
+    private static void rejectBraces(String value, String name) {
+        if (value.indexOf('{') >= 0 || value.indexOf('}') >= 0) {
+            throw new IllegalArgumentException(
+                    name + " must not contain '{' or '}' (reserved for Redis Cluster hash tags)");
+        }
+    }
+
+    /**
+     * Combine {@code (userId, sessionId)} into a single Redis slot identifier.
+     *
+     * <p>The result is wrapped in a Redis Cluster hash tag {@code {...}} so that all keys derived
+     * from this slot (payload, version, keys-set, list, list-hash) hash to the same slot. This is
+     * required by the multi-key {@code SAVE_SCRIPT} Lua eval in cluster mode. {@code userId}
+     * and {@code sessionId} must not contain {@code { } }, otherwise the tag is truncated early.
+     */
     private static String slotId(String userId, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("sessionId must not be blank");
         }
-        return normalizeUser(userId) + "/" + sessionId;
+        rejectBraces(sessionId, "sessionId");
+        String user = normalizeUser(userId);
+        rejectBraces(user, "userId");
+        return "{" + user + "/" + sessionId + "}";
     }
 
     @Override
@@ -464,7 +505,11 @@ public class RedisAgentStateStore implements AgentStateStore {
                             try {
                                 Set<String> keys = client.findKeysByPattern(keyPrefix + "*");
                                 if (!keys.isEmpty()) {
-                                    client.deleteKeys(keys.toArray(new String[0]));
+                                    // Delete keys one by one to avoid CROSSSLOT errors
+                                    // in Redis Cluster mode where keys span multiple slots.
+                                    for (String key : keys) {
+                                        client.deleteKeys(key);
+                                    }
                                 }
                                 return keys.size();
                             } catch (Exception e) {

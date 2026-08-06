@@ -26,6 +26,8 @@ import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.cluster.RedisClusterClient;
 import io.lettuce.core.cluster.api.StatefulRedisClusterConnection;
 import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
+import io.lettuce.core.cluster.models.partitions.Partitions;
+import io.lettuce.core.cluster.models.partitions.RedisClusterNode;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -108,6 +110,14 @@ public class LettuceClientAdapter implements RedisClientAdapter {
     private final RedisAdvancedClusterCommands<String, String> clusterCommands;
 
     /**
+     * The cluster connection backing {@link #clusterCommands}. Kept so that
+     * {@link #findKeysByPattern} can iterate over every master node (Lettuce's
+     * {@code clusterCommands.scan(...)} only scans the default node and would
+     * otherwise miss keys living on other shards). Null in standalone/sentinel mode.
+     */
+    private final StatefulRedisClusterConnection<String, String> clusterConnection;
+
+    /**
      * Closeable resource handler for cleaning up connections and clients.
      * Uses a strategy pattern to handle different cleanup logic for
      * standalone/sentinel and cluster modes.
@@ -117,9 +127,11 @@ public class LettuceClientAdapter implements RedisClientAdapter {
     private LettuceClientAdapter(
             RedisCommands<String, String> commands,
             RedisAdvancedClusterCommands<String, String> clusterCommands,
+            StatefulRedisClusterConnection<String, String> clusterConnection,
             AutoCloseable closeable) {
         this.commands = commands;
         this.clusterCommands = clusterCommands;
+        this.clusterConnection = clusterConnection;
         this.closeable = closeable;
     }
 
@@ -136,7 +148,7 @@ public class LettuceClientAdapter implements RedisClientAdapter {
         }
         StatefulRedisConnection<String, String> connection = redisClient.connect();
         return new LettuceClientAdapter(
-                connection.sync(), null, new StandaloneCloser(connection, redisClient));
+                connection.sync(), null, null, new StandaloneCloser(connection, redisClient));
     }
 
     /**
@@ -152,7 +164,10 @@ public class LettuceClientAdapter implements RedisClientAdapter {
         }
         StatefulRedisClusterConnection<String, String> connection = redisClusterClient.connect();
         return new LettuceClientAdapter(
-                null, connection.sync(), new ClusterCloser(connection, redisClusterClient));
+                null,
+                connection.sync(),
+                connection,
+                new ClusterCloser(connection, redisClusterClient));
     }
 
     @Override
@@ -249,9 +264,22 @@ public class LettuceClientAdapter implements RedisClientAdapter {
     public Set<String> findKeysByPattern(String pattern) {
         if (commands != null) {
             return scanKeys(pattern, commands::scan);
-        } else {
-            return scanKeys(pattern, clusterCommands::scan);
         }
+        // Cluster mode: SCAN only touches a single node by default, so iterate over
+        // every master node and aggregate the results; otherwise keys living on other
+        // shards would be silently missed (affects listSessionIds / clearAllSessions).
+        Set<String> keys = new HashSet<>();
+        Partitions partitions = clusterConnection.getPartitions();
+        for (RedisClusterNode node : partitions) {
+            if (!node.is(RedisClusterNode.NodeFlag.MASTER)) {
+                continue;
+            }
+            // nodeConn is owned by the cluster connection; do not close it here.
+            StatefulRedisConnection<String, String> nodeConn =
+                    clusterConnection.getConnection(node.getNodeId());
+            keys.addAll(scanKeys(pattern, nodeConn.sync()::scan));
+        }
+        return keys;
     }
 
     /**

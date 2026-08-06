@@ -100,6 +100,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.7</spring.version>
@@ -193,6 +194,15 @@
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
                 <version>${junit-jupiter.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Testcontainers -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
