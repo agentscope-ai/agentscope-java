@@ -47,6 +47,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class E2bEnvdProcessClientTest {
 
@@ -493,7 +494,12 @@ class E2bEnvdProcessClientTest {
 
         client.uploadFile(state, "/tmp/test.txt", "data".getBytes());
 
-        verify(mockHttp).newCall(any());
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        String url = requestCaptor.getValue().url().toString();
+        assertTrue(url.startsWith("https://sandbox.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
         verify(mockCall).execute();
     }
 
@@ -557,7 +563,12 @@ class E2bEnvdProcessClientTest {
         byte[] result = client.downloadFile(state, "/tmp/test.txt");
 
         assertArrayEquals(content, result);
-        verify(mockHttp).newCall(any());
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        verify(mockHttp).newCall(requestCaptor.capture());
+        String url = requestCaptor.getValue().url().toString();
+        assertTrue(url.startsWith("https://sandbox.e2b.app/files?path="));
+        assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
+        assertTrue(url.contains("username=user"));
         verify(mockCall).execute();
     }
 

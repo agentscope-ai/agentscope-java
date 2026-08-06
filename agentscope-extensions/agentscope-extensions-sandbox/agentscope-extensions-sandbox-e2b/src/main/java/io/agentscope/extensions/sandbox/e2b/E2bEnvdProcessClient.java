@@ -358,7 +358,7 @@ final class E2bEnvdProcessClient {
      */
     public void uploadFile(E2bSandboxState state, String remotePath, byte[] data) throws Exception {
         String host = filesystemHost(state);
-        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+        String url = host + filesUrl(remotePath);
 
         RequestBody fileBody = RequestBody.create(data, APPLICATION_OCTET_STREAM);
         RequestBody multipart =
@@ -387,7 +387,7 @@ final class E2bEnvdProcessClient {
      */
     public byte[] downloadFile(E2bSandboxState state, String remotePath) throws Exception {
         String host = filesystemHost(state);
-        String url = host + "/files?path=" + URLEncoder.encode(remotePath, StandardCharsets.UTF_8);
+        String url = host + filesUrl(remotePath);
         Request req = buildFilesystemRequest(url, state).get().build();
         try (Response res = http.newCall(req).execute()) {
             if (!res.isSuccessful()) {
@@ -403,6 +403,13 @@ final class E2bEnvdProcessClient {
     private static String filenameFromPath(String path) {
         int idx = path.lastIndexOf('/');
         return idx >= 0 ? path.substring(idx + 1) : path;
+    }
+
+    private String filesUrl(String remotePath) {
+        return "/files?path="
+                + URLEncoder.encode(remotePath, StandardCharsets.UTF_8)
+                + "&username="
+                + URLEncoder.encode(opt.getRunUser(), StandardCharsets.UTF_8);
     }
 
     private Request.Builder buildEnvdRequest(
