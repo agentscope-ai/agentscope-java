@@ -67,6 +67,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 ## 新闻
 <!-- BEGIN NEWS -->
+- **[2026-08] [AgentScope Service](./agentscope-service)：** Agent 控制面与 Dashboard，面向 Agent 观测、注册与编排，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等。
 - **[2026-07] `v2.0.0 GA`：** 首个正式版本发布！双层 Agent 架构、事件流、权限系统、Middleware、Workspace 沙箱、多智能体编排、分布式部署全面就绪。 [文档](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** 模型提供商模块化拆分；统一 DataBlock 多模态支持；原生结构化输出；Channel IM 平台接入；腾讯云 COS 状态持久化。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** 异步工具执行与定时唤醒调度；子 agent 跨副本路由与 session 恢复。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -96,7 +97,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -106,7 +107,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -133,7 +134,7 @@ public class FirstAgent {
                 // （如 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）。
                 // 示例："openai:gpt-4.1"、"openai:o3"、
                 // "deepseek:deepseek-v4-flash"、"dashscope:qwen-plus"、
-                // "anthropic:claude-sonnet-4-5"、"ollama:llama3"
+                // "anthropic:claude-sonnet-4-7"、"ollama:llama3"
                 .model("dashscope:qwen-plus")
                 // 也可以直接传入 ChatModel 对象：
                 // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
@@ -161,6 +162,16 @@ public class FirstAgent {
     }
 }
 ```
+
+## AgentScope Service
+
+**[AgentScope Service](./agentscope-service)** — 基于 AgentScope Harness 构建的 Agent 控制面，提供：
+
++ **控制面（Control Plane）。** 为企业内的所有 Agent 提供智能体注册、查询、分布式协调服务，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等主流 Agent 运行时；企业可以有一个集中的 Agent 指标查看入口，同时可以对运行中的 Session 进行上下文压缩等操作。
++ **Managed Agents 平台。** 底层基于 AgentScope Harness 运行时，可快速将多个 Agent 运行在一套统一管理的托管平台上；平台提供 Harness 能力托管，工具执行则可委托给用户自己控制的 Sandbox。
++ **Agent Teams。** 注册在 AgentScope Service 中的智能体可以被组建为一个或多个 Teams；不论是自行部署的 AgentScope 运行时，还是低代码托管的 Agent Harness 运行时，都可以被编排在一起，共同协作完成更复杂的任务。
+
+![](./docs/imgs/agentservice/agentscope-service-architecture.png)
 
 ## 核心设计
 
