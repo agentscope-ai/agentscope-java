@@ -2073,18 +2073,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * detects the pending calls.
          */
         private void synthesizeErrorResultsForPendingToolCalls() {
-            Set<String> pendingIds = getPendingToolUseIds();
-            if (pendingIds.isEmpty()) {
+            List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
+            if (pendingToolCalls.isEmpty()) {
                 return;
             }
-            Msg lastAssistant = findLastAssistantMsg();
-            if (lastAssistant == null) {
-                return;
-            }
-            List<ToolUseBlock> pendingToolCalls =
-                    lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
-                            .filter(toolUse -> pendingIds.contains(toolUse.getId()))
-                            .toList();
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
                         buildErrorToolResult(
