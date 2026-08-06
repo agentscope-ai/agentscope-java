@@ -46,7 +46,7 @@ public class ToolResultEndEvent extends AgentEvent {
 
     public ToolResultEndEvent(
             String replyId, String toolCallId, String toolCallName, ToolResultState state) {
-        this(replyId, toolCallId, toolCallName, null, state);
+        this(replyId, toolCallId, toolCallName, toolCallName, state);
     }
 
     public ToolResultEndEvent(

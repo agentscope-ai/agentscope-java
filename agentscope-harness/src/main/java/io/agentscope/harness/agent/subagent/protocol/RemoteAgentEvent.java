@@ -36,6 +36,7 @@ public class RemoteAgentEvent {
     private String text;
     private String toolCallId;
     private String toolName;
+    private String toolTitle;
     private String toolInput;
     private List<RemotePendingConfirm> pendingConfirms;
     private String status;
@@ -105,6 +106,14 @@ public class RemoteAgentEvent {
 
     public void setToolName(String toolName) {
         this.toolName = toolName;
+    }
+
+    public String getToolTitle() {
+        return toolTitle;
+    }
+
+    public void setToolTitle(String toolTitle) {
+        this.toolTitle = toolTitle;
     }
 
     public String getToolInput() {

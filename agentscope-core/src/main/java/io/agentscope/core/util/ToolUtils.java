@@ -23,14 +23,24 @@ import io.agentscope.core.tool.Toolkit;
  */
 public class ToolUtils {
 
+    /**
+     * Resolves the human-readable title for a tool from the toolkit.
+     *
+     * <p>If the tool has a custom title, it is returned. Otherwise, falls back to the tool name,
+     * consistent with {@link AgentTool#getTitle()}.
+     *
+     * @param toolkit  The toolkit to look up the tool in (may be null)
+     * @param toolName The name of the tool (may be null)
+     * @return The tool title, or the tool name if no title is defined, or null if both are null
+     */
     public static String resolveToolTitle(Toolkit toolkit, String toolName) {
         if (toolName == null) {
             return null;
         }
         if (toolkit == null) {
-            return null;
+            return toolName;
         }
         AgentTool tool = toolkit.getTool(toolName);
-        return tool != null ? tool.getTitle() : null;
+        return tool != null ? tool.getTitle() : toolName;
     }
 }

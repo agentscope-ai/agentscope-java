@@ -287,7 +287,7 @@ class ToolUseBlockTest {
 
     @Test
     void testEmptyMapsForNullInputAndMetadata() {
-        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", "null", null, null);
+        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", null, null, null);
 
         assertNotNull(toolUseBlock.getInput());
         assertTrue(toolUseBlock.getInput().isEmpty());
@@ -375,8 +375,12 @@ class ToolUseBlockTest {
     @DisplayName("Constructor should accept title parameter")
     void testConstructorWithTitle() {
         ToolUseBlock block =
-                new ToolUseBlock(
-                        "tool-3", "query_db", "Query Database", Map.of("sql", "SELECT 1"), null);
+                ToolUseBlock.builder()
+                        .id("tool-3")
+                        .name("query_db")
+                        .title("Query Database")
+                        .input(Map.of("sql", "SELECT 1"))
+                        .build();
 
         assertEquals("tool-3", block.getId());
         assertEquals("query_db", block.getName());

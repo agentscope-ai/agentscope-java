@@ -48,6 +48,13 @@ public class ToolCallEndEvent extends AgentEvent {
         this.toolCallTitle = toolCallTitle;
     }
 
+    public ToolCallEndEvent(String replyId, String toolCallId, String toolCallName) {
+        this.replyId = replyId;
+        this.toolCallId = toolCallId;
+        this.toolCallName = toolCallName;
+        this.toolCallTitle = toolCallName;
+    }
+
     @Override
     public AgentEventType getType() {
         return AgentEventType.TOOL_CALL_END;

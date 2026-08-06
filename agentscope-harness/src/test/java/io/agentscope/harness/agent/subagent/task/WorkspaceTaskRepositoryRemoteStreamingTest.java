@@ -220,7 +220,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
                 return new RemoteTaskStatus(
                         "awaiting_confirm",
                         null,
-                        List.of(new RemotePendingConfirm("tc1", "bash", "{\"cmd\":\"ls\"}")));
+                        List.of(new RemotePendingConfirm("tc1", "bash", null, "{\"cmd\":\"ls\"}")));
             }
             return new RemoteTaskStatus("success", null);
         }

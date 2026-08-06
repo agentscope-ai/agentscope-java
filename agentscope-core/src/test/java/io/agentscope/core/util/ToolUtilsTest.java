@@ -42,16 +42,16 @@ class ToolUtilsTest {
     }
 
     @Test
-    @DisplayName("Should return null when toolkit is null")
+    @DisplayName("Should return toolName when toolkit is null")
     void testResolveTitleWithNullToolkit() {
-        assertNull(ToolUtils.resolveToolTitle(null, "some_tool"));
+        assertEquals("some_tool", ToolUtils.resolveToolTitle(null, "some_tool"));
     }
 
     @Test
-    @DisplayName("Should return null when tool is not found in toolkit")
+    @DisplayName("Should return toolName when tool is not found in toolkit")
     void testResolveTitleWhenToolNotFound() {
         Toolkit toolkit = new Toolkit();
-        assertNull(ToolUtils.resolveToolTitle(toolkit, "non_existent_tool"));
+        assertEquals("non_existent_tool", ToolUtils.resolveToolTitle(toolkit, "non_existent_tool"));
     }
 
     @Test
@@ -64,12 +64,12 @@ class ToolUtilsTest {
     }
 
     @Test
-    @DisplayName("Should return null title when tool exists but title is null")
+    @DisplayName("Should return tool name when tool exists but title is null")
     void testResolveTitleWhenToolHasNullTitle() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerAgentTool(stubTool("null_title_tool", null));
 
-        assertNull(ToolUtils.resolveToolTitle(toolkit, "null_title_tool"));
+        assertEquals("null_title_tool", ToolUtils.resolveToolTitle(toolkit, "null_title_tool"));
     }
 
     @Test
@@ -87,7 +87,7 @@ class ToolUtilsTest {
 
             @Override
             public String getTitle() {
-                return title;
+                return title != null ? title : getName();
             }
 
             @Override

@@ -49,24 +49,6 @@ public final class ToolUseBlock extends ContentBlock {
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
-     * @param title Title of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
-     * @param metadata Provider-specific metadata (will be defensively copied)
-     */
-    public ToolUseBlock(
-            String id,
-            String name,
-            String title,
-            Map<String, Object> input,
-            Map<String, Object> metadata) {
-        this(id, name, title, input, null, metadata, null);
-    }
-
-    /**
-     * Creates a new tool use block for JSON deserialization.
-     *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
@@ -84,18 +66,6 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
         this(id, name, null, input, null, null, null);
-    }
-
-    /**
-     * Creates a new tool use block without metadata (convenience constructor).
-     *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
-     * @param title Title of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
-     */
-    public ToolUseBlock(String id, String name, String title, Map<String, Object> input) {
-        this(id, name, title, input, null, null, null);
     }
 
     /**

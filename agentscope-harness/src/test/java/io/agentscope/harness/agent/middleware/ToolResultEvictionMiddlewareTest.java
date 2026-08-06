@@ -181,6 +181,7 @@ class ToolResultEvictionMiddlewareTest {
                 new ToolResultBlock(
                         "call:1",
                         "large_output",
+                        "large_output",
                         List.of(TextBlock.builder().text(FULL_OUTPUT).build()),
                         Map.of("source", "hook", "hook_annotation", "preserve-me"),
                         ToolResultState.ERROR);
@@ -378,6 +379,7 @@ class ToolResultEvictionMiddlewareTest {
     private static ToolResultBlock toolResult(String output) {
         return new ToolResultBlock(
                 "call:1",
+                "large_output",
                 "large_output",
                 List.of(TextBlock.builder().text(output).build()),
                 Map.of("source", "test"),

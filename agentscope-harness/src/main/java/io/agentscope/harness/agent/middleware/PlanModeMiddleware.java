@@ -205,8 +205,8 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
                                                 agent.getToolkit(), call.getName());
                                 ToolResultBlock result =
                                         ToolResultBlock.text(DENY_MESSAGE)
-                                                .withIdAndNameAndTitle(
-                                                        call.getId(), call.getName(), toolTitle)
+                                                .withIdAndName(call.getId(), call.getName())
+                                                .withTitle(toolTitle)
                                                 .withState(ToolResultState.DENIED);
                                 Msg msg =
                                         ToolResultMessageBuilder.buildToolResultMsg(

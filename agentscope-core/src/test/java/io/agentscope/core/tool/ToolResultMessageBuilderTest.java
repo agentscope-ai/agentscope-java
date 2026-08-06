@@ -67,7 +67,8 @@ class ToolResultMessageBuilderTest {
     @Test
     @DisplayName("Should build tool result message with null title")
     void testBuildToolResultMsgWithNullTitle() {
-        ToolUseBlock originalCall = new ToolUseBlock("call-2", "simple_tool", null, Map.of(), null);
+        ToolUseBlock originalCall =
+                ToolUseBlock.builder().id("call-2").name("simple_tool").input(Map.of()).build();
 
         ToolResultBlock result =
                 ToolResultBlock.of(null, "simple_tool", TextBlock.builder().text("done").build());

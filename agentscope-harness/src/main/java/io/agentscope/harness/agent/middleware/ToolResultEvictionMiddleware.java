@@ -237,6 +237,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
         return new ToolResultBlock(
                 toolResult.getId(),
                 toolResult.getName(),
+                toolResult.getTitle(),
                 List.of(TextBlock.builder().text(placeholder).build()),
                 metadata,
                 toolResult.getState());

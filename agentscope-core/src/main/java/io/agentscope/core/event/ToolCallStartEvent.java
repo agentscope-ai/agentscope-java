@@ -48,6 +48,13 @@ public class ToolCallStartEvent extends AgentEvent {
         this.toolCallTitle = toolCallTitle;
     }
 
+    public ToolCallStartEvent(String replyId, String toolCallId, String toolCallName) {
+        this.replyId = replyId;
+        this.toolCallId = toolCallId;
+        this.toolCallName = toolCallName;
+        this.toolCallTitle = toolCallName;
+    }
+
     @Override
     public AgentEventType getType() {
         return AgentEventType.TOOL_CALL_START;

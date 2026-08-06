@@ -28,13 +28,16 @@ public class RemotePendingConfirm {
 
     private String toolCallId;
     private String toolName;
+    private String toolTitle;
     private String toolInputJson;
 
     public RemotePendingConfirm() {}
 
-    public RemotePendingConfirm(String toolCallId, String toolName, String toolInputJson) {
+    public RemotePendingConfirm(
+            String toolCallId, String toolName, String toolTitle, String toolInputJson) {
         this.toolCallId = toolCallId;
         this.toolName = toolName;
+        this.toolTitle = toolTitle;
         this.toolInputJson = toolInputJson;
     }
 
@@ -52,6 +55,14 @@ public class RemotePendingConfirm {
 
     public void setToolName(String toolName) {
         this.toolName = toolName;
+    }
+
+    public String getToolTitle() {
+        return toolTitle;
+    }
+
+    public void setToolTitle(String toolTitle) {
+        this.toolTitle = toolTitle;
     }
 
     public String getToolInputJson() {
@@ -72,11 +83,12 @@ public class RemotePendingConfirm {
         }
         return Objects.equals(toolCallId, that.toolCallId)
                 && Objects.equals(toolName, that.toolName)
+                && Objects.equals(toolTitle, that.toolTitle)
                 && Objects.equals(toolInputJson, that.toolInputJson);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(toolCallId, toolName, toolInputJson);
+        return Objects.hash(toolCallId, toolName, toolTitle, toolInputJson);
     }
 }

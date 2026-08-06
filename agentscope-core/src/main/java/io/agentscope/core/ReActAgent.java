@@ -2733,12 +2733,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .concatMap(
                                     entry -> {
                                         ToolUseBlock use = entry.getKey();
+                                        String title = resolveToolTitle(toolkit, use.getName());
                                         return Flux.<AgentEvent>just(
                                                 new ToolResultStartEvent(
-                                                        replyId,
-                                                        use.getId(),
-                                                        use.getName(),
-                                                        resolveToolTitle(toolkit, use.getName())),
+                                                        replyId, use.getId(), use.getName(), title),
                                                 new ToolResultTextDeltaEvent(
                                                         replyId,
                                                         use.getId(),
@@ -2748,7 +2746,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
-                                                        resolveToolTitle(toolkit, use.getName()),
+                                                        title,
                                                         ToolResultState.DENIED));
                                     });
 
@@ -2865,6 +2863,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                         .getId(),
                                                                                                 entry.getKey()
                                                                                                         .getName(),
+                                                                                                resolveToolTitle(
+                                                                                                        toolkit,
+                                                                                                        entry.getKey()
+                                                                                                                .getName()),
                                                                                                 state));
                                                                             }
                                                                             sink.complete();

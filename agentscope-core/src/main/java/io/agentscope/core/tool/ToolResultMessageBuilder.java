@@ -41,8 +41,8 @@ public class ToolResultMessageBuilder {
             ToolResultBlock result, ToolUseBlock originalCall, String agentName) {
         // Set id and name and title from original call
         ToolResultBlock resultWithIdAndNameAndTitle =
-                result.withIdAndNameAndTitle(
-                        originalCall.getId(), originalCall.getName(), originalCall.getTitle());
+                result.withIdAndName(originalCall.getId(), originalCall.getName())
+                        .withTitle(originalCall.getTitle());
 
         return Msg.builder()
                 .name(agentName)

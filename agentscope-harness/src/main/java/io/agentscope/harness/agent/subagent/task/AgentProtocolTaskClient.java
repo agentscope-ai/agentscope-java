@@ -368,6 +368,9 @@ public final class AgentProtocolTaskClient {
             } else if (item.hasNonNull("tool_input_json")) {
                 p.setToolInputJson(item.get("tool_input_json").asText());
             }
+            if (item.hasNonNull("toolTitle")) {
+                p.setToolTitle(item.get("toolTitle").asText());
+            }
             out.add(p);
         }
         return List.copyOf(out);

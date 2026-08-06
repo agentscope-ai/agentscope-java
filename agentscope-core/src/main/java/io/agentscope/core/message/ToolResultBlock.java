@@ -403,13 +403,26 @@ public final class ToolResultBlock extends ContentBlock {
     }
 
     /**
+     * Returns a copy of this block with the given title.
+     *
+     * @param title The new title
+     * @return A new ToolResultBlock with the updated title
+     */
+    public ToolResultBlock withTitle(String title) {
+        return new ToolResultBlock(
+                this.id, this.name, title, this.output, this.metadata, this.state);
+    }
+
+    /**
      * Create a ToolResultBlock for use in messages by setting id and name and title.
      *
      * @param id    Tool call ID
      * @param name  Tool name
      * @param title Tool title
      * @return New ToolResultBlock with id and name set
+     * @deprecated Use {@link #withIdAndName(String, String)} followed by {@link #withTitle(String)} instead.
      */
+    @Deprecated
     public ToolResultBlock withIdAndNameAndTitle(String id, String name, String title) {
         return new ToolResultBlock(id, name, title, this.output, this.metadata, this.state);
     }

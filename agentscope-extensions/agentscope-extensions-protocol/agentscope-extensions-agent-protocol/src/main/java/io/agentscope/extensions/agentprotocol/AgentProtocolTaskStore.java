@@ -326,7 +326,10 @@ public final class AgentProtocolTaskStore {
             if (block.getState() == ToolCallState.ASKING) {
                 pending.add(
                         new RemotePendingConfirm(
-                                block.getId(), block.getName(), toJsonQuiet(block.getInput())));
+                                block.getId(),
+                                block.getName(),
+                                block.getTitle(),
+                                toJsonQuiet(block.getInput())));
             }
         }
         if (pending.isEmpty()) {
@@ -334,7 +337,10 @@ public final class AgentProtocolTaskStore {
             for (ToolUseBlock block : reply.getContentBlocks(ToolUseBlock.class)) {
                 pending.add(
                         new RemotePendingConfirm(
-                                block.getId(), block.getName(), toJsonQuiet(block.getInput())));
+                                block.getId(),
+                                block.getName(),
+                                block.getTitle(),
+                                toJsonQuiet(block.getInput())));
             }
         }
         return pending;

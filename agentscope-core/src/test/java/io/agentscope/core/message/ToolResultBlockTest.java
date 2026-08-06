@@ -23,10 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -114,6 +112,20 @@ class ToolResultBlockTest {
     }
 
     @Test
+    @DisplayName("Should propagate title through withTitle")
+    void testWithTitle() {
+        ToolResultBlock original =
+                ToolResultBlock.of(
+                        "result", "original_tool", TextBlock.builder().text("ok").build());
+
+        ToolResultBlock updated = original.withTitle("Custom Title");
+
+        assertEquals("original_tool", updated.getName());
+        assertEquals("Custom Title", updated.getTitle());
+        assertNull(original.getTitle());
+    }
+
+    @Test
     @DisplayName("Should preserve output when using withIdAndNameAndTitle")
     void testWithIdAndNameAndTitlePreservesOutput() {
         ToolResultBlock original =
@@ -164,15 +176,15 @@ class ToolResultBlockTest {
     void testJsonDeserializationWithTitle() throws JsonProcessingException {
         String json =
                 """
-                        {
-                            "type": "tool_result",
-                            "id": "call-7",
-                            "name": "search_tool",
-                            "title": "Search Engine",
-                            "output": [{"type": "text", "text": "results"}],
-                            "state": "success"
-                        }
-                        """;
+                {
+                    "type": "tool_result",
+                    "id": "call-7",
+                    "name": "search_tool",
+                    "title": "Search Engine",
+                    "output": [{"type": "text", "text": "results"}],
+                    "state": "success"
+                }
+                """;
 
         ToolResultBlock block = objectMapper.readValue(json, ToolResultBlock.class);
 
@@ -188,15 +200,15 @@ class ToolResultBlockTest {
     void testJsonDeserializationWithNullTitle() throws JsonProcessingException {
         String json =
                 """
-                        {
-                            "type": "tool_result",
-                            "id": "call-8",
-                            "name": "tool",
-                            "title": null,
-                            "output": [],
-                            "state": "running"
-                        }
-                        """;
+                {
+                    "type": "tool_result",
+                    "id": "call-8",
+                    "name": "tool",
+                    "title": null,
+                    "output": [],
+                    "state": "running"
+                }
+                """;
 
         ToolResultBlock block = objectMapper.readValue(json, ToolResultBlock.class);
 
@@ -210,13 +222,13 @@ class ToolResultBlockTest {
     void testJsonDeserializationWithoutTitle() throws JsonProcessingException {
         String json =
                 """
-                        {
-                            "type": "tool_result",
-                            "id": "call-9",
-                            "name": "tool",
-                            "output": []
-                        }
-                        """;
+                {
+                    "type": "tool_result",
+                    "id": "call-9",
+                    "name": "tool",
+                    "output": []
+                }
+                """;
 
         ToolResultBlock block = objectMapper.readValue(json, ToolResultBlock.class);
 
@@ -281,40 +293,32 @@ class ToolResultBlockTest {
     @Test
     void errorFactoryCreatesStructuredErrorState() {
         ToolResultBlock result = ToolResultBlock.error("probe failed");
-        @DisplayName("of() factory with list should not set title")
-        void testOfFactoryWithListDoesNotSetTitle () {
-            ToolResultBlock result = ToolResultBlock.error("probe failed");
-
-            assertEquals(ToolResultState.ERROR, result.getState());
-            TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
-            assertEquals("Error: probe failed", output.getText());
-
-        }
 
         assertEquals(ToolResultState.ERROR, result.getState());
         TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
         assertEquals("Error: probe failed", output.getText());
-        @Test
-        @DisplayName("suspended() should create block with title from ToolUseBlock")
-        void testSuspendedWithTitle () {
-            ToolUseBlock toolUse =
-                    ToolUseBlock.builder()
-                            .id("sid-1")
-                            .name("external_tool")
-                            .title("External Tool")
-                            .input(Map.of("key", "value"))
-                            .build();
-
-            ToolResultBlock suspended = ToolResultBlock.suspended(toolUse);
-
-            assertEquals("sid-1", suspended.getId());
-            assertEquals("external_tool", suspended.getName());
-            assertEquals("External Tool", suspended.getTitle());
-            assertEquals(1, suspended.getOutput().size());
-            assertEquals(
-                    "[Awaiting external execution]",
-                    ((TextBlock) suspended.getOutput().get(0)).getText());
-            assertTrue(suspended.isSuspended());
-        }
-
     }
+
+    @Test
+    @DisplayName("suspended() should create block with title from ToolUseBlock")
+    void testSuspendedWithTitle() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("sid-1")
+                        .name("external_tool")
+                        .title("External Tool")
+                        .input(Map.of("key", "value"))
+                        .build();
+
+        ToolResultBlock suspended = ToolResultBlock.suspended(toolUse);
+
+        assertEquals("sid-1", suspended.getId());
+        assertEquals("external_tool", suspended.getName());
+        assertEquals("External Tool", suspended.getTitle());
+        assertEquals(1, suspended.getOutput().size());
+        assertEquals(
+                "[Awaiting external execution]",
+                ((TextBlock) suspended.getOutput().get(0)).getText());
+        assertTrue(suspended.isSuspended());
+    }
+}

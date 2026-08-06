@@ -79,18 +79,21 @@ public final class RemoteEventCodec {
             dto.setType(RemoteEventType.TOOL_CALL_START);
             dto.setToolCallId(toolStart.getToolCallId());
             dto.setToolName(toolStart.getToolCallName());
+            dto.setToolTitle(toolStart.getToolCallTitle());
             return Optional.of(dto);
         }
         if (event instanceof ToolCallEndEvent toolEnd) {
             dto.setType(RemoteEventType.TOOL_CALL_END);
             dto.setToolCallId(toolEnd.getToolCallId());
             dto.setToolName(toolEnd.getToolCallName());
+            dto.setToolTitle(toolEnd.getToolCallTitle());
             return Optional.of(dto);
         }
         if (event instanceof ToolResultEndEvent toolResult) {
             dto.setType(RemoteEventType.TOOL_RESULT);
             dto.setToolCallId(toolResult.getToolCallId());
             dto.setToolName(toolResult.getToolCallName());
+            dto.setToolTitle(toolResult.getToolCallTitle());
             ToolResultState state = toolResult.getState();
             if (state != null) {
                 dto.setStatus(state.name());
@@ -103,7 +106,10 @@ public final class RemoteEventCodec {
             for (ToolUseBlock block : confirm.getToolCalls()) {
                 pending.add(
                         new RemotePendingConfirm(
-                                block.getId(), block.getName(), toJson(block.getInput())));
+                                block.getId(),
+                                block.getName(),
+                                block.getTitle(),
+                                toJson(block.getInput())));
             }
             dto.setPendingConfirms(pending);
             return Optional.of(dto);
@@ -139,17 +145,24 @@ public final class RemoteEventCodec {
             case TOOL_CALL_START ->
                     Optional.of(
                             new ToolCallStartEvent(
-                                    null, remote.getToolCallId(), remote.getToolName()));
+                                    null,
+                                    remote.getToolCallId(),
+                                    remote.getToolName(),
+                                    remote.getToolTitle()));
             case TOOL_CALL_END ->
                     Optional.of(
                             new ToolCallEndEvent(
-                                    null, remote.getToolCallId(), remote.getToolName()));
+                                    null,
+                                    remote.getToolCallId(),
+                                    remote.getToolName(),
+                                    remote.getToolTitle()));
             case TOOL_RESULT ->
                     Optional.of(
                             new ToolResultEndEvent(
                                     null,
                                     remote.getToolCallId(),
                                     remote.getToolName(),
+                                    remote.getToolTitle(),
                                     parseToolResultState(remote.getStatus())));
             case REQUIRE_CONFIRM -> Optional.of(toRequireConfirm(remote));
             case STATUS -> Optional.empty();
@@ -183,6 +196,7 @@ public final class RemoteEventCodec {
                     ToolUseBlock.builder()
                             .id(p.getToolCallId())
                             .name(p.getToolName())
+                            .title(p.getToolTitle())
                             .input(input)
                             .state(ToolCallState.ASKING)
                             .build());
