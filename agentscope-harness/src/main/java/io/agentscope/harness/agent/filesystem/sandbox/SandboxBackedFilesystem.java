@@ -113,10 +113,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             try {
                 String base64Content = Base64.getEncoder().encodeToString(content);
                 String escapedPath = shellSingleQuote(path);
+                String escapedParent = shellSingleQuote(parentDirectory(path));
                 String cmd =
-                        "mkdir -p $(dirname "
-                                + escapedPath
-                                + ") && "
+                        "mkdir -p "
+                                + escapedParent
+                                + " && "
                                 + "printf '%s' '"
                                 + base64Content
                                 + "' | base64 -d > "

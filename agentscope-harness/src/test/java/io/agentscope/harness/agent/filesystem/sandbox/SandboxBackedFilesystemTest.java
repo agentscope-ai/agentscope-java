@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -111,6 +112,9 @@ class SandboxBackedFilesystemTest {
 
         assertTrue(responses.get(0).isSuccess());
         assertTrue(sandbox.uploaded.isEmpty());
+        assertFalse(sandbox.lastCommand.contains("dirname"));
+        assertFalse(sandbox.lastCommand.contains("$("));
+        assertTrue(sandbox.lastCommand.contains("mkdir -p '/etc'"));
         assertTrue(sandbox.lastCommand.contains("base64 -d > '/etc/other.txt'"));
     }
 

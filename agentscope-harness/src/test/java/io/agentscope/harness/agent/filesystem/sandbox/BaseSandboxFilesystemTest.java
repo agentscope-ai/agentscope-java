@@ -20,16 +20,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -129,6 +132,227 @@ class BaseSandboxFilesystemTest {
                             .orElseThrow();
             assertTrue(dir.isDirectory());
             assertFalse(dir.modifiedAt().isEmpty(), "dir modifiedAt should be populated");
+        }
+
+        @Test
+        void write_usesPrecomputedParentDirectory() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+
+            WriteResult result = filesystem.write(RT, "outputs/session-1/report.txt", "content");
+
+            assertTrue(result.isSuccess());
+            assertFalse(filesystem.lastCommand.contains("dirname"));
+            assertFalse(filesystem.lastCommand.contains("$("));
+            assertTrue(filesystem.lastCommand.contains("mkdir -p 'outputs/session-1'"));
+        }
+
+        @Test
+        void write_usesDotParentForFileInCurrentDirectory() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+
+            WriteResult result = filesystem.write(RT, "report.txt", "content");
+
+            assertTrue(result.isSuccess());
+            assertTrue(filesystem.lastCommand.contains("mkdir -p '.'"));
+        }
+
+        @Test
+        void write_usesRootParentForFileDirectlyUnderRoot() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/report.txt", "content");
+
+            assertTrue(result.isSuccess());
+            assertTrue(filesystem.lastCommand.contains("mkdir -p '/'"));
+        }
+
+        @Test
+        void write_existingFileReturnsActionableError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.executeResponse = new ExecuteResponse("EXISTS", 1, false);
+
+            WriteResult result = filesystem.write(RT, "report.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+        }
+
+        @Test
+        void write_directoryCreationFailureIncludesShellError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.executeResponse =
+                    new ExecuteResponse(
+                            "Syntax error: end of file unexpected (expecting \")\")", 2, false);
+
+            WriteResult result = filesystem.write(RT, "outputs/session-1/report.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("Syntax error"));
+        }
+
+        @Test
+        void write_directoryCreationFailureWithoutOutputUsesBaseError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.executeResponse = new ExecuteResponse(null, 2, false);
+
+            WriteResult result = filesystem.write(RT, "report.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertEquals("Failed to write file 'report.txt'", result.error());
+        }
+
+        @Test
+        void write_emptyUploadResponseReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.uploadNoResponse = true;
+
+            WriteResult result = filesystem.write(RT, "report.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertEquals(
+                    "Failed to write file 'report.txt': upload returned no response",
+                    result.error());
+        }
+
+        @Test
+        void write_uploadFailureReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.uploadError = "permission denied";
+
+            WriteResult result = filesystem.write(RT, "report.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertEquals("Failed to write file 'report.txt': permission denied", result.error());
+        }
+
+        @Test
+        void edit_usesFileTransferWithoutPython() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put("notes.txt", "hello old value".getBytes(StandardCharsets.UTF_8));
+            filesystem.executeResponse =
+                    new ExecuteResponse("sh: 1: python3: not found", 127, false);
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old value", "new value", false);
+
+            assertTrue(result.isSuccess());
+            assertEquals(1, result.occurrences());
+            assertEquals(
+                    "hello new value",
+                    new String(filesystem.files.get("notes.txt"), StandardCharsets.UTF_8));
+            assertFalse(filesystem.executeCalled);
+        }
+
+        @Test
+        void edit_missingFileReturnsNotFound() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+
+            EditResult result = filesystem.edit(RT, "missing.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals("Error: File 'missing.txt' not found", result.error());
+        }
+
+        @Test
+        void edit_emptyDownloadResponseReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.downloadNoResponse = true;
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals(
+                    "Error editing file 'notes.txt': download returned no response",
+                    result.error());
+        }
+
+        @Test
+        void edit_downloadFailureReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.downloadError = "permission denied";
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals("Error editing file 'notes.txt': permission denied", result.error());
+        }
+
+        @Test
+        void edit_nullDownloadedContentReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.downloadNullContent = true;
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals("Error editing file 'notes.txt': null", result.error());
+        }
+
+        @Test
+        void edit_replaceAllPreservesReplacementSemantics() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put("notes.txt", "old and old".getBytes(StandardCharsets.UTF_8));
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", true);
+
+            assertTrue(result.isSuccess());
+            assertEquals(2, result.occurrences());
+            assertEquals(
+                    "new and new",
+                    new String(filesystem.files.get("notes.txt"), StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void edit_normalizesLineEndingsForMatchingAndReplacement() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put(
+                    "notes.txt", "first\r\nold\rline\r\n".getBytes(StandardCharsets.UTF_8));
+
+            EditResult result =
+                    filesystem.edit(RT, "notes.txt", "old\r\nline", "new\rvalue", false);
+
+            assertTrue(result.isSuccess());
+            assertEquals(
+                    "first\nnew\nvalue\n",
+                    new String(filesystem.files.get("notes.txt"), StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAllFails() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put("notes.txt", "old and old".getBytes(StandardCharsets.UTF_8));
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("appears 2 times"));
+            assertEquals(
+                    "old and old",
+                    new String(filesystem.files.get("notes.txt"), StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void edit_uploadFailureReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put("notes.txt", "old value".getBytes(StandardCharsets.UTF_8));
+            filesystem.uploadError = "permission denied";
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals("Error editing file 'notes.txt': permission denied", result.error());
+        }
+
+        @Test
+        void edit_emptyUploadResponseReturnsTransferError() {
+            InMemorySandboxFilesystem filesystem = new InMemorySandboxFilesystem();
+            filesystem.files.put("notes.txt", "old value".getBytes(StandardCharsets.UTF_8));
+            filesystem.uploadNoResponse = true;
+
+            EditResult result = filesystem.edit(RT, "notes.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertEquals(
+                    "Error editing file 'notes.txt': upload returned no response", result.error());
         }
     }
 
@@ -252,6 +476,72 @@ class BaseSandboxFilesystemTest {
         public List<FileDownloadResponse> downloadFiles(
                 RuntimeContext runtimeContext, List<String> paths) {
             return List.of();
+        }
+    }
+
+    private static final class InMemorySandboxFilesystem extends BaseSandboxFilesystem {
+
+        final Map<String, byte[]> files = new HashMap<>();
+        ExecuteResponse executeResponse = new ExecuteResponse("", 0, false);
+        String uploadError;
+        String downloadError;
+        String lastCommand;
+        boolean executeCalled;
+        boolean uploadNoResponse;
+        boolean downloadNoResponse;
+        boolean downloadNullContent;
+
+        @Override
+        public String id() {
+            return "in-memory";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            executeCalled = true;
+            lastCommand = command;
+            return executeResponse;
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> uploads) {
+            if (uploadNoResponse) {
+                return List.of();
+            }
+            if (uploadError != null) {
+                return uploads.stream()
+                        .map(upload -> FileUploadResponse.fail(upload.getKey(), uploadError))
+                        .toList();
+            }
+            for (Map.Entry<String, byte[]> upload : uploads) {
+                files.put(upload.getKey(), upload.getValue());
+            }
+            return uploads.stream()
+                    .map(upload -> FileUploadResponse.success(upload.getKey()))
+                    .toList();
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            if (downloadNoResponse) {
+                return List.of();
+            }
+            return paths.stream()
+                    .map(
+                            path ->
+                                    downloadError != null
+                                            ? FileDownloadResponse.fail(path, downloadError)
+                                            : downloadNullContent
+                                                    ? FileDownloadResponse.success(path, null)
+                                                    : files.containsKey(path)
+                                                            ? FileDownloadResponse.success(
+                                                                    path, files.get(path))
+                                                            : FileDownloadResponse.fail(
+                                                                    path, "file_not_found"))
+                    .toList();
         }
     }
 

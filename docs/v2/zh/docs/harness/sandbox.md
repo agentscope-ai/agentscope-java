@@ -202,15 +202,14 @@ SandboxContext callCtx = SandboxContext.builder()
 | 文本/查找 | `sed` `grep`（支持 `-rHnF` `--include`）`find` | `read_file` 分页、`grep_files`、`glob_files` |
 | 元数据 | GNU 风格 `stat -c`（非 BSD `stat -f`） | `list_files`、`glob_files` |
 | 归档/编码 | `tar`、`base64`（编码 + `-d` 解码） | 快照持久化/恢复、文件上传下载 |
-| 解释器 | `python3` | `edit_file`（精确字符串替换） |
 | 文件系统 | 工作区根目录（默认 `/workspace`）可写 | 全部 |
 
-以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足（`python3` 可能需额外安装）；`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像**不满足**。
+以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足；`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像**不满足**。
 
 快速自检（在镜像内执行，全部成功即基本达标）：
 
 ```bash
-sh -c 'echo ok' && python3 --version && tar --version \
+sh -c 'echo ok' && tar --version \
   && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
 ```
 
