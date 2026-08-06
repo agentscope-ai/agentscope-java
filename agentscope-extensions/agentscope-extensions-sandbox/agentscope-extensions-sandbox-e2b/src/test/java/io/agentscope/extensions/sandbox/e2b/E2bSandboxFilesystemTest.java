@@ -30,6 +30,8 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map;
@@ -112,7 +114,12 @@ class E2bSandboxFilesystemTest {
 
     @Test
     void uploadFiles_fallsBackToSuperWhenNotE2bSandbox() throws Exception {
+        SandboxState state = mock(SandboxState.class);
+        WorkspaceSpec workspaceSpec = new WorkspaceSpec();
+        workspaceSpec.setRoot("/tmp");
+        when(state.getWorkspaceSpec()).thenReturn(workspaceSpec);
         Sandbox sandbox = mock(Sandbox.class);
+        when(sandbox.getState()).thenReturn(state);
         when(sandbox.exec(any(), any(), any())).thenReturn(new ExecResult(0, "", "", false));
         E2bSandboxFilesystem fs = new E2bSandboxFilesystem();
         fs.setSandbox(sandbox);
