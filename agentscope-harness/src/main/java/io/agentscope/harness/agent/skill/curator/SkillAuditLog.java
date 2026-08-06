@@ -206,25 +206,4 @@ public class SkillAuditLog {
                 null,
                 extra);
     }
-
-    /** Convenience builder for {@code curator.run}. */
-    public static Entry curatorEntry(SkillCurator.CuratorRunReport report, String mode) {
-        Map<String, Object> extra = new LinkedHashMap<>();
-        extra.put("transitions", report.transitions().toString());
-        extra.put("duration_ms", report.durationMs());
-        if (report.dryRunReportPath() != null) {
-            extra.put("report_path", report.dryRunReportPath());
-        }
-        return new Entry(
-                report.ranAt(),
-                "curator",
-                "curator.run",
-                null,
-                mode,
-                null,
-                null,
-                null,
-                null,
-                extra);
-    }
 }

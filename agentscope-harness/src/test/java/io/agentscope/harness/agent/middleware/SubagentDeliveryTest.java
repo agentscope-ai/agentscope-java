@@ -94,12 +94,6 @@ class SubagentDeliveryTest {
         }
 
         @Override
-        public void removeTask(RuntimeContext rc, String sessionId, String taskId) {}
-
-        @Override
-        public void clear() {}
-
-        @Override
         public Collection<BackgroundTask> listTasks(
                 RuntimeContext rc, String sessionId, TaskStatus filter) {
             return List.of();

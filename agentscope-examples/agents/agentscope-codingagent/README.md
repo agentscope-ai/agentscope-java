@@ -97,8 +97,8 @@ created on first use and reused across turns.
             GitHub API · target repo
 ```
 
-[claw]: ../agentscope-claw/
-[builder]: ../agentscope-builder/
+[claw]: ../agentscope-paw/
+[builder]: ../../../agentscope-service/
 
 ---
 

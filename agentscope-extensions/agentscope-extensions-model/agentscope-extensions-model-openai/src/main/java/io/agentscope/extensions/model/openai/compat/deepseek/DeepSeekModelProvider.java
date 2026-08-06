@@ -15,32 +15,25 @@
  */
 package io.agentscope.extensions.model.openai.compat.deepseek;
 
-import io.agentscope.core.formatter.Formatter;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.applyAdvancedOptions;
+
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
-import io.agentscope.core.model.transport.HttpTransport;
-import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
-import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
-import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
-import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /** DeepSeek provider registered through {@link java.util.ServiceLoader}. */
 public final class DeepSeekModelProvider implements ModelProvider {
 
-    public static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
-
     private static final String PREFIX = "deepseek:";
     private static final Pattern MODEL_ID = Pattern.compile("deepseek:.+");
-    private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
-    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
-    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
-            "nativeStructuredOutputWithTools";
+    public static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
 
     @Override
     public String providerId() {
@@ -62,75 +55,33 @@ public final class DeepSeekModelProvider implements ModelProvider {
         if (!supports(modelId)) {
             throw new IllegalArgumentException("Unsupported DeepSeek model id: " + modelId);
         }
-        String modelName = modelId.substring(PREFIX.length());
+
         String apiKey = firstNonBlank(context.getApiKey(), System.getenv("DEEPSEEK_API_KEY"));
         if (apiKey == null) {
             throw new IllegalStateException(
                     "Environment variable DEEPSEEK_API_KEY is required to auto-create model: "
                             + modelId);
         }
+        String modelName = trimToNull(modelId.substring(PREFIX.length()));
+        String baseUrl = firstNonBlank(context.getBaseUrl(), DEFAULT_BASE_URL);
+        String endpointPath = trimToNull(context.getEndpointPath());
+        boolean stream = context.getStream() != null ? context.getStream() : true;
 
         OpenAIChatModel.Builder builder =
-                OpenAIChatModel.builder()
-                        .apiKey(apiKey)
-                        .modelName(modelName)
-                        .baseUrl(DEFAULT_BASE_URL)
+                OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
+                        .baseUrl(baseUrl)
+                        .endpointPath(endpointPath)
                         .formatter(new DeepSeekFormatter())
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.DEEPSEEK))
                         .nativeStructuredOutput(false)
-                        .nativeStructuredOutputWithTools(false)
-                        .stream(context.getStream() != null ? context.getStream() : true);
+                        .contextWindowSize(
+                                ModelContextWindows.lookup(
+                                        modelName, ModelContextWindows.DEEPSEEK));
 
-        String baseUrl = trimToNull(context.getBaseUrl());
-        if (baseUrl != null) {
-            builder.baseUrl(baseUrl);
-        }
-        String endpointPath = trimToNull(context.getEndpointPath());
-        if (endpointPath != null) {
-            builder.endpointPath(endpointPath);
-        }
-        applyAdvancedOptions(builder, context);
-        return builder.build();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static void applyAdvancedOptions(
-            OpenAIChatModel.Builder builder, ModelCreationContext context) {
         GenerateOptions userOptions = context.component(GenerateOptions.class);
         GenerateOptions deepSeekDefaults = deepSeekDefaultOptions(context);
-        GenerateOptions mergedOptions = GenerateOptions.mergeOptions(userOptions, deepSeekDefaults);
-        if (mergedOptions != null) {
-            builder.generateOptions(mergedOptions);
-        }
-
-        HttpTransport httpTransport = context.component(HttpTransport.class);
-        if (httpTransport != null) {
-            builder.httpTransport(httpTransport);
-        }
-        ProxyConfig proxyConfig = context.component(ProxyConfig.class);
-        if (proxyConfig != null) {
-            builder.proxy(proxyConfig);
-        }
-        Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter =
-                (Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest>)
-                        findAssignableComponent(context, Formatter.class);
-        if (formatter != null) {
-            builder.formatter(formatter);
-        }
-        Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
-        if (contextWindowSize != null) {
-            builder.contextWindowSize(contextWindowSize);
-        }
-        Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
-        if (nativeStructuredOutput != null) {
-            builder.nativeStructuredOutput(nativeStructuredOutput);
-        }
-        Boolean nativeStructuredOutputWithTools =
-                booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
-        if (nativeStructuredOutputWithTools != null) {
-            builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
-        }
+        applyAdvancedOptions(
+                builder, context, GenerateOptions.mergeOptions(userOptions, deepSeekDefaults));
+        return builder.build();
     }
 
     private static GenerateOptions deepSeekDefaultOptions(ModelCreationContext context) {
@@ -143,52 +94,5 @@ public final class DeepSeekModelProvider implements ModelProvider {
                 .additionalBodyParam(
                         "thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"))
                 .build();
-    }
-
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    private static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
     }
 }

@@ -1,5 +1,6 @@
 server:
-  port: ${CLAW_PORT:8080}
+  # Default 8090 so paw coexists with agentscope-service gateway (:8080).
+  port: ${CLAW_PORT:8090}
 
 spring:
   application:
@@ -25,6 +26,35 @@ spring:
 # --------------------------------------------------------------------------
 claw:
   home: ${CLAW_HOME:#{systemProperties['user.home']}/.agentscope/claw}
+
+  # ---- aistio BYO (standalone HTTP self-register; no Kubernetes) ----
+  # Flip enabled to true when running beside agentscope-service (scripts/dev-up.sh)
+  # so Operate can discover this agent. Defaults match local-dev stack:
+  #   control :8081, shared internal token, contract HTTP :18090.
+  #
+  # IMPORTANT for transcript testing: set agent-name to your catalog main agent id
+  # (usually "main" or "default" in agentscope.json). Segment keys are
+  #   {tenant}/{agentId}/{sessionId}/events/...
+  # and aistiod looks up the same path using the registered agent name.
+  aistio:
+    enabled: ${CLAW_AISTIO_ENABLED:false}
+    control-http: ${AISTIO_CONTROL_HTTP:http://localhost:8081}
+    internal-token: ${BUILDER_INTERNAL_TOKEN:local-dev-internal-token-at-least-32chars}
+    agent-name: ${CLAW_AISTIO_AGENT_NAME:default}
+    namespace: ${CLAW_AISTIO_NAMESPACE:default}
+    contract-port: ${CLAW_AISTIO_CONTRACT_PORT:18090}
+    enable-events: true
+
+  # ---- Session transcript (BYO Operate history) ----
+  # Harness writes immutable JSONL segments here. Point aistiod at the same directory:
+  #   AISTIO_TRANSCRIPT_FS_ROOT=$CLAW_HOME/transcripts
+  # so Operate can read messages after the DP process exits.
+  transcript:
+    enabled: ${CLAW_TRANSCRIPT_ENABLED:true}
+    # Empty → ${claw.home}/transcripts
+    root: ${CLAW_TRANSCRIPT_ROOT:}
+    # Must match claw.aistio.namespace (tenant segment in object keys).
+    tenant: ${CLAW_TRANSCRIPT_TENANT:${claw.aistio.namespace:default}}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

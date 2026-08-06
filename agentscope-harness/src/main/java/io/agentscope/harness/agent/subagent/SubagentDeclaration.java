@@ -101,6 +101,15 @@ public final class SubagentDeclaration {
 
     private final Map<String, String> headers;
 
+    /**
+     * Whether remote subagent events should be streamed back into the parent's event stream.
+     * {@code null} defaults to {@code true}; see {@link #isRemoteStreaming()}.
+     */
+    private final Boolean remoteStreaming;
+
+    /** Policy for resolving remote HITL confirmations. Defaults to {@link RemoteAskPolicy#DENY}. */
+    private final RemoteAskPolicy remoteAskPolicy;
+
     private SubagentDeclaration(Builder b) {
         this.name = b.name;
         this.description = b.description;
@@ -121,6 +130,8 @@ public final class SubagentDeclaration {
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
+        this.remoteStreaming = b.remoteStreaming;
+        this.remoteAskPolicy = b.remoteAskPolicy != null ? b.remoteAskPolicy : RemoteAskPolicy.DENY;
     }
 
     /** Factory method for a new builder. */
@@ -300,6 +311,24 @@ public final class SubagentDeclaration {
         return headers;
     }
 
+    /**
+     * Whether remote subagent events (text deltas, tool calls, confirmations) should be streamed
+     * back into the parent's live event stream when one is present. Defaults to {@code true}
+     * when unset.
+     */
+    public boolean isRemoteStreaming() {
+        return remoteStreaming == null || remoteStreaming;
+    }
+
+    /**
+     * Policy for resolving remote HITL (tool-confirmation) requests. Defaults to
+     * {@link RemoteAskPolicy#DENY}, which auto-denies pending confirmations rather than leaving
+     * the remote task blocked indefinitely.
+     */
+    public RemoteAskPolicy getRemoteAskPolicy() {
+        return remoteAskPolicy;
+    }
+
     /** Returns {@code true} when this declaration points at an external definition workspace. */
     public boolean hasDefinitionWorkspace() {
         return workspacePath != null;
@@ -330,6 +359,8 @@ public final class SubagentDeclaration {
         private List<String> skills;
         private String url;
         private Map<String, String> headers;
+        private Boolean remoteStreaming;
+        private RemoteAskPolicy remoteAskPolicy = RemoteAskPolicy.DENY;
 
         private Builder() {}
 
@@ -516,6 +547,25 @@ public final class SubagentDeclaration {
          */
         public Builder headers(Map<String, String> headers) {
             this.headers = headers;
+            return this;
+        }
+
+        /**
+         * Whether remote subagent events should be streamed back into the parent's event stream.
+         * {@code null} (default) is treated as {@code true}. Only relevant when {@link #url(String)}
+         * is set.
+         */
+        public Builder remoteStreaming(Boolean remoteStreaming) {
+            this.remoteStreaming = remoteStreaming;
+            return this;
+        }
+
+        /**
+         * Policy for resolving remote HITL confirmations. {@code null} is treated as
+         * {@link RemoteAskPolicy#DENY}. Only relevant when {@link #url(String)} is set.
+         */
+        public Builder remoteAskPolicy(RemoteAskPolicy remoteAskPolicy) {
+            this.remoteAskPolicy = remoteAskPolicy != null ? remoteAskPolicy : RemoteAskPolicy.DENY;
             return this;
         }
 

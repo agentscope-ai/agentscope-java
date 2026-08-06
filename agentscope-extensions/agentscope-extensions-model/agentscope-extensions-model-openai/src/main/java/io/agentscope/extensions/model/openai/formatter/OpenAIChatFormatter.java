@@ -250,7 +250,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
 
     /**
      * Apply additional body parameters from GenerateOptions to OpenAI request.
-     * This handles parameters like reasoning_effort that are set via additionalBodyParam().
+     * Unknown parameters are passed through to extraParams.
      */
     protected void applyAdditionalBodyParams(OpenAIRequest request, GenerateOptions opts) {
         if (opts == null) return;
@@ -260,23 +260,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                 String key = entry.getKey();
                 Object value = entry.getValue();
 
-                // Map common parameter names to OpenAIRequest setters
                 switch (key) {
-                    case "reasoning_effort":
-                        if (value instanceof String) {
-                            request.setReasoningEffort((String) value);
-                        }
-                        break;
-                    case "include_reasoning":
-                        if (value instanceof Boolean) {
-                            request.setIncludeReasoning((Boolean) value);
-                        }
-                        break;
-                    case "thinking_budget":
-                        if (value instanceof Number number) {
-                            request.setThinkingBudget(number.intValue());
-                        }
-                        break;
                     case "stop":
                         if (value instanceof List) {
                             @SuppressWarnings("unchecked")
