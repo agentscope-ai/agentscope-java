@@ -187,6 +187,7 @@ sequenceDiagram
 | `getCreatedAt()` | `String` | ISO 8601 时间戳 |
 | `getType()` | `AgentEventType` | 事件类型枚举 |
 | `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；子 Agent 事件为斜杠分隔的路径（如 `"main/researcher"`），用于区分父子 Agent 事件 |
+| `getMetadata()` | `Map<String, Object>` | 可选键值元数据。远程子 agent 转发时会写入 `taskId`（`AgentEvent.METADATA_TASK_ID`），对应该 harness / Agent Protocol 任务 id |
 
 事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。
 
@@ -296,7 +297,13 @@ sequenceDiagram
 
     **RequireExternalExecutionEvent** — 智能体暂停等待外部执行。
 
-    **UserConfirmResultEvent** — 用户提供确认结果（输入事件）。携带 `List<ConfirmResult>`。
+    **UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`。
+     `replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同。
+
+    | 方法 | 类型 | 描述 |
+    |------|------|------|
+    | `getReplyId()` | `String` | 关联的 `RequireUserConfirmEvent` 的回复 ID |
+    | `getConfirmResults()` | `List<ConfirmResult>` | 本次恢复接受的确认结果 |
 
     **ExternalExecutionResultEvent** — 外部系统提供执行结果（输入事件）。携带 `List<ToolResultBlock>`。
 

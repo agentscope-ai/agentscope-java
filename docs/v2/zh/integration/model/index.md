@@ -5,6 +5,8 @@
 - [OpenAI](openai.md)
 - [DeepSeek](deepseek.md)
 - [GLM](glm.md)
+- [Kimi](kimi.md)
+- [MiniMax](minimax.md)
 - [DashScope](dashscope.md)
 - [Gemini](gemini.md)
 - [Anthropic](anthropic.md)
