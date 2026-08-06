@@ -195,6 +195,42 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("Should reject fine-grained streaming for legacy runners")
+    void testRejectUnsupportedFineGrainedStream() {
+        // Given
+        AgentRunner legacyRunner =
+                new AgentRunner() {
+                    @Override
+                    public String getAgentName() {
+                        return "legacy";
+                    }
+
+                    @Override
+                    public String getAgentDescription() {
+                        return "legacy runner";
+                    }
+
+                    @Override
+                    public Flux<Event> stream(
+                            List<Msg> requestMessages, AgentRequestOptions options) {
+                        return Flux.empty();
+                    }
+
+                    @Override
+                    public void stop(String taskId) {}
+                };
+
+        // When & Then
+        UnsupportedOperationException exception =
+                assertThrows(
+                        UnsupportedOperationException.class,
+                        () -> legacyRunner.streamEvents(List.of(), requestOptions).blockLast());
+        assertEquals(
+                "This AgentRunner does not support fine-grained AgentEvent streaming",
+                exception.getMessage());
+    }
+
+    @Test
     @DisplayName("Should throw exception when agent already exists for task ID")
     void testThrowExceptionWhenAgentAlreadyExists() {
         // Given
