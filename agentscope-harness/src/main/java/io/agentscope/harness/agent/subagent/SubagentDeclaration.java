@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.subagent;
 
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -110,6 +112,12 @@ public final class SubagentDeclaration {
     /** Policy for resolving remote HITL confirmations. Defaults to {@link RemoteAskPolicy#DENY}. */
     private final RemoteAskPolicy remoteAskPolicy;
 
+    /**
+     * Static attributes sent as {@code context.attributes} on every remote submission. Never empty
+     * when non-null.
+     */
+    private final Map<String, Object> remoteContextAttributes;
+
     private SubagentDeclaration(Builder b) {
         this.name = b.name;
         this.description = b.description;
@@ -132,6 +140,11 @@ public final class SubagentDeclaration {
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
         this.remoteStreaming = b.remoteStreaming;
         this.remoteAskPolicy = b.remoteAskPolicy != null ? b.remoteAskPolicy : RemoteAskPolicy.DENY;
+        this.remoteContextAttributes =
+                b.remoteContextAttributes != null && !b.remoteContextAttributes.isEmpty()
+                        ? Collections.unmodifiableMap(
+                                new LinkedHashMap<>(b.remoteContextAttributes))
+                        : null;
     }
 
     /** Factory method for a new builder. */
@@ -329,6 +342,15 @@ public final class SubagentDeclaration {
         return remoteAskPolicy;
     }
 
+    /**
+     * Static attributes sent as {@code context.attributes} with every remote submission, for the
+     * remote server to route on or expose to its agent. {@code null} when unset; never empty
+     * otherwise.
+     */
+    public Map<String, Object> getRemoteContextAttributes() {
+        return remoteContextAttributes;
+    }
+
     /** Returns {@code true} when this declaration points at an external definition workspace. */
     public boolean hasDefinitionWorkspace() {
         return workspacePath != null;
@@ -361,6 +383,7 @@ public final class SubagentDeclaration {
         private Map<String, String> headers;
         private Boolean remoteStreaming;
         private RemoteAskPolicy remoteAskPolicy = RemoteAskPolicy.DENY;
+        private Map<String, Object> remoteContextAttributes;
 
         private Builder() {}
 
@@ -566,6 +589,17 @@ public final class SubagentDeclaration {
          */
         public Builder remoteAskPolicy(RemoteAskPolicy remoteAskPolicy) {
             this.remoteAskPolicy = remoteAskPolicy != null ? remoteAskPolicy : RemoteAskPolicy.DENY;
+            return this;
+        }
+
+        /**
+         * Static attributes sent as {@code context.attributes} with every submission to this
+         * remote subagent (e.g. tenant or deployment tags). Values must be JSON-serializable. Per
+         * call attributes set on the parent's {@code RuntimeContext} are merged on top. Only
+         * relevant when {@link #url(String)} is set.
+         */
+        public Builder remoteContextAttributes(Map<String, Object> remoteContextAttributes) {
+            this.remoteContextAttributes = remoteContextAttributes;
             return this;
         }
 

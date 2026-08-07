@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.permission.PermissionBehavior;
@@ -115,5 +116,39 @@ class AgentSpawnToolRemoteHelpersTest {
         assertEquals("rm*", rules.get(0).get("rule_content"));
         assertEquals(PermissionBehavior.DENY.name(), rules.get(0).get("behavior"));
         assertEquals("parent-policy", rules.get(0).get("source"));
+    }
+
+    @Test
+    void collectRemoteContextAttributes_mergesPerCallOverDeclared() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("worker")
+                        .description("d")
+                        .url("http://remote:8080")
+                        .remoteContextAttributes(Map.of("tenant", "default", "region", "cn"))
+                        .build();
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .put(
+                                AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES,
+                                Map.of("tenant", "acme", "ticket_id", "INC-1"))
+                        .build();
+
+        Map<String, Object> merged = AgentSpawnTool.collectRemoteContextAttributes(ctx, decl);
+
+        assertEquals("acme", merged.get("tenant"));
+        assertEquals("cn", merged.get("region"));
+        assertEquals("INC-1", merged.get("ticket_id"));
+    }
+
+    @Test
+    void collectRemoteContextAttributes_isEmptyWithoutAnySource() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder().name("worker").description("d").build();
+
+        assertTrue(AgentSpawnTool.collectRemoteContextAttributes(null, decl).isEmpty());
+        assertTrue(
+                AgentSpawnTool.collectRemoteContextAttributes(RuntimeContext.empty(), null)
+                        .isEmpty());
     }
 }

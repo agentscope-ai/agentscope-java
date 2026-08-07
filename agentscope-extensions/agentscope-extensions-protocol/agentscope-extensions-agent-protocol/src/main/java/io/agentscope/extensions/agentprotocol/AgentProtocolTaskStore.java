@@ -59,6 +59,9 @@ import reactor.core.publisher.Flux;
  * the submission context and can therefore route per task. For concurrent task execution, return a
  * new instance per call (e.g. a Spring prototype-scoped bean); a shared instance requires the agent
  * to be configured with {@code checkRunning(false)}.
+ *
+ * <p>Caller-supplied {@code context.attributes} reach the run through its {@link RuntimeContext};
+ * see {@link RuntimeContextCustomizer} for controlling how.
  */
 public final class AgentProtocolTaskStore {
 
@@ -72,6 +75,7 @@ public final class AgentProtocolTaskStore {
     private final WorkspaceManager workspaceManager;
     private final AgentProtocolTaskEventBus eventBus;
     private final AgentProtocolProperties properties;
+    private final List<RuntimeContextCustomizer> runtimeContextCustomizers;
     private final ExecutorService executor =
             Executors.newCachedThreadPool(
                     r -> {
@@ -89,10 +93,23 @@ public final class AgentProtocolTaskStore {
             WorkspaceManager workspaceManager,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties) {
+        this(agentFactory, workspaceManager, eventBus, properties, List.of());
+    }
+
+    public AgentProtocolTaskStore(
+            AgentFactory agentFactory,
+            WorkspaceManager workspaceManager,
+            AgentProtocolTaskEventBus eventBus,
+            AgentProtocolProperties properties,
+            List<RuntimeContextCustomizer> runtimeContextCustomizers) {
         this.agentFactory = Objects.requireNonNull(agentFactory, "agentFactory");
         this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
         this.eventBus = eventBus != null ? eventBus : new AgentProtocolTaskEventBus();
         this.properties = properties != null ? properties : new AgentProtocolProperties();
+        this.runtimeContextCustomizers =
+                runtimeContextCustomizers == null
+                        ? List.of()
+                        : List.copyOf(runtimeContextCustomizers);
     }
 
     public AgentProtocolTaskStore(AgentFactory agentFactory, WorkspaceManager workspaceManager) {
@@ -207,11 +224,16 @@ public final class AgentProtocolTaskStore {
             List<ConfirmResult> confirmResults) {
         try {
             updateRunning(taskId, agentId);
-            RuntimeContext.Builder ctxBuilder = RuntimeContext.builder().sessionId(taskId);
-            if (submitCtx.userId() != null) {
-                ctxBuilder.userId(submitCtx.userId());
-            }
-            RuntimeContext ctx = ctxBuilder.build();
+            AgentRequest request =
+                    new AgentRequest(
+                            taskId,
+                            agentId,
+                            input,
+                            submitCtx.userId(),
+                            submitCtx.parentSessionId(),
+                            confirmResults != null,
+                            submitCtx.raw());
+            RuntimeContext ctx = buildRuntimeContext(request);
 
             Msg.Builder msgBuilder =
                     Msg.builder().role(MsgRole.USER).textContent(input != null ? input : "");
@@ -222,15 +244,6 @@ public final class AgentProtocolTaskStore {
             }
             Msg msg = msgBuilder.build();
 
-            AgentRequest request =
-                    new AgentRequest(
-                            taskId,
-                            agentId,
-                            input,
-                            submitCtx.userId(),
-                            submitCtx.parentSessionId(),
-                            confirmResults != null,
-                            submitCtx.raw());
             HarnessAgent agent = agentFactory.create(request);
             if (agent == null) {
                 throw new IllegalStateException(
@@ -296,6 +309,30 @@ public final class AgentProtocolTaskStore {
             clearSubmitContext(taskId);
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Builds the agent's runtime context for one run: session/user identity, the caller's {@code
+     * context.attributes} under {@link AgentProtocolConstants#RUNTIME_CONTEXT_ATTRIBUTES_KEY}, and
+     * whatever the registered {@link RuntimeContextCustomizer}s add on top.
+     *
+     * <p>Attributes stay behind a single namespaced key by default so that no caller-supplied name
+     * can shadow a key the framework reads (e.g. {@code agentId}); promoting individual attributes
+     * to their own keys is an explicit opt-in through a customizer.
+     */
+    private RuntimeContext buildRuntimeContext(AgentRequest request) {
+        RuntimeContext.Builder builder = RuntimeContext.builder().sessionId(request.taskId());
+        if (request.userId() != null) {
+            builder.userId(request.userId());
+        }
+        Map<String, Object> attributes = request.attributes();
+        if (!attributes.isEmpty()) {
+            builder.put(AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY, attributes);
+        }
+        for (RuntimeContextCustomizer customizer : runtimeContextCustomizers) {
+            customizer.customize(request, builder);
+        }
+        return builder.build();
     }
 
     private void publishStatus(String taskId, String agentId, String status, String error) {

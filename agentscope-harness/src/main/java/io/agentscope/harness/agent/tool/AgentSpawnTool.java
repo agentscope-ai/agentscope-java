@@ -136,6 +136,25 @@ public class AgentSpawnTool {
      */
     public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
 
+    /**
+     * {@link RuntimeContext} string key holding a {@code Map<String, Object>} of caller-defined
+     * attributes to send with every remote subagent submission of the current call, as
+     * {@code context.attributes}:
+     *
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .sessionId("s-1")
+     *     .put(AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES, Map.of("tenant", "acme"))
+     *     .build();
+     * }</pre>
+     *
+     * <p>Merged over the subagent's static {@link
+     * SubagentDeclaration#getRemoteContextAttributes()}, so a per-call value wins on conflict.
+     * Values must be JSON-serializable.
+     */
+    public static final String CTX_REMOTE_CONTEXT_ATTRIBUTES =
+            "agentscope.subagent.remote_context_attributes";
+
     private static final String BG_RESULT_TEMPLATE =
             """
             status: accepted
@@ -1096,7 +1115,7 @@ public class AgentSpawnTool {
 
     /**
      * Builds submission metadata for a remote task (streaming preference, parent identity, denied
-     * permission rules).
+     * permission rules, caller-defined attributes).
      */
     private RemoteSubmitContext buildRemoteSubmitContext(
             RuntimeContext runtimeContext, AgentState parentState, SubagentDeclaration decl) {
@@ -1107,7 +1126,30 @@ public class AgentSpawnTool {
                         stream)
                 .detail(stream ? "full" : "status")
                 .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
+                .attributes(collectRemoteContextAttributes(runtimeContext, decl))
                 .build();
+    }
+
+    /**
+     * Merges the subagent's declared static attributes with the per-call ones from {@link
+     * #CTX_REMOTE_CONTEXT_ATTRIBUTES}; per-call entries win on conflict.
+     */
+    static Map<String, Object> collectRemoteContextAttributes(
+            RuntimeContext runtimeContext, SubagentDeclaration decl) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (decl != null && decl.getRemoteContextAttributes() != null) {
+            merged.putAll(decl.getRemoteContextAttributes());
+        }
+        Object perCall =
+                runtimeContext != null ? runtimeContext.get(CTX_REMOTE_CONTEXT_ATTRIBUTES) : null;
+        if (perCall instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    merged.put(String.valueOf(e.getKey()), e.getValue());
+                }
+            }
+        }
+        return merged;
     }
 
     /**
