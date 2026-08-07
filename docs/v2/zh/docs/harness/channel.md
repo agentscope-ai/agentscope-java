@@ -48,12 +48,48 @@ Msg otherUser = chat.send(SendOptions.userId("user-2"), "你好").block();
 | `SendOptions.userId("user-1")` | 每个用户一个 session（最常用） |
 | `SendOptions.of("user-1", "session-a")` | 指定 session——同一用户多个对话 |
 | `SendOptions.userId("user-1").withAgentId("support")` | 在多 agent 场景下路由到指定 agent |
+| `SendOptions.userId("user-1").withAttribute("tenant", "acme")` | 给本轮 agent 调用附带字符串/类型化属性 |
+| `SendOptions.userId("user-1").withRuntimeContext(rtc)` | 携带完整 `RuntimeContext`（例如 force-sync 开关） |
 
 ```java
 // 同一用户，两个独立对话
 chat.send(SendOptions.of("user-1", "session-a"), "话题 A").block();
 chat.send(SendOptions.of("user-1", "session-b"), "话题 B").block();
+
+// 把应用侧上下文传入本轮 agent 调用
+chat.send(
+        SendOptions.userId("user-1")
+                .withAttribute("tenant", "acme")
+                .withRuntimeContext(
+                        RuntimeContext.builder()
+                                .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                                .build()),
+        "排查这张工单")
+        .block();
 ```
+
+### RuntimeContext 合并
+
+Channel 路径会在 Gateway 内构建 `RuntimeContext`。调用方可通过 `SendOptions` / `InboundMessage.runtimeContext()` / `ChannelRuntimeContextResolver` 提供 **caller base**。合并顺序：
+
+1. 以 caller 上下文为起点（可为空）
+2. 若配置了 `ChannelRuntimeContextResolver` 且返回非 null，则 **替换** caller base
+3. Gateway 再覆盖身份字段——`sessionId`（`gw-…`）、`userId`、`msgContext`、`gateKey`、`outboundAddress`——冲突时以 Gateway 为准
+
+通过 `GatewayBootstrap` 接线：
+
+```java
+GatewayBootstrap gw = GatewayBootstrap.builder()
+        .agent("main", b -> b.name("assistant").model(model))
+        .runtimeContextResolver(req ->
+                RuntimeContext.builder(req.callerContext())
+                        .put("tenant", resolveTenant(req))
+                        .build())
+        .build();
+ChatUiChannel chat = gw.chatUiChannel();
+```
+
+也可以拿到 gateway 后调用 `gateway.setRuntimeContextResolver(...)`。**不要**把业务属性写进 `MsgContext.extra`——该 map 参与 session key 计算。
 
 ## 流式事件 + SSE
 

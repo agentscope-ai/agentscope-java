@@ -149,7 +149,13 @@ public final class ChatUiChannel implements Channel {
     public Mono<Msg> dispatch(InboundMessage message) {
         Objects.requireNonNull(message, "message");
         RouteResult route = router.resolveRoute(config, message);
-        return resolveGateway().run(route.context(), message.messages(), route.outboundAddress());
+        return resolveGateway()
+                .run(
+                        route.context(),
+                        message.messages(),
+                        route.outboundAddress(),
+                        message.runtimeContext(),
+                        message);
     }
 
     /**
@@ -242,7 +248,12 @@ public final class ChatUiChannel implements Channel {
         Objects.requireNonNull(message, "message");
         RouteResult route = router.resolveRoute(config, message);
         return resolveGateway()
-                .runStream(route.context(), message.messages(), route.outboundAddress());
+                .runStream(
+                        route.context(),
+                        message.messages(),
+                        route.outboundAddress(),
+                        message.runtimeContext(),
+                        message);
     }
 
     /** Streaming variant of {@link #send(String)}. Returns fine-grained {@link AgentEvent}s. */
@@ -289,13 +300,13 @@ public final class ChatUiChannel implements Channel {
     private Mono<Msg> dispatchWithOptions(SendOptions options, List<Msg> messages) {
         MsgContext ctx = buildContextFromOptions(options);
         OutboundAddress outbound = buildOutboundFromOptions(options);
-        return resolveGateway().run(ctx, messages, outbound);
+        return resolveGateway().run(ctx, messages, outbound, options.runtimeContext());
     }
 
     private Flux<AgentEvent> dispatchStreamWithOptions(SendOptions options, List<Msg> messages) {
         MsgContext ctx = buildContextFromOptions(options);
         OutboundAddress outbound = buildOutboundFromOptions(options);
-        return resolveGateway().runStream(ctx, messages, outbound);
+        return resolveGateway().runStream(ctx, messages, outbound, options.runtimeContext());
     }
 
     private MsgContext buildContextFromOptions(SendOptions options) {

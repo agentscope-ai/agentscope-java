@@ -79,6 +79,16 @@ public class ChannelSendExample {
         System.out.println(
                 "Session A: " + (sessionA != null ? sessionA.getTextContent() : "(null)"));
 
+        // Attach application context (attributes / force-sync) via SendOptions.
+        Msg withCtx =
+                chat.send(
+                                SendOptions.userId("user-1")
+                                        .withAttribute("tenant", "demo"),
+                                "Reply with a short hello.")
+                        .block();
+        System.out.println(
+                "With context: " + (withCtx != null ? withCtx.getTextContent() : "(null)"));
+
         Msg sessionB = chat.send(SendOptions.of("user-1", "session-b"), "Topic B").block();
         System.out.println(
                 "Session B: " + (sessionB != null ? sessionB.getTextContent() : "(null)"));
