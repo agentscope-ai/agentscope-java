@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -24,11 +25,19 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,30 +120,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             }
 
             try {
-                String base64Content = Base64.getEncoder().encodeToString(content);
-                String escapedPath = shellSingleQuote(path);
-                String cmd =
-                        "mkdir -p $(dirname "
-                                + escapedPath
-                                + ") && "
-                                + "printf '%s' '"
-                                + base64Content
-                                + "' | base64 -d > "
-                                + escapedPath;
-
-                ExecResult result = active.exec(runtimeContext, cmd, null);
-                if (result.ok()) {
-                    results.add(FileUploadResponse.success(path));
-                } else {
-                    results.add(FileUploadResponse.fail(path, result.combinedOutput()));
+                byte[] archive = buildSingleFileArchive(active, path, content);
+                try (InputStream archiveStream = new ByteArrayInputStream(archive)) {
+                    active.hydrateWorkspace(archiveStream);
                 }
-            } catch (SandboxException.ExecException e) {
-                String combined =
-                        (e.getStdout() != null ? e.getStdout() : "")
-                                + (e.getStderr() != null && !e.getStderr().isBlank()
-                                        ? "\n" + e.getStderr()
-                                        : "");
-                results.add(FileUploadResponse.fail(path, combined));
+                results.add(FileUploadResponse.success(path));
             } catch (Exception e) {
                 log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
                 results.add(FileUploadResponse.fail(path, e.getMessage()));
@@ -203,5 +193,68 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     private String shellSingleQuote(String s) {
         return "'" + s.replace("'", "'\\''") + "'";
+    }
+
+    /** Builds a single-file tar archive relative to the workspace root. */
+    private byte[] buildSingleFileArchive(Sandbox active, String path, byte[] content)
+            throws IOException {
+        if (content == null) {
+            throw new IOException("File content must not be null");
+        }
+
+        String archivePath = resolveArchivePath(active, path);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+            TarArchiveEntry entry = new TarArchiveEntry(archivePath);
+            entry.setSize(content.length);
+            tar.putArchiveEntry(entry);
+            tar.write(content);
+            tar.closeArchiveEntry();
+            tar.finish();
+        }
+        return output.toByteArray();
+    }
+
+    /** Constrains an upload path to the workspace and converts it to an archive path. */
+    private String resolveArchivePath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+
+        if (normalized.startsWith("/")) {
+            String workspaceRoot = resolveWorkspaceRoot(active);
+            String rootPrefix = "/".equals(workspaceRoot) ? "/" : workspaceRoot + "/";
+            if (!normalized.startsWith(rootPrefix)) {
+                throw new IOException("Upload path is outside the sandbox workspace: " + path);
+            }
+            normalized = normalized.substring(rootPrefix.length());
+        }
+
+        if (normalized.isBlank()) {
+            throw new IOException("Upload path must identify a file: " + path);
+        }
+        return normalized;
+    }
+
+    /** Resolves the normalized workspace root used to convert absolute upload paths. */
+    private String resolveWorkspaceRoot(Sandbox active) throws IOException {
+        SandboxState state = active.getState();
+        WorkspaceSpec workspaceSpec = state != null ? state.getWorkspaceSpec() : null;
+        String root = workspaceSpec != null ? workspaceSpec.getRoot() : null;
+        if (root == null || root.isBlank()) {
+            throw new IOException("Sandbox workspace root is unavailable");
+        }
+
+        String normalized = root.replace('\\', '/');
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (!normalized.startsWith("/")) {
+            throw new IOException("Sandbox workspace root must be absolute: " + root);
+        }
+        return normalized;
     }
 }

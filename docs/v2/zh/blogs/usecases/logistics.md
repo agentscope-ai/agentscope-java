@@ -96,10 +96,10 @@ public class FinanceMasterAgent {
 // BAD：500+ 行的业务决策树硬编码在 Java 方法中
 private static String buildInstruction() {
     return """
-            你是一个专业的财务诊断助手...
-            ## Act 0: 识别用户输入...
-            ## Act 1: 诊断问题根因... (30+ 个错误码逻辑)
-            """;
+        你是一个专业的财务诊断助手...
+        ## Act 0: 识别用户输入...
+        ## Act 1: 诊断问题根因... (30+ 个错误码逻辑)
+        """;
 }
 // BAD：敏感信息与模型配置硬编码
 public class ModelFactory {
@@ -120,9 +120,9 @@ public class ModelFactory {
 ```java
 // BAD：工具列表焊死在代码里
 .tools(List.of(
-        AgentTool.create(OrderAgent.getInstance()),
-        AgentTool.create(RefundAgent.getInstance())
-        ))
+    AgentTool.create(OrderAgent.getInstance()),
+    AgentTool.create(RefundAgent.getInstance())
+))
 // BAD：Skill 路径硬编码
 Skill diagnosisPlan = factory.createSkillFromResource("skills/diagnosis/diagnosis_plan");
 ```
@@ -176,7 +176,7 @@ ClientMcpRequestAuth auth = ClientMcpRequestAuth.of(serverUrl).generateAuthMater
 // BAD 6a：依赖 LLM 理解魔术字符串，易陷入死循环
 return "NEED_CONFIRM: 金额过大，请确认";
 // BAD 6b：阻塞 Agent 线程等待确认
-        Thread.sleep(1000); // 占用宝贵线程资源
+Thread.sleep(1000); // 占用宝贵线程资源
 ```
 
 问题分析：
@@ -655,8 +655,8 @@ public class AgentFactoryRegistry implements SmartInitializingSingleton {
 - 触发：用户点击"发布"按钮。
 - 快照生成：系统将当前主表及所有绑定表的完整配置序列化为 JSON，写入 `ac_agent_publish_record`。此记录为不可变 (Immutable)，用于审计与回滚。
 - 版本晋升：
-    1. `ac_agent_config.current_publish_version` 自增。
-    2. `ac_agent_config.status` 更新为 `2` (Published)。
+  1. `ac_agent_config.current_publish_version` 自增。
+  2. `ac_agent_config.status` 更新为 `2` (Published)。
 - 影响范围：线上正式流量立即切换至新发布的快照版本。
 
 **运行时加载 (Runtime Loading)**：
@@ -1418,17 +1418,17 @@ Block 的 `seq` = 首条 Msg 的 `timestamp(ms)`，保证严格递增且幂等�
 
 1. **百分比路由用户粘性**：`GrayMatcher.matchPercentage()` 当前使用 `ThreadLocalRandom` 逐请求随机，同一用户可能前一次请求命中灰度、后一次命中稳定版。这对问题排查和用户体验都不友好。改为 `hash(workNo) % 100 < percentage` 的确定性分桶，保证同一用户在灰度周期内始终路由到同一版本。
 2. **灰度可观测性**：当前灰度命中结果仅体现在版本加载逻辑中，缺乏显式的埋点和指标。需要：
-    - 在 AG-UI 响应 Header 中标记 `X-Gray-Hit: true/false` 和 `X-Agent-Version`，便于前端感知和调试。
-    - 按灰度/稳定版维度拆分核心指标（成功率、平均耗时、工具调用失败率），接入 Sunfire Dashboard。
-    - 灰度命中日志结构化输出，支持按 `empId` + `agentCode` + `version` 三维检索。
+   - 在 AG-UI 响应 Header 中标记 `X-Gray-Hit: true/false` 和 `X-Agent-Version`，便于前端感知和调试。
+   - 按灰度/稳定版维度拆分核心指标（成功率、平均耗时、工具调用失败率），接入 Sunfire Dashboard。
+   - 灰度命中日志结构化输出，支持按 `empId` + `agentCode` + `version` 三维检索。
 3. **多级灰度编排**：当前灰度粒度是单个 Agent 级别。未来需支持：
-    - Skill 级灰度：同一 Agent 内，部分 Skill 使用灰度版本（如新 prompt 模板），其余保持线上版本。
-    - MCP Server 级灰度：新版本 MCP Server 仅对灰度用户开放，避免新工具的不稳定性影响全量用户。
-    - 组合策略：白名单 + 百分比可叠加（先白名单内部验证 → 再百分比放量），当前三种策略是互斥的。
+   - Skill 级灰度：同一 Agent 内，部分 Skill 使用灰度版本（如新 prompt 模板），其余保持线上版本。
+   - MCP Server 级灰度：新版本 MCP Server 仅对灰度用户开放，避免新工具的不稳定性影响全量用户。
+   - 组合策略：白名单 + 百分比可叠加（先白名单内部验证 → 再百分比放量），当前三种策略是互斥的。
 4. **灰度自动推进与回滚**：
-    - 设定灰度阶段的自动推进条件：灰度用户量 ≥ N 且成功率 ≥ 阈值 → 自动扩大百分比 → 全量。
-    - 设定自动回滚条件：灰度版本错误率突增（相对稳定版 > X%）→ 自动将灰度流量切回稳定版，发出 Sunfire 报警。
-    - 当前 `promoteToStable` 是手动操作，需要在此基础上增加自动化决策层。
+   - 设定灰度阶段的自动推进条件：灰度用户量 ≥ N 且成功率 ≥ 阈值 → 自动扩大百分比 → 全量。
+   - 设定自动回滚条件：灰度版本错误率突增（相对稳定版 > X%）→ 自动将灰度流量切回稳定版，发出 Sunfire 报警。
+   - 当前 `promoteToStable` 是手动操作，需要在此基础上增加自动化决策层。
 5. **灰度与 HITL 联动**：灰度版本的新工具/Skill 应自动提升 HITL（Human-in-the-Loop）确认级别——灰度流量中的工具调用默认走 BEFORE 模式确认，稳定版则可降级为 AFTER 或免确认，降低灰度版本的爆炸半径。
 
 #### 5.6.4 其他安全基建
