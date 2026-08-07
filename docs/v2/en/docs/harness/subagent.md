@@ -107,8 +107,24 @@ No spec file needed; always available. Its role is "generic fallback" — it mir
 
 The parent creates a subagent with `agent_spawn`; the key knob is `timeout_seconds`:
 
-- `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result.
+- `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
+
+**Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice:
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("s-1")
+    .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+    .build();
+```
+
+When enabled:
+
+1. An LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted.
+2. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
+
+`agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
 
 If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
 
