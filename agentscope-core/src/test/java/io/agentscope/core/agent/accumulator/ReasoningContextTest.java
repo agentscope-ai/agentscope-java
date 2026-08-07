@@ -22,10 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -167,6 +169,53 @@ class ReasoningContextTest {
         assertNotNull(msg);
         ChatUsage resultUsage = msg.getChatUsage();
         assertNull(resultUsage);
+    }
+
+    @Test
+    @DisplayName("Should preserve metadata-only thinking blocks")
+    void testMetadataOnlyThinkingBlock() {
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder()
+                        .metadata(Map.of("signature", "encrypted-signature"))
+                        .build();
+        ChatResponse chunk =
+                ChatResponse.builder().id("msg-1").content(List.of(thinkingBlock)).build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        ThinkingBlock result = msg.getFirstContentBlock(ThinkingBlock.class);
+        assertNotNull(result);
+        assertEquals("", result.getThinking());
+        assertEquals("encrypted-signature", result.getMetadata().get("signature"));
+    }
+
+    @Test
+    @DisplayName("Should merge thinking text and metadata across chunks")
+    void testThinkingTextAndMetadataAccumulation() {
+        ChatResponse textChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(ThinkingBlock.builder().thinking("Reasoning").build()))
+                        .build();
+        ChatResponse metadataChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(Map.of("signature", "signature-123"))
+                                                .build()))
+                        .build();
+
+        context.processChunk(textChunk);
+        context.processChunk(metadataChunk);
+
+        ThinkingBlock result =
+                context.buildFinalMessage().getFirstContentBlock(ThinkingBlock.class);
+        assertEquals("Reasoning", result.getThinking());
+        assertEquals("signature-123", result.getMetadata().get("signature"));
     }
 
     @Test
