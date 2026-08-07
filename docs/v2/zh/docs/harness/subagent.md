@@ -110,19 +110,21 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
-**通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择：
+**通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("s-1")
     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120) // 可选；覆盖 LLM 的 timeout_seconds
     .build();
 ```
 
 开启后：
 
-1. LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务。
-2. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
+1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，上限 600s）。
+2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效。
+3. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
 
 `agent_send` 同样遵守该开关。同一轮里多个强制同步的 `agent_spawn` 仍可按 Toolkit 默认并行推进。
 

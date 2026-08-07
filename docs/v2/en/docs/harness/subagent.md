@@ -110,19 +110,21 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
-**Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice:
+**Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("s-1")
     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120) // optional; overrides LLM timeout_seconds
     .build();
 ```
 
 When enabled:
 
-1. An LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted.
-2. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
+1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; max 600s).
+2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved.
+3. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
 
 `agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
 

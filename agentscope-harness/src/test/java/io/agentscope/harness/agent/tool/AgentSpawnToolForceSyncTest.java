@@ -81,12 +81,49 @@ class AgentSpawnToolForceSyncTest {
                                 .put(AgentSpawnTool.CTX_FORCE_SYNC, false)
                                 .build()));
 
-        // Without force-sync, 0 stays async.
-        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, false) == 0L);
-        // With force-sync, 0 coerces to the 30s default.
-        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, true) == 30_000L);
-        // Explicit positive timeouts are preserved.
-        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, true) == 5_000L);
+        RuntimeContext noForce = RuntimeContext.empty();
+        RuntimeContext forceOnly =
+                RuntimeContext.builder().put(AgentSpawnTool.CTX_FORCE_SYNC, true).build();
+        RuntimeContext forceWithOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120)
+                        .build();
+        RuntimeContext forceWithStringOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, "45")
+                        .build();
+        RuntimeContext overrideWithoutForce =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120)
+                        .build();
+
+        // Without force-sync, 0 stays async — even if a timeout override is present.
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, noForce) == 0L);
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, overrideWithoutForce) == 0L);
+        // With force-sync, 0 coerces to the 30s default when no override is set.
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, forceOnly) == 30_000L);
+        // Explicit positive LLM timeouts are preserved without override.
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceOnly) == 5_000L);
+        // App override wins over LLM timeout (including async 0).
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(0, forceWithOverride) == 120_000L);
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceWithOverride) == 120_000L);
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceWithStringOverride) == 45_000L);
+        // Non-positive override falls back to the default sync timeout.
+        RuntimeContext forceBadOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 0)
+                        .build();
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceBadOverride) == 30_000L);
+        // Clamp at 600s.
+        RuntimeContext forceHuge =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 9999)
+                        .build();
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceHuge) == 600_000L);
     }
 
     @Test
