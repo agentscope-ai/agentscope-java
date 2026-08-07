@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -318,6 +319,44 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
+    @DisplayName("Should reject path separators in skill names")
+    void testValidateAndResolvePath_PathSeparatorRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SkillFileSystemHelper.validateAndResolvePath(skillsBaseDir, "bad/name"));
+    }
+
+    @Test
+    @DisplayName("Should save non-ASCII skill names using an ASCII-safe directory")
+    void testSaveSkills_NonAsciiSkillName_UsesAsciiSafeDirectory() throws IOException {
+        Set<String> before = listDirectoryNames(skillsBaseDir);
+        String skillName = "中文 Skill 名";
+        AgentSkill skill = new AgentSkill(skillName, "中文描述", "内容", Map.of());
+
+        boolean result = SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill), false);
+        assertTrue(result);
+
+        Set<String> after = listDirectoryNames(skillsBaseDir);
+        after.removeAll(before);
+        assertEquals(1, after.size());
+
+        String dirName = after.iterator().next();
+        assertNotNull(dirName);
+        assertTrue(dirName.startsWith("__utf8__"));
+        assertTrue(dirName.chars().allMatch(ch -> ch >= 0x20 && ch <= 0x7E));
+
+        Path savedSkillFile = skillsBaseDir.resolve(dirName).resolve("SKILL.md");
+        assertTrue(Files.exists(savedSkillFile));
+
+        AgentSkill loaded = SkillFileSystemHelper.loadSkill(skillsBaseDir, skillName, "source");
+        assertEquals(skillName, loaded.getName());
+        assertTrue(SkillFileSystemHelper.getAllSkillNames(skillsBaseDir).contains(skillName));
+        assertTrue(SkillFileSystemHelper.skillExists(skillsBaseDir, skillName));
+        assertTrue(SkillFileSystemHelper.deleteSkill(skillsBaseDir, skillName));
+        assertFalse(SkillFileSystemHelper.skillExists(skillsBaseDir, skillName));
+    }
+
+    @Test
     @DisplayName("Should delete directory recursively")
     void testDeleteDirectory() throws IOException {
         Path dir = tempDir.resolve("to-delete");
@@ -511,5 +550,13 @@ class SkillFileSystemHelperTest {
                         + content;
 
         Files.writeString(skillDir.resolve("SKILL.md"), skillMd, StandardCharsets.UTF_8);
+    }
+
+    private static Set<String> listDirectoryNames(Path dir) throws IOException {
+        try (var paths = Files.list(dir)) {
+            return paths.filter(Files::isDirectory)
+                    .map(path -> path.getFileName().toString())
+                    .collect(java.util.stream.Collectors.toSet());
+        }
     }
 }
