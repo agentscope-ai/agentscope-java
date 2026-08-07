@@ -29,7 +29,7 @@ import {
 } from '../api/managedSessions';
 import MessageBlock from './MessageBlock';
 
-type Role = 'user' | 'assistant' | 'system';
+type Role = 'user' | 'assistant' | 'system' | 'error';
 
 interface ToolEntry {
   id: string;
@@ -123,6 +123,16 @@ function payloadText(payload?: Record<string, unknown>): string {
   return text != null ? String(text) : '';
 }
 
+function errorText(evt: SessionEvent): string {
+  const payload = evt.payload as Record<string, unknown> | undefined;
+  const raw = payload?.error;
+  const err = (typeof raw === 'object' && raw != null ? raw : {}) as Record<string, unknown>;
+  const code = err.code != null ? String(err.code) : '';
+  const message = err.message != null ? String(err.message) : '';
+  const label = code ? `[${code}]` : '[error]';
+  return `${label} ${message || 'Session turn failed'}`.trim();
+}
+
 function eventsToMessages(events: SessionEvent[]): Message[] {
   const out: Message[] = [];
   for (const evt of events) {
@@ -159,6 +169,8 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
           break;
         }
       }
+    } else if (evt.type === 'session.error') {
+      out.push({ id: evt.id, role: 'error', text: errorText(evt), tools: [] });
     }
   }
   return out;
@@ -416,6 +428,16 @@ export default function ChatPanel({
         setMessages(prev => prev.map(m => m.id === replyId ? { ...m, pending: false } : m));
         replyMsgIdRef.current = null;
       }
+    } else if (evt.type === 'session.error') {
+      setMessages(prev => {
+        if (prev.some(m => m.id === evt.id)) return prev;
+        const replyId = replyMsgIdRef.current;
+        replyMsgIdRef.current = null;
+        return [
+          ...prev.map(m => (m.id === replyId ? { ...m, pending: false } : m)),
+          { id: evt.id, role: 'error', text: errorText(evt), tools: [] },
+        ];
+      });
     }
   }, []);
 
