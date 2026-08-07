@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -30,6 +31,10 @@ import org.springframework.context.annotation.Bean;
  * <p>{@link ConditionalOnBean} is applied at the {@code @Bean} method level (not class level) to
  * avoid Spring Boot auto-configuration ordering issues: class-level {@code @ConditionalOnBean} on
  * {@code @AutoConfiguration} classes may evaluate before user-defined beans are registered.
+ *
+ * <p>Agent selection goes through {@link AgentFactory}. Without a user-defined bean, the default
+ * factory resolves the single {@link HarnessAgent} bean for every task; define an
+ * {@link AgentFactory} bean to route per {@code agent_id} or submission context.
  *
  * <p>For concurrent task execution, register the {@link HarnessAgent} bean as
  * {@code @Scope("prototype")} so that each task obtains its own instance. Alternatively, configure
@@ -46,14 +51,20 @@ public class AgentProtocolAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean({HarnessAgent.class, WorkspaceManager.class})
+    @ConditionalOnBean(HarnessAgent.class)
+    @ConditionalOnMissingBean(AgentFactory.class)
+    public AgentFactory agentProtocolAgentFactory(ObjectProvider<HarnessAgent> agentProvider) {
+        return request -> agentProvider.getObject();
+    }
+
+    @Bean
+    @ConditionalOnBean({AgentFactory.class, WorkspaceManager.class})
     public AgentProtocolTaskStore agentProtocolTaskStore(
-            ObjectProvider<HarnessAgent> agentProvider,
+            AgentFactory agentFactory,
             WorkspaceManager workspaceManager,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties) {
-        return new AgentProtocolTaskStore(
-                agentProvider::getObject, workspaceManager, eventBus, properties);
+        return new AgentProtocolTaskStore(agentFactory, workspaceManager, eventBus, properties);
     }
 
     @Bean
