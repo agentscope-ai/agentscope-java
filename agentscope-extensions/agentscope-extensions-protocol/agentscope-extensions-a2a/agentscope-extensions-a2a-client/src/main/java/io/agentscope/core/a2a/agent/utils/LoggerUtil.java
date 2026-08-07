@@ -16,12 +16,10 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.client.ClientEvent;
-import io.a2a.util.Utils;
-import io.agentscope.core.agent.Event;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import java.util.List;
+import org.a2aproject.sdk.client.ClientEvent;
 import org.slf4j.Logger;
 
 /**
@@ -30,20 +28,8 @@ import org.slf4j.Logger;
 public class LoggerUtil {
 
     /**
-     * Logs detail information of AgentScope events output from Agent.
-     *
-     * @param logger The Logger instance used for logging
-     * @param event The event object to be logged from AgentScope Agent.
-     */
-    public static void logAgentEventDetail(Logger logger, Event event) {
-        if (logger.isDebugEnabled()) {
-            debug(logger, "Event: {}", event);
-            logTextMsgDetail(logger, List.of(event.getMessage()));
-        }
-    }
-
-    /**
-     * Logs detailed information of A2A client events to the log
+     * Logs only the structural type of an A2A client event. Raw SDK events can contain peer
+     * metadata and must never be handed to the logger.
      *
      * @param logger The Logger instance used for logging
      * @param event  The client event object to be logged
@@ -51,8 +37,10 @@ public class LoggerUtil {
     public static void logA2aClientEventDetail(Logger logger, ClientEvent event) {
         if (logger.isTraceEnabled()) {
             try {
-                String eventDetail = Utils.toJsonString(event);
-                trace(logger, "\t {}", eventDetail);
+                trace(
+                        logger,
+                        "\t eventType={}",
+                        event == null ? "null" : event.getClass().getSimpleName());
             } catch (Exception ignored) {
             }
         }

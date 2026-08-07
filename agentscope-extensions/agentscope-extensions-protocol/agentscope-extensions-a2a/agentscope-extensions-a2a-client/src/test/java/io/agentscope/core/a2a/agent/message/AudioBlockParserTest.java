@@ -22,14 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.FileWithUri;
-import io.a2a.spec.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.URLSource;
 import java.util.Base64;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.FileWithUri;
+import org.a2aproject.sdk.spec.Part;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,9 +73,9 @@ class AudioBlockParserTest {
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
         FilePart filePart = (FilePart) result;
-        assertEquals("audio/mpeg", filePart.getFile().mimeType());
-        assertInstanceOf(FileWithBytes.class, filePart.getFile());
-        FileWithBytes file = (FileWithBytes) filePart.getFile();
+        assertEquals("audio/mpeg", filePart.file().mimeType());
+        assertInstanceOf(FileWithBytes.class, filePart.file());
+        FileWithBytes file = (FileWithBytes) filePart.file();
         assertEquals(Base64.getEncoder().encodeToString("test".getBytes()), file.bytes());
     }
 
@@ -91,9 +91,9 @@ class AudioBlockParserTest {
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
         FilePart filePart = (FilePart) result;
-        assertEquals("audio/mpeg", filePart.getFile().mimeType());
-        assertInstanceOf(FileWithUri.class, filePart.getFile());
-        FileWithUri file = (FileWithUri) filePart.getFile();
+        assertEquals("audio/mpeg", filePart.file().mimeType());
+        assertInstanceOf(FileWithUri.class, filePart.file());
+        FileWithUri file = (FileWithUri) filePart.file();
         assertEquals("https://example.com/test.mp3", file.uri());
     }
 }

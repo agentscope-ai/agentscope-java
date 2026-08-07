@@ -18,18 +18,16 @@ package io.agentscope.core.a2a.agent.message;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.FileContent;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithUri;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.VideoBlock;
+import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FileContent;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithUri;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,10 +65,8 @@ class PartParserRouterTest {
     @Test
     @DisplayName("Should parse FilePart")
     void testParseFilePart() {
-        FilePart part = mock(FilePart.class);
-        when(part.getKind()).thenReturn(Part.Kind.FILE);
         FileContent file = new FileWithUri("video", "test.mp4", "https://exmaple.com/test.mp4");
-        when(part.getFile()).thenReturn(file);
+        FilePart part = new FilePart(file);
 
         ContentBlock result = router.parse(part);
 
@@ -81,8 +77,7 @@ class PartParserRouterTest {
     @Test
     @DisplayName("Should parse DataPart")
     void testParseDataPart() {
-        DataPart part = mock(DataPart.class);
-        when(part.getKind()).thenReturn(Part.Kind.DATA);
+        DataPart part = new DataPart(Map.of());
 
         ContentBlock result = router.parse(part);
 

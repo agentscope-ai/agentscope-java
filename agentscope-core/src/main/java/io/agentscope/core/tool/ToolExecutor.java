@@ -207,8 +207,12 @@ class ToolExecutor {
         }
 
         // Validate input against schema
+        boolean serverPrepared =
+                Boolean.TRUE.equals(toolCall.getMetadata().get(ToolConfirmation.METADATA_PREPARED));
         String validationError =
-                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+                serverPrepared
+                        ? null
+                        : ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(

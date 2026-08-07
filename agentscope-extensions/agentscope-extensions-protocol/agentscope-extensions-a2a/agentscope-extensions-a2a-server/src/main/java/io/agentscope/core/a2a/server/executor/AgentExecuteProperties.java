@@ -34,14 +34,32 @@ public class AgentExecuteProperties {
     /**
      * Whether the agent task execution should require an inner message such as tool_call result.
      *
-     * <p>If is {@code true}, the agent execution will handle {@link io.agentscope.core.agent.Event} with
-     * {@link io.agentscope.core.agent.EventType#TOOL_RESULT} and {@link io.agentscope.core.agent.EventType#HINT}.
+     * <p>If {@code true}, tool result and hint {@link io.agentscope.core.event.AgentEvent}
+     * payloads are included in the A2A response. HITL payloads are always included.
      */
     private final boolean requireInnerMessage;
 
+    private final boolean streamMergeEnabled;
+
+    private final long streamMergeIntervalMs;
+
+    private final int streamMergeMaxSize;
+
     private AgentExecuteProperties(boolean completeWithMessage, boolean requireInnerMessage) {
+        this(completeWithMessage, requireInnerMessage, true, 300, 100);
+    }
+
+    private AgentExecuteProperties(
+            boolean completeWithMessage,
+            boolean requireInnerMessage,
+            boolean streamMergeEnabled,
+            long streamMergeIntervalMs,
+            int streamMergeMaxSize) {
         this.completeWithMessage = completeWithMessage;
         this.requireInnerMessage = requireInnerMessage;
+        this.streamMergeEnabled = streamMergeEnabled;
+        this.streamMergeIntervalMs = streamMergeIntervalMs;
+        this.streamMergeMaxSize = streamMergeMaxSize;
     }
 
     public boolean isCompleteWithMessage() {
@@ -52,13 +70,28 @@ public class AgentExecuteProperties {
         return requireInnerMessage;
     }
 
+    public boolean isStreamMergeEnabled() {
+        return streamMergeEnabled;
+    }
+
+    public long getStreamMergeIntervalMs() {
+        return streamMergeIntervalMs;
+    }
+
+    public int getStreamMergeMaxSize() {
+        return streamMergeMaxSize;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     public static class Builder {
         private boolean completeWithMessage;
-        private boolean requireInnerMessage;
+        private boolean requireInnerMessage = true;
+        private boolean streamMergeEnabled = true;
+        private long streamMergeIntervalMs = 300;
+        private int streamMergeMaxSize = 100;
 
         public Builder completeWithMessage(boolean completeWithMessage) {
             this.completeWithMessage = completeWithMessage;
@@ -70,8 +103,28 @@ public class AgentExecuteProperties {
             return this;
         }
 
+        public Builder streamMergeEnabled(boolean streamMergeEnabled) {
+            this.streamMergeEnabled = streamMergeEnabled;
+            return this;
+        }
+
+        public Builder streamMergeIntervalMs(long streamMergeIntervalMs) {
+            this.streamMergeIntervalMs = streamMergeIntervalMs;
+            return this;
+        }
+
+        public Builder streamMergeMaxSize(int streamMergeMaxSize) {
+            this.streamMergeMaxSize = streamMergeMaxSize;
+            return this;
+        }
+
         public AgentExecuteProperties build() {
-            return new AgentExecuteProperties(completeWithMessage, requireInnerMessage);
+            return new AgentExecuteProperties(
+                    completeWithMessage,
+                    requireInnerMessage,
+                    streamMergeEnabled,
+                    streamMergeIntervalMs,
+                    streamMergeMaxSize);
         }
     }
 }

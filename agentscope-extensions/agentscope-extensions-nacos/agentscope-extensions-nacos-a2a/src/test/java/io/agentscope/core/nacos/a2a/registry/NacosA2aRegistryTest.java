@@ -36,10 +36,11 @@ import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
 import com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint;
 import com.alibaba.nacos.api.exception.NacosException;
-import io.a2a.spec.AgentCapabilities;
-import io.a2a.spec.AgentCard;
 import java.util.List;
 import java.util.Properties;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -244,14 +245,15 @@ class NacosA2aRegistryTest {
     }
 
     private AgentCard mockAgentCard() {
-        return new AgentCard.Builder()
+        return AgentCard.builder()
                 .name("test-agent")
                 .description("test")
-                .capabilities(new AgentCapabilities.Builder().build())
+                .capabilities(AgentCapabilities.builder().build())
                 .defaultInputModes(List.of())
                 .defaultOutputModes(List.of())
                 .url("http://in.card:8080")
                 .preferredTransport("JSONRPC")
+                .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "http://in.card:8080")))
                 .version("1.0.0")
                 .skills(List.of())
                 .build();

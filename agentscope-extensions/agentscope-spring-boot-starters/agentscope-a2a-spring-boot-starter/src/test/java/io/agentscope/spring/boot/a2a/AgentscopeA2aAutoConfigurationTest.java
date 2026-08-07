@@ -20,16 +20,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.spring.boot.a2a.controller.A2aAuthExceptionHandler;
 import io.agentscope.spring.boot.a2a.controller.A2aJsonRpcController;
 import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.time.Duration;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
@@ -61,7 +63,23 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasSingleBean(AgentScopeA2aServer.class);
                     assertThat(context).hasSingleBean(AgentCardController.class);
                     assertThat(context).hasSingleBean(A2aJsonRpcController.class);
+                    assertThat(context).hasSingleBean(A2aAuthExceptionHandler.class);
+                    assertThat(context).hasSingleBean(A2aAuthResolver.class);
                 });
+    }
+
+    @Test
+    void shouldUseApplicationAuthenticationResolver() {
+        A2aAuthResolver resolver = request -> null;
+
+        contextRunner
+                .withBean(A2aAuthResolver.class, () -> resolver)
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context.getBean(AgentScopeA2aServer.class).getAuthResolver())
+                                    .isSameAs(resolver);
+                        });
     }
 
     @Test

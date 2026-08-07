@@ -15,10 +15,10 @@
  */
 package io.agentscope.spring.boot.a2a.properties;
 
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.transport.CustomTransportProperties;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**

@@ -19,11 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,7 +62,8 @@ class ToolResultBlockParserTest {
         assertNotNull(result);
         assertEquals(DataPart.class, result.getClass());
         DataPart dataPart = (DataPart) result;
-        Map<String, Object> data = dataPart.getData();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) dataPart.data();
         assertNotNull(data);
         assertTrue(data.containsKey("_agentscope_tool_output"));
     }
@@ -80,7 +81,7 @@ class ToolResultBlockParserTest {
         Part<?> result = parser.parse(block);
 
         DataPart dataPart = (DataPart) result;
-        Map<String, Object> metadata = dataPart.getMetadata();
+        Map<String, Object> metadata = dataPart.metadata();
         assertNotNull(metadata);
         assertEquals("tool_result", metadata.get("_agentscope_block_type"));
         assertEquals("calculator", metadata.get("_agentscope_tool_name"));
@@ -101,7 +102,7 @@ class ToolResultBlockParserTest {
         Part<?> result = parser.parse(block);
 
         DataPart dataPart = (DataPart) result;
-        Map<String, Object> metadata = dataPart.getMetadata();
+        Map<String, Object> metadata = dataPart.metadata();
         assertTrue(metadata.containsKey("custom_key"));
         assertEquals("custom_value", metadata.get("custom_key"));
     }

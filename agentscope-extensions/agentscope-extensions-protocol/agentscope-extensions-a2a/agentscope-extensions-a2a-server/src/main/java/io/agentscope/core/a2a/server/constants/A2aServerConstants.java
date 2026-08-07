@@ -27,5 +27,11 @@ public class A2aServerConstants {
          * Context key for storing whether the request is streaming.
          */
         public static final String IS_STREAM_KEY = "isStream";
+
+        public static final String PRINCIPAL_KEY = "agentscope.a2a.principal";
+
+        public static final String EFFECTIVE_USER_ID_KEY = "agentscope.a2a.effectiveUserId";
+
+        public static final String IDENTITY_KEY = "agentscope.a2a.identity";
     }
 }
