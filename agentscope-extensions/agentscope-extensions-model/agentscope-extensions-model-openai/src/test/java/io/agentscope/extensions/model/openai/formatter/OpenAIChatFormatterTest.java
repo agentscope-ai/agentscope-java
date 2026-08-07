@@ -668,6 +668,114 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
+        @DisplayName("Should normalize strict response_format from additional body parameters")
+        void testNormalizeStrictResponseFormatFromAdditionalBodyParams() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            List.of("object", "null"),
+                            "properties",
+                            Map.of(
+                                    "implicitObject",
+                                    Map.of("properties", Map.of("value", Map.of("type", "string"))),
+                                    "emptyObject",
+                                    Map.of("type", "object"),
+                                    "nullableString",
+                                    Map.of("type", List.of("string", "null"))));
+            ResponseFormat responseFormat =
+                    ResponseFormat.jsonSchema(
+                            JsonSchema.builder()
+                                    .name("nullable_response")
+                                    .strict(true)
+                                    .schema(schema)
+                                    .build());
+
+            formatter.applyOptions(
+                    request,
+                    GenerateOptions.builder()
+                            .additionalBodyParam("response_format", responseFormat)
+                            .build(),
+                    null);
+
+            ResponseFormat normalized =
+                    assertInstanceOf(ResponseFormat.class, request.getResponseFormat());
+            Map<String, Object> normalizedSchema = normalized.getJsonSchema().getSchema();
+            assertEquals(false, normalizedSchema.get("additionalProperties"));
+            List<?> required = assertInstanceOf(List.class, normalizedSchema.get("required"));
+            assertEquals(3, required.size());
+            assertTrue(
+                    required.containsAll(
+                            List.of("implicitObject", "emptyObject", "nullableString")));
+
+            Map<?, ?> properties = assertInstanceOf(Map.class, normalizedSchema.get("properties"));
+            Map<?, ?> implicitObject =
+                    assertInstanceOf(Map.class, properties.get("implicitObject"));
+            assertEquals(false, implicitObject.get("additionalProperties"));
+            assertEquals(List.of("value"), implicitObject.get("required"));
+
+            Map<?, ?> emptyObject = assertInstanceOf(Map.class, properties.get("emptyObject"));
+            assertEquals(false, emptyObject.get("additionalProperties"));
+            assertNull(emptyObject.get("required"));
+
+            Map<?, ?> nullableString =
+                    assertInstanceOf(Map.class, properties.get("nullableString"));
+            assertNull(nullableString.get("additionalProperties"));
+        }
+
+        @Test
+        @DisplayName("Should preserve response formats without strict JSON schemas")
+        void testPreserveResponseFormatsWithoutStrictSchemas() {
+            ResponseFormat text = applyResponseFormat(ResponseFormat.text());
+            assertEquals("text", text.getType());
+            assertNull(text.getJsonSchema());
+
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("value", Map.of("type", "string")));
+            ResponseFormat responseFormat =
+                    ResponseFormat.jsonSchema(
+                            JsonSchema.builder()
+                                    .name("non_strict_response")
+                                    .strict(false)
+                                    .schema(schema)
+                                    .build());
+            ResponseFormat preserved = applyResponseFormat(responseFormat);
+            assertEquals(false, preserved.getJsonSchema().getStrict());
+            assertEquals(schema, preserved.getJsonSchema().getSchema());
+            assertNull(preserved.getJsonSchema().getSchema().get("additionalProperties"));
+
+            ResponseFormat withoutJsonSchema = applyResponseFormat(ResponseFormat.jsonSchema(null));
+            assertEquals("json_schema", withoutJsonSchema.getType());
+            assertNull(withoutJsonSchema.getJsonSchema());
+
+            ResponseFormat withoutSchema =
+                    applyResponseFormat(
+                            ResponseFormat.jsonSchema(
+                                    JsonSchema.builder()
+                                            .name("missing_schema")
+                                            .strict(true)
+                                            .build()));
+            assertTrue(withoutSchema.getJsonSchema().getStrict());
+            assertNull(withoutSchema.getJsonSchema().getSchema());
+        }
+
+        private ResponseFormat applyResponseFormat(ResponseFormat responseFormat) {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+            formatter.applyOptions(
+                    request,
+                    GenerateOptions.builder().responseFormat(responseFormat).build(),
+                    null);
+            return assertInstanceOf(ResponseFormat.class, request.getResponseFormat());
+        }
+
+        @Test
         @DisplayName("Should add unknown parameters to extraParams")
         void testApplyUnknownParams() {
             OpenAIRequest request =
