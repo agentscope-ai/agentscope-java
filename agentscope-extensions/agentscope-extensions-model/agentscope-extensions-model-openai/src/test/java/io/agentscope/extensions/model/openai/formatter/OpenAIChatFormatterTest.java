@@ -567,8 +567,8 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
-        @DisplayName("Should apply response_format parameter with ResponseFormat class")
-        void testApplyResponseFormatWithClass() {
+        @DisplayName("Should normalize strict response_format for OpenAI Structured Outputs")
+        void testApplyStrictResponseFormatWithClass() {
             OpenAIRequest request =
                     OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
 
@@ -582,9 +582,7 @@ class OpenAIChatFormatterTest {
                                     .schema(schema)
                                     .build());
             GenerateOptions options =
-                    GenerateOptions.builder()
-                            .additionalBodyParam("response_format", responseFormat)
-                            .build();
+                    GenerateOptions.builder().responseFormat(responseFormat).build();
 
             formatter.applyOptions(request, options, null);
 
@@ -600,6 +598,73 @@ class OpenAIChatFormatterTest {
                     (Map<String, Object>) format.getJsonSchema().getSchema().get("properties");
             assertTrue(properties.containsKey("name"));
             assertTrue(properties.containsKey("age"));
+            assertTrue(properties.containsKey("email"));
+            assertEquals(false, format.getJsonSchema().getSchema().get("additionalProperties"));
+            @SuppressWarnings("unchecked")
+            List<String> required =
+                    (List<String>) format.getJsonSchema().getSchema().get("required");
+            assertEquals(properties.size(), required.size());
+            assertTrue(required.containsAll(properties.keySet()));
+
+            // Normalization must not mutate the schema supplied by the caller.
+            assertNull(schema.get("additionalProperties"));
+        }
+
+        @Test
+        @DisplayName("Should recursively normalize nested strict object schemas")
+        void testRecursivelyNormalizeStrictResponseFormat() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            Map<String, Object> nestedObject =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("value", Map.of("type", "string")));
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("items", Map.of("type", "array", "items", nestedObject)),
+                            "$defs",
+                            Map.of("metadata", nestedObject));
+            ResponseFormat responseFormat =
+                    ResponseFormat.jsonSchema(
+                            JsonSchema.builder()
+                                    .name("nested_response")
+                                    .strict(true)
+                                    .schema(schema)
+                                    .build());
+
+            formatter.applyOptions(
+                    request,
+                    GenerateOptions.builder().responseFormat(responseFormat).build(),
+                    null);
+
+            ResponseFormat normalized = (ResponseFormat) request.getResponseFormat();
+            Map<String, Object> normalizedSchema = normalized.getJsonSchema().getSchema();
+            assertEquals(false, normalizedSchema.get("additionalProperties"));
+            assertEquals(List.of("items"), normalizedSchema.get("required"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties =
+                    (Map<String, Object>) normalizedSchema.get("properties");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> items = (Map<String, Object>) properties.get("items");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> normalizedNested = (Map<String, Object>) items.get("items");
+            assertEquals(false, normalizedNested.get("additionalProperties"));
+            assertEquals(List.of("value"), normalizedNested.get("required"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> definitions = (Map<String, Object>) normalizedSchema.get("$defs");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> normalizedDefinition =
+                    (Map<String, Object>) definitions.get("metadata");
+            assertEquals(false, normalizedDefinition.get("additionalProperties"));
+            assertEquals(List.of("value"), normalizedDefinition.get("required"));
         }
 
         @Test
