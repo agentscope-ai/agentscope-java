@@ -60,6 +60,12 @@
             <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
+        <!-- OpenAI-compatible model providers (openai/deepseek/glm/kimi/minimax) via ModelProvider SPI -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+        </dependency>
+
         <!-- JdbcStore-backed BaseStore for remote filesystem routes -->
         <dependency>
             <groupId>io.agentscope</groupId>
