@@ -20,10 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
@@ -105,7 +107,7 @@ class DangerousPathBypassTest {
         Files.writeString(sshConfig, "Host *\n");
 
         Path link = tempDir.resolve("innocent-link");
-        Files.createSymbolicLink(link, sshConfig);
+        createSymlinkOrSkip(link, sshConfig);
 
         assertTrue(PROBE.check(link.toString()));
     }
@@ -116,8 +118,16 @@ class DangerousPathBypassTest {
         Files.writeString(envFile, "SECRET=value\n");
 
         Path link = tempDir.resolve("config.txt");
-        Files.createSymbolicLink(link, envFile);
+        createSymlinkOrSkip(link, envFile);
 
         assertTrue(PROBE.check(link.toString()));
+    }
+
+    private static void createSymlinkOrSkip(Path link, Path target) throws IOException {
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (UnsupportedOperationException | SecurityException | FileSystemException e) {
+            Assumptions.abort("Symbolic links are not permitted in this environment: " + e);
+        }
     }
 }

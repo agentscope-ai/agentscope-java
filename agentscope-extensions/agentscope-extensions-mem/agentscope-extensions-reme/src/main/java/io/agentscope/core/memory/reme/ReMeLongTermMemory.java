@@ -34,20 +34,21 @@ import reactor.core.publisher.Mono;
  * <p><b>Key Features:</b>
  * <ul>
  *   <li>LLM-powered memory extraction and inference
- *   <li>Workspace-based memory isolation
- *   <li>Automatic memory summarization from conversation trajectories
+ *   <li>Session-based memory recording for ReMe 0.4.x
+ *   <li>Automatic memory summarization from conversation messages
  *   <li>Reactive, non-blocking operations
  * </ul>
  *
- * <p><b>Memory Isolation:</b>
- * Memories are organized by userId (mapped to ReMe's workspace_id), enabling
- * multi-tenant scenarios where different users maintain separate memory contexts.
+ * <p><b>Session Mapping:</b>
+ * ReMe 0.4.x records messages into a {@code session_id}. For backward compatibility,
+ * the builder still accepts {@code userId}, which is treated as the session ID when
+ * {@code sessionId} is not explicitly configured.
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
  * // Create memory instance
  * ReMeLongTermMemory memory = ReMeLongTermMemory.builder()
- *     .userId("task_workspace")
+ *     .sessionId("task-session")
  *     .apiBaseUrl("http://localhost:8002")
  *     .build();
  *
@@ -66,30 +67,29 @@ import reactor.core.publisher.Mono;
 public class ReMeLongTermMemory implements LongTermMemory {
 
     private final ReMeClient client;
-    private final String userId;
+    private final String sessionId;
 
     /**
      * Private constructor - use Builder instead.
      */
     private ReMeLongTermMemory(Builder builder) {
-        // Validate required fields before creating ReMeClient
-        if (builder.userId == null || builder.userId.isEmpty()) {
-            throw new IllegalArgumentException("userId is required");
-        }
         if (builder.apiBaseUrl == null || builder.apiBaseUrl.isEmpty()) {
             throw new IllegalArgumentException("apiBaseUrl is required");
         }
+        String resolvedSessionId = firstNonBlank(builder.sessionId, builder.userId);
+        if (resolvedSessionId == null) {
+            throw new IllegalArgumentException("sessionId or userId is required");
+        }
 
         this.client = new ReMeClient(builder.apiBaseUrl, builder.timeout);
-        this.userId = builder.userId;
+        this.sessionId = resolvedSessionId;
     }
 
     /**
      * Records messages to long-term memory.
      *
-     * <p>This method converts messages to ReMe trajectory format and sends them to
-     * the ReMe API for processing. ReMe will extract and store memorable information
-     * from the conversation.
+     * <p>This method converts messages to ReMe's message format and sends them to
+     * the ReMe API for processing.
      *
      * <p>Only USER and ASSISTANT messages are recorded. For ASSISTANT messages,
      * only those without ToolUseBlock (pure assistant replies) are kept, filtering
@@ -152,16 +152,9 @@ public class ReMeLongTermMemory implements LongTermMemory {
             return Mono.empty();
         }
 
-        // Create trajectory with messages
-        ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(remeMessages).build();
-
         // Build request
-        // Note: userId is used as workspaceId for ReMe API
         ReMeAddRequest request =
-                ReMeAddRequest.builder()
-                        .workspaceId(userId)
-                        .trajectories(List.of(trajectory))
-                        .build();
+                ReMeAddRequest.builder().sessionId(sessionId).messages(remeMessages).build();
 
         // Send to ReMe API
         return client.add(request).then();
@@ -201,8 +194,6 @@ public class ReMeLongTermMemory implements LongTermMemory {
      * Returns memory fragments as a newline-separated string, or empty string if no
      * relevant memories are found.
      *
-     * <p>Only memories from the configured workspace are returned.
-     *
      * @param msg The message to use as a search query
      * @return A Mono emitting the retrieved memory text (may be empty)
      */
@@ -217,16 +208,12 @@ public class ReMeLongTermMemory implements LongTermMemory {
             return Mono.just("");
         }
 
-        // Build search request
-        // Note: userId is used as workspaceId for ReMe API
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder().workspaceId(userId).query(query).topK(5).build();
+        ReMeSearchRequest request = ReMeSearchRequest.builder().query(query).limit(5).build();
 
         // Search and convert response to string
         return client.search(request)
                 .map(
                         response -> {
-                            // Use answer field if available, otherwise use memory_list
                             if (response.getAnswer() != null && !response.getAnswer().isEmpty()) {
                                 return response.getAnswer();
                             }
@@ -257,17 +244,32 @@ public class ReMeLongTermMemory implements LongTermMemory {
      */
     public static class Builder {
         private String userId;
+        private String sessionId;
         private String apiBaseUrl;
         private Duration timeout = Duration.ofSeconds(60);
 
         /**
-         * Sets the userId.
+         * Sets a legacy userId alias.
          *
-         * @param userId The userId
+         * <p>ReMe 0.4.x no longer uses {@code workspace_id}; this value is treated as the
+         * session ID when {@link #sessionId(String)} is not provided.
+         *
+         * @param userId The legacy userId alias
          * @return This builder
          */
         public Builder userId(String userId) {
             this.userId = userId;
+            return this;
+        }
+
+        /**
+         * Sets the ReMe session ID used by ReMe 0.4.x.
+         *
+         * @param sessionId The session ID
+         * @return This builder
+         */
+        public Builder sessionId(String sessionId) {
+            this.sessionId = sessionId;
             return this;
         }
 
@@ -302,5 +304,15 @@ public class ReMeLongTermMemory implements LongTermMemory {
         public ReMeLongTermMemory build() {
             return new ReMeLongTermMemory(this);
         }
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
     }
 }

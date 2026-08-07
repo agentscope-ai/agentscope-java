@@ -1,12 +1,12 @@
 # ReMe
 
-`agentscope-extensions-reme` 接入自托管的 ReMe 记忆服务，特点是基于 **trajectory（对话轨迹）** 抽取长期记忆，并按 **workspace** 隔离。
+`agentscope-extensions-reme` 用于接入自托管 ReMe 记忆服务。在 ReMe `0.4.x` 中，AgentScope-Java 通过 `auto_memory` job 写入过滤后的会话消息，通过 `search` job 检索相关上下文。
 
 ## 何时使用
 
-- 想要一个轻量的本地记忆服务，启动门槛低。
-- 关注整段对话轨迹的摘要，而不是单条消息级的存储。
-- 用 `userId` 表达逻辑工作区，每个用户一份独立记忆。
+- 你希望使用一个启动成本较低的自托管记忆服务。
+- 你希望 ReMe 基于整段会话持续演化记忆，而不是只保存单条事实。
+- 你可以通过 ReMe 的 `session_id` 或部署级隔离来管理记忆边界。
 
 ## 添加依赖
 
@@ -18,43 +18,37 @@
 </dependency>
 ```
 
-## 快速上手
+## 快速开始
 
 ```java
 import io.agentscope.core.memory.reme.ReMeLongTermMemory;
 
 ReMeLongTermMemory memory = ReMeLongTermMemory.builder()
-    .userId("task_workspace")            // 映射到 ReMe 的 workspace_id
-    .apiBaseUrl("http://localhost:8002") // 你的 ReMe Server 地址
-    .build();
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .longTermMemory(memory)
-    .longTermMemoryMode(LongTermMemoryMode.BOTH)
+    .sessionId("task-session")
+    .apiBaseUrl("http://localhost:8002")
     .build();
 ```
 
-`userId` 在 ReMe 里实际作为 `workspace_id`，这是 ReMe 用来切分记忆的最小单位。
+`userId(String)` 仍然保留用于兼容旧代码，但在 ReMe `0.4.x` 下它只会作为 `session_id` 的回退值，不再映射到 `workspace_id`。
 
 ## 工作机制
 
-- **写入（record）**：把过滤后的对话拼成一个 `ReMeTrajectory`，作为整体送给 ReMe 的 `add` 接口；服务端再用 LLM 把轨迹抽取成可检索的记忆片段。
-- **检索（retrieve）**：以当前消息为 query 调用 ReMe 的 `search`，优先返回服务端聚合的 `answer`，没有时退化为多个 memory 片段拼接。
+- **写入（`record`）**：把过滤后的 `USER` / `ASSISTANT` 消息连同 `session_id` 一起发送到 `POST /auto_memory`。
+- **检索（`retrieve`）**：把当前消息文本发送到 `POST /search`。如果 ReMe 返回非空 `answer`，直接使用；否则退化为拼接 `metadata.results[].text`。
 
-写入时遵循与 Bailian 相同的过滤策略：
+写入时沿用与 Bailian 相同的过滤策略：
 
-- 只保留 `USER` 与 `ASSISTANT` 消息。
-- 跳过含 `ToolUseBlock` 的助手消息（工具调用请求不入记忆）。
-- 跳过含 `<compressed_history>` 标记的压缩历史。
+- 只保留 `USER` 和 `ASSISTANT` 消息。
+- 跳过包含 `ToolUseBlock` 的助手消息。
+- 跳过带有 `<compressed_history>` 标记的消息。
 
-## Builder 配置参数
+## Builder 参数
 
-| 方法 | 是否必填 | 默认 | 说明 |
+| 方法 | 是否必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `userId(String)` | ✅ | - | 工作区 ID（写入和检索都基于它） |
-| `apiBaseUrl(String)` | ✅ | - | ReMe 服务地址，例如 `http://localhost:8002` |
-| `timeout(Duration)` | ❌ | `60s` | HTTP 请求超时 |
+| `sessionId(String)` | 推荐 | - | ReMe `session_id`，用于写入会话消息 |
+| `userId(String)` | 兼容旧代码 | - | 仅在未设置 `sessionId` 时作为 `session_id` 使用 |
+| `apiBaseUrl(String)` | 是 | - | ReMe 服务地址，例如 `http://localhost:8002` |
+| `timeout(Duration)` | 否 | `60s` | HTTP 请求超时 |
 
-> ReMe 暂未提供更细粒度的 metadata 过滤；如果需要按业务标签切分，建议在 `userId` 里编码命名空间（例如 `tenant-a:project-1`）。
+> ReMe `0.4.x` 已不再提供旧版 `workspace_id` 级别的 personal-memory API。如果你的业务需要严格的单用户隔离，建议使用独立的 ReMe workspace / 部署，或在 `session_id` 中显式编码隔离边界。

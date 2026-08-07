@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.util.JsonException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -42,7 +43,6 @@ class ReMeClientTest {
         mockServer = new MockWebServer();
         mockServer.start();
         String baseUrl = mockServer.url("/").toString();
-        // Remove trailing slash
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
@@ -61,70 +61,50 @@ class ReMeClientTest {
 
     @Test
     void testConstructorWithBaseUrl() {
-        String baseUrl = "http://localhost:8002";
-        ReMeClient client = new ReMeClient(baseUrl);
-        assertNotNull(client);
-        client.shutdown();
+        ReMeClient baseClient = new ReMeClient("http://localhost:8002");
+        assertNotNull(baseClient);
+        baseClient.shutdown();
     }
 
     @Test
     void testConstructorWithTrailingSlash() {
-        String baseUrl = "http://localhost:8002/";
-        ReMeClient client = new ReMeClient(baseUrl);
-        assertNotNull(client);
-        client.shutdown();
+        ReMeClient slashClient = new ReMeClient("http://localhost:8002/");
+        assertNotNull(slashClient);
+        slashClient.shutdown();
     }
 
     @Test
     void testConstructorWithCustomTimeout() {
-        String baseUrl = "http://localhost:8002";
-        ReMeClient client = new ReMeClient(baseUrl, Duration.ofSeconds(30));
-        assertNotNull(client);
-        client.shutdown();
+        ReMeClient timeoutClient = new ReMeClient("http://localhost:8002", Duration.ofSeconds(30));
+        assertNotNull(timeoutClient);
+        timeoutClient.shutdown();
     }
 
     @Test
     void testAddRequestSuccess() throws Exception {
-        // Mock successful response matching actual API format
-        String responseJson =
-                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"memory_list\":[{"
-                    + "\"workspace_id\":\"task_workspace\",\"memory_id\":\"test_memory_id\",\"memory_type\":\"personal\",\"when_to_use\":\"coffee,"
-                    + " morning, work\",\"content\":\"user drinks coffee in the morning while"
-                    + " working\",\"score\":0.0,\"time_created\":\"2025-12-10"
-                    + " 10:30:43\",\"time_modified\":\"2025-12-10"
-                    + " 10:30:43\",\"author\":\"test-author\",\"metadata\":{\"keywords\":\"coffee,"
-                    + " morning, work\",\"time_info\":\"\",\"source_message\":\"I like to drink"
-                    + " coffee while working in the"
-                    + " morning\",\"observation_type\":\"personal_info_with_time\"},"
-                    + "\"target\":\"user\",\"reflection_subject\":\"\"}],\"deleted_memory_ids\":[],"
-                    + "\"update_result\":{\"deleted_count\":0,\"inserted_count\":1}}}";
-
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
-
-        // Create request
-        ReMeMessage message1 =
-                ReMeMessage.builder()
-                        .role("user")
-                        .content("I like to drink coffee while working in the morning")
-                        .build();
-        ReMeMessage message2 =
-                ReMeMessage.builder()
-                        .role("assistant")
-                        .content(
-                                "I understand, you prefer to start your workday with coffee to stay"
-                                        + " energized")
-                        .build();
-
-        ReMeTrajectory trajectory =
-                ReMeTrajectory.builder().messages(List.of(message1, message2)).build();
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(
+                                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"path\":\"daily/2026-07-04/task-session.md\",\"created\":true,\"modified\":true,\"n_messages\":2,\"source_conversation\":\"session/dialog/task-session.jsonl\",\"index\":{\"updated\":true}}}")
+                        .setResponseCode(200));
 
         ReMeAddRequest request =
                 ReMeAddRequest.builder()
-                        .workspaceId("task_workspace")
-                        .trajectories(List.of(trajectory))
+                        .sessionId("task-session")
+                        .messages(
+                                List.of(
+                                        ReMeMessage.builder()
+                                                .role("user")
+                                                .content("I like coffee in the morning")
+                                                .build(),
+                                        ReMeMessage.builder()
+                                                .role("assistant")
+                                                .content("Noted. You prefer coffee while working.")
+                                                .build()))
+                        .memoryHint("preference memory")
+                        .metadata(Map.of("tenant", "demo"))
                         .build();
 
-        // Execute and verify
         StepVerifier.create(client.add(request))
                 .assertNext(
                         response -> {
@@ -132,49 +112,64 @@ class ReMeClientTest {
                             assertEquals(true, response.getSuccess());
                             assertEquals("", response.getAnswer());
                             assertNotNull(response.getMetadata());
-                            assertNotNull(response.getMetadata().getMemoryList());
-                            assertEquals(1, response.getMetadata().getMemoryList().size());
-                            ReMeAddResponse.MemoryItem memory =
-                                    response.getMetadata().getMemoryList().get(0);
-                            assertEquals("task_workspace", memory.getWorkspaceId());
                             assertEquals(
-                                    "user drinks coffee in the morning while working",
-                                    memory.getContent());
-                            assertNotNull(response.getMetadata().getUpdateResult());
+                                    "daily/2026-07-04/task-session.md",
+                                    response.getMetadata().getPath());
+                            assertEquals(true, response.getMetadata().getCreated());
+                            assertEquals(true, response.getMetadata().getModified());
+                            assertEquals(2, response.getMetadata().getNMessages());
                             assertEquals(
-                                    1, response.getMetadata().getUpdateResult().getInsertedCount());
+                                    "session/dialog/task-session.jsonl",
+                                    response.getMetadata().getSourceConversation());
+                            assertEquals(true, response.getMetadata().getIndex().get("updated"));
                         })
                 .verifyComplete();
 
-        // Verify request
         RecordedRequest recordedRequest = mockServer.takeRequest();
         assertEquals("POST", recordedRequest.getMethod());
-        assertEquals("/summary_personal_memory", recordedRequest.getPath());
+        assertEquals("/auto_memory", recordedRequest.getPath());
         assertTrue(recordedRequest.getHeader("Content-Type").contains("application/json"));
 
-        // Verify request body
         String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"workspace_id\":\"task_workspace\""));
-        assertTrue(requestBody.contains("\"trajectories\""));
+        assertTrue(requestBody.contains("\"session_id\":\"task-session\""));
+        assertTrue(requestBody.contains("\"messages\""));
+        assertTrue(requestBody.contains("\"memory_hint\":\"preference memory\""));
+        assertTrue(requestBody.contains("\"tenant\":\"demo\""));
         assertTrue(requestBody.contains("\"role\":\"user\""));
-        assertTrue(requestBody.contains("\"content\":\"I like to drink coffee"));
+        assertTrue(requestBody.contains("\"role\":\"assistant\""));
     }
 
     @Test
-    void testAddRequestWithEmptyResponse() throws Exception {
-        // Mock empty response body (should return empty object)
-        mockServer.enqueue(new MockResponse().setBody("").setResponseCode(200));
-
-        ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
-        ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
+    void testAddRequestWithLegacyWorkspaceAlias() throws Exception {
+        mockServer.enqueue(new MockResponse().setBody("{}").setResponseCode(200));
 
         ReMeAddRequest request =
                 ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory))
+                        .workspaceId("legacy-workspace")
+                        .messages(
+                                List.of(ReMeMessage.builder().role("user").content("Test").build()))
                         .build();
 
-        // Should handle empty response gracefully
+        StepVerifier.create(client.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        String requestBody = recordedRequest.getBody().readUtf8();
+        assertTrue(requestBody.contains("\"session_id\":\"legacy-workspace\""));
+    }
+
+    @Test
+    void testAddRequestWithEmptyResponse() {
+        mockServer.enqueue(new MockResponse().setBody("").setResponseCode(200));
+
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
+                        .sessionId("test-session")
+                        .messages(
+                                List.of(ReMeMessage.builder().role("user").content("Test").build()))
+                        .build();
+
         StepVerifier.create(client.add(request))
                 .assertNext(response -> assertNotNull(response))
                 .verifyComplete();
@@ -185,20 +180,18 @@ class ReMeClientTest {
         mockServer.enqueue(
                 new MockResponse().setBody("{\"error\":\"Bad request\"}").setResponseCode(400));
 
-        ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
-        ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
-
         ReMeAddRequest request =
                 ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory))
+                        .sessionId("test-session")
+                        .messages(
+                                List.of(ReMeMessage.builder().role("user").content("Test").build()))
                         .build();
 
         StepVerifier.create(client.add(request))
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("failed with status 400")
-                                        && error.getMessage().contains("summary_personal_memory"))
+                                        && error.getMessage().contains("auto_memory"))
                 .verify();
     }
 
@@ -206,13 +199,11 @@ class ReMeClientTest {
     void testAddRequestInvalidJson() {
         mockServer.enqueue(new MockResponse().setBody("invalid json").setResponseCode(200));
 
-        ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
-        ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
-
         ReMeAddRequest request =
                 ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory))
+                        .sessionId("test-session")
+                        .messages(
+                                List.of(ReMeMessage.builder().role("user").content("Test").build()))
                         .build();
 
         StepVerifier.create(client.add(request))
@@ -225,82 +216,21 @@ class ReMeClientTest {
 
     @Test
     void testSearchRequestSuccess() throws Exception {
-        // Mock successful search response matching actual API format
-        String responseJson =
-                "{\"answer\":\"user drinks coffee in the morning while working\",\"success\":true,"
-                    + "\"metadata\":{\"memory_list\":[{\"workspace_id\":\"task_workspace\","
-                    + "\"memory_id\":\"test_memory_id\",\"memory_type\":\"personal\",\"when_to_use\":\"coffee,"
-                    + " morning, work\",\"content\":\"user drinks coffee in the morning while"
-                    + " working\",\"score\":0.048747035796754684,\"time_created\":\"2025-12-10"
-                    + " 10:30:43\",\"time_modified\":\"2025-12-10"
-                    + " 10:30:43\",\"author\":\"test-author\",\"metadata\":{\"keywords\":\"coffee,"
-                    + " morning, work\",\"time_info\":\"\",\"source_message\":\"I like to drink"
-                    + " coffee while working in the"
-                    + " morning\",\"observation_type\":\"personal_info_with_time\"},"
-                    + "\"target\":\"user\",\"reflection_subject\":\"\"}]}}";
-
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
-
-        // Create request
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder()
-                        .workspaceId("task_workspace")
-                        .query("What are the user's work habits?")
-                        .topK(5)
-                        .build();
-
-        // Execute and verify
-        StepVerifier.create(client.search(request))
-                .assertNext(
-                        response -> {
-                            assertNotNull(response);
-                            assertEquals(true, response.getSuccess());
-                            assertEquals(
-                                    "user drinks coffee in the morning while working",
-                                    response.getAnswer());
-                            assertNotNull(response.getMetadata());
-                            assertNotNull(response.getMetadata().getMemoryList());
-                            assertEquals(1, response.getMetadata().getMemoryList().size());
-                            ReMeSearchResponse.MemoryItem memory =
-                                    response.getMetadata().getMemoryList().get(0);
-                            assertEquals("task_workspace", memory.getWorkspaceId());
-                            assertEquals(
-                                    "user drinks coffee in the morning while working",
-                                    memory.getContent());
-                            // Test backward compatibility - getMemories() should extract content
-                            assertNotNull(response.getMemories());
-                            assertEquals(1, response.getMemories().size());
-                            assertEquals(
-                                    "user drinks coffee in the morning while working",
-                                    response.getMemories().get(0));
-                        })
-                .verifyComplete();
-
-        // Verify request
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        assertEquals("POST", recordedRequest.getMethod());
-        assertEquals("/retrieve_personal_memory", recordedRequest.getPath());
-        assertTrue(recordedRequest.getHeader("Content-Type").contains("application/json"));
-
-        // Verify request body
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"workspace_id\":\"task_workspace\""));
-        assertTrue(requestBody.contains("\"query\":\"What are the user's work habits?\""));
-        assertTrue(requestBody.contains("\"top_k\":5"));
-    }
-
-    @Test
-    void testSearchRequestEmptyResults() throws Exception {
-        String responseJson =
-                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"memory_list\":[]}}";
-
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(
+                                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"results\":[{\"id\":\"chunk-1\",\"text\":\"User"
+                                    + " likes"
+                                    + " coffee\",\"metadata\":{\"source\":\"daily\"},\"path\":\"daily/2026-07-04.md\",\"start_line\":12,\"end_line\":13,\"scores\":{\"hybrid\":0.91}}],\"counts\":{\"results\":1},\"link_expansion\":{\"enabled\":false}}}")
+                        .setResponseCode(200));
 
         ReMeSearchRequest request =
                 ReMeSearchRequest.builder()
-                        .workspaceId("test_workspace")
-                        .query("test query")
-                        .topK(5)
+                        .query("What are the user's preferences?")
+                        .limit(5)
+                        .minScore(0.2)
+                        .metadata(Map.of("scope", "demo"))
+                        .workspaceId("ignored-workspace")
                         .build();
 
         StepVerifier.create(client.search(request))
@@ -310,41 +240,67 @@ class ReMeClientTest {
                             assertEquals(true, response.getSuccess());
                             assertEquals("", response.getAnswer());
                             assertNotNull(response.getMetadata());
-                            assertNotNull(response.getMetadata().getMemoryList());
-                            assertEquals(0, response.getMetadata().getMemoryList().size());
-                            assertEquals(0, response.getMemories().size());
+                            assertEquals(1, response.getMetadata().getResults().size());
+                            ReMeSearchResponse.SearchResult result =
+                                    response.getMetadata().getResults().get(0);
+                            assertEquals("chunk-1", result.getId());
+                            assertEquals("User likes coffee", result.getText());
+                            assertEquals("daily/2026-07-04.md", result.getPath());
+                            assertEquals(12, result.getStartLine());
+                            assertEquals(13, result.getEndLine());
+                            assertEquals(0.91, result.getScores().get("hybrid"));
+                            assertEquals(List.of("User likes coffee"), response.getMemories());
                         })
                 .verifyComplete();
+
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("POST", recordedRequest.getMethod());
+        assertEquals("/search", recordedRequest.getPath());
+        String requestBody = recordedRequest.getBody().readUtf8();
+        assertTrue(requestBody.contains("\"query\":\"What are the user's preferences?\""));
+        assertTrue(requestBody.contains("\"limit\":5"));
+        assertTrue(requestBody.contains("\"min_score\":0.2"));
+        assertTrue(requestBody.contains("\"scope\":\"demo\""));
+        assertTrue(!requestBody.contains("workspace_id"));
     }
 
     @Test
-    void testSearchRequestWithDefaultTopK() throws Exception {
-        String responseJson =
-                "{\"answer\":\"Memory"
-                    + " 1\",\"success\":true,\"metadata\":{\"memory_list\":[{\"workspace_id\":\"test_workspace\",\"memory_id\":\"mem1\",\"content\":\"Memory"
-                    + " 1\"}]}}";
+    void testSearchRequestEmptyResults() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(
+                                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"results\":[],\"counts\":{\"results\":0}}}")
+                        .setResponseCode(200));
 
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
-
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder()
-                        .workspaceId("test_workspace")
-                        .query("test")
-                        .build(); // topK not set, should use default
+        ReMeSearchRequest request = ReMeSearchRequest.builder().query("test query").build();
 
         StepVerifier.create(client.search(request))
                 .assertNext(
                         response -> {
                             assertNotNull(response);
                             assertEquals(true, response.getSuccess());
-                            assertEquals("Memory 1", response.getAnswer());
+                            assertEquals("", response.getAnswer());
+                            assertNotNull(response.getMetadata());
+                            assertEquals(0, response.getMetadata().getResults().size());
+                            assertEquals(0, response.getMemories().size());
                         })
                 .verifyComplete();
+    }
 
-        // Verify default topK is used
+    @Test
+    void testSearchRequestWithDefaultLimit() throws Exception {
+        mockServer.enqueue(new MockResponse().setBody("{}").setResponseCode(200));
+
+        ReMeSearchRequest request = ReMeSearchRequest.builder().query("test").build();
+
+        StepVerifier.create(client.search(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
         RecordedRequest recordedRequest = mockServer.takeRequest();
         String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"top_k\":5")); // Default value
+        assertTrue(requestBody.contains("\"limit\":5"));
+        assertTrue(requestBody.contains("\"min_score\":0.0"));
     }
 
     @Test
@@ -352,18 +308,13 @@ class ReMeClientTest {
         mockServer.enqueue(
                 new MockResponse().setBody("{\"error\":\"Not found\"}").setResponseCode(404));
 
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder()
-                        .workspaceId("test_workspace")
-                        .query("test query")
-                        .topK(5)
-                        .build();
+        ReMeSearchRequest request = ReMeSearchRequest.builder().query("test query").build();
 
         StepVerifier.create(client.search(request))
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("failed with status 404")
-                                        && error.getMessage().contains("retrieve_personal_memory"))
+                                        && error.getMessage().contains("search"))
                 .verify();
     }
 
@@ -371,8 +322,7 @@ class ReMeClientTest {
     void testSearchRequestInvalidJson() {
         mockServer.enqueue(new MockResponse().setBody("not valid json").setResponseCode(200));
 
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder().workspaceId("test_workspace").query("test").build();
+        ReMeSearchRequest request = ReMeSearchRequest.builder().query("test").build();
 
         StepVerifier.create(client.search(request))
                 .expectErrorMatches(
@@ -383,189 +333,34 @@ class ReMeClientTest {
     }
 
     @Test
-    void testSearchRequestWithMultipleMemories() throws Exception {
-        String responseJson =
-                "{\"answer\":\"First memory fragment. Second memory fragment. Third memory"
-                    + " fragment\",\"success\":true,\"metadata\":{\"memory_list\":[{"
-                    + "\"workspace_id\":\"test_workspace\",\"memory_id\":\"mem1\",\"content\":\"First"
-                    + " memory fragment\",\"score\":0.9"
-                    + "},{\"workspace_id\":\"test_workspace\",\"memory_id\":\"mem2\",\"content\":\"Second"
-                    + " memory fragment\",\"score\":0.8"
-                    + "},{\"workspace_id\":\"test_workspace\",\"memory_id\":\"mem3\",\"content\":\"Third"
-                    + " memory fragment\",\"score\":0.7}]}}";
-
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
-
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder()
-                        .workspaceId("test_workspace")
-                        .query("test query")
-                        .topK(10)
-                        .build();
-
-        StepVerifier.create(client.search(request))
-                .assertNext(
-                        response -> {
-                            assertNotNull(response);
-                            assertEquals(true, response.getSuccess());
-                            assertNotNull(response.getMetadata());
-                            assertNotNull(response.getMetadata().getMemoryList());
-                            assertEquals(3, response.getMetadata().getMemoryList().size());
-                            // Test backward compatibility
-                            assertNotNull(response.getMemories());
-                            assertEquals(3, response.getMemories().size());
-                            assertEquals("First memory fragment", response.getMemories().get(0));
-                            assertEquals("Second memory fragment", response.getMemories().get(1));
-                            assertEquals("Third memory fragment", response.getMemories().get(2));
-                        })
-                .verifyComplete();
-    }
-
-    @Test
     void testShutdown() {
-        ReMeClient client = new ReMeClient("http://localhost:8002");
-        // Should not throw exception
-        client.shutdown();
-    }
-
-    @Test
-    void testRequestBodySerialization() throws Exception {
-        mockServer.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"memory_list\":[],\"deleted_memory_ids\":[],\"update_result\":{\"deleted_count\":0,\"inserted_count\":0}}}")
-                        .setResponseCode(200));
-
-        ReMeMessage message1 = ReMeMessage.builder().role("user").content("Test message 1").build();
-        ReMeMessage message2 =
-                ReMeMessage.builder().role("assistant").content("Test response 1").build();
-        ReMeMessage message3 = ReMeMessage.builder().role("user").content("Test message 2").build();
-
-        ReMeTrajectory trajectory =
-                ReMeTrajectory.builder().messages(List.of(message1, message2, message3)).build();
-
-        ReMeAddRequest request =
-                ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory))
-                        .build();
-
-        StepVerifier.create(client.add(request))
-                .assertNext(response -> assertNotNull(response))
-                .verifyComplete();
-
-        // Verify request body contains expected fields
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"workspace_id\":\"test_workspace\""));
-        assertTrue(requestBody.contains("\"trajectories\""));
-        assertTrue(requestBody.contains("\"role\":\"user\""));
-        assertTrue(requestBody.contains("\"role\":\"assistant\""));
-        assertTrue(requestBody.contains("\"content\":\"Test message 1\""));
-        assertTrue(requestBody.contains("\"content\":\"Test response 1\""));
-        assertTrue(requestBody.contains("\"content\":\"Test message 2\""));
-    }
-
-    @Test
-    void testSearchRequestBodySerialization() throws Exception {
-        mockServer.enqueue(
-                new MockResponse()
-                        .setBody(
-                                "{\"answer\":\"Memory"
-                                    + " 1\",\"success\":true,\"metadata\":{\"memory_list\":[{\"workspace_id\":\"test_workspace\",\"memory_id\":\"mem1\",\"content\":\"Memory"
-                                    + " 1\"}]}}")
-                        .setResponseCode(200));
-
-        ReMeSearchRequest request =
-                ReMeSearchRequest.builder()
-                        .workspaceId("test_workspace")
-                        .query("What are the user preferences?")
-                        .topK(10)
-                        .build();
-
-        StepVerifier.create(client.search(request))
-                .assertNext(response -> assertNotNull(response))
-                .verifyComplete();
-
-        // Verify request body contains expected fields
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"workspace_id\":\"test_workspace\""));
-        assertTrue(requestBody.contains("\"query\":\"What are the user preferences?\""));
-        assertTrue(requestBody.contains("\"top_k\":10"));
+        ReMeClient shutdownClient = new ReMeClient("http://localhost:8002");
+        shutdownClient.shutdown();
     }
 
     @Test
     void testHttpTimeout() {
-        // Create client with very short timeout
         String baseUrl = mockServer.url("/").toString();
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
         ReMeClient shortTimeoutClient = new ReMeClient(baseUrl, Duration.ofMillis(1));
 
-        // Enqueue delayed response
         mockServer.enqueue(
                 new MockResponse()
-                        .setBody("{\"status\":\"success\"}")
+                        .setBody("{}")
                         .setResponseCode(200)
                         .setBodyDelay(1000, TimeUnit.MILLISECONDS));
 
-        ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
-        ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
-
         ReMeAddRequest request =
                 ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory))
+                        .sessionId("test-session")
+                        .messages(
+                                List.of(ReMeMessage.builder().role("user").content("Test").build()))
                         .build();
 
-        // Should timeout
         StepVerifier.create(shortTimeoutClient.add(request)).expectError().verify();
 
         shortTimeoutClient.shutdown();
-    }
-
-    @Test
-    void testMultipleTrajectoriesInAddRequest() throws Exception {
-        String responseJson =
-                "{\"answer\":\"\",\"success\":true,\"metadata\":{\"memory_list\":[],\"deleted_memory_ids\":[],\"update_result\":{\"deleted_count\":0,\"inserted_count\":2}}}";
-
-        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
-
-        // Create multiple trajectories
-        ReMeMessage msg1 = ReMeMessage.builder().role("user").content("Message 1").build();
-        ReMeMessage msg2 = ReMeMessage.builder().role("assistant").content("Response 1").build();
-        ReMeTrajectory trajectory1 = ReMeTrajectory.builder().messages(List.of(msg1, msg2)).build();
-
-        ReMeMessage msg3 = ReMeMessage.builder().role("user").content("Message 2").build();
-        ReMeMessage msg4 = ReMeMessage.builder().role("assistant").content("Response 2").build();
-        ReMeTrajectory trajectory2 = ReMeTrajectory.builder().messages(List.of(msg3, msg4)).build();
-
-        ReMeAddRequest request =
-                ReMeAddRequest.builder()
-                        .workspaceId("test_workspace")
-                        .trajectories(List.of(trajectory1, trajectory2))
-                        .build();
-
-        StepVerifier.create(client.add(request))
-                .assertNext(
-                        response -> {
-                            assertNotNull(response);
-                            assertEquals(true, response.getSuccess());
-                            assertNotNull(response.getMetadata());
-                            assertNotNull(response.getMetadata().getUpdateResult());
-                            assertEquals(
-                                    2, response.getMetadata().getUpdateResult().getInsertedCount());
-                        })
-                .verifyComplete();
-
-        // Verify request contains both trajectories
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"trajectories\""));
-        // Should contain messages from both trajectories
-        assertTrue(requestBody.contains("\"content\":\"Message 1\""));
-        assertTrue(requestBody.contains("\"content\":\"Message 2\""));
     }
 }
