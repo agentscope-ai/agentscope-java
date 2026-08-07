@@ -339,6 +339,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
     .headers(Map.of("Authorization", "Bearer xxx"))
     .remoteStreaming(true)          // 未设置时默认 true
     .remoteAskPolicy(RemoteAskPolicy.DENY)  // 默认
+    .remoteContextAttributes(Map.of("region", "cn"))
     .build())
 ```
 
@@ -350,6 +351,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 |------|------|------|
 | `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记与 `metadata.taskId` / `metadata.parentSessionId`（与 harness `TaskRecord` / 父 session 一致） |
 | `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
+| `remoteContextAttributes` | 无 | 每次提交都携带的静态调用方属性，写入 `context.attributes`。按次追加时，在父代理的 `RuntimeContext` 上用 `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` 放一个 map；见[上下文属性](../../integration/protocol/agent-protocol.md#上下文属性contextattributes) |
 
 ### 远程授权
 
