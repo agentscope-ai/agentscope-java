@@ -25,7 +25,7 @@ export interface MessageBlockTool {
 }
 
 export interface MessageBlockProps {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'error';
   text: string;
   tools: MessageBlockTool[];
   pending?: boolean;
@@ -73,6 +73,12 @@ const roleStyles: Record<MessageBlockProps['role'], React.CSSProperties> = {
     color: '#94a3b8',
     border: '1px dashed #e2e8f0',
     fontStyle: 'italic',
+  },
+  error: {
+    alignSelf: 'center',
+    background: '#fef2f2',
+    color: '#b91c1c',
+    border: '1px solid #fecaca',
   },
 };
 
