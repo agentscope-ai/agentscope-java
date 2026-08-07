@@ -68,6 +68,25 @@ chat.send(
         .block();
 ```
 
+### Multimodal / structured messages
+
+Plain-text `send(String)` is a convenience. For images, audio, or multi-part turns, pass a pre-built `Msg` (or `List<Msg>`) — every String overload has matching `Msg` / `List<Msg>` variants (including `SendOptions` and `sendStream`):
+
+```java
+Msg multimodal = Msg.builder()
+        .role(MsgRole.USER)
+        .content(
+                TextBlock.builder().text("What is in this image?").build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/photo.png").build())
+                        .build())
+        .build();
+
+chat.send(SendOptions.userId("user-1"), multimodal).block();
+chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
+chat.send(multimodal).block(); // single-session mode
+```
+
 ### RuntimeContext merge
 
 Channel turns always build a `RuntimeContext` inside the Gateway. Callers can contribute a **caller base** via `SendOptions` / `InboundMessage.runtimeContext()` / a `ChannelRuntimeContextResolver`. Merge order:

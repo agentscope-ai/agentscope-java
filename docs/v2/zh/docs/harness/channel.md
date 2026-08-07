@@ -68,6 +68,25 @@ chat.send(
         .block();
 ```
 
+### 多模态 / 结构化消息
+
+纯文本 `send(String)` 只是便捷方法。图片、音频或多段内容请传预构建的 `Msg`（或 `List<Msg>`）——每个 String 重载都有对应的 `Msg` / `List<Msg>` 版本（含 `SendOptions` 与 `sendStream`）：
+
+```java
+Msg multimodal = Msg.builder()
+        .role(MsgRole.USER)
+        .content(
+                TextBlock.builder().text("这张图里有什么？").build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/photo.png").build())
+                        .build())
+        .build();
+
+chat.send(SendOptions.userId("user-1"), multimodal).block();
+chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
+chat.send(multimodal).block(); // 单 session 模式
+```
+
 ### RuntimeContext 合并
 
 Channel 路径会在 Gateway 内构建 `RuntimeContext`。调用方可通过 `SendOptions` / `InboundMessage.runtimeContext()` / `ChannelRuntimeContextResolver` 提供 **caller base**。合并顺序：
