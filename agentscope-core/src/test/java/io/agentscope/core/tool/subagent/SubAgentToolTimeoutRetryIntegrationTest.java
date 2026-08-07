@@ -103,6 +103,10 @@ class SubAgentToolTimeoutRetryIntegrationTest {
                                         () -> {
                                             try {
                                                 Thread.sleep(4_000);
+                                            } catch (InterruptedException e) {
+                                                Thread.currentThread().interrupt();
+                                            }
+                                            try {
                                                 Files.writeString(
                                                         tmpFile, "slow_tool round done\n");
                                             } catch (Exception ignored) {
