@@ -29,7 +29,6 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -49,12 +48,12 @@ class AgentProtocolContextAttributesTest {
 
     @TempDir Path tempDir;
 
-    private WorkspaceManager workspaceManager;
+    private ProtocolTaskRepository taskRepository;
     private final AtomicReference<RuntimeContext> executed = new AtomicReference<>();
 
     @BeforeEach
     void setUp() {
-        workspaceManager = new WorkspaceManager(tempDir);
+        taskRepository = new WorkspaceProtocolTaskRepository(tempDir);
     }
 
     @Test
@@ -155,7 +154,7 @@ class AgentProtocolContextAttributesTest {
     private AgentProtocolTaskStore store(List<RuntimeContextCustomizer> customizers) {
         return new AgentProtocolTaskStore(
                 AgentFactory.fixed(recordingAgent()),
-                workspaceManager,
+                taskRepository,
                 new AgentProtocolTaskEventBus(),
                 new AgentProtocolProperties(),
                 customizers);

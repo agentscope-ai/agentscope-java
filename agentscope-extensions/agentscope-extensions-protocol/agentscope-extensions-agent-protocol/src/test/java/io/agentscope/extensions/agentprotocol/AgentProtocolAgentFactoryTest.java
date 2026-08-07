@@ -30,7 +30,6 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -49,14 +48,14 @@ class AgentProtocolAgentFactoryTest {
 
     @TempDir Path tempDir;
 
-    private WorkspaceManager workspaceManager;
+    private ProtocolTaskRepository taskRepository;
     private HarnessAgent researcher;
     private HarnessAgent writer;
     private final List<AgentRequest> seenRequests = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() {
-        workspaceManager = new WorkspaceManager(tempDir);
+        taskRepository = new WorkspaceProtocolTaskRepository(tempDir);
         researcher = agentReplying("researched");
         writer = agentReplying("written");
     }
@@ -130,7 +129,7 @@ class AgentProtocolAgentFactoryTest {
                 };
         return new AgentProtocolTaskStore(
                 factory,
-                workspaceManager,
+                taskRepository,
                 new AgentProtocolTaskEventBus(),
                 new AgentProtocolProperties());
     }
