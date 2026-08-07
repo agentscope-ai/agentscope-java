@@ -199,13 +199,6 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // External tool short-circuit: once availability is authorized, surface the call without
-        // running schema validation, preset injection, or local invocation. SchemaOnlyTool and any
-        // @Tool(externalTool=true) method end up here.
-        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
-            return Mono.just(ToolResultBlock.suspended(toolCall));
-        }
-
         // Validate input against schema
         String validationError =
                 ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
@@ -217,6 +210,13 @@ class ToolExecutor {
                             toolCall.getName(), validationError);
             logger.debug(errorMsg);
             return Mono.just(ToolResultBlock.error(errorMsg));
+        }
+
+        // External tool short-circuit: once availability and schema are validated, surface the call
+        // without preset injection or local invocation. SchemaOnlyTool and any
+        // @Tool(externalTool=true) method end up here.
+        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+            return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
         // Merge runtime context: param-level > toolkit default

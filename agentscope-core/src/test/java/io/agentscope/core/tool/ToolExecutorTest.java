@@ -212,6 +212,50 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should validate external tool input before suspension")
+    void shouldValidateExternalToolInputBeforeSuspension() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string")),
+                                        "required",
+                                        List.of("endpoint")))
+                        .build());
+
+        Map<String, Object> input = Map.of("endpoint", 42);
+        ToolUseBlock invalidExternalCall =
+                ToolUseBlock.builder()
+                        .id("call-invalid-external")
+                        .name("external_api")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(invalidExternalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return a validation response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals(
+                "call-invalid-external", response.getId(), "Response should keep tool call id");
+        assertEquals("external_api", response.getName(), "Response should keep tool name");
+        assertTrue(!response.isSuspended(), "Invalid external input must not suspend");
+
+        String errorText = extractFirstText(response);
+        assertTrue(
+                errorText.startsWith("Error: Parameter validation failed for tool 'external_api'"),
+                "External tool should fail validation before suspension: " + errorText);
+    }
+
+    @Test
     @DisplayName("Should reject inactive grouped external tools before suspension")
     void shouldRejectInactiveGroupedExternalToolsBeforeSuspension() {
         toolkit.createToolGroup("inactiveExternal", "Inactive external tools", false);
