@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
@@ -35,11 +36,13 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -112,6 +115,22 @@ class ReActAgentNewLoopReplyTest {
     private static Toolkit toolkitWith(AgentTool tool) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerAgentTool(tool);
+        return toolkit;
+    }
+
+    private static Toolkit toolkitWithExternalSchema() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("query", Map.of("type", "string"))))
+                        .build());
         return toolkit;
     }
 
@@ -223,6 +242,74 @@ class ReActAgentNewLoopReplyTest {
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
         int secondModelStart = indexOfFrom(events, ModelCallStartEvent.class, firstModelStart + 1);
         assertTrue(secondModelStart > iToolResultEnd, "second iteration should follow tool result");
+    }
+
+    @Test
+    void externalToolCallReturnsSuspendedMessage() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        "ext1", "external_api", "/users"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, result.getGenerateReason());
+        assertEquals(1, result.getContentBlocks(ToolUseBlock.class).size());
+
+        List<ToolResultBlock> toolResults = result.getContentBlocks(ToolResultBlock.class);
+        assertEquals(1, toolResults.size());
+        ToolResultBlock toolResult = toolResults.get(0);
+        assertEquals("ext1", toolResult.getId());
+        assertEquals("external_api", toolResult.getName());
+        assertEquals(ToolResultState.RUNNING, toolResult.getState());
+        assertTrue(toolResult.isSuspended());
+    }
+
+    @Test
+    void externalToolCallEmitsRequireExternalExecutionEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        "ext1", "external_api", "/users"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
+        int iRequireExternal = indexOf(events, RequireExternalExecutionEvent.class);
+
+        assertTrue(iToolResultEnd >= 0, "ToolResultEndEvent expected");
+        assertTrue(
+                iRequireExternal > iToolResultEnd,
+                "RequireExternalExecutionEvent must follow suspended tool result");
+
+        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iToolResultEnd);
+        assertEquals(ToolResultState.RUNNING, end.getState());
+
+        RequireExternalExecutionEvent event =
+                (RequireExternalExecutionEvent) events.get(iRequireExternal);
+        assertEquals(1, event.getToolCalls().size());
+        assertEquals("ext1", event.getToolCalls().get(0).getId());
+        assertEquals("external_api", event.getToolCalls().get(0).getName());
     }
 
     @Test
