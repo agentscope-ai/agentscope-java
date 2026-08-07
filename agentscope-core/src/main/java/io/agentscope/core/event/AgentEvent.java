@@ -32,7 +32,10 @@ import java.util.UUID;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.EXISTING_PROPERTY,
+        property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = AgentStartEvent.class, name = "AGENT_START"),
     @JsonSubTypes.Type(value = AgentEndEvent.class, name = "AGENT_END"),
