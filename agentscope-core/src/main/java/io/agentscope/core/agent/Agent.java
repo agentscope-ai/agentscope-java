@@ -71,20 +71,60 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
 
     /**
      * Interrupt the current agent execution.
-     * This method sets an interrupt flag that will be checked by the agent at appropriate
-     * checkpoints during execution. The interruption is cooperative and may not take effect
-     * immediately.
+     *
+     * @deprecated since 2.0.0, use {@link #interrupt(RuntimeContext)} with explicit runtime
+     *     context to ensure the interruption targets the correct session slot.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     void interrupt();
 
     /**
      * Interrupt the current agent execution with a user message.
-     * This method sets an interrupt flag and associates a user message with the interruption.
-     * The interruption is cooperative and may not take effect immediately.
      *
-     * @param msg User message associated with the interruption
+     * @deprecated since 2.0.0, use {@link #interrupt(RuntimeContext, Msg)} with explicit runtime
+     *     context to ensure the interruption targets the correct session slot.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     void interrupt(Msg msg);
+
+    /**
+     * Interrupt the agent execution for the session identified by the given {@link RuntimeContext}.
+     * This is the session-aware variant of {@link #interrupt()} that targets a specific
+     * {@code (userId, sessionId)} session instead of a hardcoded default session.
+     *
+     * <p>When called from a middleware or tool that holds both {@code Agent agent} and
+     * {@code RuntimeContext ctx}, this method ensures the interruption targets the current
+     * in-flight call's session rather than a different session.
+     *
+     * <p>Default implementation delegates to {@link #interrupt()} for backward compatibility.
+     * Subclasses that maintain per-session state (e.g., {@link io.agentscope.core.ReActAgent})
+     * should override this to trigger the interrupt signal on the correct session slot.
+     *
+     * @param ctx the runtime context identifying the session to interrupt; if {@code null} or
+     *            {@code ctx.getSessionId()} is {@code null}/{@code blank}, implementations may
+     *            fall back to a default session
+     */
+    default void interrupt(RuntimeContext ctx) {
+        interrupt();
+    }
+
+    /**
+     * Interrupt the agent execution for the session identified by the given {@link RuntimeContext}
+     * with an associated user message.
+     *
+     * <p>This is the session-aware variant of {@link #interrupt(Msg)} that targets a specific
+     * {@code (userId, sessionId)} session instead of a hardcoded default session.
+     *
+     * <p>Default implementation delegates to {@link #interrupt(Msg)} for backward compatibility.
+     * Subclasses that maintain per-session state (e.g., {@link io.agentscope.core.ReActAgent})
+     * should override this to trigger the interrupt signal on the correct session slot.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to associate with the interruption
+     */
+    default void interrupt(RuntimeContext ctx, Msg msg) {
+        interrupt(msg);
+    }
 
     /**
      * Returns the agent's runtime {@link io.agentscope.core.state.AgentState}, or {@code null} if
