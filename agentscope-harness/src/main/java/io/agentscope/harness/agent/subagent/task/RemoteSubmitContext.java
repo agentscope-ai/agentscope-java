@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,6 +31,7 @@ public final class RemoteSubmitContext {
     private final boolean stream;
     private final String detail;
     private final List<Map<String, String>> denyRules;
+    private final Map<String, Object> attributes;
 
     private RemoteSubmitContext(Builder builder) {
         this.userId = builder.userId;
@@ -40,6 +42,10 @@ public final class RemoteSubmitContext {
                 builder.denyRules == null || builder.denyRules.isEmpty()
                         ? List.of()
                         : List.copyOf(builder.denyRules);
+        this.attributes =
+                builder.attributes == null || builder.attributes.isEmpty()
+                        ? Map.of()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(builder.attributes));
     }
 
     public static Builder builder() {
@@ -70,8 +76,16 @@ public final class RemoteSubmitContext {
         return denyRules;
     }
 
+    /**
+     * Caller-defined attributes forwarded as {@code context.attributes}. Never null; empty when the
+     * parent supplied none.
+     */
+    public Map<String, Object> attributes() {
+        return attributes;
+    }
+
     public Map<String, Object> toMap() {
-        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        Map<String, Object> m = new LinkedHashMap<>();
         if (userId != null) {
             m.put("user_id", userId);
         }
@@ -83,6 +97,9 @@ public final class RemoteSubmitContext {
         if (!denyRules.isEmpty()) {
             m.put("deny_rules", denyRules);
         }
+        if (!attributes.isEmpty()) {
+            m.put("attributes", attributes);
+        }
         return Collections.unmodifiableMap(m);
     }
 
@@ -92,6 +109,7 @@ public final class RemoteSubmitContext {
         private boolean stream = true;
         private String detail = "status";
         private List<Map<String, String>> denyRules;
+        private Map<String, Object> attributes;
 
         public Builder userId(String userId) {
             this.userId = userId;
@@ -115,6 +133,15 @@ public final class RemoteSubmitContext {
 
         public Builder denyRules(List<Map<String, String>> denyRules) {
             this.denyRules = denyRules;
+            return this;
+        }
+
+        /**
+         * Caller-defined attributes sent as {@code context.attributes}, kept apart from the
+         * protocol's own context fields. Values must be JSON-serializable.
+         */
+        public Builder attributes(Map<String, Object> attributes) {
+            this.attributes = attributes;
             return this;
         }
 

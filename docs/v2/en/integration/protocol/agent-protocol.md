@@ -88,10 +88,69 @@ AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
 | `userId()` / `parentSessionId()` | Parsed from `context.user_id` / `context.parent_session_id` |
 | `resume()` | `true` when re-running a task that was awaiting tool confirmation |
 | `context()` | The submission `context` map exactly as received, including custom keys; `contextValue(key)` / `contextString(key)` are convenience accessors |
+| `attributes()` | Just the `context.attributes` map; `attributeString(key)` is a convenience accessor |
 
 The factory is invoked once per run — on submit and again on every `/resume` — with the original submission context, so routing decisions stay stable across HITL pauses.
 
 Return a distinct instance per call (for example a prototype-scoped bean) when tasks run concurrently. Returning `null` fails the task with an error status.
+
+## Context attributes
+
+Callers pass their own data in `context.attributes`, nested so it never mixes with the protocol's own context fields. Besides being visible to the `AgentFactory`, attributes reach the running agent through its `RuntimeContext`.
+
+They arrive as **one map under a single namespaced key**, `AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY` (`agentprotocol.context.attributes`):
+
+```java
+Map<String, Object> attributes = ctx.get(AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY);
+String tenant = attributes != null ? (String) attributes.get("tenant") : null;
+```
+
+Attributes are namespaced rather than written as top-level keys because the framework itself reads a few plain runtime-context keys — `agentId` drives async tool wakeup routing, `outboundAddress` carries the gateway reply address. A caller naming an attribute after one of those would otherwise change how the agent behaves. Attributes are never rendered into the system prompt, so they do not affect what the model sees.
+
+### Promoting attributes to their own keys
+
+Register `RuntimeContextCustomizer` beans when a tool expects a plain key such as `ctx.get("tenant")`, or to turn attributes into typed values. `RuntimeContextCustomizer.flatten` copies an explicit allow-list, silently skipping framework-reserved names:
+
+```java
+@Bean
+RuntimeContextCustomizer promoteTenantKeys() {
+    return RuntimeContextCustomizer.flatten("tenant", "ticket_id");
+}
+
+@Bean
+RuntimeContextCustomizer tenantContext(TenantService tenants) {
+    return (request, builder) -> {
+        String tenant = request.attributeString("tenant");
+        if (tenant != null) {
+            builder.put(TenantInfo.class, tenants.load(tenant));
+        }
+    };
+}
+```
+
+Every customizer bean is applied to every run, in `@Order`, after the namespaced injection — a later customizer overrides an earlier one. Hand-written customizers are trusted and may write any key, including reserved ones.
+
+### Sending attributes from a parent agent
+
+A parent agent delegating to a remote subagent supplies attributes in two ways, merged with the per-call ones winning:
+
+```java
+// Static, per subagent
+SubagentDeclaration.builder()
+        .name("researcher")
+        .description("Remote researcher")
+        .url("http://remote:8080")
+        .remoteContextAttributes(Map.of("region", "cn"))
+        .build();
+
+// Per call, on the parent's RuntimeContext
+RuntimeContext.builder()
+        .sessionId("sess-1")
+        .put(AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES, Map.of("tenant", "acme"))
+        .build();
+```
+
+Values must be JSON-serializable.
 
 ## Endpoints
 
@@ -115,7 +174,11 @@ Return a distinct instance per call (for example a prototype-scoped bean) when t
         "behavior": "DENY",
         "source": "parent"
       }
-    ]
+    ],
+    "attributes": {
+      "tenant": "acme",
+      "ticket_id": "INC-1001"
+    }
   }
 }
 ```
@@ -129,6 +192,7 @@ Optional `context` fields:
 | `stream` | Whether the caller intends to consume SSE events |
 | `detail` | `status` (default) or `full` — `full` includes text/thinking deltas on the event stream |
 | `deny_rules` | Parent DENY permission rules to enforce on the remote side |
+| `attributes` | Caller-defined key/values for routing and for the run's `RuntimeContext`; see [Context attributes](#context-attributes) |
 
 Response on success: `{ "task_id", "status": "pending" }`.
 

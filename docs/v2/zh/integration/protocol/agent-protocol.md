@@ -88,10 +88,69 @@ AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
 | `userId()` / `parentSessionId()` | 解析自 `context.user_id` / `context.parent_session_id` |
 | `resume()` | 为 `true` 表示这是等待工具确认后的续跑 |
 | `context()` | 原样保留的提交 `context` map（含自定义键）；可用 `contextValue(key)` / `contextString(key)` 取值 |
+| `attributes()` | 仅 `context.attributes` 这层 map；可用 `attributeString(key)` 取值 |
 
 工厂每次运行调用一次——提交时一次，之后每次 `/resume` 再调用一次，且拿到的仍是最初的提交上下文，因此 HITL 暂停前后的路由结果保持一致。
 
 任务并发执行时请每次返回独立实例（例如 prototype 作用域 bean）。返回 `null` 会让任务以错误状态结束。
+
+## 上下文属性（`context.attributes`）
+
+调用方的自定义数据放在 `context.attributes` 里，单独嵌一层，不与协议自身的上下文字段混在一起。除了 `AgentFactory` 能读到之外，这些属性还会随 `RuntimeContext` 进入实际执行的 agent。
+
+它们**整体挂在一个带命名空间的键下**——`AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY`（`agentprotocol.context.attributes`）：
+
+```java
+Map<String, Object> attributes = ctx.get(AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY);
+String tenant = attributes != null ? (String) attributes.get("tenant") : null;
+```
+
+之所以命名空间化而不是平铺成顶层键，是因为框架自身会读少量约定键：`agentId` 决定异步工具的唤醒路由，`outboundAddress` 携带网关回推地址。调用方一旦把属性命名成这些词，就会改变 agent 的行为。属性不会写进系统提示词，因此不影响模型看到的内容。
+
+### 把属性提升为独立键
+
+当某个工具期望直接读 `ctx.get("tenant")`，或需要把属性转成类型化对象时，注册 `RuntimeContextCustomizer` bean。`RuntimeContextCustomizer.flatten` 按显式白名单拷贝，并自动跳过框架保留键：
+
+```java
+@Bean
+RuntimeContextCustomizer promoteTenantKeys() {
+    return RuntimeContextCustomizer.flatten("tenant", "ticket_id");
+}
+
+@Bean
+RuntimeContextCustomizer tenantContext(TenantService tenants) {
+    return (request, builder) -> {
+        String tenant = request.attributeString("tenant");
+        if (tenant != null) {
+            builder.put(TenantInfo.class, tenants.load(tenant));
+        }
+    };
+}
+```
+
+所有 customizer bean 都会按 `@Order` 应用到每次运行，且在命名空间注入之后执行——后者覆盖前者。手写 customizer 属于可信扩展，可以写任意键，包括保留键。
+
+### 从父 agent 发送属性
+
+父 agent 调用远程子 agent 时有两个来源，二者合并且按调用传入的优先：
+
+```java
+// 静态：按子 agent 声明
+SubagentDeclaration.builder()
+        .name("researcher")
+        .description("远程研究员")
+        .url("http://remote:8080")
+        .remoteContextAttributes(Map.of("region", "cn"))
+        .build();
+
+// 动态：按本次调用，挂在父 agent 的 RuntimeContext 上
+RuntimeContext.builder()
+        .sessionId("sess-1")
+        .put(AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES, Map.of("tenant", "acme"))
+        .build();
+```
+
+值必须可 JSON 序列化。
 
 ## 端点
 
@@ -115,7 +174,11 @@ AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
         "behavior": "DENY",
         "source": "parent"
       }
-    ]
+    ],
+    "attributes": {
+      "tenant": "acme",
+      "ticket_id": "INC-1001"
+    }
   }
 }
 ```
@@ -129,6 +192,7 @@ AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
 | `stream` | 调用方是否打算消费 SSE 事件 |
 | `detail` | `status`（默认）或 `full`——`full` 会在事件流中包含文本 / 思考增量 |
 | `deny_rules` | 父侧 DENY 权限规则，供远程侧执行 |
+| `attributes` | 调用方自定义键值，用于路由以及本次运行的 `RuntimeContext`；见[上下文属性](#上下文属性contextattributes) |
 
 成功响应：`{ "task_id", "status": "pending" }`。
 

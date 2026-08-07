@@ -321,6 +321,7 @@ Just set `url` + optional `headers` and the subagent runs through a remote HTTP 
     .headers(Map.of("Authorization", "Bearer xxx"))
     .remoteStreaming(true)          // default when unset
     .remoteAskPolicy(RemoteAskPolicy.DENY)  // default
+    .remoteContextAttributes(Map.of("region", "cn"))
     .build())
 ```
 
@@ -332,6 +333,7 @@ Declaration knobs specific to remote mode:
 |-------|---------|-------|
 | `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag and `metadata.taskId` (same id as the harness `TaskRecord`) |
 | `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
+| `remoteContextAttributes` | none | Static caller attributes sent as `context.attributes` on every submission. Merge per-call values by putting a map under `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` on the parent's `RuntimeContext`; see [Context attributes](../../integration/protocol/agent-protocol.md#context-attributes) |
 
 ### Remote authorization
 
