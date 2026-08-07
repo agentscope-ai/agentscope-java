@@ -44,6 +44,7 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
+import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import io.agentscope.harness.agent.subagent.task.AgentProtocolTransport;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
@@ -1215,9 +1216,13 @@ public class AgentSpawnTool {
         String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         boolean stream = decl != null && decl.isRemoteStreaming();
+        String detail =
+                stream
+                        ? decl.getRemoteStreamDetail().wireValue()
+                        : RemoteStreamDetail.STATUS.wireValue();
         return RemoteSubmitContext.builder().userId(userId).parentSessionId(parentSessionId).stream(
                         stream)
-                .detail(stream ? "full" : "status")
+                .detail(detail)
                 .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
                 .attributes(collectRemoteContextAttributes(runtimeContext, decl))
                 .build();

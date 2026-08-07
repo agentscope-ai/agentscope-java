@@ -338,6 +338,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
     .remoteStreaming(true)          // 未设置时默认 true
+    .remoteStreamDetail(RemoteStreamDetail.VERBOSE)  // 未设置时为 FULL
     .remoteAskPolicy(RemoteAskPolicy.DENY)  // 默认
     .remoteContextAttributes(Map.of("region", "cn"))
     .build())
@@ -350,8 +351,23 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 | 字段 | 默认 | 说明 |
 |------|------|------|
 | `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记与 `metadata.taskId` / `metadata.parentSessionId`（与 harness `TaskRecord` / 父 session 一致） |
+| `remoteStreamDetail` | `FULL` | 回传多少远程事件——见[远程流式详细度](#远程流式详细度) |
 | `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
 | `remoteContextAttributes` | 无 | 每次提交都携带的静态调用方属性，写入 `context.attributes`。按次追加时，在父代理的 `RuntimeContext` 上用 `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` 放一个 map；见[上下文属性](../../integration/protocol/agent-protocol.md#上下文属性contextattributes) |
+
+### 远程流式详细度
+
+本地子 agent 会把孩子的事件原样转发给父流。远程子 agent 的事件要过一趟网络，过多少由 `remoteStreamDetail` 决定，以 `context.detail` 发送：
+
+| 档位 | 回传内容 |
+|------|----------|
+| `STATUS` | 运行生命周期、工具调用起止、工具结果、确认请求 |
+| `FULL`（默认） | `STATUS` 之外再加文本与思考增量 |
+| `VERBOSE` | 远程 agent 发出的每一个事件——块边界、工具入参增量、**工具输出增量**、带 token usage 的模型调用、hint、agent 结果、自定义事件 |
+
+如果希望父流在子 agent 是本地还是远程时表现一致，选 `VERBOSE`——这是唯一能让远程子 agent 的工具输出内容和 token 用量到达父代理的档位。它不作为默认，是因为对只渲染文本的调用方来说这些事件纯粹是额外流量。
+
+没有专属 wire 类型的事件以 `AGENT_EVENT` 传输，原始事件完整序列化在 `payload` 字段里，父代理解出来的就是本地场景下同一个类，id、时间戳和 metadata 都在。不认识该字段的旧客户端仍读扁平字段，只是看不到这些透传事件。
 
 ### 远程授权
 

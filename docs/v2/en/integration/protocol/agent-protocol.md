@@ -190,7 +190,7 @@ Optional `context` fields:
 | `user_id` | Forwarded into the remote agent's `RuntimeContext` |
 | `parent_session_id` | Parent session identity (for tracing / correlation) |
 | `stream` | Whether the caller intends to consume SSE events |
-| `detail` | `status` (default) or `full` — `full` includes text/thinking deltas on the event stream |
+| `detail` | `status` (default), `full` or `verbose` — see [Stream detail levels](#stream-detail-levels) |
 | `deny_rules` | Parent DENY permission rules to enforce on the remote side |
 | `attributes` | Caller-defined key/values for routing and for the run's `RuntimeContext`; see [Context attributes](#context-attributes) |
 
@@ -218,6 +218,27 @@ Reconnect / resume:
 - Header `Last-Event-ID` — used when `from_seq` is omitted (same meaning)
 
 Each SSE message uses the event seq as `id`, the remote event type as `event`, and a JSON body as `data`.
+
+#### Stream detail levels
+
+`context.detail` on submission decides how much of the run reaches subscribers. Each level is a superset of the previous one:
+
+| `detail` | Event types on the stream |
+|----------|---------------------------|
+| `status` (default) | `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`, `TOOL_CALL_START`, `TOOL_CALL_END`, `TOOL_RESULT`, `REQUIRE_CONFIRM`, `STATUS` |
+| `full` | plus `TEXT_DELTA`, `THINKING_DELTA` |
+| `verbose` | plus `AGENT_EVENT` — every remaining agent event, including block boundaries, tool argument and tool output deltas, model calls with token usage, agent results and custom events |
+
+Only `verbose` reproduces the agent's own event stream in full. An unrecognized value is treated as `status`.
+
+Every event body also carries two fields beyond its type-specific ones:
+
+| Field | Meaning |
+|-------|---------|
+| `eventType` | Name of the source `AgentEventType`, e.g. `MODEL_CALL_END`. Lets a client filter or log without parsing `payload` |
+| `payload` | The source `AgentEvent` serialized in full. Restores the original event with its id, timestamp and metadata intact, and is the only representation of an `AGENT_EVENT` |
+
+Both are additive: a client that ignores them keeps reading the flat fields (`text`, `toolCallId`, `status`, …) exactly as before, and one that predates `AGENT_EVENT` simply skips those messages.
 
 ### Resume after HITL
 
