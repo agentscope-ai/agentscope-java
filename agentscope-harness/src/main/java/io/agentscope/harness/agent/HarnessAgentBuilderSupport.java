@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
@@ -311,6 +312,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
+        final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         // Propagate the parent's (distributed) state store so an exposed subagent can be
         // re-materialized on another node / after a restart and still load its conversation
         // history by sessionId. Null in purely local default deployments — children then keep
@@ -356,6 +358,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
+            if (capturedMemoryConfig != null) sub.memory(capturedMemoryConfig);
             if (capturedDisableCompaction) {
                 sub.disableCompaction();
             } else if (capturedCompactionConfig != null) {
