@@ -69,7 +69,10 @@ class AgentProtocolTaskStoreHitlTest {
         props.setStreamingEnabled(true);
         store =
                 new AgentProtocolTaskStore(
-                        () -> agent, workspaceManager, new AgentProtocolTaskEventBus(), props);
+                        AgentFactory.fixed(agent),
+                        workspaceManager,
+                        new AgentProtocolTaskEventBus(),
+                        props);
 
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
                 .thenAnswer(

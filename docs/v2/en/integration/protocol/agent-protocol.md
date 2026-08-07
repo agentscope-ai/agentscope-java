@@ -60,6 +60,39 @@ public HarnessAgent harnessAgent() {
 
 Concurrent requests for the same session are automatically serialized; different sessions run in parallel.
 
+## Agent selection (`AgentFactory`)
+
+Which agent runs a task is decided by an `AgentFactory` bean. Without one, the default factory returns the single `HarnessAgent` bean for every task.
+
+Define your own bean to route by `agent_id`, tenant, or any custom submission-context key:
+
+```java
+@Bean
+AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
+    return request -> {
+        String tenant = request.contextString("tenant");
+        log.info("task {} agent_id={} tenant={} resume={}",
+                request.taskId(), request.agentId(), tenant, request.resume());
+        return agentsByName.getOrDefault(request.agentId(), agentsByName.get("default"));
+    };
+}
+```
+
+`AgentRequest` fields:
+
+| Field | Notes |
+| --- | --- |
+| `taskId()` | Task identifier; also the agent session id |
+| `agentId()` | Requested `agent_id` from the submission |
+| `input()` | User input; empty on a resume run |
+| `userId()` / `parentSessionId()` | Parsed from `context.user_id` / `context.parent_session_id` |
+| `resume()` | `true` when re-running a task that was awaiting tool confirmation |
+| `context()` | The submission `context` map exactly as received, including custom keys; `contextValue(key)` / `contextString(key)` are convenience accessors |
+
+The factory is invoked once per run — on submit and again on every `/resume` — with the original submission context, so routing decisions stay stable across HITL pauses.
+
+Return a distinct instance per call (for example a prototype-scoped bean) when tasks run concurrently. Returning `null` fails the task with an error status.
+
 ## Endpoints
 
 ### Submit a task

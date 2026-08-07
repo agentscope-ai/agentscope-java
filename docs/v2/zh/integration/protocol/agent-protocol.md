@@ -60,6 +60,39 @@ public HarnessAgent harnessAgent() {
 
 同一 session 的并发请求会自动串行化；不同 session 完全并行。
 
+## Agent 选择（`AgentFactory`）
+
+由哪个 agent 执行任务，交给 `AgentFactory` bean 决定。不定义时，默认工厂对所有任务返回唯一的 `HarnessAgent` bean。
+
+自定义 bean 即可按 `agent_id`、租户或任意自定义提交上下文字段路由：
+
+```java
+@Bean
+AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
+    return request -> {
+        String tenant = request.contextString("tenant");
+        log.info("task {} agent_id={} tenant={} resume={}",
+                request.taskId(), request.agentId(), tenant, request.resume());
+        return agentsByName.getOrDefault(request.agentId(), agentsByName.get("default"));
+    };
+}
+```
+
+`AgentRequest` 字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `taskId()` | 任务标识，同时作为 agent 的 session id |
+| `agentId()` | 提交时请求的 `agent_id` |
+| `input()` | 用户输入；resume 运行时为空 |
+| `userId()` / `parentSessionId()` | 解析自 `context.user_id` / `context.parent_session_id` |
+| `resume()` | 为 `true` 表示这是等待工具确认后的续跑 |
+| `context()` | 原样保留的提交 `context` map（含自定义键）；可用 `contextValue(key)` / `contextString(key)` 取值 |
+
+工厂每次运行调用一次——提交时一次，之后每次 `/resume` 再调用一次，且拿到的仍是最初的提交上下文，因此 HITL 暂停前后的路由结果保持一致。
+
+任务并发执行时请每次返回独立实例（例如 prototype 作用域 bean）。返回 `null` 会让任务以错误状态结束。
+
 ## 端点
 
 ### 提交任务

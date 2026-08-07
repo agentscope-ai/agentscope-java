@@ -48,7 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -56,10 +55,10 @@ import reactor.core.publisher.Flux;
 /**
  * In-memory execution handles with workspace-backed {@link TaskRecord} persistence.
  *
- * <p>Each submitted task obtains a {@link HarnessAgent} instance via the {@code agentSupplier}.
- * For concurrent task execution, supply a factory that returns a new instance per call (e.g. a
- * Spring prototype-scoped bean). When a singleton bean is supplied, concurrent tasks will fail
- * at the agent level unless the agent is configured with {@code checkRunning(false)}.
+ * <p>Each run resolves its {@link HarnessAgent} through the {@link AgentFactory}, which receives
+ * the submission context and can therefore route per task. For concurrent task execution, return a
+ * new instance per call (e.g. a Spring prototype-scoped bean); a shared instance requires the agent
+ * to be configured with {@code checkRunning(false)}.
  */
 public final class AgentProtocolTaskStore {
 
@@ -69,7 +68,7 @@ public final class AgentProtocolTaskStore {
     /** Sentinel returned when the agent paused for HITL confirmation. */
     static final String AWAITING_CONFIRM_SENTINEL = "__awaiting_confirm__";
 
-    private final Supplier<HarnessAgent> agentSupplier;
+    private final AgentFactory agentFactory;
     private final WorkspaceManager workspaceManager;
     private final AgentProtocolTaskEventBus eventBus;
     private final AgentProtocolProperties properties;
@@ -86,27 +85,26 @@ public final class AgentProtocolTaskStore {
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
 
     public AgentProtocolTaskStore(
-            Supplier<HarnessAgent> agentSupplier,
+            AgentFactory agentFactory,
             WorkspaceManager workspaceManager,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties) {
-        this.agentSupplier = Objects.requireNonNull(agentSupplier, "agentSupplier");
+        this.agentFactory = Objects.requireNonNull(agentFactory, "agentFactory");
         this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
         this.eventBus = eventBus != null ? eventBus : new AgentProtocolTaskEventBus();
         this.properties = properties != null ? properties : new AgentProtocolProperties();
     }
 
-    public AgentProtocolTaskStore(
-            Supplier<HarnessAgent> agentSupplier, WorkspaceManager workspaceManager) {
+    public AgentProtocolTaskStore(AgentFactory agentFactory, WorkspaceManager workspaceManager) {
         this(
-                agentSupplier,
+                agentFactory,
                 workspaceManager,
                 new AgentProtocolTaskEventBus(),
                 new AgentProtocolProperties());
     }
 
     public AgentProtocolTaskStore(HarnessAgent harnessAgent, WorkspaceManager workspaceManager) {
-        this(() -> harnessAgent, workspaceManager);
+        this(AgentFactory.fixed(harnessAgent), workspaceManager);
     }
 
     public AgentProtocolTaskEventBus eventBus() {
@@ -224,7 +222,20 @@ public final class AgentProtocolTaskStore {
             }
             Msg msg = msgBuilder.build();
 
-            HarnessAgent agent = agentSupplier.get();
+            AgentRequest request =
+                    new AgentRequest(
+                            taskId,
+                            agentId,
+                            input,
+                            submitCtx.userId(),
+                            submitCtx.parentSessionId(),
+                            confirmResults != null,
+                            submitCtx.raw());
+            HarnessAgent agent = agentFactory.create(request);
+            if (agent == null) {
+                throw new IllegalStateException(
+                        "AgentFactory returned no agent for agent_id=" + agentId);
+            }
             AtomicReference<Msg> resultRef = new AtomicReference<>();
             String detail = submitCtx.detail();
 
@@ -604,9 +615,14 @@ public final class AgentProtocolTaskStore {
         }
     }
 
-    private record SubmitContext(String userId, String parentSessionId, String detail) {
+    /**
+     * Parsed protocol fields plus the {@code raw} submission map, which is handed to the {@link
+     * AgentFactory} so custom context keys survive routing on both submit and resume.
+     */
+    private record SubmitContext(
+            String userId, String parentSessionId, String detail, Map<String, Object> raw) {
         static SubmitContext empty() {
-            return new SubmitContext(null, null, "status");
+            return new SubmitContext(null, null, "status", Map.of());
         }
 
         static SubmitContext from(Map<String, Object> raw) {
@@ -619,7 +635,7 @@ public final class AgentProtocolTaskStore {
             if (detail == null || detail.isBlank()) {
                 detail = "status";
             }
-            return new SubmitContext(userId, parentSessionId, detail);
+            return new SubmitContext(userId, parentSessionId, detail, raw);
         }
 
         private static String stringVal(Object v) {
