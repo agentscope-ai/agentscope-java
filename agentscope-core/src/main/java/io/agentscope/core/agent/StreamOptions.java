@@ -120,7 +120,8 @@ public class StreamOptions {
     }
 
     /**
-     * Default options: All event types, incremental mode, include both reasoning chunk and reasoning result.
+     * Default options: all event types (including {@link EventType#AGENT_RESULT}), incremental
+     * mode, and both reasoning chunk and reasoning result enabled.
      *
      * @return StreamOptions with default configuration
      */
@@ -140,7 +141,8 @@ public class StreamOptions {
     /**
      * Get the set of event types that should be streamed.
      *
-     * <p>If the set contains {@link EventType#ALL}, all event types will be streamed.
+     * <p>If the set contains {@link EventType#ALL}, all event types, including
+     * {@link EventType#AGENT_RESULT}, will be streamed.
      *
      * @return The set of event types to stream
      */
@@ -266,7 +268,7 @@ public class StreamOptions {
          * Set which event types to stream.
          *
          * <p>Only events matching these types will be emitted in the Flux. Use {@link
-         * EventType#ALL} to receive all types.
+         * EventType#ALL} to receive all types, including {@link EventType#AGENT_RESULT}.
          *
          * @param types One or more event types
          * @return this builder
