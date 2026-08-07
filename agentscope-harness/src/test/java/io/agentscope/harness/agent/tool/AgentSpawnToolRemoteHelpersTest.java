@@ -50,16 +50,34 @@ class AgentSpawnToolRemoteHelpersTest {
     }
 
     @Test
-    void tagRemoteForwardedEvent_setsSourceAndTaskIdMetadata() {
+    void tagRemoteForwardedEvent_setsSourceTaskIdAndParentSessionMetadata() {
         TextBlockDeltaEvent event = new TextBlockDeltaEvent(null, "b1", "hello");
         event.withMetadataEntry("keep", "me");
 
         AgentEvent tagged =
-                AgentSpawnTool.tagRemoteForwardedEvent(event, "parent/worker", "task_abc");
+                AgentSpawnTool.tagRemoteForwardedEvent(
+                        event, "parent/worker", "task_abc", "parent-sess");
 
         assertEquals("parent/worker", tagged.getSource());
         assertEquals("task_abc", tagged.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertEquals(
+                "parent-sess", tagged.getMetadata().get(AgentEvent.METADATA_PARENT_SESSION_ID));
         assertEquals("me", tagged.getMetadata().get("keep"));
+    }
+
+    @Test
+    void tagRemoteForwardedEvent_skipsBlankParentSessionId() {
+        TextBlockDeltaEvent event = new TextBlockDeltaEvent(null, "b1", "hello");
+
+        AgentEvent tagged =
+                AgentSpawnTool.tagRemoteForwardedEvent(event, "main/worker", "task_abc", "  ");
+
+        assertEquals("main/worker", tagged.getSource());
+        assertEquals("task_abc", tagged.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertTrue(
+                tagged.getMetadata() == null
+                        || !tagged.getMetadata()
+                                .containsKey(AgentEvent.METADATA_PARENT_SESSION_ID));
     }
 
     @Test
