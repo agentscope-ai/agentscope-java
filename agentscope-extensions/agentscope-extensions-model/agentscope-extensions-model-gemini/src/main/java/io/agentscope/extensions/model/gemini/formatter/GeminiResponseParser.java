@@ -32,6 +32,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -199,7 +200,9 @@ public class GeminiResponseParser {
             Map<String, Object> metadata = null;
             if (thoughtSignature != null) {
                 metadata = new HashMap<>();
-                metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+                metadata.put(
+                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                        Base64.getEncoder().encodeToString(thoughtSignature));
             }
 
             blocks.add(
