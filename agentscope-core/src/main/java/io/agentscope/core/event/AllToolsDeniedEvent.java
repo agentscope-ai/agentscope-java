@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 
@@ -32,6 +34,15 @@ import java.util.List;
 public class AllToolsDeniedEvent extends AgentEvent {
 
     private final List<ToolUseBlock> deniedToolCalls;
+
+    @JsonCreator
+    public AllToolsDeniedEvent(
+            @JsonProperty("id") String id,
+            @JsonProperty("createdAt") String createdAt,
+            @JsonProperty("deniedToolCalls") List<ToolUseBlock> deniedToolCalls) {
+        super(id, createdAt);
+        this.deniedToolCalls = deniedToolCalls != null ? List.copyOf(deniedToolCalls) : List.of();
+    }
 
     public AllToolsDeniedEvent(List<ToolUseBlock> deniedToolCalls) {
         this.deniedToolCalls = deniedToolCalls != null ? List.copyOf(deniedToolCalls) : List.of();

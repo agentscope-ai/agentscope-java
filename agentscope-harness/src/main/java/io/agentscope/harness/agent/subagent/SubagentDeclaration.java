@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -109,6 +110,12 @@ public final class SubagentDeclaration {
      */
     private final Boolean remoteStreaming;
 
+    /**
+     * How much of the remote event stream to request. {@code null} defaults to
+     * {@link RemoteStreamDetail#FULL}; see {@link #getRemoteStreamDetail()}.
+     */
+    private final RemoteStreamDetail remoteStreamDetail;
+
     /** Policy for resolving remote HITL confirmations. Defaults to {@link RemoteAskPolicy#DENY}. */
     private final RemoteAskPolicy remoteAskPolicy;
 
@@ -139,6 +146,7 @@ public final class SubagentDeclaration {
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
         this.remoteStreaming = b.remoteStreaming;
+        this.remoteStreamDetail = b.remoteStreamDetail;
         this.remoteAskPolicy = b.remoteAskPolicy != null ? b.remoteAskPolicy : RemoteAskPolicy.DENY;
         this.remoteContextAttributes =
                 b.remoteContextAttributes != null && !b.remoteContextAttributes.isEmpty()
@@ -334,6 +342,17 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * How much of the remote event stream to forward. Defaults to {@link RemoteStreamDetail#FULL}
+     * (lifecycle, tool calls, text and thinking deltas). Use {@link RemoteStreamDetail#VERBOSE} to
+     * mirror a local subagent's stream in full — block boundaries, tool output deltas, model calls
+     * with token usage and every other event — at the cost of more traffic. Only relevant when
+     * {@link #isRemoteStreaming()} is true.
+     */
+    public RemoteStreamDetail getRemoteStreamDetail() {
+        return remoteStreamDetail != null ? remoteStreamDetail : RemoteStreamDetail.FULL;
+    }
+
+    /**
      * Policy for resolving remote HITL (tool-confirmation) requests. Defaults to
      * {@link RemoteAskPolicy#DENY}, which auto-denies pending confirmations rather than leaving
      * the remote task blocked indefinitely.
@@ -382,6 +401,7 @@ public final class SubagentDeclaration {
         private String url;
         private Map<String, String> headers;
         private Boolean remoteStreaming;
+        private RemoteStreamDetail remoteStreamDetail;
         private RemoteAskPolicy remoteAskPolicy = RemoteAskPolicy.DENY;
         private Map<String, Object> remoteContextAttributes;
 
@@ -580,6 +600,17 @@ public final class SubagentDeclaration {
          */
         public Builder remoteStreaming(Boolean remoteStreaming) {
             this.remoteStreaming = remoteStreaming;
+            return this;
+        }
+
+        /**
+         * How much of the remote event stream to forward. {@code null} (default) is treated as
+         * {@link RemoteStreamDetail#FULL}; {@link RemoteStreamDetail#VERBOSE} forwards every event
+         * the remote agent emits, matching a local subagent. Only relevant when
+         * {@link #remoteStreaming(Boolean)} is enabled.
+         */
+        public Builder remoteStreamDetail(RemoteStreamDetail remoteStreamDetail) {
+            this.remoteStreamDetail = remoteStreamDetail;
             return this;
         }
 

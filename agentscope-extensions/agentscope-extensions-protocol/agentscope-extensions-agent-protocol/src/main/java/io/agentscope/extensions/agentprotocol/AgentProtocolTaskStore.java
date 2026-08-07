@@ -262,10 +262,7 @@ public final class AgentProtocolTaskStore {
                                     return;
                                 }
                                 RemoteEventCodec.fromAgentEvent(event)
-                                        .filter(
-                                                dto ->
-                                                        RemoteEventCodec.matchesDetail(
-                                                                dto.getType(), detail))
+                                        .filter(dto -> RemoteEventCodec.matchesDetail(dto, detail))
                                         .ifPresent(
                                                 dto -> {
                                                     dto.setAgentId(agentId);

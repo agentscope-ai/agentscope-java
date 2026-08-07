@@ -190,7 +190,7 @@ RuntimeContext.builder()
 | `user_id` | 写入远程 agent 的 `RuntimeContext` |
 | `parent_session_id` | 父 session 标识（用于关联 / 追踪） |
 | `stream` | 调用方是否打算消费 SSE 事件 |
-| `detail` | `status`（默认）或 `full`——`full` 会在事件流中包含文本 / 思考增量 |
+| `detail` | `status`（默认）、`full` 或 `verbose`——见[事件流详细度](#事件流详细度) |
 | `deny_rules` | 父侧 DENY 权限规则，供远程侧执行 |
 | `attributes` | 调用方自定义键值，用于路由以及本次运行的 `RuntimeContext`；见[上下文属性](#上下文属性contextattributes) |
 
@@ -218,6 +218,27 @@ RuntimeContext.builder()
 - 请求头 `Last-Event-ID` —— 未传 `from_seq` 时使用（含义相同）
 
 每条 SSE 消息以事件序号为 `id`、远程事件类型为 `event`、JSON 正文为 `data`。
+
+#### 事件流详细度
+
+提交时的 `context.detail` 决定订阅方能收到多少事件，每一档都是前一档的超集：
+
+| `detail` | 事件流中的类型 |
+|----------|----------------|
+| `status`（默认） | `RUN_STARTED`、`RUN_FINISHED`、`RUN_ERROR`、`TOOL_CALL_START`、`TOOL_CALL_END`、`TOOL_RESULT`、`REQUIRE_CONFIRM`、`STATUS` |
+| `full` | 再加 `TEXT_DELTA`、`THINKING_DELTA` |
+| `verbose` | 再加 `AGENT_EVENT`——其余所有 agent 事件，包括块边界、工具入参与工具输出增量、带 token usage 的模型调用、agent 结果、自定义事件 |
+
+只有 `verbose` 能完整复现 agent 自身的事件流。无法识别的取值按 `status` 处理。
+
+除各类型专属字段外，每个事件正文还带两个字段：
+
+| 字段 | 含义 |
+|------|------|
+| `eventType` | 源 `AgentEventType` 的名字，如 `MODEL_CALL_END`。客户端可据此过滤或打日志，无需解析 `payload` |
+| `payload` | 源 `AgentEvent` 的完整序列化。可还原出原始事件，id、时间戳与 metadata 都保留；也是 `AGENT_EVENT` 的唯一表示形式 |
+
+两者都是增量字段：忽略它们的客户端照旧读扁平字段（`text`、`toolCallId`、`status` 等），早于 `AGENT_EVENT` 的客户端则直接跳过这类消息。
 
 ### HITL 恢复
 
