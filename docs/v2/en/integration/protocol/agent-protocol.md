@@ -33,16 +33,34 @@ AgentScope uses different protocols for different trust / UX boundaries:
 
 The module is delivered as a Spring Boot auto-configuration. In a Spring Boot app:
 
-1. Provide a `HarnessAgent` bean and a `WorkspaceManager` bean.
+1. Provide a `HarnessAgent` bean (or a custom `AgentFactory`).
 2. Enable in `application.yml`:
 
 ```yaml
 agentscope:
   agent-protocol:
     enabled: true
+    # optional — control-plane TaskRecord directory (not an execution agent's workspace)
+    # task-store-path: ${user.dir}/.agentscope/agent-protocol
 ```
 
 The `/tasks` REST endpoints are then registered automatically.
+
+### Control-plane vs execution workspace
+
+`AgentProtocolTaskStore` persists protocol task metadata (`TaskRecord` for submit / resume /
+snapshot) through a dedicated `ProtocolTaskRepository`. By default that repository is rooted at
+`agentscope.agent-protocol.task-store-path` (`${user.dir}/.agentscope/agent-protocol`), under the
+synthetic bucket `agents/_agentscope_protocol/tasks/`.
+
+This path is **independent** of each `HarnessAgent`'s own `WorkspaceManager` (MEMORY, sessions,
+skills). Multi-agent factories may give each agent a different `.workspace(...)`; protocol
+`task_id` lookup always goes through the control-plane repository.
+
+You may supply your own `ProtocolTaskRepository` bean to override the default. Do **not** inject an
+execution agent's `WorkspaceManager` into the task store unless you intentionally want protocol
+metadata co-located with that agent's files (legacy deprecated constructors still wrap a
+`WorkspaceManager` as a control-plane repo for compatibility).
 
 ## Concurrent execution
 

@@ -16,7 +16,7 @@
 package io.agentscope.extensions.agentprotocol;
 
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -35,6 +35,10 @@ import org.springframework.context.annotation.Bean;
  * <p>Agent selection goes through {@link AgentFactory}. Without a user-defined bean, the default
  * factory resolves the single {@link HarnessAgent} bean for every task; define an
  * {@link AgentFactory} bean to route per {@code agent_id} or submission context.
+ *
+ * <p>Protocol task metadata is persisted through {@link ProtocolTaskRepository},
+ * rooted at {@link AgentProtocolProperties#getTaskStorePath()} by default — not through any
+ * execution agent's workspace.
  *
  * <p>All {@link RuntimeContextCustomizer} beans are applied, in {@code @Order}, to the runtime
  * context of every task run.
@@ -61,16 +65,22 @@ public class AgentProtocolAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean({AgentFactory.class, WorkspaceManager.class})
+    @ConditionalOnMissingBean(ProtocolTaskRepository.class)
+    public ProtocolTaskRepository agentProtocolTaskRepository(AgentProtocolProperties properties) {
+        return new WorkspaceProtocolTaskRepository(Path.of(properties.getTaskStorePath()));
+    }
+
+    @Bean
+    @ConditionalOnBean({AgentFactory.class, ProtocolTaskRepository.class})
     public AgentProtocolTaskStore agentProtocolTaskStore(
             AgentFactory agentFactory,
-            WorkspaceManager workspaceManager,
+            ProtocolTaskRepository taskRepository,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties,
             ObjectProvider<RuntimeContextCustomizer> runtimeContextCustomizers) {
         return new AgentProtocolTaskStore(
                 agentFactory,
-                workspaceManager,
+                taskRepository,
                 eventBus,
                 properties,
                 runtimeContextCustomizers.orderedStream().toList());

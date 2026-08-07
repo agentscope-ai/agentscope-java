@@ -39,7 +39,6 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
 import io.agentscope.harness.agent.subagent.protocol.RemoteEventType;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -60,12 +59,12 @@ class AgentProtocolStreamDetailTest {
 
     @TempDir Path tempDir;
 
-    private WorkspaceManager workspaceManager;
+    private ProtocolTaskRepository taskRepository;
     private HarnessAgent agent;
 
     @BeforeEach
     void setUp() {
-        workspaceManager = new WorkspaceManager(tempDir);
+        taskRepository = new WorkspaceProtocolTaskRepository(tempDir);
         agent = mock(HarnessAgent.class);
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
                 .thenReturn(Flux.fromIterable(agentRun()));
@@ -141,7 +140,7 @@ class AgentProtocolStreamDetailTest {
         AgentProtocolTaskStore store =
                 new AgentProtocolTaskStore(
                         AgentFactory.fixed(agent),
-                        workspaceManager,
+                        taskRepository,
                         bus,
                         new AgentProtocolProperties());
 
