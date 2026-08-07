@@ -1167,17 +1167,22 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path and
-     * the harness {@link AgentEvent#METADATA_TASK_ID} so concurrent calls to the same remote agent
-     * stay correlatable to distinct {@code TaskRecord}s.
+     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path, the
+     * harness {@link AgentEvent#METADATA_TASK_ID}, and {@link
+     * AgentEvent#METADATA_PARENT_SESSION_ID} so concurrent calls to the same remote agent stay
+     * correlatable to distinct {@code TaskRecord}s and to the parent session that spawned them.
      */
-    static AgentEvent tagRemoteForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+    static AgentEvent tagRemoteForwardedEvent(
+            AgentEvent event, String sourcePath, String taskId, String parentSessionId) {
         if (event == null) {
             return null;
         }
         event.withSource(sourcePath);
         if (taskId != null && !taskId.isBlank()) {
             event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+        }
+        if (parentSessionId != null && !parentSessionId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_PARENT_SESSION_ID, parentSessionId.trim());
         }
         return event;
     }
@@ -1317,7 +1322,8 @@ public class AgentSpawnTool {
                                                                         tagRemoteForwardedEvent(
                                                                                 ae,
                                                                                 sourcePath,
-                                                                                taskId))));
+                                                                                taskId,
+                                                                                parentSessionId))));
             }
 
             long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0L);
