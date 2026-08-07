@@ -36,6 +36,9 @@ import org.springframework.context.annotation.Bean;
  * factory resolves the single {@link HarnessAgent} bean for every task; define an
  * {@link AgentFactory} bean to route per {@code agent_id} or submission context.
  *
+ * <p>All {@link RuntimeContextCustomizer} beans are applied, in {@code @Order}, to the runtime
+ * context of every task run.
+ *
  * <p>For concurrent task execution, register the {@link HarnessAgent} bean as
  * {@code @Scope("prototype")} so that each task obtains its own instance. Alternatively, configure
  * the singleton with {@code checkRunning(false)} if concurrent access is otherwise safe.
@@ -63,8 +66,14 @@ public class AgentProtocolAutoConfiguration {
             AgentFactory agentFactory,
             WorkspaceManager workspaceManager,
             AgentProtocolTaskEventBus eventBus,
-            AgentProtocolProperties properties) {
-        return new AgentProtocolTaskStore(agentFactory, workspaceManager, eventBus, properties);
+            AgentProtocolProperties properties,
+            ObjectProvider<RuntimeContextCustomizer> runtimeContextCustomizers) {
+        return new AgentProtocolTaskStore(
+                agentFactory,
+                workspaceManager,
+                eventBus,
+                properties,
+                runtimeContextCustomizers.orderedStream().toList());
     }
 
     @Bean

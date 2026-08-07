@@ -57,4 +57,30 @@ public record AgentRequest(
         Object v = contextValue(key);
         return v == null ? null : String.valueOf(v);
     }
+
+    /**
+     * Caller-defined attributes from {@code context.attributes}, or an empty map when the caller
+     * sent none. These are the values propagated into the agent's {@link
+     * io.agentscope.core.agent.RuntimeContext}; the surrounding {@link #context()} also holds the
+     * protocol's own fields.
+     */
+    public Map<String, Object> attributes() {
+        Object raw = context.get(AgentProtocolConstants.CONTEXT_ATTRIBUTES_FIELD);
+        if (!(raw instanceof Map<?, ?> map) || map.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            if (e.getKey() != null && e.getValue() != null) {
+                out.put(String.valueOf(e.getKey()), e.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(out);
+    }
+
+    /** Returns the {@code context.attributes} value for {@code key} as a string, or {@code null}. */
+    public String attributeString(String key) {
+        Object v = key == null ? null : attributes().get(key);
+        return v == null ? null : String.valueOf(v);
+    }
 }
